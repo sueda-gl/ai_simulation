@@ -61,7 +61,7 @@ if 'mc_results' not in st.session_state:
     st.session_state.mc_results = None
 
 # Sidebar inputs
-st.sidebar.subheader("🎯 Simulation Parameters")
+st.sidebar.subheader("Simulation Parameters")
 
 simulation_mode = st.sidebar.radio(
     "Simulation Mode",
@@ -505,7 +505,7 @@ else:
     pass
     
     # Instructions
-    st.subheader("🚀 Getting Started")
+    st.subheader("Getting Started")
     
     st.markdown("""
     **1. Set Parameters**
