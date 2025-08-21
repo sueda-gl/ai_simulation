@@ -1,0 +1,37 @@
+                            OLS Regression Results                            
+==============================================================================
+Dep. Variable:              obs_behav   R-squared:                       0.021
+Model:                            OLS   Adj. R-squared:                 -0.016
+Method:                 Least Squares   F-statistic:                    0.5641
+Date:                Wed, 06 Aug 2025   Prob (F-statistic):              0.843
+Time:                        17:41:20   Log-Likelihood:                -1035.8
+No. Observations:                 280   AIC:                             2094.
+Df Residuals:                     269   BIC:                             2134.
+Df Model:                          10                                         
+Covariance Type:            nonrobust                                         
+=======================================================================================================
+                                          coef    std err          t      P>|t|      [0.025      0.975]
+-------------------------------------------------------------------------------------------------------
+Intercept                               3.7701      1.039      3.630      0.000       1.725       5.815
+C(income_cat)[T.2]                     -0.5062      1.589     -0.319      0.750      -3.635       2.623
+C(income_cat)[T.3]                     -1.2080      1.614     -0.748      0.455      -4.386       1.970
+C(income_cat)[T.4]                      0.5170      2.075      0.249      0.803      -3.568       4.602
+C(income_cat)[T.5]                     -2.1023      4.261     -0.493      0.622     -10.491       6.287
+C(study_prog)[T.Incoming]              -4.7349     10.128     -0.468      0.641     -24.675      15.205
+C(study_prog)[T.Law 5-year Program]    -2.1699      3.586     -0.605      0.546      -9.230       4.890
+C(study_prog)[T.UG 3-year Program]     -1.8019      1.269     -1.420      0.157      -4.301       0.697
+C(group)[T.MidSub]                      2.1987      0.978      2.249      0.025       0.274       4.124
+C(group)[T.NoSub]                       0.3408      0.888      0.384      0.702      -1.408       2.090
+C(group)[T.HighSub]                     1.2306      0.907      1.357      0.176      -0.555       3.016
+z_hh                                    0.4757      0.610      0.780      0.436      -0.725       1.676
+==============================================================================
+Omnibus:                      387.996   Durbin-Watson:                   2.016
+Prob(Omnibus):                  0.000   Jarque-Bera (JB):            40079.766
+Skew:                           6.560   Prob(JB):                         0.00
+Kurtosis:                      60.125   Cond. No.                     4.26e+15
+==============================================================================
+
+Notes:
+[1] Standard Errors assume that the covariance matrix of the errors is correctly specified.
+[2] The smallest eigenvalue is 2.97e-29. This might indicate that there are
+strong multicollinearity problems or that the design matrix is singular.

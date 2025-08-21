@@ -1,0 +1,63 @@
+# Trait requirements for each decision module
+# This file specifies which columns from the merged survey+experiment data
+# each decision needs. The TraitEngine will eventually fit a copula only on
+# the union of all specified traits instead of all ~50+ survey columns.
+
+donation_default:
+  # Decision 3: Set up default donation rate
+  # Uses anchor formula: 0.75 * observed_prosocial + 0.25 * predicted_prosocial
+  # Predicted prosocial comes from regression on these traits:
+  - Honesty_Humility                        # continuous variable (hh in regression)
+  - Assigned Allowance Level                # allocated income variable from experiment
+  - Study Program                           # study program indicator
+  - Group_experiment                        # experimental group indicator (use experiment version)
+  - TWT+Sospeso [=AW2+AX2]{Periods 1+2}    # experimental prosocial score for 75% anchor weight
+
+# Placeholder blocks for remaining decisions - traits TBD when models are fitted
+disclose_income:
+  # Decision 1: Disclose income for Fixed status
+  - placeholder_trait
+
+disclose_documents: 
+  # Decision 2: Disclose documents for Discount status
+  - placeholder_trait
+
+rejected_transaction_defaults:
+  # Decision 4: Select prioritized defaults for handling rejected transactions
+  - placeholder_trait
+
+vendor_choice_weights:
+  # Decision 5: Select default weights for vendor/product choice
+  - placeholder_trait
+
+consumption_quantity:
+  # Decision 6: Decide consumption quantity per calendar period
+  - placeholder_trait
+
+consumption_frequency:
+  # Decision 7: Decide consumption frequency per day
+  - placeholder_trait
+
+vendor_selection:
+  # Decision 8: Select vendor/product from sorted list
+  - placeholder_trait
+
+purchase_vs_bid:
+  # Decision 9: Decide between Purchase Now and Bid
+  - placeholder_trait
+
+bid_value:
+  # Decision 10: Select bid value if Bid chosen
+  - placeholder_trait
+
+rejected_transaction_option:
+  # Decision 11: Select option after rejected transaction
+  - placeholder_trait
+
+rejected_bid_value:
+  # Decision 12: Select bid value after rejected transaction
+  - placeholder_trait
+
+final_donation_rate:
+  # Decision 13: Select donation rate after transaction accepted
+  - placeholder_trait

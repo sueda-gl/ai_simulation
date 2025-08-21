@@ -1,0 +1,123 @@
+# Decision parameters for all 13 decision modules
+# Each decision has its own parameter block with regression coefficients,
+# stochastic parameters, and any decision-specific configuration
+
+donation_default:
+  # Decision 3: Set up default donation rate
+  # Uses anchor formula: 0.75 * observed_prosocial + 0.25 * predicted_prosocial
+  # Predicted prosocial comes from regression with these exact coefficients:
+  
+  regression:
+    intercept: 1.22985660120368
+    
+    # Group coefficients (reference: FullSub = 0)
+    beta_group:
+      MidSub: 0.856140306694656
+      NoSub: -0.926633374153906
+      FullSub: 0.0  # reference category
+    
+    # Income quintile coefficients (reference: Q4/Q5 = 0)  
+    beta_income_q:
+      Q1: -0.520290427509808
+      Q2: 3.754612744416796
+      Q3: 4.001714810873598
+      Q4_Q5: 0.0  # reference category
+    
+    # Study programme coefficients (reference: Graduate 2-yr = 0)
+    beta_study:
+      Incoming: -6.920193024391676
+      Law5yr: -2.081331674770856
+      UG3yr: -2.139093511519692
+      Grad2yr: 0.0  # reference category (CLEF/CLEAM/BIEF)
+    
+    # Honesty-Humility coefficient (z-score)
+    beta_hh: 0.634001208840808
+  
+  # Anchor mixing weights
+  anchor_weights:
+    observed: 0.75    # weight on observed prosocial score
+    predicted: 0.25   # weight on predicted prosocial score
+  
+  # Stochastic parameters
+  stochastic:
+    sigma_strategy: overall_sd_twt_sospeso  # compute overall SD at runtime
+    # Alternative: quintile_specific_sd for income-dependent variance
+  
+  # Truncation and rescaling rules
+  truncation:
+    lower_bound: 0      # floor negative values at 0
+    percentile_max: 0.99  # use 99th percentile as personal maximum
+    final_range: [0, 1]   # final output range after rescaling
+
+# Placeholder blocks for remaining 12 decisions
+disclose_income:
+  # Decision 1: Disclose income for Fixed status
+  placeholder: true
+  output_field: "disclose_income"
+  default_value: "NA"
+
+disclose_documents:
+  # Decision 2: Disclose documents for Discount status  
+  placeholder: true
+  output_field: "disclose_documents"
+  default_value: "NA"
+
+rejected_transaction_defaults:
+  # Decision 4: Select prioritized defaults for handling rejected transactions
+  placeholder: true
+  output_field: "rejected_transaction_defaults"
+  default_value: "NA"
+
+vendor_choice_weights:
+  # Decision 5: Select default weights for vendor/product choice
+  placeholder: true
+  output_field: "vendor_choice_weights"
+  default_value: "NA"
+
+consumption_quantity:
+  # Decision 6: Decide consumption quantity per calendar period
+  placeholder: true
+  output_field: "consumption_quantity"
+  default_value: "NA"
+
+consumption_frequency:
+  # Decision 7: Decide consumption frequency per day
+  placeholder: true
+  output_field: "consumption_frequency"
+  default_value: "NA"
+
+vendor_selection:
+  # Decision 8: Select vendor/product from sorted list
+  placeholder: true
+  output_field: "vendor_selection"
+  default_value: "NA"
+
+purchase_vs_bid:
+  # Decision 9: Decide between Purchase Now and Bid
+  placeholder: true
+  output_field: "purchase_vs_bid"
+  default_value: "NA"
+
+bid_value:
+  # Decision 10: Select bid value if Bid chosen
+  placeholder: true
+  output_field: "bid_value"
+  default_value: "NA"
+
+rejected_transaction_option:
+  # Decision 11: Select option after rejected transaction
+  placeholder: true
+  output_field: "rejected_transaction_option"
+  default_value: "NA"
+
+rejected_bid_value:
+  # Decision 12: Select bid value after rejected transaction
+  placeholder: true
+  output_field: "rejected_bid_value"
+  default_value: "NA"
+
+final_donation_rate:
+  # Decision 13: Select donation rate after transaction accepted
+  placeholder: true
+  output_field: "final_donation_rate"
+  default_value: "NA"

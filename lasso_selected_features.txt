@@ -1,0 +1,10 @@
+TotalAllowance_std
+SVO_type_std
+Agreeable_std
+SubHappy_std
+SupportEquality_std
+Religious_std
+TotalAllowance_std
+Foreign_binary
+Group_NoSub
+Education_2

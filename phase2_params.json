@@ -1,0 +1,51 @@
+{
+  "hh_mean": 3.3921875,
+  "hh_sd": 0.5586640535720767,
+  "income_bin_edges": [
+    "-inf",
+    12617.0,
+    18030.0,
+    23567.0,
+    31487.0,
+    "inf"
+  ],
+  "income_bin_labels": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "baseline_income_cat": 1,
+  "baseline_study_prog": "G 2-year Program",
+  "y_min": 0.0,
+  "y_max": 112.0,
+  "other_min": -0.2847724864437624,
+  "other_max": 6.509285394710869,
+  "weights_tried": [
+    0.25,
+    0.5,
+    0.75
+  ],
+  "weight_default": 0.5,
+  "noise_scale": 0.5,
+  "sigma_rmse": 9.969626805929265,
+  "sigma_0100": 8.901452505293985,
+  "study_prog_levels": [
+    "G 2-year Program",
+    "Incoming",
+    "Law 5-year Program",
+    "UG 3-year Program"
+  ],
+  "model_params": {
+    "Intercept": 4.871063040566465,
+    "C(income_cat)[T.2]": -0.403490777612646,
+    "C(income_cat)[T.3]": -1.0321406149380756,
+    "C(income_cat)[T.4]": 0.5038346183873736,
+    "C(income_cat)[T.5]": -1.937727083061549,
+    "C(study_prog)[T.Incoming]": -5.581380594732093,
+    "C(study_prog)[T.Law 5-year Program]": -2.3283374389670923,
+    "C(study_prog)[T.UG 3-year Program]": -1.7474936356441724,
+    "z_hh": 0.5415148951929265
+  }
+}
