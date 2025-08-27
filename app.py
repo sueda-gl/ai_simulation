@@ -59,6 +59,8 @@ if 'simulation_results' not in st.session_state:
     st.session_state.simulation_results = None
 if 'mc_results' not in st.session_state:
     st.session_state.mc_results = None
+if 'simulation_mode' not in st.session_state:
+    st.session_state.simulation_mode = "Single Run"
 
 # Sidebar inputs
 st.sidebar.subheader("Simulation Parameters")
@@ -66,6 +68,8 @@ st.sidebar.subheader("Simulation Parameters")
 simulation_mode = st.sidebar.radio(
     "Simulation Mode",
     ["Single Run", "Monte-Carlo Study"],
+    index=0 if st.session_state.simulation_mode == "Single Run" else 1,
+    key="simulation_mode_radio",
     help="Single Run: One simulation with specified parameters\nMonte-Carlo: Multiple runs for uncertainty analysis"
 )
 
@@ -245,7 +249,7 @@ if st.session_state.simulation_results is not None:
     df = st.session_state.simulation_results
     
     # Overview metrics
-    st.subheader("📊 Simulation Overview")
+    st.subheader("Simulation Overview")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -267,7 +271,7 @@ if st.session_state.simulation_results is not None:
     
     # Donation rate analysis (if available)
     if 'donation_default' in df.columns:
-        st.subheader("💰 Donation Rate Analysis")
+        st.subheader(" Donation Rate Analysis")
         
         # Distribution plot
         col1, col2 = st.columns([2, 1])
@@ -323,7 +327,7 @@ if st.session_state.simulation_results is not None:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("**🧬 Agent Traits**")
+            st.markdown("** Agent Traits**")
             trait_data = {}
             for col in ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
                        'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
@@ -331,6 +335,8 @@ if st.session_state.simulation_results is not None:
                     trait_data[col] = agent_data[col]
             
             trait_df = pd.DataFrame(list(trait_data.items()), columns=['Trait', 'Value'])
+            # Convert all values to strings to avoid PyArrow serialization issues
+            trait_df['Value'] = trait_df['Value'].astype(str)
             st.dataframe(trait_df, hide_index=True)
         
         with col2:
@@ -345,6 +351,8 @@ if st.session_state.simulation_results is not None:
             if 'donation_default' in decision_data:
                 decision_df.loc[decision_df['Decision'] == 'donation_default', 'Value'] = \
                     f"{decision_data['donation_default']:.1%}"
+            # Convert all values to strings to avoid PyArrow serialization issues
+            decision_df['Value'] = decision_df['Value'].astype(str)
             st.dataframe(decision_df, hide_index=True)
     
     # Raw data download

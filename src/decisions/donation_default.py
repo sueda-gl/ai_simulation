@@ -10,7 +10,7 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator) 
     1. Compute anchor (0.75 * observed + 0.25 * predicted)
     2. Select appropriate sigma
     3. Draw from Normal(anchor, sigma)
-    4. Floor at 0 if negative
+    4. Floor negative values at 0
     5. Compute personal 99th percentile maximum
     6. Clip and rescale to [0,1]
     """
@@ -66,14 +66,17 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator) 
     weights = params['anchor_weights']
     anchor = weights['observed'] * observed_prosocial + weights['predicted'] * predicted
     
-    # Step 2: Select sigma (for now use overall strategy)
-    # TODO: Compute sigma from the actual data - placeholder for now
-    sigma = 5.0  # placeholder - will be computed from data
+    # Step 2: Select sigma based on strategy
+    sd_params = params['stochastic']
+    if sd_params['sigma_strategy'] == 'overall_sd_twt_sospeso':
+        sigma = sd_params['sigma_value']  # empirical SD from 280-person data
+    else:
+        sigma = 5.0  # fallback
     
     # Step 3: Draw from Normal(anchor, sigma)
     draw = rng.normal(anchor, sigma)
     
-    # Step 4: Floor at 0 if negative
+    # Step 4: Floor negative values at 0
     if draw < 0:
         draw = 0.0
     
@@ -85,7 +88,12 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator) 
     if personal_max > 0:
         donation_rate = min(draw, personal_max) / personal_max
     else:
-        donation_rate = 0.0
+        # Handle case where personal_max <= 0
+        # Use the raw draw relative to sigma for scaling
+        if sigma > 0:
+            donation_rate = max(0, draw / (3 * sigma))  # Scale by 3-sigma range
+        else:
+            donation_rate = 0.0
     
     # Final clipping to ensure [0,1] range
     donation_rate = np.clip(donation_rate, 0.0, 1.0)
