@@ -171,18 +171,3 @@ python scripts/run_mc_study.py --agents 10000 --runs 500
 # - mc_config.json: Complete reproducibility information
 ```
 
-### Output Format
-- **Summary Statistics**: Cross-run means, standard deviations, 95% confidence intervals
-- **Detailed Results**: Individual statistics from each Monte-Carlo run
-- **Reproducibility**: Exact seeds and configuration for replication
-
-### Academic Reporting
-Use the 95% confidence intervals from `mc_summary.csv` in your Results section:
-> "Across 500 Monte-Carlo repetitions the average donation rate was 0.284 with a 95% interval of [0.273, 0.295]."
-
-## Next Steps
-
-1. **Implement remaining decisions** as regression models become available
-2. **Create web interface** using Streamlit or Dash
-3. **Add validation plots** comparing synthetic vs. real distributions
-4. **Extend Monte-Carlo** to include parameter uncertainty (Bayesian posterior draws)
