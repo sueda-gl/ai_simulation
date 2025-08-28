@@ -111,8 +111,7 @@ else:
     )
 
 # Decision selection
-available_decisions = [
-    "All Decisions",
+all_decisions = [
     "donation_default",
     "disclose_income", 
     "disclose_documents",
@@ -128,11 +127,30 @@ available_decisions = [
     "final_donation_rate"
 ]
 
-selected_decision = st.sidebar.selectbox(
-    "Decision to Run",
-    available_decisions,
-    help="Select specific decision or run all 13 decisions"
-)
+# Multi-select with "Select All" functionality
+st.sidebar.subheader("Decision Selection")
+select_all = st.sidebar.checkbox("Select All Decisions", value=True)
+
+if select_all:
+    selected_decisions = st.sidebar.multiselect(
+        "Decisions to Run",
+        all_decisions,
+        default=all_decisions,
+        help="Select one or more decisions to run",
+        disabled=True
+    )
+else:
+    selected_decisions = st.sidebar.multiselect(
+        "Decisions to Run",
+        all_decisions,
+        default=["donation_default"],
+        help="Select one or more decisions to run"
+    )
+
+# Ensure at least one decision is selected
+if not selected_decisions:
+    st.sidebar.error("Please select at least one decision")
+    selected_decisions = ["donation_default"]
 
 # Advanced options
 st.sidebar.subheader("🔧 Advanced Options")
@@ -242,7 +260,8 @@ def run_single_simulation():
                         if pop_mode == "documentation" or (pop_mode == "copula" and sigma_in_copula):
                             orchestrator.config['donation_default']['stochastic']['raw_output'] = raw_draw_mode
                 
-                decision_param = None if selected_decision == "All Decisions" else selected_decision
+                # Handle multiple decisions
+                decision_param = None if len(selected_decisions) == len(all_decisions) else selected_decisions
                 return orchestrator.run_simulation(
                     n_agents=n_agents,
                     seed=seed,
@@ -281,7 +300,13 @@ def run_single_simulation():
                 output_dir = Path("outputs")
                 output_dir.mkdir(exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                decision_suffix = f"_{selected_decision}" if selected_decision != "All Decisions" else "_all"
+                # Create decision suffix for filename
+                if len(selected_decisions) == len(all_decisions):
+                    decision_suffix = "_all"
+                elif len(selected_decisions) == 1:
+                    decision_suffix = f"_{selected_decisions[0]}"
+                else:
+                    decision_suffix = f"_{len(selected_decisions)}decisions"
                 
                 for mode, df in results.items():
                     filename = f"webapp_simulation_{mode}_seed{seed}_agents{n_agents}{decision_suffix}_{timestamp}.parquet"
@@ -309,8 +334,11 @@ def run_monte_carlo_study():
                 '--anchor-observed', str(anchor_observed_weight)
             ]
             
-            if selected_decision != "All Decisions":
-                cmd.extend(['--decision', selected_decision])
+            # Handle multiple decisions for Monte Carlo
+            if len(selected_decisions) < len(all_decisions):
+                # Pass each selected decision as a separate argument
+                for decision in selected_decisions:
+                    cmd.extend(['--decision', decision])
             
             # Run Monte-Carlo study
             progress_bar = st.progress(0)

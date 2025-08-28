@@ -16,8 +16,8 @@ def main():
                        help='Number of synthetic agents to generate (default: 1000)')
     parser.add_argument('--seed', type=int, default=42,
                        help='Random seed for reproducibility (default: 42)')
-    parser.add_argument('--decision', type=str, default=None,
-                       help='Run only specific decision (default: run all)')
+    parser.add_argument('--decision', type=str, action='append', default=None,
+                       help='Run specific decision(s). Can be specified multiple times. (default: run all)')
     parser.add_argument('--output-dir', type=str, default='outputs',
                        help='Output directory (default: outputs)')
     parser.add_argument('--format', choices=['parquet', 'csv'], default='parquet',
@@ -39,11 +39,12 @@ def main():
     
     if args.decision:
         available = orchestrator.get_available_decisions()
-        if args.decision not in available:
-            print(f"Error: Decision '{args.decision}' not available.")
-            print(f"Available decisions: {', '.join(available)}")
-            return 1
-        print(f"Running single decision: {args.decision}")
+        for decision in args.decision:
+            if decision not in available:
+                print(f"Error: Decision '{decision}' not available.")
+                print(f"Available decisions: {', '.join(available)}")
+                return 1
+        print(f"Running decisions: {', '.join(args.decision)}")
     else:
         print("Running all 13 decisions")
     
@@ -63,7 +64,13 @@ def main():
         
         # Generate output filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        decision_suffix = f"_{args.decision}" if args.decision else "_all"
+        # Create decision suffix for filename
+        if args.decision is None:
+            decision_suffix = "_all"
+        elif len(args.decision) == 1:
+            decision_suffix = f"_{args.decision[0]}"
+        else:
+            decision_suffix = f"_{len(args.decision)}decisions"
         filename = f"simulation_seed{args.seed}_agents{args.agents}{decision_suffix}_{timestamp}"
         
         # Save results

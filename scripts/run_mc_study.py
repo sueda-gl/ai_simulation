@@ -16,8 +16,8 @@ def main():
                        help='Number of Monte-Carlo repetitions (default: 500)')
     parser.add_argument('--base-seed', type=int, default=1,
                        help='Base random seed (subsequent runs use base_seed + i) (default: 1)')
-    parser.add_argument('--decision', type=str, default=None,
-                       help='Run only specific decision (default: run all)')
+    parser.add_argument('--decision', type=str, action='append', default=None,
+                       help='Run specific decision(s). Can be specified multiple times. (default: run all)')
     parser.add_argument('--output-dir', type=str, default='outputs',
                        help='Output directory (default: outputs)')
     parser.add_argument('--keep-individual', action='store_true',
@@ -42,7 +42,7 @@ def main():
     print(f"Base seed: {args.base_seed}")
     print(f"Anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
     if args.decision:
-        print(f"Decision: {args.decision}")
+        print(f"Decisions: {', '.join(args.decision)}")
     else:
         print("Running all 13 decisions")
     print("-" * 50)
@@ -61,7 +61,8 @@ def main():
         ]
         
         if args.decision:
-            cmd.extend(['--decision', args.decision])
+            for decision in args.decision:
+                cmd.extend(['--decision', decision])
         
         # Run simulation
         try:

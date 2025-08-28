@@ -3,7 +3,7 @@ import yaml
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Union
 import importlib
 
 from src.trait_engine import TraitEngine
@@ -56,11 +56,13 @@ class Orchestrator:
                 print(f"Warning: Could not load decision module {decision_name}: {e}")
     
     def run_simulation(self, n_agents: int, seed: int, 
-                      single_decision: Optional[str] = None) -> pd.DataFrame:
+                      single_decision: Optional[Union[str, List[str]]] = None) -> pd.DataFrame:
         """
         Run simulation for n_agents with specified seed.
         
-        If single_decision is provided, only run that decision.
+        If single_decision is provided:
+        - If it's a string, only run that decision
+        - If it's a list of strings, run those decisions in order
         Otherwise run all decisions in order.
         """
         # Sample synthetic agents
@@ -68,9 +70,20 @@ class Orchestrator:
         
         # Determine which decisions to run
         if single_decision:
-            if single_decision not in self.decision_order:
-                raise ValueError(f"Unknown decision: {single_decision}")
-            decisions_to_run = [single_decision]
+            if isinstance(single_decision, str):
+                # Single decision
+                if single_decision not in self.decision_order:
+                    raise ValueError(f"Unknown decision: {single_decision}")
+                decisions_to_run = [single_decision]
+            elif isinstance(single_decision, list):
+                # Multiple decisions
+                for decision in single_decision:
+                    if decision not in self.decision_order:
+                        raise ValueError(f"Unknown decision: {decision}")
+                # Run decisions in the order they appear in decision_order
+                decisions_to_run = [d for d in self.decision_order if d in single_decision]
+            else:
+                raise ValueError("single_decision must be a string or list of strings")
         else:
             decisions_to_run = self.decision_order
         

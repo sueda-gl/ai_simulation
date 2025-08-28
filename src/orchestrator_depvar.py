@@ -3,7 +3,7 @@ import yaml
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Union
 
 # Import the merged data directly
 from src.validate_traits import merged
@@ -112,7 +112,7 @@ class OrchestratorDepVar:
             print("Dependent variable mode: Using RAW (pre-truncation) distribution")
     
     def run_simulation(self, n_agents: int, seed: int, 
-                      single_decision: Optional[str] = None) -> pd.DataFrame:
+                      single_decision: Optional[Union[str, List[str]]] = None) -> pd.DataFrame:
         """
         Generate n_agents by resampling from empirical donation distribution.
         
@@ -124,8 +124,15 @@ class OrchestratorDepVar:
         Returns:
             DataFrame with single column 'donation_default' containing resampled values
         """
-        if single_decision and single_decision != 'donation_default':
-            raise ValueError(f"Dependent variable mode only supports 'donation_default', not '{single_decision}'")
+        if single_decision:
+            if isinstance(single_decision, str):
+                if single_decision != 'donation_default':
+                    raise ValueError(f"Dependent variable mode only supports 'donation_default', not '{single_decision}'")
+            elif isinstance(single_decision, list):
+                if 'donation_default' not in single_decision:
+                    raise ValueError(f"Dependent variable mode only supports 'donation_default', not {single_decision}")
+            else:
+                raise ValueError("single_decision must be a string or list of strings")
         
         # Bootstrap resample from empirical distribution
         rng = np.random.default_rng(seed)
