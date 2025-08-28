@@ -100,36 +100,28 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     else:
         sigma_0_100 = 8.84  # fallback based on calculation above
     
-    # Draw from Normal(anchor, sigma) - both in 0-100 scale
-    draw_0_100_raw = rng.normal(s100_anchor, sigma_0_100)
-    
-    # Save the raw draw before any truncation (for raw output mode)
-    raw_donation_rate = draw_0_100_raw / 100.0  # Convert to 0-1 scale
-    
-    # Step 5: Floor negative values at 0
-    draw_0_100 = max(0.0, draw_0_100_raw)
-    
-    # Step 6: Compute personal 99th percentile maximum and rescale
-    # Personal max is based on individual's anchor and sigma
-    percentile_max = params['truncation']['percentile_max']
-    personal_max_0_100 = s100_anchor + norm.ppf(percentile_max) * sigma_0_100
-    
-    # Rescale to [0,1] using personal maximum
-    if personal_max_0_100 > 0:
-        donation_rate = min(draw_0_100, personal_max_0_100) / personal_max_0_100
-    else:
-        # Handle edge case where personal_max <= 0
-        donation_rate = 0.0
-    
-    # Final clipping to ensure [0,1] range
-    donation_rate = np.clip(donation_rate, 0.0, 1.0)
-    
-    # Check if we should return raw output (pre-truncation)
-    if params.get('stochastic', {}).get('raw_output', False):
-        # Return the truly raw draw (can be negative)
-        return {
-            "donation_default": donation_rate,
-            "donation_default_raw": raw_donation_rate
-        }
-    
-    return {"donation_default": donation_rate}
+    # Draw from Normal(anchor, sigma) (0-100 scale)
+    draw_raw = rng.normal(s100_anchor, sigma_0_100)
+
+    # Store raw draw (can be negative)
+    raw_flag = params.get('stochastic', {}).get('raw_output', False)
+    out = {}
+    if raw_flag:
+        out["donation_default_raw"] = draw_raw / 100.0  # keep original scale as proportion
+
+    # Always keep non-negative version for later scaling
+    draw_pos = max(draw_raw, 0.0)
+    out["donation_default_raw_pos"] = draw_pos  # still 0-100 scale, no scaling yet
+
+    # If we are **not** using global-max rescaling we fall back to personal 99-percentile logic
+    if not params.get('stochastic', {}).get('global_max_rescale', False):
+        percentile_max = params['truncation']['percentile_max']
+        personal_max_0_100 = s100_anchor + norm.ppf(percentile_max) * sigma_0_100
+        if personal_max_0_100 > 0:
+            donation_rate = min(draw_pos, personal_max_0_100) / personal_max_0_100
+        else:
+            donation_rate = 0.0
+        donation_rate = np.clip(donation_rate, 0.0, 1.0)
+        out["donation_default"] = donation_rate
+
+    return out

@@ -107,32 +107,33 @@ class OrchestratorDocMode:
                 if outcome_draws>1:
                     agent_state['draw_id']=rep+1
                 agent_rng = np.random.default_rng(rng_global.integers(1e9))
-            
-            # Execute decisions in order
-            for decision_name in decisions_to_run:
-                if decision_name in self.decision_modules:
-                    # Get parameters for this decision
-                    params = self.config.get(decision_name, {})
-                    
-                    # Execute decision module
-                    # Only pass pop_context to modules that support it (donation_default variants)
-                    if decision_name == 'donation_default':
-                        decision_output = self.decision_modules[decision_name](
-                            agent_state, params, agent_rng, pop_context=self.pop_context
-                        )
-                    else:
-                        decision_output = self.decision_modules[decision_name](
-                            agent_state, params, agent_rng
-                        )
-                    
-                    # Update agent state with decision outputs
-                    agent_state.update(decision_output)
-                else:
-                    print(f"Warning: No module found for decision {decision_name}")
-            
-            results.append(agent_state)
+
+                # we postpone decision execution until after loop to capture repeats
+                # so move decision loop inside rep
+                for decision_name in decisions_to_run:
+                    if decision_name in self.decision_modules:
+                        params = self.config.get(decision_name, {})
+                        if decision_name == 'donation_default':
+                            decision_output = self.decision_modules[decision_name](
+                                agent_state, params, agent_rng, pop_context=self.pop_context
+                            )
+                        else:
+                            decision_output = self.decision_modules[decision_name](
+                                agent_state, params, agent_rng)
+                        agent_state.update(decision_output)
+                results.append(agent_state)
         
-        return pd.DataFrame(results)
+        df = pd.DataFrame(results)
+
+        # If global-max rescaling is requested, apply it here
+        donation_col = 'donation_default_raw_pos'
+        if 'donation_default' not in df.columns and donation_col in df.columns:
+            global_max = df[donation_col].max()
+            if global_max == 0:
+                df['donation_default'] = 0.0
+            else:
+                df['donation_default'] = (df[donation_col] / global_max).clip(0,1)
+        return df
     
     def get_available_decisions(self) -> List[str]:
         """Return list of available decision modules."""
