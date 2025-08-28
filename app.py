@@ -54,13 +54,16 @@ st.markdown('<h1 class="main-header">AI Agent Simulation Dashboard</h1>', unsafe
 # Sidebar configuration
 st.sidebar.title("⚙️ Simulation Controls")
 
-# Initialize session state
-if 'simulation_results' not in st.session_state:
-    st.session_state.simulation_results = None
-if 'mc_results' not in st.session_state:
-    st.session_state.mc_results = None
-if 'simulation_mode' not in st.session_state:
-    st.session_state.simulation_mode = "Single Run"
+# Initialize session state - fix KeyError issues
+_DEFAULTS = {
+    "simulation_mode": "Single Run",
+    "population_mode": "Copula (synthetic)",
+    "income_spec_mode": "categorical only",
+    "simulation_results": None,
+    "mc_results": None,
+}
+for k, v in _DEFAULTS.items():
+    st.session_state.setdefault(k, v)
 
 # Sidebar inputs
 st.sidebar.subheader("Simulation Parameters")
@@ -146,6 +149,64 @@ save_results = st.sidebar.checkbox(
     help="Save simulation outputs to outputs/ directory"
 )
 
+# Population mode selector
+st.sidebar.subheader("Population Generation")
+population_mode = st.sidebar.radio(
+    "Population Mode",
+    ["Copula (synthetic)", "Documentation (original + stochastic)", "Compare both"],
+    index=0,
+    help="Copula: Generate synthetic agents via fitted copula\nDocumentation: Use original participants with stochastic draws\nCompare both: Show Copula vs Documentation side-by-side"
+)
+
+# Income specification selector with comparison mode (not relevant for dependent variable mode)
+if population_mode != "Dependent variable resampling":
+    st.sidebar.subheader("Income Specification")
+    income_spec_mode = st.sidebar.radio(
+        "Income Mode for Donation Model",
+        ["categorical only", "continuous only", "compare side-by-side"],
+        index=0,
+        help="Choose income treatment: categorical (5 categories), continuous (linear), or compare both side-by-side"
+    )
+else:
+    income_spec_mode = "categorical only"  # Default for dependent variable mode
+
+# Stochastic component option for copula mode (not relevant for dependent variable mode)
+if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
+    st.sidebar.subheader("Stochastic Component")
+    sigma_in_copula = st.sidebar.checkbox(
+        "Add Normal(anchor, σ) draw to Copula runs",
+        value=False,
+        help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Documentation mode"
+    )
+else:
+    sigma_in_copula = False  # Default for other modes
+
+# Anchor weights slider (not for dependent variable mode which uses pre-computed values)
+if population_mode != "Dependent variable resampling":
+    st.sidebar.subheader("Anchor Mix")
+    anchor_observed_weight = st.sidebar.slider(
+        "Weight on OBSERVED prosocial score",
+        min_value=0.0,
+        max_value=1.0,
+        value=0.75,
+        step=0.05,
+        help="Anchor = w × Observed + (1-w) × Predicted. Default is 0.75 observed + 0.25 predicted."
+    )
+    st.sidebar.caption(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
+else:
+    anchor_observed_weight = 0.75  # Default value used in pre-computation
+
+# Raw output option
+if population_mode != "Copula (synthetic)" or sigma_in_copula:
+    st.sidebar.subheader("Output Options")
+    raw_draw_mode = st.sidebar.checkbox(
+        "Show pre-truncation (raw) donation rate",
+        value=False,
+        help="Display the raw Normal(anchor, σ) draw before any processing. This shows negative values and the full range of the stochastic draw before flooring at 0 and rescaling by personal maximum."
+    )
+else:
+    raw_draw_mode = False  # Not applicable for deterministic copula mode
+
 # Run simulation button
 st.sidebar.markdown("---")
 
@@ -153,16 +214,67 @@ def run_single_simulation():
     """Run a single simulation and return results."""
     try:
         with st.spinner("🔄 Generating synthetic agents and running simulation..."):
-            # Initialize orchestrator
-            orchestrator = Orchestrator()
+            # Helper to run simulation with chosen orchestrator and income mode
+            def _run(pop_mode: str, inc_mode: str):
+                # Initialize appropriate orchestrator
+                if pop_mode == "documentation":
+                    from src.orchestrator_doc_mode import OrchestratorDocMode
+                    orchestrator = OrchestratorDocMode()
+                elif pop_mode == "depvar":
+                    from src.orchestrator_depvar import OrchestratorDepVar
+                    orchestrator = OrchestratorDepVar()
+                    # Set raw output mode for dependent variable resampling
+                    orchestrator.set_raw_output(raw_draw_mode)
+                else:  # copula
+                    orchestrator = Orchestrator()
+                
+                # Override income specification in config based on choice (not for depvar mode)
+                if hasattr(orchestrator, 'config') and 'donation_default' in orchestrator.config:
+                    if pop_mode != "depvar":  # depvar mode doesn't use these settings
+                        orchestrator.config['donation_default']['regression']['income_mode'] = inc_mode
+                        # Set stochastic flag for copula mode if checkbox is enabled
+                        if pop_mode == "copula":
+                            orchestrator.config['donation_default']['stochastic']['in_copula'] = sigma_in_copula
+                        # Apply chosen anchor weights
+                        orchestrator.config['donation_default']['anchor_weights']['observed'] = anchor_observed_weight
+                        orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - anchor_observed_weight
+                        # Set raw output flag if applicable
+                        if pop_mode == "documentation" or (pop_mode == "copula" and sigma_in_copula):
+                            orchestrator.config['donation_default']['stochastic']['raw_output'] = raw_draw_mode
+                
+                decision_param = None if selected_decision == "All Decisions" else selected_decision
+                return orchestrator.run_simulation(
+                    n_agents=n_agents,
+                    seed=seed,
+                    single_decision=decision_param
+                )
             
-            # Run simulation
-            decision_param = None if selected_decision == "All Decisions" else selected_decision
-            results_df = orchestrator.run_simulation(
-                n_agents=n_agents,
-                seed=seed,
-                single_decision=decision_param
-            )
+            # Run based on population and income specification modes
+            results = {}
+            
+            if population_mode == "Compare both":
+                # Compare population modes
+                for pop_name, pop_type in [("copula", "copula"), ("doc_mode", "documentation")]:
+                    if income_spec_mode == "compare side-by-side":
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical")
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous")
+                    elif income_spec_mode == "continuous only":
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous")
+                    else:  # categorical only
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical")
+            elif population_mode == "Dependent variable resampling":
+                # Dependent variable mode - only one result regardless of income spec
+                results["depvar"] = _run("depvar", "categorical")  # income mode is ignored
+            else:
+                # Single population mode
+                pop_type = "documentation" if "Documentation" in population_mode else "copula"
+                if income_spec_mode == "compare side-by-side":
+                    results["categorical"] = _run(pop_type, "categorical")
+                    results["continuous"] = _run(pop_type, "continuous")
+                elif income_spec_mode == "continuous only":
+                    results["continuous"] = _run(pop_type, "continuous")
+                else:  # categorical only
+                    results["categorical"] = _run(pop_type, "categorical")
             
             # Save results if requested
             if save_results:
@@ -170,12 +282,15 @@ def run_single_simulation():
                 output_dir.mkdir(exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 decision_suffix = f"_{selected_decision}" if selected_decision != "All Decisions" else "_all"
-                filename = f"webapp_simulation_seed{seed}_agents{n_agents}{decision_suffix}_{timestamp}.parquet"
-                filepath = output_dir / filename
-                results_df.to_parquet(filepath, index=False)
-                st.sidebar.success(f"✅ Results saved to {filename}")
+                
+                for mode, df in results.items():
+                    filename = f"webapp_simulation_{mode}_seed{seed}_agents{n_agents}{decision_suffix}_{timestamp}.parquet"
+                    filepath = output_dir / filename
+                    df.to_parquet(filepath, index=False)
+                
+                st.sidebar.success(f"✅ Results saved with timestamp {timestamp}")
             
-            return results_df
+            return results
             
     except Exception as e:
         st.error(f"❌ Simulation failed: {str(e)}")
@@ -190,7 +305,8 @@ def run_monte_carlo_study():
                 sys.executable, 'scripts/run_mc_study.py',
                 '--agents', str(n_agents),
                 '--runs', str(n_runs),
-                '--base-seed', str(base_seed)
+                '--base-seed', str(base_seed),
+                '--anchor-observed', str(anchor_observed_weight)
             ]
             
             if selected_decision != "All Decisions":
@@ -243,13 +359,18 @@ if st.sidebar.button("🚀 Run Simulation", type="primary", use_container_width=
         }
         st.session_state.simulation_results = None
 
-# Main content area
-if st.session_state.simulation_results is not None:
-    # Single simulation results
-    df = st.session_state.simulation_results
+def _show_overview(df, title_suffix=""):
+    """Helper function to show simulation overview for a DataFrame"""
+    st.subheader(f"Simulation Overview{title_suffix}")
     
-    # Overview metrics
-    st.subheader("Simulation Overview")
+    # Check if this is dependent variable mode (only has donation_default column)
+    is_depvar_mode = len(df.columns) == 1 and 'donation_default' in df.columns
+    
+    # Display anchor weights info (not for depvar mode)
+    if not is_depvar_mode:
+        st.caption(f"📊 Anchor mix: {anchor_observed_weight:.2f} observed | {1 - anchor_observed_weight:.2f} predicted")
+    else:
+        st.caption("📊 Resampling from empirical distribution of 280 original donation rates")
     
     col1, col2, col3, col4 = st.columns(4)
     
@@ -257,21 +378,32 @@ if st.session_state.simulation_results is not None:
         st.metric("Total Agents", f"{len(df):,}")
     
     with col2:
-        trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
-                     'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
-        st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
+        if not is_depvar_mode:
+            trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
+                         'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
+            st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
+        else:
+            st.metric("Source", "280 participants")
     
     with col3:
-        decision_cols = [c for c in df.columns if c not in trait_cols]
-        st.metric("Decisions Computed", len(decision_cols))
+        if not is_depvar_mode:
+            decision_cols = [c for c in df.columns if c not in trait_cols]
+            st.metric("Decisions Computed", len(decision_cols))
+        else:
+            st.metric("Method", "Bootstrap")
     
     with col4:
-        if 'donation_default' in df.columns:
-            st.metric("Avg Donation Rate", f"{df['donation_default'].mean():.1%}")
+        # Determine which column to use for display
+        donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
+        if donation_col in df.columns:
+            avg_label = "Avg Donation Rate" + (" (raw)" if donation_col == 'donation_default_raw' else "")
+            st.metric(avg_label, f"{df[donation_col].mean():.1%}")
     
     # Donation rate analysis (if available)
-    if 'donation_default' in df.columns:
-        st.subheader(" Donation Rate Analysis")
+    donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
+    if donation_col in df.columns:
+        raw_suffix = " (raw pre-truncation)" if donation_col == 'donation_default_raw' else ""
+        st.subheader(f" Donation Rate Analysis{title_suffix}{raw_suffix}")
         
         # Distribution plot
         col1, col2 = st.columns([2, 1])
@@ -279,10 +411,10 @@ if st.session_state.simulation_results is not None:
         with col1:
             fig = px.histogram(
                 df, 
-                x='donation_default',
+                x=donation_col,
                 nbins=30,
-                title="Distribution of Donation Rates",
-                labels={'donation_default': 'Donation Rate', 'count': 'Number of Agents'},
+                title=f"Distribution of Donation Rates{title_suffix}{raw_suffix}",
+                labels={donation_col: 'Donation Rate', 'count': 'Number of Agents'},
                 marginal="box"
             )
             fig.update_layout(
@@ -293,7 +425,7 @@ if st.session_state.simulation_results is not None:
         
         with col2:
             st.markdown("**📈 Statistics**")
-            donation_stats = df['donation_default'].describe()
+            donation_stats = df[donation_col].describe()
             
             stats_df = pd.DataFrame({
                 'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
@@ -308,71 +440,308 @@ if st.session_state.simulation_results is not None:
                 ]
             })
             st.dataframe(stats_df, hide_index=True)
+
+# Main content area
+if st.session_state.simulation_results is not None:
+    results_dict = st.session_state.simulation_results
+    
+    # Show results based on mode
+    if population_mode == "Compare both":
+        st.markdown("### 🔬 Population Mode Comparison")
+        
+        # Create layout based on income mode
+        if income_spec_mode == "compare side-by-side":
+            # 2x2 grid: copula vs doc_mode x categorical vs continuous
+            st.markdown("#### Copula (Synthetic Agents)")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Categorical Income**")
+                if "copula_categorical" in results_dict:
+                    _show_overview(results_dict["copula_categorical"], " (Copula, Cat)")
+                else:
+                    st.info("Categorical results not available")
+            with col2:
+                st.markdown("**Continuous Income**")
+                if "copula_continuous" in results_dict:
+                    _show_overview(results_dict["copula_continuous"], " (Copula, Cont)")
+                else:
+                    st.info("Continuous results not available")
+            
+            st.markdown("---")
+            st.markdown("#### Documentation Mode (Original + Stochastic)")
+            col3, col4 = st.columns(2)
+            with col3:
+                st.markdown("**Categorical Income**")
+                if "doc_mode_categorical" in results_dict:
+                    _show_overview(results_dict["doc_mode_categorical"], " (Doc, Cat)")
+                else:
+                    st.info("Categorical results not available")
+            with col4:
+                st.markdown("**Continuous Income**")
+                if "doc_mode_continuous" in results_dict:
+                    _show_overview(results_dict["doc_mode_continuous"], " (Doc, Cont)")
+                else:
+                    st.info("Continuous results not available")
+            
+            # Default for individual analysis - use first available result
+            df = next((results_dict[k] for k in ["copula_categorical", "doc_mode_categorical", "copula_continuous", "doc_mode_continuous"] if k in results_dict), pd.DataFrame())
+        else:
+            # Single income mode, compare population modes
+            income_type = "continuous" if income_spec_mode == "continuous only" else "categorical"
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 🧬 Copula (Synthetic)")
+                copula_key = f"copula_{income_type}"
+                if copula_key in results_dict:
+                    _show_overview(results_dict[copula_key], f" (Copula, {income_type.title()})")
+                else:
+                    st.info(f"Copula {income_type} results not available")
+            
+            with col2:
+                st.markdown("#### 📄 Documentation Mode")
+                doc_key = f"doc_mode_{income_type}"
+                if doc_key in results_dict:
+                    _show_overview(results_dict[doc_key], f" (Doc, {income_type.title()})")
+                else:
+                    st.info(f"Documentation {income_type} results not available")
+            
+            # Use first available result for individual analysis
+            df = next((results_dict[k] for k in [f"copula_{income_type}", f"doc_mode_{income_type}"] if k in results_dict), pd.DataFrame())
+    
+    elif population_mode == "Dependent variable resampling":
+        # Special display for dependent variable mode
+        raw_suffix = " (Raw Pre-truncation)" if raw_draw_mode else ""
+        st.markdown(f"### 📊 Dependent Variable Resampling{raw_suffix}")
+        if raw_draw_mode:
+            st.info("This mode resamples from the empirical distribution of RAW (pre-truncation) donation rates computed from the original 280 participants. These values represent the Normal(anchor, σ) draw before flooring at 0 and rescaling by personal maximum.")
+        else:
+            st.info("This mode resamples from the empirical distribution of donation rates computed from the original 280 participants. No trait information is preserved.")
+        
+        df = results_dict["depvar"]
+        
+        # Show comparison of original vs resampled
+        try:
+            from src.orchestrator_depvar import OrchestratorDepVar
+            temp_orch = OrchestratorDepVar()
+            # Set the same raw output mode as was used for simulation
+            temp_orch.set_raw_output(raw_draw_mode)
+            emp_stats = temp_orch.get_empirical_stats()
+            original_donations = temp_orch.get_empirical_distribution()
+            
+            # Determine the column name based on raw mode
+            donation_col = 'donation_default_raw' if raw_draw_mode else 'donation_default'
+            
+            # Create two columns for side-by-side comparison
+            col_orig, col_resamp = st.columns(2)
+            
+            with col_orig:
+                st.subheader("📊 Original 280 Participants")
+                
+                # Stats
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Mean", f"{emp_stats['mean']:.1%}")
+                    st.metric("Min", f"{emp_stats['min']:.1%}")
+                with col2:
+                    st.metric("Std Dev", f"{emp_stats['std']:.4f}")
+                    st.metric("Max", f"{emp_stats['max']:.1%}")
+                
+                # Histogram
+                fig_orig = px.histogram(
+                    pd.DataFrame({donation_col: original_donations}),
+                    x=donation_col,
+                    nbins=30,
+                    title="Original Distribution (n=280)",
+                    labels={donation_col: 'Donation Rate', 'count': 'Number of Participants'},
+                    marginal="box"
+                )
+                fig_orig.update_layout(
+                    xaxis_tickformat='.0%',
+                    showlegend=False,
+                    height=400
+                )
+                st.plotly_chart(fig_orig, use_container_width=True)
+            
+            with col_resamp:
+                st.subheader(f"📊 Resampled ({len(df):,} agents)")
+                
+                # Stats
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Mean", f"{df[donation_col].mean():.1%}")
+                    st.metric("Min", f"{df[donation_col].min():.1%}")
+                with col2:
+                    st.metric("Std Dev", f"{df[donation_col].std():.4f}")
+                    st.metric("Max", f"{df[donation_col].max():.1%}")
+                
+                # Histogram
+                fig_resamp = px.histogram(
+                    df,
+                    x=donation_col,
+                    nbins=30,
+                    title=f"Resampled Distribution (n={len(df):,})",
+                    labels={donation_col: 'Donation Rate', 'count': 'Number of Agents'},
+                    marginal="box"
+                )
+                fig_resamp.update_layout(
+                    xaxis_tickformat='.0%',
+                    showlegend=False,
+                    height=400
+                )
+                st.plotly_chart(fig_resamp, use_container_width=True)
+            
+            # Additional info
+            st.info(f"The resampled distribution is created by bootstrap sampling with replacement from the {len(original_donations)} original donation rates.")
+            
+            # Combined comparison plot
+            st.subheader("📊 Distribution Comparison")
+            
+            # Create combined dataframe for comparison
+            orig_df = pd.DataFrame({
+                donation_col: original_donations,
+                'source': 'Original (n=280)'
+            })
+            resamp_df = pd.DataFrame({
+                donation_col: df[donation_col].values,
+                'source': f'Resampled (n={len(df):,})'
+            })
+            combined_df = pd.concat([orig_df, resamp_df])
+            
+            # Create overlaid histogram
+            fig_combined = px.histogram(
+                combined_df,
+                x=donation_col,
+                color='source',
+                nbins=30,
+                barmode='overlay',
+                opacity=0.7,
+                title="Original vs Resampled Distribution Overlay",
+                labels={donation_col: 'Donation Rate', 'count': 'Count'}
+            )
+            fig_combined.update_layout(
+                xaxis_tickformat='.0%',
+                height=400
+            )
+            st.plotly_chart(fig_combined, use_container_width=True)
+            
+            # Show unique values info
+            st.markdown("### 📊 Distribution Details")
+            col1, col2 = st.columns(2)
+            with col1:
+                unique_orig = len(np.unique(original_donations))
+                st.metric("Unique values in original", unique_orig)
+                st.caption(f"Maximum possible unique values: {len(original_donations)}")
+            with col2:
+                unique_resamp = len(np.unique(df[donation_col]))
+                st.metric("Unique values in resampled", unique_resamp)
+                st.caption(f"Limited by original {unique_orig} unique values")
+            
+        except Exception as e:
+            st.error(f"Error loading empirical distribution: {e}")
+            _show_overview(df)
+            
+    elif income_spec_mode == "compare side-by-side":
+        st.markdown("### 📊 Income Specification Comparison")
+        
+        col_cat, col_cont = st.columns(2, gap="large")
+        
+        with col_cat:
+            st.markdown("#### 📋 Categorical Income")
+            if "categorical" in results_dict:
+                _show_overview(results_dict["categorical"], " (Categorical)")
+            else:
+                st.info("Categorical results not available")
+        
+        with col_cont:
+            st.markdown("#### 📈 Continuous Income") 
+            if "continuous" in results_dict:
+                _show_overview(results_dict["continuous"], " (Continuous)")
+            else:
+                st.info("Continuous results not available")
+        
+        # Use first available for individual agent analysis
+        df = next((results_dict[k] for k in ["categorical", "continuous"] if k in results_dict), pd.DataFrame())
+    else:
+        # Single mode display
+        df = next(iter(results_dict.values()))
+        mode_name = next(iter(results_dict.keys()))
+        _show_overview(df, f" ({mode_name.title()})")
     
 
     
     # Individual agent details
-    if show_individual_agents:
-        st.subheader("🔍 Individual Agent Details")
+    if show_individual_agents and not df.empty:
+        # Check if this is dependent variable mode
+        is_depvar_mode = len(df.columns) == 1 and 'donation_default' in df.columns
         
-        # Agent selection
-        agent_id = st.selectbox(
-            "Select Agent to Examine",
-            options=range(len(df)),
-            format_func=lambda x: f"Agent {x+1}"
-        )
-        
-        agent_data = df.iloc[agent_id]
+        if not is_depvar_mode:
+            st.subheader("🔍 Individual Agent Details")
+            
+            # Agent selection
+            agent_id = st.selectbox(
+                "Select Agent to Examine",
+                options=range(len(df)),
+                format_func=lambda x: f"Agent {x+1}"
+            )
+            
+            agent_data = df.iloc[agent_id]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("** Agent Traits**")
+                trait_data = {}
+                for col in ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
+                           'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
+                    if col in agent_data:
+                        trait_data[col] = agent_data[col]
+                
+                trait_df = pd.DataFrame(list(trait_data.items()), columns=['Trait', 'Value'])
+                # Convert all values to strings to avoid PyArrow serialization issues
+                trait_df['Value'] = trait_df['Value'].astype(str)
+                st.dataframe(trait_df, hide_index=True)
+            
+            with col2:
+                st.markdown("**🎯 Agent Decisions**")
+                decision_data = {}
+                for col in df.columns:
+                    if col not in ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
+                                  'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
+                        decision_data[col] = agent_data[col]
+                
+                decision_df = pd.DataFrame(list(decision_data.items()), columns=['Decision', 'Value'])
+                if 'donation_default' in decision_data:
+                    decision_df.loc[decision_df['Decision'] == 'donation_default', 'Value'] = \
+                        f"{decision_data['donation_default']:.1%}"
+                if 'donation_default_raw' in decision_data:
+                    decision_df.loc[decision_df['Decision'] == 'donation_default_raw', 'Value'] = \
+                        f"{decision_data['donation_default_raw']:.1%}"
+                # Convert all values to strings to avoid PyArrow serialization issues
+                decision_df['Value'] = decision_df['Value'].astype(str)
+                st.dataframe(decision_df, hide_index=True)
+        else:
+            st.info("Individual agent details not available in dependent variable resampling mode (no trait information)")
+    
+    # Raw data download
+    if not df.empty:
+        st.subheader("💾 Export Results")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("** Agent Traits**")
-            trait_data = {}
-            for col in ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
-                       'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
-                if col in agent_data:
-                    trait_data[col] = agent_data[col]
-            
-            trait_df = pd.DataFrame(list(trait_data.items()), columns=['Trait', 'Value'])
-            # Convert all values to strings to avoid PyArrow serialization issues
-            trait_df['Value'] = trait_df['Value'].astype(str)
-            st.dataframe(trait_df, hide_index=True)
+            csv_data = df.to_csv(index=False)
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv_data,
+                file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
         
         with col2:
-            st.markdown("**🎯 Agent Decisions**")
-            decision_data = {}
-            for col in df.columns:
-                if col not in ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
-                              'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
-                    decision_data[col] = agent_data[col]
-            
-            decision_df = pd.DataFrame(list(decision_data.items()), columns=['Decision', 'Value'])
-            if 'donation_default' in decision_data:
-                decision_df.loc[decision_df['Decision'] == 'donation_default', 'Value'] = \
-                    f"{decision_data['donation_default']:.1%}"
-            # Convert all values to strings to avoid PyArrow serialization issues
-            decision_df['Value'] = decision_df['Value'].astype(str)
-            st.dataframe(decision_df, hide_index=True)
-    
-    # Raw data download
-    st.subheader("💾 Export Results")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        csv_data = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download CSV",
-            data=csv_data,
-            file_name=f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-    
-    with col2:
-        if st.button("🔄 Clear Results"):
-            st.session_state.simulation_results = None
-            st.rerun()
+            if st.button("🔄 Clear Results"):
+                st.session_state.simulation_results = None
+                st.rerun()
 
 elif st.session_state.mc_results is not None:
     # Monte-Carlo results

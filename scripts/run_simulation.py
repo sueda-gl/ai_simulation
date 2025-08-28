@@ -22,12 +22,20 @@ def main():
                        help='Output directory (default: outputs)')
     parser.add_argument('--format', choices=['parquet', 'csv'], default='parquet',
                        help='Output format (default: parquet)')
+    parser.add_argument('--anchor-observed', type=float, default=0.75,
+                       help='Weight on observed prosocial score for anchor (default: 0.75)')
     
     args = parser.parse_args()
     
     # Initialize orchestrator
     print("Initializing simulation...")
     orchestrator = Orchestrator()
+    
+    # Apply anchor weights if donation_default is in scope
+    if 'donation_default' in orchestrator.config:
+        orchestrator.config['donation_default']['anchor_weights']['observed'] = args.anchor_observed
+        orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - args.anchor_observed
+        print(f"Using anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
     
     if args.decision:
         available = orchestrator.get_available_decisions()

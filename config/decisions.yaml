@@ -11,10 +11,12 @@ donation_default:
     intercept: 1.22985660120368
     
     # Group coefficients (reference: FullSub = 0)
+    # Note: In data, HighSub is used instead of FullSub, but coefficients are for FullSub
+    # The code maps HighSub -> FullSub for coefficient lookup
     beta_group:
       MidSub: 0.856140306694656
       NoSub: -0.926633374153906
-      FullSub: 0.0  # reference category
+      FullSub: 0.0  # reference category (maps from HighSub in data)
     
     # Income quintile coefficients (reference: Q4/Q5 = 0)  
     beta_income_q:
@@ -41,14 +43,22 @@ donation_default:
   # Stochastic parameters
   stochastic:
     sigma_strategy: overall_sd_twt_sospeso  # use empirical SD from 280-person data
-    sigma_value: 7.393487  # standard deviation of anchor values from original data
+    sigma_value: 9.8995  # standard deviation of TWT+Sospeso from original data (0-112 scale)
     # Alternative: quintile_specific_sd for income-dependent variance
+    in_copula: false  # Add Normal(anchor, σ) draw even in Copula mode (default: false)
+    raw_output: false  # Return raw Normal(anchor, σ) draw as donation_default_raw, can be negative (default: false)
   
   # Truncation and rescaling rules
   truncation:
     lower_bound: 0      # floor negative values at 0
     percentile_max: 0.99  # use 99th percentile as personal maximum
     final_range: [0, 1]   # final output range after rescaling
+
+    # Income specification mode: 'categorical' (default) or 'continuous'.
+    income_mode: categorical
+
+    # Continuous-income coefficient (used only when income_mode == 'continuous')
+    beta_income_linear: 0.0256   # from linear model specification
 
 # Placeholder blocks for remaining 12 decisions
 disclose_income:

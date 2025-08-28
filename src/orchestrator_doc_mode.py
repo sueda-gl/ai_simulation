@@ -1,4 +1,4 @@
-# src/orchestrator.py
+# src/orchestrator_doc_mode.py
 import yaml
 import pandas as pd
 import numpy as np
@@ -6,16 +6,21 @@ from pathlib import Path
 from typing import Optional, List
 import importlib
 
-from src.trait_engine import TraitEngine
+# Import the merged data directly
+from src.validate_traits import merged
+from src.build_master_traits import get_master_trait_list
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
 
-class Orchestrator:
+class OrchestratorDocMode:
     """
-    Coordinates trait sampling and decision execution.
+    Orchestrator for documentation mode - uses original participants instead of copula sampling.
     
-    Supports both full-run (all 13 decisions) and single-decision modes.
-    Each agent maintains state that accumulates across decisions.
+    Key differences from regular Orchestrator:
+    - No TraitEngine/copula sampling
+    - Works with original 280 participants from merged dataset
+    - Uses stochastic version of decision modules
+    - Can bootstrap participants to reach desired n_agents
     """
     
     def __init__(self):
@@ -23,13 +28,15 @@ class Orchestrator:
         with open(CONFIG_PATH, 'r') as f:
             self.config = yaml.safe_load(f)
         
-        # Initialize trait engine
-        self.trait_engine = TraitEngine()
+        # Get required traits and load original data
+        self.traits = get_master_trait_list()
+        self.original_data = merged[self.traits].copy().dropna()
+        print(f"Documentation mode: Using {len(self.original_data)} original participants")
         
         # Set population context for decision modules
-        self.pop_context = 'copula'
+        self.pop_context = 'documentation'
         
-        # Define decision order (1-13 as specified)
+        # Define decision order (same as regular orchestrator)
         self.decision_order = [
             'disclose_income',           # 1
             'disclose_documents',        # 2  
@@ -46,25 +53,41 @@ class Orchestrator:
             'final_donation_rate'        # 13
         ]
         
-        # Load decision modules dynamically
+        # Load decision modules - use stochastic version where available
         self.decision_modules = {}
         for decision_name in self.decision_order:
             try:
-                module = importlib.import_module(f'src.decisions.{decision_name}')
-                self.decision_modules[decision_name] = getattr(module, decision_name)
+                # First try to load stochastic version
+                try:
+                    module = importlib.import_module(f'src.decisions.{decision_name}_stochastic')
+                    self.decision_modules[decision_name] = getattr(module, f'{decision_name}_stochastic')
+                except (ImportError, AttributeError):
+                    # Fall back to regular version
+                    module = importlib.import_module(f'src.decisions.{decision_name}')
+                    self.decision_modules[decision_name] = getattr(module, decision_name)
             except (ImportError, AttributeError) as e:
                 print(f"Warning: Could not load decision module {decision_name}: {e}")
     
     def run_simulation(self, n_agents: int, seed: int, 
-                      single_decision: Optional[str] = None) -> pd.DataFrame:
+                      single_decision: Optional[str] = None, 
+                      outcome_draws: int = 1) -> pd.DataFrame:
         """
-        Run simulation for n_agents with specified seed.
+        Run simulation using original participants with bootstrap sampling.
         
-        If single_decision is provided, only run that decision.
-        Otherwise run all decisions in order.
+        If n_agents > original participants, bootstrap with replacement.
+        If n_agents <= original participants, sample without replacement.
         """
-        # Sample synthetic agents
-        agents_df = self.trait_engine.sample(n_agents, seed)
+        # Sample agents from original data
+        rng = np.random.default_rng(seed)
+        n_original = len(self.original_data)
+        
+        if n_agents > n_original:
+            # Bootstrap with replacement on participants then repeat draws
+            indices = rng.choice(n_original, size=n_agents, replace=True)
+            agents_df = self.original_data.iloc[indices].reset_index(drop=True)
+        else:
+            indices = rng.choice(n_original, size=n_agents, replace=False)
+            agents_df = self.original_data.iloc[indices].reset_index(drop=True)
         
         # Determine which decisions to run
         if single_decision:
@@ -79,11 +102,11 @@ class Orchestrator:
         rng_global = np.random.default_rng(seed)
         
         for idx, row in agents_df.iterrows():
-            # Initialize agent state with traits
-            agent_state = row.to_dict()
-            
-            # Create child RNG for this agent
-            agent_rng = np.random.default_rng(rng_global.integers(1e9))
+            for rep in range(outcome_draws):  # repeat dependent-var draw
+                agent_state = row.to_dict()
+                if outcome_draws>1:
+                    agent_state['draw_id']=rep+1
+                agent_rng = np.random.default_rng(rng_global.integers(1e9))
             
             # Execute decisions in order
             for decision_name in decisions_to_run:
@@ -92,7 +115,7 @@ class Orchestrator:
                     params = self.config.get(decision_name, {})
                     
                     # Execute decision module
-                    # Only pass pop_context to modules that support it (donation_default)
+                    # Only pass pop_context to modules that support it (donation_default variants)
                     if decision_name == 'donation_default':
                         decision_output = self.decision_modules[decision_name](
                             agent_state, params, agent_rng, pop_context=self.pop_context

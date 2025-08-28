@@ -24,6 +24,8 @@ def main():
                        help='Keep individual run files (default: delete after aggregation)')
     parser.add_argument('--summary-only', action='store_true',
                        help='Only save summary statistics, not individual runs')
+    parser.add_argument('--anchor-observed', type=float, default=0.75,
+                       help='Weight on observed prosocial score for anchor (default: 0.75)')
     
     args = parser.parse_args()
     
@@ -38,6 +40,7 @@ def main():
     print(f"Starting Monte-Carlo study with {args.runs} repetitions")
     print(f"Population size: {args.agents} agents per run")
     print(f"Base seed: {args.base_seed}")
+    print(f"Anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
     if args.decision:
         print(f"Decision: {args.decision}")
     else:
@@ -53,7 +56,8 @@ def main():
             sys.executable, 'scripts/run_simulation.py',
             '--agents', str(args.agents),
             '--seed', str(current_seed),
-            '--format', 'parquet'
+            '--format', 'parquet',
+            '--anchor-observed', str(args.anchor_observed)
         ]
         
         if args.decision:
@@ -177,6 +181,8 @@ def main():
         'num_runs': args.runs,
         'base_seed': args.base_seed,
         'decision': args.decision,
+        'anchor_observed_weight': args.anchor_observed,
+        'anchor_predicted_weight': 1 - args.anchor_observed,
         'seeds_used': list(range(args.base_seed, args.base_seed + args.runs)),
         'timestamp': timestamp
     }

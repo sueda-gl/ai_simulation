@@ -1,16 +1,16 @@
-# src/decisions/donation_default.py
+# src/decisions/donation_default_stochastic.py
 import numpy as np
 from scipy.stats import norm
 
-def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, **kwargs) -> dict:
+def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.Generator, **kwargs) -> dict:
     """
-    Decision 3: Set up default donation rate
+    Decision 3: Set up default donation rate (Documentation mode with stochastic component)
     
-    Implements 6-step process from documentation:
+    Implements the full 6-step process from documentation:
     1. Compute predicted prosocial from regression
     2. Scale both observed and predicted to 0-100
     3. Compute anchor (0.75 * observed + 0.25 * predicted)
-    4. Draw from Normal(anchor, sigma) where sigma is from observed behavior
+    4. Add stochastic component: Draw from Normal(anchor, sigma)
     5. Floor negative values at 0
     6. Compute personal 99th percentile maximum and rescale to [0,1]
     """
@@ -33,20 +33,20 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     if group_mapped in regression['beta_group']:
         predicted += regression['beta_group'][group_mapped]
     
-    # ---------------- Income effect ----------------
+    # Add income effect
     income_mode = regression.get('income_mode', 'categorical')
     if income_mode == 'continuous':
+        # Linear income effect
         beta_lin = regression.get('beta_income_linear', 0.0)
         predicted += beta_lin * income_level
     else:
-        # Categorical (default)
+        # Categorical income effect
         income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
         income_q = income_quintiles.get(int(income_level), 'Q4_Q5')
         if income_q in regression['beta_income_q']:
             predicted += regression['beta_income_q'][income_q]
     
-    # Add study program effect (reference: Graduate 2-yr)
-    # Map study programs to categories based on documentation patterns
+    # Add study program effect
     study_category = 'Grad2yr'  # default to reference
     
     # More comprehensive mapping based on typical program names
@@ -73,9 +73,7 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     obs_min = 0.0      # from data analysis
     obs_max = 112.0    # from data analysis
     
-    # For predicted, based on empirical analysis, the regression produces values
-    # on a different scale (roughly -4 to 7, suggesting it was fit on transformed data)
-    # We need to use the actual range of predictions from the original regression
+    # For predicted, use the empirical range from regression analysis
     pred_min = -4.0778  # empirical min from regression analysis
     pred_max = 7.2030   # empirical max from regression analysis
     
@@ -91,42 +89,47 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     weights = params['anchor_weights']
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
     
-    # Step 4: Determine if we should use stochastic component
-    # Check population context and stochastic flag
-    pop_context = kwargs.get('pop_context', 'copula')
-    use_stochastic = (
-        (params['stochastic'].get('in_copula', False) and pop_context == 'copula') or
-        pop_context == 'documentation'
-    )
-    
-    if use_stochastic:
-        # Apply stochastic component with Normal(anchor, σ) draw
-        # Use the same sigma logic as documentation mode
-        sigma_0_100 = params['stochastic']['sigma_value']  # 9.8995 on 0-112 scale
-        # Convert to 0-100 scale
-        sigma_0_100_scaled = sigma_0_100 * (100.0 / 112.0)
-        
-        # Step 4a: Draw from Normal(anchor, σ)
-        draw_0_100 = rng.normal(s100_anchor, sigma_0_100_scaled)
-        
-        # Step 5: Floor negative values at 0
-        draw_0_100 = max(draw_0_100, 0.0)
-        
-        # Step 6: Compute personal 99th percentile maximum and rescale
-        percentile_max = params['truncation']['percentile_max']  # 0.99
-        personal_max = s100_anchor + norm.ppf(percentile_max) * sigma_0_100_scaled
-        personal_max = max(personal_max, draw_0_100)  # Ensure personal_max >= draw
-        
-        donation_rate = draw_0_100 / personal_max
+    # Step 4: Add stochastic component
+    # Use the overall SD from observed behavior, scaled to 0-100 range
+    sd_params = params['stochastic']
+    if sd_params['sigma_strategy'] == 'overall_sd_twt_sospeso':
+        # The sigma value should be the SD of the 0-100 scaled observed behavior
+        # Original SD = 9.8995 on 0-112 scale
+        # Scaled SD = 9.8995 * 100 / 112 ≈ 8.84
+        sigma_0_100 = sd_params['sigma_value'] * 100 / (obs_max - obs_min)
     else:
-        # Use anchor directly (no additional stochastic component)
-        # The copula sampling already provides natural variability
-        draw_0_100 = s100_anchor
-        
-        # Step 6: Rescale to [0,1] range using simple scaling
-        donation_rate = draw_0_100 / 100.0
+        sigma_0_100 = 8.84  # fallback based on calculation above
+    
+    # Draw from Normal(anchor, sigma) - both in 0-100 scale
+    draw_0_100_raw = rng.normal(s100_anchor, sigma_0_100)
+    
+    # Save the raw draw before any truncation (for raw output mode)
+    raw_donation_rate = draw_0_100_raw / 100.0  # Convert to 0-1 scale
+    
+    # Step 5: Floor negative values at 0
+    draw_0_100 = max(0.0, draw_0_100_raw)
+    
+    # Step 6: Compute personal 99th percentile maximum and rescale
+    # Personal max is based on individual's anchor and sigma
+    percentile_max = params['truncation']['percentile_max']
+    personal_max_0_100 = s100_anchor + norm.ppf(percentile_max) * sigma_0_100
+    
+    # Rescale to [0,1] using personal maximum
+    if personal_max_0_100 > 0:
+        donation_rate = min(draw_0_100, personal_max_0_100) / personal_max_0_100
+    else:
+        # Handle edge case where personal_max <= 0
+        donation_rate = 0.0
     
     # Final clipping to ensure [0,1] range
     donation_rate = np.clip(donation_rate, 0.0, 1.0)
+    
+    # Check if we should return raw output (pre-truncation)
+    if params.get('stochastic', {}).get('raw_output', False):
+        # Return the truly raw draw (can be negative)
+        return {
+            "donation_default": donation_rate,
+            "donation_default_raw": raw_donation_rate
+        }
     
     return {"donation_default": donation_rate}
