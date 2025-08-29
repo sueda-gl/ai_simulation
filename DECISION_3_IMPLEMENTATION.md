@@ -59,6 +59,38 @@ Where σ is computed using the `overall_sd_twt_sospeso` strategy (global standar
 2. **Personal maximum:** `x_max = μ + σ × Φ⁻¹(0.99)` where Φ⁻¹(0.99) ≈ 2.326
 3. **Final rescaling:** `d_i = min(x_i, x_max) / x_max`, yielding a value in [0,1]
 
+### 5.2.1 Sigma Parameterization and Scaling Issues
+
+The standard deviation parameter σ has been made configurable through the web interface, allowing researchers to control the magnitude of behavioral noise added to each participant's anchor. However, this parameterization revealed a critical implementation issue in the original scaling logic.
+
+**Initial Problem:** When σ was set to zero, the system produced anomalous results:
+- **Documentation mode** yielded uniform 100% donation rates for all participants
+- **Copula mode** produced a uniform distribution across the donation rate range
+
+**Root Cause:** The original implementation used a "personal 99th-percentile" rescaling approach:
+```
+personal_max = anchor + σ × Φ⁻¹(0.99)
+donation_rate = min(draw, personal_max) / personal_max
+```
+When σ = 0, this formula collapsed to `donation_rate = anchor / anchor = 1` for all positive anchors, eliminating all heterogeneity.
+
+**Solution:** The scaling logic was simplified to preserve the natural distribution of donation rates:
+```
+draw = max(Normal(anchor, σ), 0)  # Floor negative values
+donation_rate = draw / 100         # Scale to [0,1] proportion
+```
+This approach maintains the relative differences between participants while ensuring all rates fall within the admissible [0,1] range.
+
+**Post-Fix Behavior:** After resolving the scaling issue, both modes now produce consistent and interpretable results:
+- **Without stochastic component (σ = 0):** Both modes show similar distributions driven by anchor heterogeneity across participants
+- **With stochastic component (σ > 0):** Results become nearly identical, as both modes now apply the same Normal(anchor, σ) noise
+
+**Interpretation:** The convergence between modes when σ > 0 reflects the dual nature of variability in the model:
+1. **Inter-person heterogeneity:** Captured by anchor variation (different participants have different baseline donation tendencies)
+2. **Intra-person behavioral noise:** Captured by the σ parameter (day-to-day or situational variability around each person's anchor)
+
+The copula mode generates synthetic participants that preserve the statistical relationships of the original 280-person dataset, effectively simulating a larger population with the same trait distributions. When σ = 0, only inter-person differences drive the results. When σ > 0, both inter-person anchor variation and intra-person behavioral noise contribute, making the synthetic population behave identically to the real-data documentation mode.
+
 ### 5.3 Implementation Architecture
 
 #### File Structure and Responsibilities

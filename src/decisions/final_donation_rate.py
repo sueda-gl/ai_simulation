@@ -1,5 +1,5 @@
 # src/decisions/final_donation_rate.py
 
-def final_donation_rate(agent_state: dict, params: dict, rng) -> dict:
+def final_donation_rate(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
     """Decision 13: Select donation rate after transaction accepted"""
     return {"final_donation_rate": params.get("default_value", "NA")}

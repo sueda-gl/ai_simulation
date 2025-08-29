@@ -1,8 +1,14 @@
 # src/decisions/donation_default.py
 import numpy as np
 from scipy.stats import norm
+from pathlib import Path
+import sys
 
-def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, **kwargs) -> dict:
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from src.parameter_processor import ParameterProcessor
+
+def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
     Decision 3: Set up default donation rate
     
@@ -13,6 +19,8 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     4. Draw from Normal(anchor, sigma) where sigma is from observed behavior
     5. Floor negative values at 0
     6. Compute personal 99th percentile maximum and rescale to [0,1]
+    
+    Now enhanced with global parameter context for more realistic behavior.
     """
     
     # Extract required traits
@@ -91,6 +99,25 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     weights = params['anchor_weights']
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
     
+    # NEW: Apply global parameter context if available
+    if simulation_config is not None:
+        processor = ParameterProcessor()
+        context = processor.get_decision_context('donation_default', simulation_config)
+        
+        if context:
+            # Apply behavioral modifiers from global parameters
+            inequality_factor = context.get('inequality_factor', 1.0)
+            competition_factor = context.get('competition_factor', 1.0)
+            trust_factor = context.get('trust_factor', 1.0)
+            prosperity_factor = context.get('prosperity_factor', 1.0)
+            temporal_factor = context.get('temporal_factor', 1.0)
+            
+            # Combine all factors
+            global_modifier = inequality_factor * competition_factor * trust_factor * prosperity_factor * temporal_factor
+            
+            # Apply modifier to anchor (with bounds)
+            s100_anchor = np.clip(s100_anchor * global_modifier, 0, 100)
+    
     # Step 4: Determine if we should use stochastic component
     # Check population context and stochastic flag
     pop_context = kwargs.get('pop_context', 'copula')
@@ -100,6 +127,8 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     )
     
     if use_stochastic:
+        out = {}
+        raw_flag = params.get('stochastic', {}).get('raw_output', False)
         # Apply stochastic component with Normal(anchor, σ) draw
         # Use the same sigma logic as documentation mode
         sigma_0_100 = params['stochastic']['sigma_value']  # 9.8995 on 0-112 scale
@@ -109,15 +138,14 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         # Step 4a: Draw from Normal(anchor, σ)
         draw_0_100 = rng.normal(s100_anchor, sigma_0_100_scaled)
         
-        # Step 5: Floor negative values at 0
+        if raw_flag:
+            out = {"donation_default_raw": draw_0_100 / 100.0}
         draw_0_100 = max(draw_0_100, 0.0)
-        
-        # Step 6: Compute personal 99th percentile maximum and rescale
-        percentile_max = params['truncation']['percentile_max']  # 0.99
-        personal_max = s100_anchor + norm.ppf(percentile_max) * sigma_0_100_scaled
-        personal_max = max(personal_max, draw_0_100)  # Ensure personal_max >= draw
-        
-        donation_rate = draw_0_100 / personal_max
+        out["donation_default_raw_pos"] = draw_0_100
+        # Step 6: Simple scaling to proportion (0-1) matching documentation-mode logic
+        donation_rate = draw_0_100 / 100.0
+        out["donation_default"] = np.clip(donation_rate, 0.0, 1.0)
+        return out
     else:
         # Use anchor directly (no additional stochastic component)
         # The copula sampling already provides natural variability
@@ -125,8 +153,4 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         
         # Step 6: Rescale to [0,1] range using simple scaling
         donation_rate = draw_0_100 / 100.0
-    
-    # Final clipping to ensure [0,1] range
-    donation_rate = np.clip(donation_rate, 0.0, 1.0)
-    
-    return {"donation_default": donation_rate}
+        return {"donation_default": np.clip(donation_rate,0.0,1.0)}

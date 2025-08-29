@@ -43,7 +43,7 @@ donation_default:
   # Stochastic parameters
   stochastic:
     sigma_strategy: overall_sd_twt_sospeso  # use empirical SD from 280-person data
-    sigma_value: 9.8995  # standard deviation of TWT+Sospeso from original data (0-112 scale)
+    sigma_value: 0  # standard deviation of TWT+Sospeso from original data (0-112 scale)
     # Alternative: quintile_specific_sd for income-dependent variance
     in_copula: false  # Add Normal(anchor, σ) draw even in Copula mode (default: false)
     raw_output: false  # Return raw Normal(anchor, σ) draw as donation_default_raw, can be negative (default: false)

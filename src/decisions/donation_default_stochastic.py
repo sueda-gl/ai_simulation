@@ -2,7 +2,7 @@
 import numpy as np
 from scipy.stats import norm
 
-def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.Generator, **kwargs) -> dict:
+def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
     Decision 3: Set up default donation rate (Documentation mode with stochastic component)
     
@@ -113,15 +113,9 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     draw_pos = max(draw_raw, 0.0)
     out["donation_default_raw_pos"] = draw_pos  # still 0-100 scale, no scaling yet
 
-    # If we are **not** using global-max rescaling we fall back to personal 99-percentile logic
-    if not params.get('stochastic', {}).get('global_max_rescale', False):
-        percentile_max = params['truncation']['percentile_max']
-        personal_max_0_100 = s100_anchor + norm.ppf(percentile_max) * sigma_0_100
-        if personal_max_0_100 > 0:
-            donation_rate = min(draw_pos, personal_max_0_100) / personal_max_0_100
-        else:
-            donation_rate = 0.0
-        donation_rate = np.clip(donation_rate, 0.0, 1.0)
-        out["donation_default"] = donation_rate
+    # Final donation rate: simply scale the (non-negative) draw from 0-100 to 0-1.
+    # This replicates the Stata implementation and avoids the personal 99th-percentile rescale.
+    donation_rate = np.clip(draw_pos / 100.0, 0.0, 1.0)
+    out["donation_default"] = donation_rate
 
     return out

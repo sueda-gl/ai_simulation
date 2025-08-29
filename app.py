@@ -196,8 +196,26 @@ if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
         value=False,
         help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Documentation mode"
     )
+    # Slider to adjust sigma (original SD ≈ 9 on 0–112 scale).
+    sigma_value_ui = st.sidebar.slider(
+        "σ (standard deviation) on 0–112 scale",
+        min_value=0.0,
+        max_value=15.0,
+        value=9.0,
+        step=0.1,
+        help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+    )
 else:
     sigma_in_copula = False  # Default for other modes
+    # Provide sigma slider for documentation & compare-both modes as well
+    sigma_value_ui = st.sidebar.slider(
+        "σ (standard deviation) on 0–112 scale",
+        min_value=0.0,
+        max_value=15.0,
+        value=9.0,
+        step=0.1,
+        help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+    )
 
 # Anchor weights slider (not for dependent variable mode which uses pre-computed values)
 if population_mode != "Dependent variable resampling":
@@ -253,6 +271,8 @@ def run_single_simulation():
                         # Set stochastic flag for copula mode if checkbox is enabled
                         if pop_mode == "copula":
                             orchestrator.config['donation_default']['stochastic']['in_copula'] = sigma_in_copula
+                        # Apply selected sigma value
+                        orchestrator.config['donation_default']['stochastic']['sigma_value'] = sigma_value_ui
                         # Apply chosen anchor weights
                         orchestrator.config['donation_default']['anchor_weights']['observed'] = anchor_observed_weight
                         orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - anchor_observed_weight

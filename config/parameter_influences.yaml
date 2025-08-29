@@ -1,0 +1,129 @@
+# Parameter Influence Mapping
+# Maps global simulation parameters to the decisions they affect
+# This allows for scalable parameter propagation across all decisions
+
+parameter_influences:
+  # Decision 1: Disclose income for Fixed status
+  disclose_income:
+    affected_by:
+      - income_distribution  # Wealth distribution affects disclosure willingness
+      - num_discount_categories  # More categories = more disclosure incentive
+      - num_fixed_categories  # Competition between fixed/discount affects strategy
+    influence_type: "strategic"
+    
+  # Decision 2: Disclose documents for Discount status  
+  disclose_documents:
+    affected_by:
+      - income_distribution  # Documentation burden varies by income
+      - num_discount_categories  # Category competition
+    influence_type: "strategic"
+    
+  # Decision 3: Set up default donation rate
+  donation_default:
+    affected_by:
+      - income_distribution  # Wealth distribution affects prosocial behavior
+      - income_min  # Absolute poverty threshold
+      - income_max  # Wealth ceiling effects
+      - income_avg  # Relative income position
+      - platform_markup  # Platform profit affects trust
+      - num_vendors  # Market competition affects generosity
+      - periods  # Multi-period considerations
+    influence_type: "behavioral"
+    
+  # Decision 4: Select prioritized defaults for rejected transactions
+  rejected_transaction_defaults:
+    affected_by:
+      - bidding_percentage  # Auction availability
+      - price_range  # Price flexibility
+    influence_type: "mechanical"
+    
+  # Decision 5: Select default weights for vendor/product choice
+  vendor_choice_weights:
+    affected_by:
+      - num_vendors  # Choice set size
+      - vendor_price_min  # Price variation
+      - vendor_price_max
+      - platform_markup  # Price transparency
+    influence_type: "preference"
+    
+  # Decision 6: Decide consumption quantity per calendar period
+  consumption_quantity:
+    affected_by:
+      - income_avg  # Budget constraint
+      - periods  # Planning horizon
+      - duration_hours  # Time pressure
+      - consumption_limits  # Hard constraints
+      - products_per_vendor  # Availability
+    influence_type: "constraint"
+    
+  # Decision 7: Decide consumption frequency per day
+  consumption_frequency:
+    affected_by:
+      - duration_hours  # Time windows
+      - income_distribution  # Spending patterns
+      - consumption_limits  # Daily limits
+    influence_type: "temporal"
+    
+  # Decision 8: Select vendor/product from sorted list
+  vendor_selection:
+    affected_by:
+      - num_vendors  # Choice set
+      - vendor_price_min  # Price range
+      - vendor_price_max
+      - market_price  # Reference point
+      - vendor_price_source  # Price variability
+    influence_type: "choice"
+    
+  # Decision 9: Decide between Purchase Now and Bid
+  purchase_vs_bid:
+    affected_by:
+      - bidding_percentage  # Auction availability
+      - price_range  # Price gap
+      - income_avg  # Risk tolerance
+      - price_grid  # Granularity
+    influence_type: "strategic"
+    
+  # Decision 10: Select bid value if Bid chosen
+  bid_value:
+    affected_by:
+      - price_range  # Bidding space
+      - price_grid  # Bid increments
+      - income_avg  # Budget
+      - market_price  # Anchoring
+    influence_type: "tactical"
+    
+  # Decision 11: Select option after rejected transaction
+  rejected_transaction_option:
+    affected_by:
+      - num_vendors  # Alternative options
+      - periods  # Time remaining
+      - carryover  # Future availability
+    influence_type: "adaptive"
+    
+  # Decision 12: Select bid value after rejected transaction
+  rejected_bid_value:
+    affected_by:
+      - price_range  # Adjustment space
+      - income_avg  # Budget flexibility
+      - periods  # Urgency
+    influence_type: "adaptive"
+    
+  # Decision 13: Select donation rate after transaction accepted
+  final_donation_rate:
+    affected_by:
+      - platform_markup  # Realized value
+      - market_price  # Deal quality
+      - income_avg  # Affordability
+    influence_type: "outcome_based"
+
+# Influence type definitions:
+# - strategic: Long-term planning decisions
+# - behavioral: Personality/preference driven
+# - mechanical: Rule-based decisions
+# - preference: Taste-based choices
+# - constraint: Budget/limit driven
+# - temporal: Time-based decisions
+# - choice: Selection from alternatives
+# - tactical: Short-term optimization
+# - adaptive: Response to failure
+# - outcome_based: Post-transaction adjustment

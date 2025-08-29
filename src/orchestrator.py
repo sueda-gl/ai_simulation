@@ -9,6 +9,7 @@ import importlib
 from src.trait_engine import TraitEngine
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
+SIMULATION_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "simulation.yaml"
 
 class Orchestrator:
     """
@@ -22,6 +23,10 @@ class Orchestrator:
         # Load decision configuration
         with open(CONFIG_PATH, 'r') as f:
             self.config = yaml.safe_load(f)
+        
+        # Load global simulation configuration
+        with open(SIMULATION_CONFIG_PATH, 'r') as f:
+            self.simulation_config = yaml.safe_load(f)
         
         # Initialize trait engine
         self.trait_engine = TraitEngine()
@@ -105,14 +110,15 @@ class Orchestrator:
                     params = self.config.get(decision_name, {})
                     
                     # Execute decision module
-                    # Only pass pop_context to modules that support it (donation_default)
+                    # Pass pop_context to modules that support it (donation_default)
+                    # Pass simulation_config to all modules for global parameters
                     if decision_name == 'donation_default':
                         decision_output = self.decision_modules[decision_name](
-                            agent_state, params, agent_rng, pop_context=self.pop_context
+                            agent_state, params, agent_rng, pop_context=self.pop_context, simulation_config=self.simulation_config
                         )
                     else:
                         decision_output = self.decision_modules[decision_name](
-                            agent_state, params, agent_rng
+                            agent_state, params, agent_rng, simulation_config=self.simulation_config
                         )
                     
                     # Update agent state with decision outputs

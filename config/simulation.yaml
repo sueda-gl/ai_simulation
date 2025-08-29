@@ -1,0 +1,40 @@
+# Global simulation parameters
+# These parameters apply to the entire simulation and are used across multiple decisions
+
+simulation:
+  # Time parameters
+  periods: 1
+  duration_hours: 1.0  # Duration in hours (converted to seconds for simulation)
+  
+  # Market parameters
+  num_vendors: 5
+  market_price: 10.0
+  vendor_price_min: 8.0
+  vendor_price_max: 12.0
+  
+  # Product offering
+  products_per_vendor: 100  # NV
+  carryover: false
+  
+  # Pricing parameters
+  bidding_percentage: 0.5  # bp (proportion available for bidding)
+  platform_markup: 0.1  # m
+  price_range: 0.25  # r
+  price_grid: 11  # g (must be odd)
+  
+  # Income distribution parameters
+  income_min: 1000.0
+  income_max: 10000.0
+  income_avg: 5000.0
+  income_distribution: "lognormal"  # lognormal, pareto, weibull
+  
+  # Income categories
+  num_discount_categories: 3  # NDIC
+  num_fixed_categories: 5  # NFIC
+  
+  # Consumption limits (per product and income category per period)
+  consumption_limits: {}  # Will be populated dynamically
+  
+  # Vendor prices (either generated or from file)
+  vendor_price_source: "random"  # "random" or "file"
+  vendor_prices_file: null  # Path to CSV file if using file source
