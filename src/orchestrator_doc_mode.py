@@ -9,8 +9,10 @@ import importlib
 # Import the merged data directly
 from src.validate_traits import merged
 from src.build_master_traits import get_master_trait_list
+from src.income_transformer import IncomeTransformer
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
+SIMULATION_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "simulation.yaml"
 
 class OrchestratorDocMode:
     """
@@ -27,6 +29,13 @@ class OrchestratorDocMode:
         # Load decision configuration
         with open(CONFIG_PATH, 'r') as f:
             self.config = yaml.safe_load(f)
+        
+        # Load global simulation configuration
+        with open(SIMULATION_CONFIG_PATH, 'r') as f:
+            self.simulation_config = yaml.safe_load(f)
+        
+        # Initialize income transformer
+        self.income_transformer = IncomeTransformer(self.simulation_config)
         
         # Get required traits and load original data
         self.traits = get_master_trait_list()
@@ -108,15 +117,50 @@ class OrchestratorDocMode:
         else:
             decisions_to_run = self.decision_order
         
+        # First pass: Generate monetary incomes for all agents
+        income_transformations = []
+        for idx, row in agents_df.iterrows():
+            if 'Assigned Allowance Level' in row:
+                transform_result = self.income_transformer.transform_agent(
+                    int(row['Assigned Allowance Level']),
+                    income_mode='placeholder'
+                )
+                income_transformations.append(transform_result)
+            else:
+                # Fallback if no income level
+                income_transformations.append({
+                    'monetary_income': self.income_transformer.income_avg,
+                    'income_level_original': 3
+                })
+        
+        # Compute population quintiles for categorical mode
+        all_incomes = [t['monetary_income'] for t in income_transformations]
+        quintile_breaks = self.income_transformer.compute_population_quintiles(all_incomes)
+        
         # Process each agent
         results = []
         rng_global = np.random.default_rng(seed)
         
         for idx, row in agents_df.iterrows():
+            # Get income transformation for this agent
+            income_data = income_transformations[idx] if idx < len(income_transformations) else None
+            
             for rep in range(outcome_draws):  # repeat dependent-var draw
                 agent_state = row.to_dict()
                 if outcome_draws>1:
                     agent_state['draw_id']=rep+1
+                    
+                # Add transformed income fields
+                if income_data:
+                    agent_state['monetary_income'] = income_data['monetary_income']
+                    agent_state['income_quintile'] = self.income_transformer.map_to_quintile(
+                        income_data['monetary_income'], quintile_breaks
+                    )
+                    agent_state['income_continuous'] = self.income_transformer.normalize_continuous(
+                        income_data['monetary_income']
+                    )
+                    agent_state['income_level_original'] = agent_state.get('Assigned Allowance Level', 3)
+                
                 agent_rng = np.random.default_rng(rng_global.integers(1e9))
 
                 # we postpone decision execution until after loop to capture repeats

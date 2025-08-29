@@ -708,7 +708,34 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
     
     # Advanced options (like original app.py)
     st.sidebar.subheader("🔧 Advanced Options")
-    
+
+    # --- NEW: Global Income Distribution controls (visible on Page 2/Results) ---
+    st.sidebar.subheader("💵 Income Distribution (Global)")
+    income_dist_type = st.sidebar.selectbox(
+        "Distribution Type",
+        ["lognormal", "pareto", "weibull"],
+        index=["lognormal", "pareto", "weibull"].index(st.session_state.sim_params.income_distribution)
+    )
+    st.session_state.sim_params.income_distribution = income_dist_type
+
+    st.sidebar.caption("Set bounds and central tendency for generated incomes ($)")
+    st.session_state.sim_params.income_min = st.sidebar.number_input(
+        "Minimum Income",
+        min_value=0.0,
+        value=st.session_state.sim_params.income_min
+    )
+    st.session_state.sim_params.income_avg = st.sidebar.number_input(
+        "Average / Median Income",
+        min_value=st.session_state.sim_params.income_min,
+        value=st.session_state.sim_params.income_avg
+    )
+    st.session_state.sim_params.income_max = st.sidebar.number_input(
+        "Maximum Income",
+        min_value=st.session_state.sim_params.income_avg,
+        value=st.session_state.sim_params.income_max
+    )
+    # --- END NEW CONTROLS ---
+
     show_individual_agents = st.sidebar.checkbox(
         "Show Individual Agent Details",
         value=False,
@@ -786,6 +813,19 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                             # Set raw output flag if applicable
                             if pop_mode == "documentation" or (pop_mode == "copula" and st.session_state.sigma_in_copula):
                                 orchestrator.config['donation_default']['stochastic']['raw_output'] = st.session_state.raw_draw_mode
+
+                        # --- NEW: push updated income distribution parameters ---
+                        if hasattr(orchestrator, 'simulation_config'):
+                            sim_section = orchestrator.simulation_config.setdefault('simulation', {})
+                            sim_section['income_distribution'] = st.session_state.sim_params.income_distribution
+                            sim_section['income_min'] = st.session_state.sim_params.income_min
+                            sim_section['income_max'] = st.session_state.sim_params.income_max
+                            sim_section['income_avg'] = st.session_state.sim_params.income_avg
+                            # Rebuild income transformer so changes take effect
+                            if hasattr(orchestrator, 'income_transformer'):
+                                from src.income_transformer import IncomeTransformer
+                                orchestrator.income_transformer = IncomeTransformer(orchestrator.simulation_config)
+                        # --- END NEW ---
                     
                     # Handle multiple decisions
                     decision_param = None if len(st.session_state.decision_params.selected_decisions) == len(all_decisions) else st.session_state.decision_params.selected_decisions

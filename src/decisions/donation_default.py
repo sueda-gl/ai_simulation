@@ -1,12 +1,6 @@
 # src/decisions/donation_default.py
 import numpy as np
 from scipy.stats import norm
-from pathlib import Path
-import sys
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from src.parameter_processor import ParameterProcessor
 
 def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
@@ -20,15 +14,26 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     5. Floor negative values at 0
     6. Compute personal 99th percentile maximum and rescale to [0,1]
     
-    Now enhanced with global parameter context for more realistic behavior.
+    Now enhanced with income distribution support through the IncomeTransformer.
     """
     
     # Extract required traits
     hh_score = agent_state['Honesty_Humility']
-    income_level = agent_state['Assigned Allowance Level']
     study_program = agent_state['Study Program']
     group = agent_state['Group_experiment']
     observed_prosocial = agent_state['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
+    
+    # Get income based on transformation (fallback to original if not available)
+    if 'income_quintile' in agent_state and 'income_continuous' in agent_state:
+        # Use transformed income
+        income_quintile = agent_state['income_quintile']
+        income_continuous = agent_state['income_continuous']
+        income_level_original = agent_state.get('income_level_original', agent_state.get('Assigned Allowance Level', 3))
+    else:
+        # Fallback to original system
+        income_level_original = agent_state.get('Assigned Allowance Level', 3)
+        income_quintile = None
+        income_continuous = None
     
     # Step 1: Compute predicted prosocial behavior using regression
     regression = params['regression']
@@ -45,13 +50,24 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     income_mode = regression.get('income_mode', 'categorical')
     if income_mode == 'continuous':
         beta_lin = regression.get('beta_income_linear', 0.0)
-        predicted += beta_lin * income_level
+        # Use transformed continuous income if available
+        if income_continuous is not None:
+            predicted += beta_lin * income_continuous
+        else:
+            # Fallback to original level
+            predicted += beta_lin * income_level_original
     else:
         # Categorical (default)
-        income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
-        income_q = income_quintiles.get(int(income_level), 'Q4_Q5')
-        if income_q in regression['beta_income_q']:
-            predicted += regression['beta_income_q'][income_q]
+        if income_quintile is not None:
+            # Use transformed quintile directly
+            if income_quintile in regression['beta_income_q']:
+                predicted += regression['beta_income_q'][income_quintile]
+        else:
+            # Fallback to original mapping
+            income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
+            income_q = income_quintiles.get(int(income_level_original), 'Q4_Q5')
+            if income_q in regression['beta_income_q']:
+                predicted += regression['beta_income_q'][income_q]
     
     # Add study program effect (reference: Graduate 2-yr)
     # Map study programs to categories based on documentation patterns
@@ -98,25 +114,6 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     # Step 3: Compute anchor with specified weights (still in 0-100 scale)
     weights = params['anchor_weights']
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
-    
-    # NEW: Apply global parameter context if available
-    if simulation_config is not None:
-        processor = ParameterProcessor()
-        context = processor.get_decision_context('donation_default', simulation_config)
-        
-        if context:
-            # Apply behavioral modifiers from global parameters
-            inequality_factor = context.get('inequality_factor', 1.0)
-            competition_factor = context.get('competition_factor', 1.0)
-            trust_factor = context.get('trust_factor', 1.0)
-            prosperity_factor = context.get('prosperity_factor', 1.0)
-            temporal_factor = context.get('temporal_factor', 1.0)
-            
-            # Combine all factors
-            global_modifier = inequality_factor * competition_factor * trust_factor * prosperity_factor * temporal_factor
-            
-            # Apply modifier to anchor (with bounds)
-            s100_anchor = np.clip(s100_anchor * global_modifier, 0, 100)
     
     # Step 4: Determine if we should use stochastic component
     # Check population context and stochastic flag
