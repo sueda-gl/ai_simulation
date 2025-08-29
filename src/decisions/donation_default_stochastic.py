@@ -17,21 +17,10 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     
     # Extract required traits
     hh_score = agent_state['Honesty_Humility']
+    income_level = agent_state['Assigned Allowance Level']
     study_program = agent_state['Study Program']
     group = agent_state['Group_experiment']
     observed_prosocial = agent_state['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
-    
-    # Get income based on transformation (fallback to original if not available)
-    if 'income_quintile' in agent_state and 'income_continuous' in agent_state:
-        # Use transformed income
-        income_quintile = agent_state['income_quintile']
-        income_continuous = agent_state['income_continuous']
-        income_level_original = agent_state.get('income_level_original', agent_state.get('Assigned Allowance Level', 3))
-    else:
-        # Fallback to original system
-        income_level_original = agent_state.get('Assigned Allowance Level', 3)
-        income_quintile = None
-        income_continuous = None
     
     # Step 1: Compute predicted prosocial behavior using regression
     regression = params['regression']
@@ -49,24 +38,13 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     if income_mode == 'continuous':
         # Linear income effect
         beta_lin = regression.get('beta_income_linear', 0.0)
-        # Use transformed continuous income if available
-        if income_continuous is not None:
-            predicted += beta_lin * income_continuous
-        else:
-            # Fallback to original level
-            predicted += beta_lin * income_level_original
+        predicted += beta_lin * income_level
     else:
         # Categorical income effect
-        if income_quintile is not None:
-            # Use transformed quintile directly
-            if income_quintile in regression['beta_income_q']:
-                predicted += regression['beta_income_q'][income_quintile]
-        else:
-            # Fallback to original mapping
-            income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
-            income_q = income_quintiles.get(int(income_level_original), 'Q4_Q5')
-            if income_q in regression['beta_income_q']:
-                predicted += regression['beta_income_q'][income_q]
+        income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
+        income_q = income_quintiles.get(int(income_level), 'Q4_Q5')
+        if income_q in regression['beta_income_q']:
+            predicted += regression['beta_income_q'][income_q]
     
     # Add study program effect
     study_category = 'Grad2yr'  # default to reference

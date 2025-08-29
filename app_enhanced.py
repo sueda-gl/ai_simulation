@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 from src.orchestrator import Orchestrator
 from src.trait_engine import TraitEngine
+from src.parameter_applicability import param_manager
 
 # Page configuration
 st.set_page_config(
@@ -559,16 +560,117 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
             selected_decisions = st.multiselect(
                 "Select Decisions to Run",
                 all_decisions,
-                default=st.session_state.decision_params.selected_decisions or ["donation_default"],
+                default=st.session_state.decision_params.selected_decisions or [],
                 help="Select one or more decisions to run"
             )
         
-        # Ensure at least one decision is selected
+        # Show message if no decisions selected (but don't force a default)
         if not selected_decisions:
             st.caption("Please select at least one decision")
-            selected_decisions = ["donation_default"]
         
         st.session_state.decision_params.selected_decisions = selected_decisions
+        
+        # Parameter Applicability Analysis
+        if selected_decisions:
+            st.markdown('<h3 class="section-header">📋 Parameter Applicability Analysis</h3>', unsafe_allow_html=True)
+            
+            # Show overall summary
+            total_applicable = set()
+            total_not_applicable = set()
+            
+            for decision in selected_decisions:
+                applicable = param_manager.get_applicable_parameters(decision)
+                not_applicable = param_manager.get_not_applicable_parameters(decision)
+                total_applicable.update(applicable)
+                total_not_applicable.update(not_applicable)
+            
+            # Remove overlap (if a parameter is applicable for any decision, consider it applicable)
+            total_not_applicable = total_not_applicable - total_applicable
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📊 Total Parameters", len(param_manager.all_parameters))
+            with col2:
+                st.metric("✅ Applicable", len(total_applicable))
+            with col3:
+                st.metric("❌ Not Applicable", len(total_not_applicable))
+            
+            # Show parameter breakdown by category
+            with st.expander("🔍 Parameter Breakdown by Category", expanded=False):
+                # Aggregate parameters across all selected decisions
+                aggregated_categories = {}
+                
+                for decision in selected_decisions:
+                    categories = param_manager.get_parameters_by_category(decision)
+                    for category, params in categories.items():
+                        if category not in aggregated_categories:
+                            aggregated_categories[category] = {
+                                'applicable': set(),
+                                'not_applicable': set()
+                            }
+                        
+                        # Add applicable parameters
+                        for param_info in params['applicable']:
+                            aggregated_categories[category]['applicable'].add(param_info.name)
+                        
+                        # Add not applicable parameters (but remove if it's applicable in any decision)
+                        for param_info in params['not_applicable']:
+                            if param_info.name not in total_applicable:
+                                aggregated_categories[category]['not_applicable'].add(param_info.name)
+                
+                # Display the aggregated results
+                for category, params in aggregated_categories.items():
+                    st.markdown(f"**{category}**")
+                    
+                    col_app, col_not_app = st.columns(2)
+                    
+                    with col_app:
+                        if params['applicable']:
+                            st.markdown("✅ **Applicable:**")
+                            for param in sorted(params['applicable']):
+                                st.markdown(f"  • {param.replace('_', ' ').title()}")
+                        else:
+                            st.markdown("✅ **Applicable:** None")
+                    
+                    with col_not_app:
+                        if params['not_applicable']:
+                            st.markdown("❌ **Not Applicable:**")
+                            for param in sorted(params['not_applicable']):
+                                st.markdown(f"  • {param.replace('_', ' ').title()}")
+                        else:
+                            st.markdown("❌ **Not Applicable:** None")
+                    
+                    st.markdown("---")
+            
+            # Show decision-specific analysis
+            with st.expander("📊 Decision-Specific Parameter Analysis", expanded=False):
+                for decision in selected_decisions:
+                    summary = param_manager.get_decision_summary(decision)
+                    
+                    st.markdown(f"**{decision.replace('_', ' ').title()}**")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Applicable", summary['applicable_count'])
+                    with col2:
+                        st.metric("Not Applicable", summary['not_applicable_count'])
+                    with col3:
+                        st.metric("Applicability %", f"{summary['applicability_ratio']:.0%}")
+                    
+                    if summary['reason']:
+                        st.caption(f"💡 {summary['reason']}")
+                    
+                    if summary['applicable_parameters']:
+                        st.markdown("✅ **Applicable Parameters:**")
+                        applicable_formatted = [p.replace('_', ' ').title() for p in summary['applicable_parameters']]
+                        st.markdown(f"  {', '.join(applicable_formatted)}")
+                    
+                    if summary['not_applicable_parameters']:
+                        st.markdown("❌ **Not Applicable Parameters:**")
+                        not_applicable_formatted = [p.replace('_', ' ').title() for p in summary['not_applicable_parameters']]
+                        st.markdown(f"  {', '.join(not_applicable_formatted)}")
+                    
+                    st.markdown("---")
     
     # Sidebar configuration (like original app.py) - DYNAMIC BASED ON SELECTED DECISIONS
     st.sidebar.title("⚙️ Decision Parameters")
@@ -576,209 +678,292 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
     # DYNAMIC PARAMETERS BASED ON SELECTED DECISIONS
     selected_decisions = st.session_state.decision_params.selected_decisions
     
-    # Only show donation-specific parameters if donation_default is selected
-    if "donation_default" in selected_decisions:
-        # Population mode selector (like original app.py) - ONLY for donation_default
-        st.sidebar.subheader("Population Generation")
-        population_mode = st.sidebar.radio(
-            "Population Mode",
-            ["Copula (synthetic)", "Research Specification", "Compare both"],
-            index=0,
-            help="Copula: Generate synthetic agents via fitted copula\nDocumentation: Use original participants with stochastic draws\nCompare both: Show Copula vs Documentation side-by-side"
-        )
+    # Debug: Show what's in selected_decisions (temporary)
+    st.sidebar.caption(f"Debug: selected_decisions = {selected_decisions}")
+    
+    # Reset button to clear session state (temporary)
+    if st.sidebar.button("🔄 Reset Session State"):
+        st.session_state.decision_params.selected_decisions = []
+        st.rerun()
+    
+    # Only show sidebar content if decisions are selected
+    if not selected_decisions:
+        st.sidebar.info("👈 Select decisions on the main page to see applicable parameters")
+        # Store minimal settings in session state for no decisions selected
+        st.session_state.n_agents = 1000
+        st.session_state.simulation_mode = "Single Run"
+        st.session_state.seed = 42
+        st.session_state.show_individual_agents = False
+        st.session_state.save_results = True
+    else:
+        # Show decision-specific parameters only for selected decisions
         
-        # Income specification selector (like original app.py)
-        if population_mode != "Dependent variable resampling":
-            st.sidebar.subheader("Income Specification")
-            income_spec_mode = st.sidebar.radio(
-                "Income Mode for Donation Model",
-                ["categorical only", "continuous only", "compare side-by-side"],
+        # Only show donation-specific parameters if donation_default is selected
+        if "donation_default" in selected_decisions:
+            # Population mode selector (like original app.py) - ONLY for donation_default
+            st.sidebar.subheader("Population Generation")
+            population_mode = st.sidebar.radio(
+                "Population Mode",
+                ["Copula (synthetic)", "Research Specification", "Compare both"],
                 index=0,
-                help="Choose income treatment: categorical (5 categories), continuous (linear), or compare both side-by-side"
+                help="Copula: Generate synthetic agents via fitted copula\nDocumentation: Use original participants with stochastic draws\nCompare both: Show Copula vs Documentation side-by-side"
             )
-        else:
-            income_spec_mode = "categorical only"  # Default for dependent variable mode
-        
-        # Stochastic component option (like original app.py)
-        if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
-            st.sidebar.subheader("Stochastic Component")
-            sigma_in_copula = st.sidebar.checkbox(
-                "Add Normal(anchor, σ) draw to Copula runs",
-                value=False,
-                help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Documentation mode"
-            )
-            # Slider to adjust sigma (original SD ≈ 9 on 0–112 scale).
-            sigma_value_ui = st.sidebar.slider(
-                "σ (standard deviation) on 0–112 scale",
-                min_value=0.0,
-                max_value=15.0,
-                value=9.0,
-                step=0.1,
-                help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
-            )
-        else:
-            sigma_in_copula = False  # Default for other modes
-            # Provide sigma slider for documentation & compare-both modes as well
-            sigma_value_ui = st.sidebar.slider(
-                "σ (standard deviation) on 0–112 scale",
-                min_value=0.0,
-                max_value=15.0,
-                value=9.0,
-                step=0.1,
-                help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
-            )
-        
-        # Anchor weights slider (like original app.py)
-        if population_mode != "Dependent variable resampling":
-            st.sidebar.subheader("Anchor Mix")
-            anchor_observed_weight = st.sidebar.slider(
-                "Weight for observed versus modeled prosocial behavior",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.75,
-                step=0.05,
-                help="Anchor = w × Observed + (1-w) × Predicted. Default is 0.75 observed + 0.25 predicted."
-            )
-            st.sidebar.caption(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
-        else:
-            anchor_observed_weight = 0.75  # Default value used in pre-computation
-        
-        # Raw output option (like original app.py)
-        if population_mode != "Copula (synthetic)" or sigma_in_copula:
-            st.sidebar.subheader("Output Options")
-            raw_draw_mode = st.sidebar.checkbox(
-                "Show pre-truncation (raw) donation rate",
-                value=False,
-                help="Display the raw Normal(anchor, σ) draw before any processing. This shows negative values and the full range of the stochastic draw before flooring at 0 and rescaling by personal maximum."
-            )
-        else:
-            raw_draw_mode = False  # Not applicable for deterministic copula mode
-    else:
-        # If donation_default is not selected, set default values and show minimal sidebar
-        population_mode = "Copula (synthetic)"  # Default population mode
-        income_spec_mode = "categorical only"
-        sigma_in_copula = False
-        sigma_value_ui = 9.0
-        anchor_observed_weight = 0.75
-        raw_draw_mode = False
-    
-    # Simulation parameters (like original app.py)
-    st.sidebar.subheader("Simulation Parameters")
-    
-    n_agents = st.sidebar.number_input(
-        "Number of Agents",
-        min_value=10,
-        max_value=50000,
-        value=1000,
-        step=100,
-        help="Number of synthetic agents to generate"
-    )
-    
-    simulation_mode = st.sidebar.radio(
-        "Simulation Mode",
-        ["Single Run", "Monte-Carlo Study"],
-        index=0,
-        help="Single Run: One simulation with specified parameters\nMonte-Carlo: Multiple runs for uncertainty analysis"
-    )
-    
-    if simulation_mode == "Single Run":
-        seed = st.sidebar.number_input(
-            "Random Seed",
-            min_value=1,
-            max_value=2147483647,
-            value=42,
-            help="Seed for reproducible results"
-        )
-    else:
-        n_runs = st.sidebar.number_input(
-            "Number of Runs",
-            min_value=2,
-            max_value=1000,
-            value=100,
-            step=10,
-            help="Number of Monte-Carlo repetitions"
-        )
-        base_seed = st.sidebar.number_input(
-            "Base Seed",
-            min_value=1,
-            max_value=2147483647,
-            value=42,
-            help="Starting seed (subsequent runs use base_seed + i)"
-        )
-    
-    # Advanced options (like original app.py)
-    st.sidebar.subheader("🔧 Advanced Options")
-
-    # --- NEW: Global Income Distribution controls (visible on Page 2/Results) ---
-    st.sidebar.subheader("💵 Income Distribution (Global)")
-    income_dist_type = st.sidebar.selectbox(
-        "Distribution Type",
-        ["lognormal", "pareto", "weibull"],
-        index=["lognormal", "pareto", "weibull"].index(st.session_state.sim_params.income_distribution)
-    )
-    st.session_state.sim_params.income_distribution = income_dist_type
-
-    st.sidebar.caption("Set bounds and central tendency for generated incomes ($)")
-    st.session_state.sim_params.income_min = st.sidebar.number_input(
-        "Minimum Income",
-        min_value=0.0,
-        value=st.session_state.sim_params.income_min
-    )
-    st.session_state.sim_params.income_avg = st.sidebar.number_input(
-        "Average / Median Income",
-        min_value=st.session_state.sim_params.income_min,
-        value=st.session_state.sim_params.income_avg
-    )
-    st.session_state.sim_params.income_max = st.sidebar.number_input(
-        "Maximum Income",
-        min_value=st.session_state.sim_params.income_avg,
-        value=st.session_state.sim_params.income_max
-    )
-    # --- END NEW CONTROLS ---
-
-    show_individual_agents = st.sidebar.checkbox(
-        "Show Individual Agent Details",
-        value=False,
-        help="Display detailed breakdown of individual agents"
-    )
-    
-    save_results = st.sidebar.checkbox(
-        "Save Results to File",
-        value=True,
-        help="Save simulation outputs to outputs/ directory"
-    )
-    
-    # Store settings in session state
-    st.session_state.population_mode = population_mode
-    st.session_state.income_spec_mode = income_spec_mode
-    st.session_state.sigma_in_copula = sigma_in_copula
-    st.session_state.sigma_value_ui = sigma_value_ui
-    st.session_state.anchor_observed_weight = anchor_observed_weight
-    st.session_state.raw_draw_mode = raw_draw_mode
-    st.session_state.n_agents = n_agents
-    st.session_state.simulation_mode = simulation_mode
-    if simulation_mode == "Single Run":
-        st.session_state.seed = seed
-    else:
-        st.session_state.n_runs = n_runs
-        st.session_state.base_seed = base_seed
-    st.session_state.show_individual_agents = show_individual_agents
-    st.session_state.save_results = save_results
-    
-    # Main content area - show selected decisions info (only on page2)
-    if st.session_state.page == 'page2':
-        st.markdown('<h3 class="section-header">📋 Selected Decisions</h3>', unsafe_allow_html=True)
-        
-        if selected_decisions:
-            for i, decision in enumerate(selected_decisions):
-                st.markdown(f"**{i+1}.** {decision.replace('_', ' ').title()}")
             
-            st.caption(f"Total decisions selected: {len(selected_decisions)}")
+            # Income specification selector (like original app.py)
+            if population_mode != "Dependent variable resampling":
+                st.sidebar.subheader("Income Specification")
+                income_spec_mode = st.sidebar.radio(
+                    "Income Mode for Donation Model",
+                    ["categorical only", "continuous only", "compare side-by-side"],
+                    index=0,
+                    help="Choose income treatment: categorical (5 categories), continuous (linear), or compare both side-by-side"
+                )
+            else:
+                income_spec_mode = "categorical only"  # Default for dependent variable mode
+            
+            # Stochastic component option (like original app.py)
+            if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
+                st.sidebar.subheader("Stochastic Component")
+                sigma_in_copula = st.sidebar.checkbox(
+                    "Add Normal(anchor, σ) draw to Copula runs",
+                    value=False,
+                    help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Documentation mode"
+                )
+                # Slider to adjust sigma (original SD ≈ 9 on 0–112 scale).
+                sigma_value_ui = st.sidebar.slider(
+                    "σ (standard deviation) on 0–112 scale",
+                    min_value=0.0,
+                    max_value=15.0,
+                    value=9.0,
+                    step=0.1,
+                    help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+                )
+            else:
+                sigma_in_copula = False  # Default for other modes
+                # Provide sigma slider for documentation & compare-both modes as well
+                sigma_value_ui = st.sidebar.slider(
+                    "σ (standard deviation) on 0–112 scale",
+                    min_value=0.0,
+                    max_value=15.0,
+                    value=9.0,
+                    step=0.1,
+                    help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+                )
+            
+            # Anchor weights slider (like original app.py)
+            if population_mode != "Dependent variable resampling":
+                st.sidebar.subheader("Anchor Mix")
+                anchor_observed_weight = st.sidebar.slider(
+                    "Weight for observed versus modeled prosocial behavior",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.75,
+                    step=0.05,
+                    help="Anchor = w × Observed + (1-w) × Predicted. Default is 0.75 observed + 0.25 predicted."
+                )
+                st.sidebar.caption(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
+            else:
+                anchor_observed_weight = 0.75  # Default value used in pre-computation
+            
+            # Raw output option (like original app.py)
+            if population_mode != "Copula (synthetic)" or sigma_in_copula:
+                st.sidebar.subheader("Output Options")
+                raw_draw_mode = st.sidebar.checkbox(
+                    "Show pre-truncation (raw) donation rate",
+                    value=False,
+                    help="Display the raw Normal(anchor, σ) draw before any processing. This shows negative values and the full range of the stochastic draw before flooring at 0 and rescaling by personal maximum."
+                )
+            else:
+                raw_draw_mode = False  # Not applicable for deterministic copula mode
         else:
-            st.caption("No decisions selected")
-    
-    # Run simulation button (like original app.py)
-    st.sidebar.markdown("---")
+            # If donation_default is not selected, set default values
+            population_mode = "Copula (synthetic)"  # Default population mode
+            income_spec_mode = "categorical only"
+            sigma_in_copula = False
+            sigma_value_ui = 9.0
+            anchor_observed_weight = 0.75
+            raw_draw_mode = False
+
+        # Show applicable global parameters dynamically
+        # Get all applicable parameters across selected decisions
+        all_applicable = set()
+        for decision in selected_decisions:
+            applicable_params = param_manager.get_applicable_parameters(decision)
+            all_applicable.update(applicable_params)
+        
+        # Only show income parameters if they are applicable
+        if any(param in all_applicable for param in ['income_distribution', 'income_min', 'income_max', 'income_avg']):
+            st.sidebar.subheader("💵 Income Distribution")
+            st.sidebar.caption("✅ Applicable for selected decisions")
+            
+            if 'income_distribution' in all_applicable:
+                income_dist_type = st.sidebar.selectbox(
+                    "Distribution Type",
+                    ["lognormal", "pareto", "weibull"],
+                    index=["lognormal", "pareto", "weibull"].index(st.session_state.sim_params.income_distribution),
+                    help="✅ Applicable for selected decisions"
+                )
+                st.session_state.sim_params.income_distribution = income_dist_type
+            
+            if 'income_min' in all_applicable:
+                st.session_state.sim_params.income_min = st.sidebar.number_input(
+                    "Minimum Income",
+                    min_value=0.0,
+                    value=st.session_state.sim_params.income_min,
+                    help="✅ Applicable for selected decisions"
+                )
+            
+            if 'income_avg' in all_applicable:
+                st.session_state.sim_params.income_avg = st.sidebar.number_input(
+                    "Average / Median Income",
+                    min_value=st.session_state.sim_params.income_min,
+                    value=st.session_state.sim_params.income_avg,
+                    help="✅ Applicable for selected decisions"
+                )
+            
+            if 'income_max' in all_applicable:
+                st.session_state.sim_params.income_max = st.sidebar.number_input(
+                    "Maximum Income",
+                    min_value=st.session_state.sim_params.income_avg,
+                    value=st.session_state.sim_params.income_max,
+                    help="✅ Applicable for selected decisions"
+                )
+
+        # Only show market parameters if they are applicable
+        market_params = ['num_vendors', 'market_price', 'vendor_price_min', 'vendor_price_max']
+        if any(param in all_applicable for param in market_params):
+            st.sidebar.subheader("🏪 Market Parameters")
+            st.sidebar.caption("✅ Applicable for selected decisions")
+            
+            if 'num_vendors' in all_applicable:
+                st.session_state.sim_params.num_vendors = st.sidebar.number_input(
+                    "Number of Vendors",
+                    min_value=1,
+                    max_value=50,
+                    value=st.session_state.sim_params.num_vendors,
+                    help="✅ Applicable for selected decisions"
+                )
+            
+            if 'market_price' in all_applicable:
+                st.session_state.sim_params.market_price = st.sidebar.number_input(
+                    "Average Market Price ($)",
+                    min_value=0.01,
+                    max_value=1000.0,
+                    value=st.session_state.sim_params.market_price,
+                    step=0.01,
+                    help="✅ Applicable for selected decisions"
+                )
+
+        # Only show pricing parameters if they are applicable
+        pricing_params = ['platform_markup', 'price_range', 'price_grid', 'bidding_percentage']
+        if any(param in all_applicable for param in pricing_params):
+            st.sidebar.subheader("💰 Pricing Parameters")
+            st.sidebar.caption("✅ Applicable for selected decisions")
+            
+            if 'platform_markup' in all_applicable:
+                st.session_state.sim_params.platform_markup = st.sidebar.slider(
+                    "Platform Markup (m)",
+                    min_value=0.0,
+                    max_value=0.5,
+                    value=st.session_state.sim_params.platform_markup,
+                    step=0.01,
+                    help="✅ Applicable for selected decisions"
+                )
+            
+            if 'bidding_percentage' in all_applicable:
+                st.session_state.sim_params.bidding_percentage = st.sidebar.slider(
+                    "Bidding Percentage (bp)",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=st.session_state.sim_params.bidding_percentage,
+                    step=0.05,
+                    help="✅ Applicable for selected decisions"
+                )
+        
+        # Simulation parameters (always show if decisions are selected)
+        st.sidebar.subheader("Simulation Parameters")
+        
+        n_agents = st.sidebar.number_input(
+            "Number of Agents",
+            min_value=10,
+            max_value=50000,
+            value=1000,
+            step=100,
+            help="Number of synthetic agents to generate"
+        )
+        
+        simulation_mode = st.sidebar.radio(
+            "Simulation Mode",
+            ["Single Run", "Monte-Carlo Study"],
+            index=0,
+            help="Single Run: One simulation with specified parameters\nMonte-Carlo: Multiple runs for uncertainty analysis"
+        )
+        
+        if simulation_mode == "Single Run":
+            seed = st.sidebar.number_input(
+                "Random Seed",
+                min_value=1,
+                max_value=2147483647,
+                value=42,
+                help="Seed for reproducible results"
+            )
+        else:
+            n_runs = st.sidebar.number_input(
+                "Number of Runs",
+                min_value=2,
+                max_value=1000,
+                value=100,
+                step=10,
+                help="Number of Monte-Carlo repetitions"
+            )
+            base_seed = st.sidebar.number_input(
+                "Base Seed",
+                min_value=1,
+                max_value=2147483647,
+                value=42,
+                help="Starting seed (subsequent runs use base_seed + i)"
+            )
+        
+        # Advanced options (always show if decisions are selected)
+        st.sidebar.subheader("🔧 Advanced Options")
+
+        show_individual_agents = st.sidebar.checkbox(
+            "Show Individual Agent Details",
+            value=False,
+            help="Display detailed breakdown of individual agents"
+        )
+        
+        save_results = st.sidebar.checkbox(
+            "Save Results to File",
+            value=True,
+            help="Save simulation outputs to outputs/ directory"
+        )
+        
+        # Store settings in session state
+        st.session_state.population_mode = population_mode
+        st.session_state.income_spec_mode = income_spec_mode
+        st.session_state.sigma_in_copula = sigma_in_copula
+        st.session_state.sigma_value_ui = sigma_value_ui
+        st.session_state.anchor_observed_weight = anchor_observed_weight
+        st.session_state.raw_draw_mode = raw_draw_mode
+        st.session_state.n_agents = n_agents
+        st.session_state.simulation_mode = simulation_mode
+        if simulation_mode == "Single Run":
+            st.session_state.seed = seed
+        else:
+            st.session_state.n_runs = n_runs
+            st.session_state.base_seed = base_seed
+        st.session_state.show_individual_agents = show_individual_agents
+        st.session_state.save_results = save_results
+        
+        # Summary info
+        if st.sidebar.button("📊 Show Parameter Summary"):
+            total_params = len(param_manager.all_parameters)
+            applicable_count = len(all_applicable)
+            st.sidebar.success(f"✅ {applicable_count}/{total_params} parameters applicable ({applicable_count/total_params:.0%})")
+        
+        # Run simulation button
+        st.sidebar.markdown("---")
     
     def run_simulation_from_sidebar():
         """Run simulation using original app.py logic"""
@@ -889,8 +1074,8 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
         except Exception as e:
             st.caption(f"❌ Simulation failed: {str(e)}")
     
-    if st.sidebar.button("🚀 Run Simulation", type="primary", use_container_width=True):
-        run_simulation_from_sidebar()
+        if st.sidebar.button("🚀 Run Simulation", type="primary", use_container_width=True):
+            run_simulation_from_sidebar()
     
     # Navigation (only show on page2, not on results page)
     if st.session_state.page == 'page2':
@@ -926,6 +1111,102 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                 st.write(f"- Range: ${st.session_state.sim_params.income_min:.0f} - ${st.session_state.sim_params.income_max:.0f}")
                 st.write(f"- Agents: {st.session_state.n_agents}")
                 st.write(f"- Decisions: {len(st.session_state.decision_params.selected_decisions)}")
+        
+        # Show parameter applicability summary for the run decisions
+        with st.expander("📋 Parameter Applicability Summary for This Run", expanded=False):
+            selected_decisions = st.session_state.decision_params.selected_decisions
+            
+            if selected_decisions:
+                # Calculate overall applicability
+                total_applicable = set()
+                total_not_applicable = set()
+                
+                for decision in selected_decisions:
+                    applicable = param_manager.get_applicable_parameters(decision)
+                    not_applicable = param_manager.get_not_applicable_parameters(decision)
+                    total_applicable.update(applicable)
+                    total_not_applicable.update(not_applicable)
+                
+                # Remove overlap
+                total_not_applicable = total_not_applicable - total_applicable
+                
+                # Summary metrics
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("📊 Total Parameters", len(param_manager.all_parameters))
+                with col2:
+                    st.metric("✅ Applicable", len(total_applicable))
+                with col3:
+                    st.metric("❌ Not Applicable", len(total_not_applicable))
+                with col4:
+                    applicability_pct = len(total_applicable) / len(param_manager.all_parameters) * 100 if param_manager.all_parameters else 0
+                    st.metric("📈 Efficiency", f"{applicability_pct:.0f}%")
+                
+                # Show which parameters were actually used vs unused
+                col_used, col_unused = st.columns(2)
+                
+                with col_used:
+                    st.markdown("### ✅ Parameters Used in This Simulation")
+                    if total_applicable:
+                        # Group by category
+                        used_by_category = {}
+                        for param in total_applicable:
+                            category = param_manager._get_parameter_category(param)
+                            if category not in used_by_category:
+                                used_by_category[category] = []
+                            used_by_category[category].append(param)
+                        
+                        for category, params in sorted(used_by_category.items()):
+                            st.markdown(f"**{category}:**")
+                            for param in sorted(params):
+                                st.markdown(f"  • {param.replace('_', ' ').title()}")
+                    else:
+                        st.caption("No parameters were applicable for the selected decisions.")
+                
+                with col_unused:
+                    st.markdown("### ❌ Parameters Not Used in This Simulation")
+                    if total_not_applicable:
+                        # Group by category
+                        unused_by_category = {}
+                        for param in total_not_applicable:
+                            category = param_manager._get_parameter_category(param)
+                            if category not in unused_by_category:
+                                unused_by_category[category] = []
+                            unused_by_category[category].append(param)
+                        
+                        for category, params in sorted(unused_by_category.items()):
+                            st.markdown(f"**{category}:**")
+                            for param in sorted(params):
+                                st.markdown(f"  • {param.replace('_', ' ').title()}")
+                    else:
+                        st.caption("All parameters were used in this simulation.")
+                
+                # Show decision-specific breakdown
+                st.markdown("### 📊 Parameter Usage by Decision")
+                
+                for decision in selected_decisions:
+                    summary = param_manager.get_decision_summary(decision)
+                    
+                    with st.container():
+                        col_title, col_metrics = st.columns([2, 3])
+                        
+                        with col_title:
+                            st.markdown(f"**{decision.replace('_', ' ').title()}**")
+                            if summary['reason']:
+                                st.caption(f"💡 {summary['reason']}")
+                        
+                        with col_metrics:
+                            sub_col1, sub_col2, sub_col3 = st.columns(3)
+                            with sub_col1:
+                                st.metric("Applicable", summary['applicable_count'], label_visibility="collapsed")
+                            with sub_col2:
+                                st.metric("Not Applicable", summary['not_applicable_count'], label_visibility="collapsed")
+                            with sub_col3:
+                                st.metric("Efficiency", f"{summary['applicability_ratio']:.0%}", label_visibility="collapsed")
+                        
+                        st.markdown("---")
+            else:
+                st.caption("No decisions were selected for this simulation.")
         
         results_dict = st.session_state.simulation_results
         

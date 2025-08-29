@@ -7,7 +7,6 @@ from typing import Optional, List, Union
 import importlib
 
 from src.trait_engine import TraitEngine
-from src.income_transformer import IncomeTransformer
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
 SIMULATION_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "simulation.yaml"
@@ -31,9 +30,6 @@ class Orchestrator:
         
         # Initialize trait engine
         self.trait_engine = TraitEngine()
-        
-        # Initialize income transformer
-        self.income_transformer = IncomeTransformer(self.simulation_config)
         
         # Set population context for decision modules
         self.pop_context = 'copula'
@@ -96,26 +92,6 @@ class Orchestrator:
         else:
             decisions_to_run = self.decision_order
         
-        # First pass: Generate monetary incomes for all agents
-        income_transformations = []
-        for idx, row in agents_df.iterrows():
-            if 'Assigned Allowance Level' in row:
-                transform_result = self.income_transformer.transform_agent(
-                    int(row['Assigned Allowance Level']),
-                    income_mode='placeholder'  # Will be determined later
-                )
-                income_transformations.append(transform_result)
-            else:
-                # Fallback if no income level
-                income_transformations.append({
-                    'monetary_income': self.income_transformer.income_avg,
-                    'income_level_original': 3
-                })
-        
-        # Compute population quintiles for categorical mode
-        all_incomes = [t['monetary_income'] for t in income_transformations]
-        quintile_breaks = self.income_transformer.compute_population_quintiles(all_incomes)
-        
         # Process each agent
         results = []
         rng_global = np.random.default_rng(seed)
@@ -123,22 +99,6 @@ class Orchestrator:
         for idx, row in agents_df.iterrows():
             # Initialize agent state with traits
             agent_state = row.to_dict()
-            
-            # Add transformed income fields
-            if idx < len(income_transformations):
-                income_data = income_transformations[idx]
-                agent_state['monetary_income'] = income_data['monetary_income']
-                
-                # Determine income mode from config (will be used by donation_default)
-                # For now, we'll prepare both categorical and continuous values
-                agent_state['income_quintile'] = self.income_transformer.map_to_quintile(
-                    income_data['monetary_income'], quintile_breaks
-                )
-                agent_state['income_continuous'] = self.income_transformer.normalize_continuous(
-                    income_data['monetary_income']
-                )
-                # Keep original for reference
-                agent_state['income_level_original'] = agent_state.get('Assigned Allowance Level', 3)
             
             # Create child RNG for this agent
             agent_rng = np.random.default_rng(rng_global.integers(1e9))

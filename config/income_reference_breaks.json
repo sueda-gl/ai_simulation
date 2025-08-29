@@ -1,0 +1,26 @@
+{
+  "description": "Reference income quintile breakpoints from 280-person experimental data",
+  "source": "Original experiment participants with Assigned Allowance Level 1-5",
+  "reference_distribution": "lognormal",
+  "reference_params": {
+    "min": 1000.0,
+    "max": 10000.0,
+    "avg": 5000.0,
+    "mu": 8.229370054791982,
+    "sigma": 0.7587135646925732
+  },
+  "quintile_breakpoints": [
+    1418.0521706944346,
+    2518.7052844580753,
+    3749.47104666228,
+    5581.650706221293
+  ],
+  "sample_size": 280,
+  "verification": {
+    "q1_count": 57,
+    "q2_count": 61,
+    "q3_count": 52,
+    "q4_count": 56,
+    "q5_count": 54
+  }
+}
