@@ -159,6 +159,8 @@ if 'decision_params' not in st.session_state:
     st.session_state.decision_params = DecisionParameters()
 if 'simulation_results' not in st.session_state:
     st.session_state.simulation_results = None
+if 'mc_results' not in st.session_state:
+    st.session_state.mc_results = None
 
 # Navigation functions
 def go_to_page2():
@@ -517,16 +519,12 @@ if st.session_state.page == 'page1':
         st.button("Next: Decision Parameters →", type="primary", on_click=go_to_page2, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-elif st.session_state.page == 'page2' or st.session_state.page == 'results':
-    # Page 2: Decision-Specific Parameters (also shown on results page)
-    if st.session_state.page == 'page2':
-        st.markdown('<h2 class="page-header">Page 2: Decision-Specific Parameters</h2>', unsafe_allow_html=True)
-    else:
-        st.markdown('<h2 class="page-header">Simulation Results</h2>', unsafe_allow_html=True)
+elif st.session_state.page == 'page2':
+    # Page 2: Decision-Specific Parameters
+    st.markdown('<h2 class="page-header">Page 2: Decision-Specific Parameters</h2>', unsafe_allow_html=True)
     
     # Decision selection (like in original app.py)
-    if st.session_state.page == 'page2':
-        st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)
     
     all_decisions = [
         "donation_default",
@@ -678,14 +676,6 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
     # DYNAMIC PARAMETERS BASED ON SELECTED DECISIONS
     selected_decisions = st.session_state.decision_params.selected_decisions
     
-    # Debug: Show what's in selected_decisions (temporary)
-    st.sidebar.caption(f"Debug: selected_decisions = {selected_decisions}")
-    
-    # Reset button to clear session state (temporary)
-    if st.sidebar.button("🔄 Reset Session State"):
-        st.session_state.decision_params.selected_decisions = []
-        st.rerun()
-    
     # Only show sidebar content if decisions are selected
     if not selected_decisions:
         st.sidebar.info("👈 Select decisions on the main page to see applicable parameters")
@@ -706,7 +696,7 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                 "Population Mode",
                 ["Copula (synthetic)", "Research Specification", "Compare both"],
                 index=0,
-                help="Copula: Generate synthetic agents via fitted copula\nDocumentation: Use original participants with stochastic draws\nCompare both: Show Copula vs Documentation side-by-side"
+                help="Copula: Generate synthetic agents via fitted copula\nResearch: Use original participants with stochastic draws\nCompare both: Show Copula vs Research side-by-side"
             )
             
             # Income specification selector (like original app.py)
@@ -727,7 +717,7 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                 sigma_in_copula = st.sidebar.checkbox(
                     "Add Normal(anchor, σ) draw to Copula runs",
                     value=False,
-                    help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Documentation mode"
+                    help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Research mode"
                 )
                 # Slider to adjust sigma (original SD ≈ 9 on 0–112 scale).
                 sigma_value_ui = st.sidebar.slider(
@@ -740,7 +730,7 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                 )
             else:
                 sigma_in_copula = False  # Default for other modes
-                # Provide sigma slider for documentation & compare-both modes as well
+                # Provide sigma slider for research & compare-both modes as well
                 sigma_value_ui = st.sidebar.slider(
                     "σ (standard deviation) on 0–112 scale",
                     min_value=0.0,
@@ -912,9 +902,9 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                 "Number of Runs",
                 min_value=2,
                 max_value=1000,
-                value=100,
+                value=10,
                 step=10,
-                help="Number of Monte-Carlo repetitions"
+                help="Number of Monte-Carlo repetitions (Note: 100+ runs can take several minutes)"
             )
             base_seed = st.sidebar.number_input(
                 "Base Seed",
@@ -961,9 +951,174 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
             total_params = len(param_manager.all_parameters)
             applicable_count = len(all_applicable)
             st.sidebar.success(f"✅ {applicable_count}/{total_params} parameters applicable ({applicable_count/total_params:.0%})")
-        
-        # Run simulation button
-        st.sidebar.markdown("---")
+    
+    # Run simulation button - moved outside the decision selection conditional block
+    st.sidebar.markdown("---")
+    
+    def run_monte_carlo_study():
+        """Run Monte-Carlo study and return results."""
+        try:
+            # Create a container for real-time updates
+            status_container = st.container()
+            
+            st.info(f"🔄 Starting Monte-Carlo study with {st.session_state.n_runs} runs of {st.session_state.n_agents} agents each...")
+            
+            # Show estimated time
+            estimated_time_per_run = 2  # seconds, rough estimate
+            total_estimated_time = st.session_state.n_runs * estimated_time_per_run
+            st.caption(f"⏱️ Estimated time: ~{total_estimated_time} seconds ({total_estimated_time/60:.1f} minutes)")
+            
+            # Build command
+            cmd = [
+                sys.executable, 'scripts/run_mc_study.py',
+                '--agents', str(st.session_state.n_agents),
+                '--runs', str(st.session_state.n_runs),
+                '--base-seed', str(st.session_state.base_seed),
+                '--anchor-observed', str(st.session_state.anchor_observed_weight)
+            ]
+            
+            # Handle multiple decisions for Monte Carlo
+            if len(st.session_state.decision_params.selected_decisions) < len(all_decisions):
+                # Pass each selected decision as a separate argument
+                for decision in st.session_state.decision_params.selected_decisions:
+                    cmd.extend(['--decision', decision])
+            
+            # Debug: print command
+            with st.expander("🔧 Debug Information", expanded=False):
+                st.code(' '.join(cmd))
+            
+            # Create progress tracking elements
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            output_container = st.container()
+            
+            # Change to project directory to ensure scripts can be found
+            cwd = Path(__file__).resolve().parent
+            
+            # Run with real-time output capture using Popen instead of run
+            import subprocess
+            import time
+            
+            status_text.text("🚀 Launching Monte-Carlo simulations...")
+            
+            # Start the process
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=str(cwd),
+                bufsize=1,  # Line buffered
+                universal_newlines=True
+            )
+            
+            # Collect output
+            stdout_lines = []
+            stderr_lines = []
+            last_update_time = time.time()
+            
+            # Monitor the process
+            while True:
+                # Check if process is still running
+                poll = process.poll()
+                
+                # Read any available output
+                line = process.stdout.readline()
+                if line:
+                    stdout_lines.append(line.strip())
+                    
+                    # Parse progress from output
+                    if "Run" in line and "/" in line:
+                        try:
+                            # Extract run number (e.g., "Run  10/100:")
+                            parts = line.split()
+                            for i, part in enumerate(parts):
+                                if "/" in part:
+                                    current_run = int(parts[i-1])
+                                    total_runs = int(part.split("/")[1].split(":")[0])
+                                    progress = current_run / total_runs
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"🔄 Progress: Run {current_run}/{total_runs}")
+                                    break
+                        except:
+                            pass
+                    
+                    # Show last few lines of output
+                    if time.time() - last_update_time > 0.5:  # Update every 0.5 seconds
+                        with output_container.container():
+                            st.text("📊 Recent output:")
+                            st.code('\n'.join(stdout_lines[-5:]))
+                        last_update_time = time.time()
+                
+                # If process finished, break
+                if poll is not None:
+                    break
+                
+                # Small delay to prevent CPU spinning
+                time.sleep(0.1)
+            
+            # Get any remaining output
+            remaining_stdout, remaining_stderr = process.communicate()
+            if remaining_stdout:
+                stdout_lines.extend(remaining_stdout.strip().split('\n'))
+            if remaining_stderr:
+                stderr_lines.extend(remaining_stderr.strip().split('\n'))
+            
+            # Join all output
+            stdout = '\n'.join(stdout_lines)
+            stderr = '\n'.join(stderr_lines)
+            
+            # Show final output
+            if stdout:
+                with st.expander("📋 Monte Carlo Output", expanded=False):
+                    st.text(stdout)
+            
+            if stderr:
+                with st.expander("⚠️ Monte Carlo Errors", expanded=True):
+                    st.text(stderr)
+            
+            if process.returncode == 0:
+                # Parse output to find result files
+                output_lines = stdout.strip().split('\n')
+                summary_file = None
+                detailed_file = None
+                
+                for line in output_lines:
+                    if 'Summary saved to:' in line:
+                        summary_file = line.split('Summary saved to:')[1].strip()
+                    elif 'Detailed results saved to:' in line:
+                        detailed_file = line.split('Detailed results saved to:')[1].strip()
+                
+                progress_bar.progress(1.0)
+                status_text.success("✅ Monte-Carlo study completed!")
+                
+                # Load results - handle relative paths
+                if summary_file and not Path(summary_file).is_absolute():
+                    summary_file = str(cwd / summary_file)
+                if detailed_file and not Path(detailed_file).is_absolute():
+                    detailed_file = str(cwd / detailed_file)
+                
+                # Load results
+                mc_summary = pd.read_csv(summary_file) if summary_file and Path(summary_file).exists() else None
+                mc_detailed = pd.read_csv(detailed_file) if detailed_file and Path(detailed_file).exists() else None
+                
+                # If files not found, show debug info
+                if mc_summary is None and summary_file:
+                    st.warning(f"Summary file not found at: {summary_file}")
+                if mc_detailed is None and detailed_file:
+                    st.warning(f"Detailed file not found at: {detailed_file}")
+                
+                return mc_summary, mc_detailed, stdout
+            else:
+                st.error(f"❌ Monte-Carlo study failed with return code: {process.returncode}")
+                st.error(f"Error output: {stderr}")
+                return None, None, None
+                    
+        except Exception as e:
+            st.error(f"❌ Monte-Carlo study failed: {str(e)}")
+            import traceback
+            st.text(traceback.format_exc())
+            return None, None, None
     
     def run_simulation_from_sidebar():
         """Run simulation using original app.py logic"""
@@ -999,18 +1154,7 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                             if pop_mode == "documentation" or (pop_mode == "copula" and st.session_state.sigma_in_copula):
                                 orchestrator.config['donation_default']['stochastic']['raw_output'] = st.session_state.raw_draw_mode
 
-                        # --- NEW: push updated income distribution parameters ---
-                        if hasattr(orchestrator, 'simulation_config'):
-                            sim_section = orchestrator.simulation_config.setdefault('simulation', {})
-                            sim_section['income_distribution'] = st.session_state.sim_params.income_distribution
-                            sim_section['income_min'] = st.session_state.sim_params.income_min
-                            sim_section['income_max'] = st.session_state.sim_params.income_max
-                            sim_section['income_avg'] = st.session_state.sim_params.income_avg
-                            # Rebuild income transformer so changes take effect
-                            if hasattr(orchestrator, 'income_transformer'):
-                                from src.income_transformer import IncomeTransformer
-                                orchestrator.income_transformer = IncomeTransformer(orchestrator.simulation_config)
-                        # --- END NEW ---
+
                     
                     # Handle multiple decisions
                     decision_param = None if len(st.session_state.decision_params.selected_decisions) == len(all_decisions) else st.session_state.decision_params.selected_decisions
@@ -1038,7 +1182,7 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                     results["depvar"] = _run("depvar", "categorical")  # income mode is ignored
                 else:
                     # Single population mode
-                    pop_type = "documentation" if "Documentation" in st.session_state.population_mode else "copula"
+                    pop_type = "documentation" if "Research" in st.session_state.population_mode else "copula"
                     if st.session_state.income_spec_mode == "compare side-by-side":
                         results["categorical"] = _run(pop_type, "categorical")
                         results["continuous"] = _run(pop_type, "continuous")
@@ -1074,19 +1218,59 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
         except Exception as e:
             st.caption(f"❌ Simulation failed: {str(e)}")
     
-        if st.sidebar.button("🚀 Run Simulation", type="primary", use_container_width=True):
-            run_simulation_from_sidebar()
+    # Run simulation button - moved outside the function
+    if st.sidebar.button("🚀 Run Simulation", type="primary", use_container_width=True):
+        # Check if simulation is already running (simple lock mechanism)
+        if 'simulation_running' not in st.session_state:
+            st.session_state.simulation_running = False
+            
+        if st.session_state.simulation_running:
+            st.warning("⚠️ A simulation is already running. Please wait for it to complete.")
+        else:
+            st.session_state.simulation_running = True
+            try:
+                if st.session_state.simulation_mode == "Single Run":
+                    run_simulation_from_sidebar()
+                    st.session_state.mc_results = None
+                else:
+                    mc_summary, mc_detailed, output_log = run_monte_carlo_study()
+                    if mc_summary is not None:
+                        st.session_state.mc_results = {
+                            'summary': mc_summary,
+                            'detailed': mc_detailed,
+                            'log': output_log
+                        }
+                        st.session_state.simulation_results = None
+                        st.session_state.page = 'results'
+                        st.success("✅ Monte Carlo results saved to session state. Redirecting to results page...")
+                        st.rerun()
+                    else:
+                        st.error("❌ Monte Carlo simulation returned no results")
+            finally:
+                st.session_state.simulation_running = False
     
-    # Navigation (only show on page2, not on results page)
-    if st.session_state.page == 'page2':
-        st.markdown('<div class="navigation-buttons">', unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col1:
-            st.button("← Back to Common Parameters", on_click=go_to_page1, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+    # Navigation
+    st.markdown('<div class="navigation-buttons">', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col1:
+        st.button("← Back to Common Parameters", on_click=go_to_page1, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # Display results on results page
-    if st.session_state.page == 'results' and st.session_state.simulation_results is not None:
+elif st.session_state.page == 'results':
+    # Results page
+    st.markdown('<h2 class="page-header">Simulation Results</h2>', unsafe_allow_html=True)
+    
+    # Debug info
+    with st.expander("🔧 Debug: Session State", expanded=False):
+        st.write(f"simulation_results: {'Yes' if st.session_state.simulation_results is not None else 'No'}")
+        st.write(f"mc_results: {'Yes' if st.session_state.mc_results is not None else 'No'}")
+        if st.session_state.mc_results is not None:
+            st.write(f"mc_results keys: {list(st.session_state.mc_results.keys())}")
+            st.write(f"summary shape: {st.session_state.mc_results['summary'].shape if st.session_state.mc_results['summary'] is not None else 'None'}")
+            st.write(f"detailed shape: {st.session_state.mc_results['detailed'].shape if st.session_state.mc_results['detailed'] is not None else 'None'}")
+    
+    # Display single run results
+    if st.session_state.simulation_results is not None:
         # Show parameter summary
         with st.expander("📊 Simulation Parameters Summary", expanded=False):
             col1, col2, col3 = st.columns(3)
@@ -1233,18 +1417,18 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                         st.caption("Continuous results not available")
                 
                 st.markdown("---")
-                st.markdown("#### Documentation Mode (Original + Stochastic)")
+                st.markdown("#### Research Mode (Original + Stochastic)")
                 col3, col4 = st.columns(2)
                 with col3:
                     st.markdown("**Categorical Income**")
                     if "doc_mode_categorical" in results_dict:
-                        _show_overview(results_dict["doc_mode_categorical"], " (Doc, Cat)")
+                        _show_overview(results_dict["doc_mode_categorical"], " (Research, Cat)")
                     else:
                         st.caption("Categorical results not available")
                 with col4:
                     st.markdown("**Continuous Income**")
                     if "doc_mode_continuous" in results_dict:
-                        _show_overview(results_dict["doc_mode_continuous"], " (Doc, Cont)")
+                        _show_overview(results_dict["doc_mode_continuous"], " (Research, Cont)")
                     else:
                         st.caption("Continuous results not available")
                 
@@ -1264,12 +1448,12 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                         st.caption(f"Copula {income_type} results not available")
                 
                 with col2:
-                    st.markdown("#### 📄 Documentation Mode")
+                    st.markdown("#### 📄 Research Mode")
                     doc_key = f"doc_mode_{income_type}"
                     if doc_key in results_dict:
-                        _show_overview(results_dict[doc_key], f" (Doc, {income_type.title()})")
+                        _show_overview(results_dict[doc_key], f" (Research, {income_type.title()})")
                     else:
-                        st.caption(f"Documentation {income_type} results not available")
+                        st.caption(f"Research {income_type} results not available")
                 
                 # Use first available result for individual analysis
                 df = next((results_dict[k] for k in [f"copula_{income_type}", f"doc_mode_{income_type}"] if k in results_dict), pd.DataFrame())
@@ -1505,6 +1689,148 @@ elif st.session_state.page == 'page2' or st.session_state.page == 'results':
                 if st.button("🔄 Clear Results"):
                     st.session_state.simulation_results = None
                     st.rerun()
+    
+    # Display Monte Carlo results
+    elif st.session_state.mc_results is not None:
+        mc_data = st.session_state.mc_results
+        
+        if mc_data['summary'] is not None:
+            st.subheader("📈 Monte-Carlo Analysis Results")
+            
+            summary_df = mc_data['summary']
+            
+            # Overview metrics
+            col1, col2, col3, col4 = st.columns(4)
+        
+            if 'donation_default' in summary_df['decision'].values:
+                donation_row = summary_df[summary_df['decision'] == 'donation_default'].iloc[0]
+            
+                with col1:
+                    st.metric("Mean Donation Rate", f"{donation_row['mean']:.1%}")
+                
+                with col2:
+                    st.metric("Standard Deviation", f"{donation_row['std']:.4f}")
+                
+                with col3:
+                    st.metric("95% CI Lower", f"{donation_row['p2.5']:.1%}")
+                
+                with col4:
+                    st.metric("95% CI Upper", f"{donation_row['p97.5']:.1%}")
+        
+            # Monte-Carlo convergence plot
+            if mc_data['detailed'] is not None:
+                detailed_df = mc_data['detailed']
+                
+                if 'donation_default_mean' in detailed_df.columns:
+                    st.subheader("📊 Monte-Carlo Convergence")
+                    
+                    # Calculate running average
+                    detailed_df['running_mean'] = detailed_df['donation_default_mean'].expanding().mean()
+                    
+                    fig = make_subplots(
+                        rows=2, cols=1,
+                        subplot_titles=("Individual Run Results", "Running Average Convergence"),
+                        vertical_spacing=0.1
+                    )
+                    
+                    # Individual runs
+                    fig.add_trace(
+                        go.Scatter(
+                            x=detailed_df['run'] + 1,
+                            y=detailed_df['donation_default_mean'],
+                            mode='markers+lines',
+                            name='Individual Runs',
+                            line=dict(color='lightblue', width=1),
+                            marker=dict(size=4)
+                        ),
+                        row=1, col=1
+                    )
+                    
+                    # Running average
+                    fig.add_trace(
+                        go.Scatter(
+                            x=detailed_df['run'] + 1,
+                            y=detailed_df['running_mean'],
+                            mode='lines',
+                            name='Running Average',
+                            line=dict(color='red', width=2)
+                        ),
+                        row=2, col=1
+                    )
+                    
+                    # Add confidence interval
+                    if len(detailed_df) > 1:
+                        final_mean = detailed_df['running_mean'].iloc[-1]
+                        final_std = detailed_df['donation_default_mean'].std()
+                        ci_upper = final_mean + 1.96 * final_std / np.sqrt(len(detailed_df))
+                        ci_lower = final_mean - 1.96 * final_std / np.sqrt(len(detailed_df))
+                        
+                        fig.add_hline(y=ci_upper, line_dash="dash", line_color="gray", row=2, col=1)
+                        fig.add_hline(y=ci_lower, line_dash="dash", line_color="gray", row=2, col=1)
+                    
+                    fig.update_layout(
+                        height=600,
+                        title="Monte-Carlo Study Results",
+                        showlegend=True
+                    )
+                    fig.update_yaxes(tickformat='.1%')
+                    fig.update_xaxes(title="Run Number")
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+        
+            # Summary statistics table
+            st.subheader("📋 Summary Statistics")
+        
+            # Format the summary table for display
+            display_summary = summary_df.copy()
+            for col in ['mean', 'p2.5', 'p97.5']:
+                if col in display_summary.columns:
+                    display_summary[col] = display_summary[col].apply(lambda x: f"{x:.1%}")
+            
+            st.dataframe(display_summary, use_container_width=True)
+        
+            # Download Monte-Carlo results
+            st.subheader("💾 Export Monte-Carlo Results")
+            
+            col1, col2, col3 = st.columns(3)
+        
+            with col1:
+                if mc_data['summary'] is not None:
+                    summary_csv = mc_data['summary'].to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Summary",
+                        data=summary_csv,
+                        file_name=f"monte_carlo_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+            
+            with col2:
+                if mc_data['detailed'] is not None:
+                    detailed_csv = mc_data['detailed'].to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Detailed",
+                        data=detailed_csv,
+                        file_name=f"monte_carlo_detailed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+            
+            with col3:
+                if st.button("🔄 Clear Monte-Carlo Results"):
+                    st.session_state.mc_results = None
+                    st.rerun()
+        
+            # Show log output
+            if mc_data['log']:
+                with st.expander("📋 Monte-Carlo Execution Log", expanded=False):
+                    st.text(mc_data['log'])
+    
+    # Show message if no results available
+    else:
+        st.info("🔍 No simulation results available yet.")
+        st.write("Please configure your simulation parameters and click '🚀 Run Simulation' in the sidebar.")
+        if st.button("← Back to Decision Parameters", type="primary"):
+            st.session_state.page = 'page2'
+            st.rerun()
 
 # Footer
 st.markdown("---")
