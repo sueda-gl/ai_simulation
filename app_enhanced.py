@@ -470,7 +470,7 @@ if st.session_state.page == 'page1':
     
     if price_source == "Generate Randomly":
         st.session_state.sim_params.vendor_price_source = "random"
-        st.caption(f"Vendor prices will be randomly generated within the range ${st.session_state.sim_params.vendor_price_min:.2f} - ${st.session_state.sim_params.vendor_price_max:.2f} with an average of ${st.session_state.sim_params.market_price:.2f}")
+
     else:
         st.session_state.sim_params.vendor_price_source = "file"
         uploaded_file = st.file_uploader(
