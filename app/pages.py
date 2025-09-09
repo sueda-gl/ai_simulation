@@ -725,40 +725,40 @@ def render_donation_default_tab():
     
     with col2:
         # Stochastic component option
-        if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
-            st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
+        st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
+        # Copula toggle
+        if population_mode in ["Copula (synthetic)", "Compare both"]:
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
-                value=st.session_state.sigma_in_copula,
-                help="When enabled, Copula mode will also use the stochastic component",
-                key="tab_sigma_in_copula"
+                value=getattr(st.session_state, "sigma_in_copula", True),
+                key="tab_sigma_in_copula",
+                help="When enabled, Copula mode will use the Normal(anchor, σ) stochastic draw"
             )
             st.session_state.sigma_in_copula = sigma_in_copula
-            
-            sigma_value_ui = st.slider(
-                "σ (standard deviation) on 0–112 scale",
-                min_value=0.0,
-                max_value=15.0,
-                value=st.session_state.sigma_value_ui,
-                step=0.1,
-                help="Controls the spread of the Normal(anchor, σ) draw",
-                key="tab_sigma_value"
-            )
-            st.session_state.sigma_value_ui = sigma_value_ui
         else:
-            # Still show sigma for non-copula modes
-            st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
-            sigma_value_ui = st.slider(
-                "σ (standard deviation) on 0–112 scale",
-                min_value=0.0,
-                max_value=15.0,
-                value=st.session_state.sigma_value_ui,
-                step=0.1,
-                help="Controls the spread of the Normal(anchor, σ) draw",
-                key="tab_sigma_value_alt"
-            )
-            st.session_state.sigma_value_ui = sigma_value_ui
             st.session_state.sigma_in_copula = False
+        # Research toggle
+        if population_mode in ["Research Specification", "Compare both"]:
+            sigma_in_research = st.checkbox(
+                "Add Normal(anchor, σ) draw to Research runs",
+                value=getattr(st.session_state, "sigma_in_research", True),
+                key="tab_sigma_in_research",
+                help="Enable or disable stochastic component for Research mode runs"
+            )
+            st.session_state.sigma_in_research = sigma_in_research
+        else:
+            st.session_state.sigma_in_research = True
+        # σ slider (always visible)
+        sigma_value_ui = st.slider(
+            "σ (standard deviation) on 0–112 scale",
+            min_value=0.0,
+            max_value=15.0,
+            value=st.session_state.sigma_value_ui,
+            step=0.1,
+            key="tab_sigma_value",
+            help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+        )
+        st.session_state.sigma_value_ui = sigma_value_ui
         
         # Anchor weights
         if population_mode != "Dependent variable resampling":
@@ -1351,6 +1351,7 @@ def configure_sidebar(selected_decisions):
             population_mode = "Copula (synthetic)"
             income_spec_mode = "categorical only"
             sigma_in_copula = False
+            sigma_in_research = True
             sigma_value_ui = 9.0
             anchor_observed_weight = 0.75
             raw_draw_mode = False
@@ -1528,6 +1529,7 @@ def configure_sidebar(selected_decisions):
         st.session_state.population_mode = population_mode
         st.session_state.income_spec_mode = income_spec_mode
         st.session_state.sigma_in_copula = sigma_in_copula
+        st.session_state.sigma_in_research = sigma_in_research
         st.session_state.sigma_value_ui = sigma_value_ui
         st.session_state.anchor_observed_weight = anchor_observed_weight
         st.session_state.raw_draw_mode = raw_draw_mode

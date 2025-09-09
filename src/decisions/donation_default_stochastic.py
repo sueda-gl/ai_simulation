@@ -90,6 +90,12 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
     
     # Step 4: Add stochastic component
+    # Allow disabling stochastic component via config flag (stochastic.enabled = False)
+    if not params.get('stochastic', {}).get('enabled', True):
+        # Skip Normal draw; behave like anchor-only scaling (similar to copula deterministic)
+        donation_rate = np.clip(s100_anchor / 100.0, 0.0, 1.0)
+        return {"donation_default": donation_rate}
+
     # Use the overall SD from observed behavior, scaled to 0-100 range
     sd_params = params['stochastic']
     if sd_params['sigma_strategy'] == 'overall_sd_twt_sospeso':

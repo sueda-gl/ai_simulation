@@ -208,6 +208,8 @@ def run_simulation_from_sidebar():
                         # Set stochastic flag for copula mode if checkbox is enabled
                         if pop_mode == "copula":
                             orchestrator.config['donation_default']['stochastic']['in_copula'] = st.session_state.sigma_in_copula
+                        if pop_mode == "documentation":
+                            orchestrator.config['donation_default']['stochastic']['enabled'] = st.session_state.sigma_in_research
                         # Apply selected sigma value
                         orchestrator.config['donation_default']['stochastic']['sigma_value'] = st.session_state.sigma_value_ui
                         # Apply chosen anchor weights

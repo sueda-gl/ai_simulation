@@ -205,6 +205,7 @@ def initialize_session_state():
         'population_mode': 'Copula (synthetic)',
         'income_spec_mode': 'categorical only',
         'sigma_in_copula': False,
+        'sigma_in_research': True,
         'sigma_value_ui': 9.0,
         'anchor_observed_weight': 0.75,
         'raw_draw_mode': False,
