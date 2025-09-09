@@ -9,18 +9,50 @@ from pathlib import Path
 from datetime import datetime
 
 from app.models import ALL_DECISIONS, get_decision_global_parameters, get_all_global_parameters
-from app.components import (show_overview, show_parameter_applicability_analysis, 
+from app.components import (show_overview, 
                            show_monte_carlo_results, show_dependent_variable_comparison,
                            show_income_distribution_histogram)
 from app.simulation import run_simulation_from_sidebar, run_monte_carlo_study
+
+
+def go_to_page1():
+    st.session_state.page = 'page1'
 
 
 def go_to_page2():
     st.session_state.page = 'page2'
 
 
-def go_to_page1():
-    st.session_state.page = 'page1'
+def go_to_results():
+    st.session_state.page = 'results'
+
+
+def render_navigation(current_page):
+    """Render navigation buttons based on current page"""
+    st.markdown('<div class="navigation-buttons">', unsafe_allow_html=True)
+    
+    if current_page == 'page1':
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col3:
+            st.button("Next: Decision Parameters →", type="primary", on_click=go_to_page2, use_container_width=True)
+    
+    elif current_page == 'page2':
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col1:
+            st.button("← Back to Common Parameters", on_click=go_to_page1, use_container_width=True)
+        with col3:
+            # Show "Go to Results" button if results exist
+            if st.session_state.simulation_results is not None or st.session_state.mc_results is not None:
+                st.button("View Results →", type="primary", on_click=go_to_results, use_container_width=True)
+    
+    elif current_page == 'results':
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col1:
+            st.button("← Back to Decision Parameters", on_click=go_to_page2, use_container_width=True)
+        with col3:
+            st.button("Back to Common Parameters →", on_click=go_to_page1, use_container_width=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
 def render_page1():
@@ -380,10 +412,7 @@ def render_page1():
             price_total_avg = num_vendors * market_price
             price_valid = price_total_min <= price_total_avg <= price_total_max
             
-            if price_valid:
-                st.success(f"✅ Price validation: N×avg = {price_total_avg:.2f} ∈ [{price_total_min:.2f}, {price_total_max:.2f}]")
-            else:
-                st.error(f"❌ Price validation failed: N×avg = {price_total_avg:.2f} ∉ [{price_total_min:.2f}, {price_total_max:.2f}]")
+ 
         
         with col_right:
             # Products Configuration
@@ -421,11 +450,6 @@ def render_page1():
             products_total_max = num_vendors * vendor_products_max
             products_total_avg = num_vendors * vendor_products_avg
             products_valid = products_total_min <= products_total_avg <= products_total_max
-            
-            if products_valid:
-                st.success(f"✅ Products validation: N×avg = {products_total_avg:,} ∈ [{products_total_min:,}, {products_total_max:,}]")
-            else:
-                st.error(f"❌ Products validation failed: N×avg = {products_total_avg:,} ∉ [{products_total_min:,}, {products_total_max:,}]")
         
         # Carryover Configuration (full width)
         st.markdown('<h4 class="subsection-header">🔄 Carryover Configuration</h4>', unsafe_allow_html=True)
@@ -651,19 +675,12 @@ V5,12.00,100,1""")
         st.session_state.sim_params.consumption_limits = {}
     
     # Navigation
-    st.markdown('<div class="navigation-buttons">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col3:
-        st.button("Next: Decision Parameters →", type="primary", on_click=go_to_page2, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    render_navigation('page1')
 
 
 # Tab-based helper functions for Page 2
 def render_overview_tab(selected_decisions):
-    """Render the overview tab with parameter applicability analysis"""
-    st.markdown('<h3 class="section-header">📋 Parameter Applicability Analysis</h3>', unsafe_allow_html=True)
-    show_parameter_applicability_analysis(selected_decisions)
-    
+    """Render the overview tab with combined execution option"""
     # Add combined run button
     st.markdown('<h3 class="section-header">🚀 Combined Execution</h3>', unsafe_allow_html=True)
     col1, col2 = st.columns([3, 1])
@@ -676,7 +693,7 @@ def render_overview_tab(selected_decisions):
 
 def render_donation_default_tab():
     """Render donation_default specific configuration"""
-    st.markdown('<h3 class="section-header">🎁 Donation Default Configuration</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
     
@@ -687,7 +704,7 @@ def render_donation_default_tab():
             "Population Mode",
             ["Copula (synthetic)", "Research Specification", "Compare both"],
             index=["Copula (synthetic)", "Research Specification", "Compare both"].index(st.session_state.population_mode),
-            help="Copula: Generate synthetic agents via fitted copula\nResearch: Use original participants with stochastic draws\nCompare both: Show Copula vs Research side-by-side",
+            help="Copula: Generate synthetic agents via fitted copula\nResearch: Use original participants with stochastic draws\nCompare both: Show both Copula and Research modes",
             key="tab_population_mode"
         )
         st.session_state.population_mode = population_mode
@@ -697,9 +714,9 @@ def render_donation_default_tab():
             st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
             income_spec_mode = st.radio(
                 "Income Mode for Donation Model",
-                ["categorical only", "continuous only", "compare side-by-side"],
-                index=["categorical only", "continuous only", "compare side-by-side"].index(st.session_state.income_spec_mode),
-                help="Choose income treatment: categorical (5 categories), continuous (linear), or compare both side-by-side",
+                ["categorical only", "continuous only", "Compare both"],
+                index=["categorical only", "continuous only", "Compare both"].index(st.session_state.income_spec_mode) if st.session_state.income_spec_mode in ["categorical only", "continuous only", "Compare both", "compare both"] else (2 if st.session_state.income_spec_mode == "compare side-by-side" else 0),
+                help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
                 key="tab_income_spec_mode"
             )
             st.session_state.income_spec_mode = income_spec_mode
@@ -773,6 +790,70 @@ def render_donation_default_tab():
     else:
         st.session_state.raw_draw_mode = False
     
+    # Simulation Settings
+    st.markdown("---")
+    st.markdown('<h3 class="section-header">⚙️ Simulation Settings</h3>', unsafe_allow_html=True)
+    
+    # Show current simulation mode
+    st.info(f"📊 Mode: {st.session_state.sim_params.simulation_mode} (configured on Page 1)")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        n_agents = st.number_input(
+            "Number of Agents",
+            min_value=10,
+            max_value=50000,
+            value=st.session_state.n_agents,
+            step=100,
+            key="donation_n_agents"
+        )
+        st.session_state.n_agents = n_agents
+        
+        if st.session_state.sim_params.simulation_mode == "Single Run":
+            seed = st.number_input(
+                "Random Seed",
+                min_value=1,
+                max_value=2147483647,
+                value=st.session_state.seed,
+                key="donation_seed"
+            )
+            st.session_state.seed = seed
+        else:
+            n_runs = st.number_input(
+                "Number of Runs",
+                min_value=2,
+                max_value=1000,
+                value=st.session_state.n_runs,
+                step=10,
+                key="donation_n_runs"
+            )
+            st.session_state.n_runs = n_runs
+            
+            base_seed = st.number_input(
+                "Base Seed",
+                min_value=1,
+                max_value=2147483647,
+                value=st.session_state.base_seed,
+                key="donation_base_seed"
+            )
+            st.session_state.base_seed = base_seed
+    
+    with col2:
+        show_individual_agents = st.checkbox(
+            "Show Individual Agent Details",
+            value=st.session_state.show_individual_agents,
+            key="donation_show_agents"
+        )
+        st.session_state.show_individual_agents = show_individual_agents
+        
+        save_results = st.checkbox(
+            "Save Results to File",
+            value=st.session_state.save_results,
+            key="donation_save_results"
+        )
+        st.session_state.save_results = save_results
+    
     # Individual run button
     st.markdown("---")
     if st.button("🚀 Run Donation Default Only", type="secondary", use_container_width=True):
@@ -798,6 +879,41 @@ def render_decision_tab(decision_name):
                 st.write(f"• {param.replace('_', ' ').title()}")
         else:
             st.markdown("**This is a trait-based decision (no global parameters)**")
+        
+        # Basic Simulation Settings
+        st.markdown("---")
+        st.markdown('<h4 class="subsection-header">⚙️ Simulation Settings</h4>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            n_agents = st.number_input(
+                "Number of Agents",
+                min_value=10,
+                max_value=50000,
+                value=st.session_state.n_agents,
+                step=100,
+                key=f"{decision_name}_n_agents"
+            )
+            st.session_state.n_agents = n_agents
+            
+            if st.session_state.sim_params.simulation_mode == "Single Run":
+                seed = st.number_input(
+                    "Random Seed",
+                    min_value=1,
+                    max_value=2147483647,
+                    value=st.session_state.seed,
+                    key=f"{decision_name}_seed"
+                )
+                st.session_state.seed = seed
+        
+        with col2:
+            save_results = st.checkbox(
+                "Save Results to File",
+                value=st.session_state.save_results,
+                key=f"{decision_name}_save_results"
+            )
+            st.session_state.save_results = save_results
         
         # Individual run button
         st.markdown("---")
@@ -976,77 +1092,6 @@ def render_global_parameters_tab(selected_decisions):
                 st.session_state.sim_params.price_grid = price_grid
 
 
-def render_simulation_settings_tab(selected_decisions):
-    """Render simulation execution settings"""
-    st.markdown('<h3 class="section-header">⚙️ Simulation Settings</h3>', unsafe_allow_html=True)
-    
-    # Show current simulation mode
-    st.info(f"📊 Mode: {st.session_state.sim_params.simulation_mode} (configured on Page 1)")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        n_agents = st.number_input(
-            "Number of Agents",
-            min_value=10,
-            max_value=50000,
-            value=st.session_state.n_agents,
-            step=100,
-            key="tab_n_agents"
-        )
-        st.session_state.n_agents = n_agents
-        
-        if st.session_state.sim_params.simulation_mode == "Single Run":
-            seed = st.number_input(
-                "Random Seed",
-                min_value=1,
-                max_value=2147483647,
-                value=st.session_state.seed,
-                key="tab_seed"
-            )
-            st.session_state.seed = seed
-        else:
-            n_runs = st.number_input(
-                "Number of Runs",
-                min_value=2,
-                max_value=1000,
-                value=st.session_state.n_runs,
-                step=10,
-                key="tab_n_runs"
-            )
-            st.session_state.n_runs = n_runs
-            
-            base_seed = st.number_input(
-                "Base Seed",
-                min_value=1,
-                max_value=2147483647,
-                value=st.session_state.base_seed,
-                key="tab_base_seed"
-            )
-            st.session_state.base_seed = base_seed
-    
-    with col2:
-        show_individual_agents = st.checkbox(
-            "Show Individual Agent Details",
-            value=st.session_state.show_individual_agents,
-            key="tab_show_agents"
-        )
-        st.session_state.show_individual_agents = show_individual_agents
-        
-        save_results = st.checkbox(
-            "Save Results to File",
-            value=st.session_state.save_results,
-            key="tab_save_results"
-        )
-        st.session_state.save_results = save_results
-        
-        # Summary info
-        st.markdown("---")
-        total_params = len(get_all_global_parameters())
-        applicable_count = len(get_decision_global_parameters(selected_decisions))
-        st.metric("Parameter Efficiency", f"{applicable_count}/{total_params} ({applicable_count/total_params:.0%})")
-
-
 def run_individual_decision(decision_name):
     """Run a single decision simulation"""
     with st.spinner(f"Running {decision_name} simulation..."):
@@ -1109,22 +1154,27 @@ def render_page2():
     st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)
     
     # Multi-select with "Select All" functionality
-    select_all = st.checkbox("Select All Decisions", value=True)
+    select_all = st.checkbox("Select All Decisions", value=False)
     
     if select_all:
         selected_decisions = st.multiselect(
             "Selected Decisions",
             ALL_DECISIONS,
             default=ALL_DECISIONS,
-            help="Select one or more decisions to run",
+            help="All decisions are selected",
             disabled=True
         )
     else:
+        # Use session state to preserve selections when navigating between pages
+        # But default to empty list if nothing was previously selected
+        default_selections = st.session_state.decision_params.selected_decisions if hasattr(st.session_state.decision_params, 'selected_decisions') and st.session_state.decision_params.selected_decisions else []
+        
         selected_decisions = st.multiselect(
             "Select Decisions to Run",
             ALL_DECISIONS,
-            default=st.session_state.decision_params.selected_decisions or [],
-            help="Select one or more decisions to run"
+            default=default_selections,
+            help="Select one or more decisions to run",
+            placeholder="Choose decisions..."
         )
     
     # Store selected decisions
@@ -1133,15 +1183,11 @@ def render_page2():
     if not selected_decisions:
         st.warning("Please select at least one decision to configure parameters")
         # Navigation
-        st.markdown('<div class="navigation-buttons">', unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col1:
-            st.button("← Back to Common Parameters", on_click=go_to_page1, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        render_navigation('page2')
         return
     
     # Create tabs
-    tab_names = ["📊 Overview"] + [f"🎯 {d.replace('_', ' ').title()}" for d in selected_decisions] + ["🌐 Global Parameters", "⚙️ Simulation Settings"]
+    tab_names = ["📊 Overview"] + [f"🎯 {d.replace('_', ' ').title()}" for d in selected_decisions] + ["🌐 Global Parameters"]
     tabs = st.tabs(tab_names)
     
     # Overview Tab
@@ -1157,16 +1203,8 @@ def render_page2():
     with tabs[len(selected_decisions) + 1]:
         render_global_parameters_tab(selected_decisions)
     
-    # Simulation Settings Tab
-    with tabs[len(selected_decisions) + 2]:
-        render_simulation_settings_tab(selected_decisions)
-    
     # Navigation
-    st.markdown('<div class="navigation-buttons">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
-        st.button("← Back to Common Parameters", on_click=go_to_page1, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    render_navigation('page2')
 
 
 def configure_sidebar(selected_decisions):
@@ -1193,7 +1231,7 @@ def configure_sidebar(selected_decisions):
                 "Population Mode",
                 ["Copula (synthetic)", "Research Specification", "Compare both"],
                 index=0,
-                help="Copula: Generate synthetic agents via fitted copula\nResearch: Use original participants with stochastic draws\nCompare both: Show Copula vs Research side-by-side"
+                help="Copula: Generate synthetic agents via fitted copula\nResearch: Use original participants with stochastic draws\nCompare both: Show both Copula and Research modes"
             )
             
             # Income specification selector
@@ -1201,9 +1239,9 @@ def configure_sidebar(selected_decisions):
                 st.sidebar.subheader("Income Specification")
                 income_spec_mode = st.sidebar.radio(
                     "Income Mode for Donation Model",
-                    ["categorical only", "continuous only", "compare side-by-side"],
+                    ["categorical only", "continuous only", "Compare both"],
                     index=0,
-                    help="Choose income treatment: categorical (5 categories), continuous (linear), or compare both side-by-side"
+                    help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both"
                 )
             else:
                 income_spec_mode = "categorical only"
@@ -1520,9 +1558,9 @@ def render_results_page():
     else:
         st.info("🔍 No simulation results available yet.")
         st.write("Please configure your simulation parameters and click '🚀 Run Simulation' in the sidebar.")
-        if st.button("← Back to Decision Parameters", type="primary"):
-            st.session_state.page = 'page2'
-            st.rerun()
+    
+    # Always show navigation
+    render_navigation('results')
 
 
 def render_single_run_results():
@@ -1554,9 +1592,6 @@ def render_single_run_results():
             st.write(f"- Agents: {st.session_state.n_agents}")
             st.write(f"- Decisions: {len(st.session_state.decision_params.selected_decisions)}")
     
-    # Show parameter applicability summary
-    with st.expander("📋 Parameter Applicability Summary for This Run", expanded=False):
-        render_parameter_applicability_summary()
     
     results_dict = st.session_state.simulation_results
     
@@ -1565,7 +1600,7 @@ def render_single_run_results():
         render_population_comparison(results_dict)
     elif st.session_state.population_mode == "Dependent variable resampling":
         render_dependent_variable_results(results_dict)
-    elif st.session_state.income_spec_mode == "compare side-by-side":
+    elif st.session_state.income_spec_mode == "Compare both":
         render_income_comparison(results_dict)
     else:
         # Single mode display
@@ -1575,12 +1610,12 @@ def render_single_run_results():
     
     # Get DataFrame for individual agent analysis
     if st.session_state.population_mode == "Compare both":
-        if st.session_state.income_spec_mode == "compare side-by-side":
+        if st.session_state.income_spec_mode == "Compare both":
             df = next((results_dict[k] for k in ["copula_categorical", "doc_mode_categorical", "copula_continuous", "doc_mode_continuous"] if k in results_dict), pd.DataFrame())
         else:
             income_type = "continuous" if st.session_state.income_spec_mode == "continuous only" else "categorical"
             df = next((results_dict[k] for k in [f"copula_{income_type}", f"doc_mode_{income_type}"] if k in results_dict), pd.DataFrame())
-    elif st.session_state.income_spec_mode == "compare side-by-side":
+    elif st.session_state.income_spec_mode == "Compare both":
         df = next((results_dict[k] for k in ["categorical", "continuous"] if k in results_dict), pd.DataFrame())
     else:
         df = next(iter(results_dict.values()))
@@ -1598,7 +1633,7 @@ def render_population_comparison(results_dict):
     """Render population mode comparison results"""
     st.markdown("### 🔬 Population Mode Comparison")
     
-    if st.session_state.income_spec_mode == "compare side-by-side":
+    if st.session_state.income_spec_mode == "Compare both":
         # 2x2 grid: copula vs doc_mode x categorical vs continuous
         st.markdown("#### Copula (Synthetic Agents)")
         col1, col2 = st.columns(2)
@@ -1708,7 +1743,7 @@ def render_parameter_applicability_summary():
             applicability_pct = len(total_applicable) / len(all_global_params) * 100 if all_global_params else 0
             st.metric("📈 Efficiency", f"{applicability_pct:.0f}%")
         
-        # Show which parameters were actually used vs unused
+            # Show which parameters were actually used vs unused
         col_used, col_unused = st.columns(2)
         
         with col_used:

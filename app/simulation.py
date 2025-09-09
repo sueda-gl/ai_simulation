@@ -233,7 +233,7 @@ def run_simulation_from_sidebar():
             if st.session_state.population_mode == "Compare both":
                 # Compare population modes
                 for pop_name, pop_type in [("copula", "copula"), ("doc_mode", "documentation")]:
-                    if st.session_state.income_spec_mode == "compare side-by-side":
+                    if st.session_state.income_spec_mode == "Compare both":
                         results[f"{pop_name}_categorical"] = _run(pop_type, "categorical")
                         results[f"{pop_name}_continuous"] = _run(pop_type, "continuous")
                     elif st.session_state.income_spec_mode == "continuous only":
@@ -246,7 +246,7 @@ def run_simulation_from_sidebar():
             else:
                 # Single population mode
                 pop_type = "documentation" if "Research" in st.session_state.population_mode else "copula"
-                if st.session_state.income_spec_mode == "compare side-by-side":
+                if st.session_state.income_spec_mode == "Compare both":
                     results["categorical"] = _run(pop_type, "categorical")
                     results["continuous"] = _run(pop_type, "continuous")
                 elif st.session_state.income_spec_mode == "continuous only":
