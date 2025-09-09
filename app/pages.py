@@ -726,39 +726,92 @@ def render_donation_default_tab():
     with col2:
         # Stochastic component option
         st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
-        # Copula toggle
-        if population_mode in ["Copula (synthetic)", "Compare both"]:
+        
+        if population_mode == "Copula (synthetic)":
+            # Show only Copula controls
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
-                value=getattr(st.session_state, "sigma_in_copula", True),
-                key="tab_sigma_in_copula",
-                help="When enabled, Copula mode will use the Normal(anchor, σ) stochastic draw"
+                value=st.session_state.sigma_in_copula,
+                help="When enabled, Copula mode will also use the stochastic component",
+                key="tab_sigma_in_copula"
             )
             st.session_state.sigma_in_copula = sigma_in_copula
-        else:
-            st.session_state.sigma_in_copula = False
-        # Research toggle
-        if population_mode in ["Research Specification", "Compare both"]:
+            st.session_state.sigma_in_research = True  # Default for research mode
+            
+            sigma_value_ui = st.slider(
+                "σ (standard deviation) on 0–112 scale",
+                min_value=0.0,
+                max_value=15.0,
+                value=st.session_state.sigma_value_ui,
+                step=0.1,
+                help="Controls the spread of the Normal(anchor, σ) draw",
+                key="tab_sigma_value"
+            )
+            st.session_state.sigma_value_ui = sigma_value_ui
+            
+        elif population_mode == "Research Specification":
+            # Show only Research controls
             sigma_in_research = st.checkbox(
-                "Add Normal(anchor, σ) draw to Research runs",
-                value=getattr(st.session_state, "sigma_in_research", True),
-                key="tab_sigma_in_research",
-                help="Enable or disable stochastic component for Research mode runs"
+                "Use Normal(anchor, σ) draw in Research mode",
+                value=st.session_state.sigma_in_research,
+                help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
+                key="tab_sigma_in_research"
             )
             st.session_state.sigma_in_research = sigma_in_research
-        else:
-            st.session_state.sigma_in_research = True
-        # σ multiplier slider (0–2× base SD)
-        sigma_multiplier_ui = st.slider(
-            "σ multiplier (0 = no noise, 1 = baseline SD, 2 = double SD)",
-            min_value=0.0,
-            max_value=2.0,
-            value=st.session_state.get("sigma_multiplier_ui", 1.0),
-            step=0.1,
-            key="tab_sigma_multiplier",
-            help="Multiplier applied to the baseline σ (9.90)."
-        )
-        st.session_state.sigma_multiplier_ui = sigma_multiplier_ui
+            st.session_state.sigma_in_copula = False  # Not applicable
+            
+            # Show sigma slider only if stochastic component is enabled
+            if sigma_in_research:
+                sigma_value_ui = st.slider(
+                    "σ (standard deviation) on 0–112 scale",
+                    min_value=0.0,
+                    max_value=15.0,
+                    value=st.session_state.sigma_value_ui,
+                    step=0.1,
+                    help="Controls the spread of the Normal(anchor, σ) draw",
+                    key="tab_sigma_value_research"
+                )
+                st.session_state.sigma_value_ui = sigma_value_ui
+            else:
+                st.info("ℹ️ Stochastic component disabled - using anchor values directly")
+                # Set sigma to 0 when disabled to ensure no variability
+                st.session_state.sigma_value_ui = 0.0
+                
+        else:  # Compare both
+            # Show both Copula and Research controls
+            st.markdown("**Copula Mode Controls:**")
+            sigma_in_copula = st.checkbox(
+                "Add Normal(anchor, σ) draw to Copula runs",
+                value=st.session_state.sigma_in_copula,
+                help="When enabled, Copula mode will also use the stochastic component",
+                key="tab_sigma_in_copula_compare"
+            )
+            st.session_state.sigma_in_copula = sigma_in_copula
+            
+            st.markdown("**Research Mode Controls:**")
+            sigma_in_research = st.checkbox(
+                "Use Normal(anchor, σ) draw in Research mode",
+                value=st.session_state.sigma_in_research,
+                help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
+                key="tab_sigma_in_research_compare"
+            )
+            st.session_state.sigma_in_research = sigma_in_research
+            
+            # Show sigma slider if either mode has stochastic enabled
+            if sigma_in_copula or sigma_in_research:
+                sigma_value_ui = st.slider(
+                    "σ (standard deviation) on 0–112 scale",
+                    min_value=0.0,
+                    max_value=15.0,
+                    value=st.session_state.sigma_value_ui,
+                    step=0.1,
+                    help="Controls the spread of the Normal(anchor, σ) draw",
+                    key="tab_sigma_value_compare"
+                )
+                st.session_state.sigma_value_ui = sigma_value_ui
+            else:
+                st.info("ℹ️ Stochastic component disabled for both modes - using anchor values directly")
+                st.session_state.sigma_value_ui = 0.0
         
         # Anchor weights
         if population_mode != "Dependent variable resampling":
@@ -777,8 +830,14 @@ def render_donation_default_tab():
         else:
             st.session_state.anchor_observed_weight = 0.75
     
-    # Raw output option
-    if population_mode != "Copula (synthetic)" or st.session_state.sigma_in_copula:
+    # Raw output option - only show if stochastic component is enabled
+    stochastic_enabled = (
+        (population_mode == "Copula (synthetic)" and st.session_state.sigma_in_copula) or
+        (population_mode == "Research Specification" and st.session_state.sigma_in_research) or
+        (population_mode == "Compare both" and (st.session_state.sigma_in_copula or st.session_state.sigma_in_research))
+    )
+    
+    if stochastic_enabled:
         st.markdown('<h4 class="subsection-header">Output Options</h4>', unsafe_allow_html=True)
         raw_draw_mode = st.checkbox(
             "Show pre-truncation (raw) donation rate",
@@ -1295,33 +1354,78 @@ def configure_sidebar(selected_decisions):
                 income_spec_mode = "categorical only"
             
             # Stochastic component option
-            if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
-                st.sidebar.subheader("Stochastic Component")
+            st.sidebar.subheader("Stochastic Component")
+            
+            if population_mode == "Copula (synthetic)":
+                # Show only Copula controls
                 sigma_in_copula = st.sidebar.checkbox(
                     "Add Normal(anchor, σ) draw to Copula runs",
-                    value=False,
-                    help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Research mode"
+                    value=st.session_state.sigma_in_copula,
+                    help="When enabled, Copula mode will also use the stochastic component"
                 )
-                sigma_multiplier_ui = st.sidebar.slider(
-                    "σ multiplier (0 = no noise, 1 = baseline SD, 2 = double SD)",
+                sigma_in_research = True  # Default for research mode
+                
+                sigma_value_ui = st.sidebar.slider(
+                    "σ (standard deviation) on 0–112 scale",
                     min_value=0.0,
-                    max_value=2.0,
-                    value=st.session_state.get("sigma_multiplier_ui", 1.0),
+                    max_value=15.0,
+                    value=st.session_state.sigma_value_ui,
                     step=0.1,
-                    key="tab_sigma_multiplier",
-                    help="Multiplier applied to the baseline σ (9.90)."
+                    help="Controls the spread of the Normal(anchor, σ) draw"
                 )
-            else:
-                sigma_in_copula = False
-                sigma_multiplier_ui = st.sidebar.slider(
-                    "σ multiplier (0 = no noise, 1 = baseline SD, 2 = double SD)",
-                    min_value=0.0,
-                    max_value=2.0,
-                    value=st.session_state.get("sigma_multiplier_ui", 1.0),
-                    step=0.1,
-                    key="tab_sigma_multiplier",
-                    help="Multiplier applied to the baseline σ (9.90)."
+                
+            elif population_mode == "Research Specification":
+                # Show only Research controls
+                sigma_in_research = st.sidebar.checkbox(
+                    "Use Normal(anchor, σ) draw in Research mode",
+                    value=st.session_state.sigma_in_research,
+                    help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used."
                 )
+                sigma_in_copula = False  # Not applicable
+                
+                # Show sigma slider only if stochastic component is enabled
+                if sigma_in_research:
+                    sigma_value_ui = st.sidebar.slider(
+                        "σ (standard deviation) on 0–112 scale",
+                        min_value=0.0,
+                        max_value=15.0,
+                        value=st.session_state.sigma_value_ui,
+                        step=0.1,
+                        help="Controls the spread of the Normal(anchor, σ) draw"
+                    )
+                else:
+                    st.sidebar.info("ℹ️ Stochastic component disabled")
+                    sigma_value_ui = 0.0
+                    
+            else:  # Compare both
+                # Show both controls
+                st.sidebar.markdown("**Copula Mode:**")
+                sigma_in_copula = st.sidebar.checkbox(
+                    "Add Normal(anchor, σ) draw to Copula runs",
+                    value=st.session_state.sigma_in_copula,
+                    help="When enabled, Copula mode will also use the stochastic component"
+                )
+                
+                st.sidebar.markdown("**Research Mode:**")
+                sigma_in_research = st.sidebar.checkbox(
+                    "Use Normal(anchor, σ) draw in Research mode",
+                    value=st.session_state.sigma_in_research,
+                    help="When enabled, Research mode will add stochastic variation"
+                )
+                
+                # Show sigma slider if either mode has stochastic enabled
+                if sigma_in_copula or sigma_in_research:
+                    sigma_value_ui = st.sidebar.slider(
+                        "σ (standard deviation) on 0–112 scale",
+                        min_value=0.0,
+                        max_value=15.0,
+                        value=st.session_state.sigma_value_ui,
+                        step=0.1,
+                        help="Controls the spread of the Normal(anchor, σ) draw"
+                    )
+                else:
+                    st.sidebar.info("ℹ️ Stochastic disabled for both modes")
+                    sigma_value_ui = 0.0
             
             # Anchor weights slider
             if population_mode != "Dependent variable resampling":
@@ -1338,12 +1442,18 @@ def configure_sidebar(selected_decisions):
             else:
                 anchor_observed_weight = 0.75
             
-            # Raw output option
-            if population_mode != "Copula (synthetic)" or sigma_in_copula:
+            # Raw output option - only show if stochastic component is enabled
+            stochastic_enabled = (
+                (population_mode == "Copula (synthetic)" and sigma_in_copula) or
+                (population_mode == "Research Specification" and sigma_in_research) or
+                (population_mode == "Compare both" and (sigma_in_copula or sigma_in_research))
+            )
+            
+            if stochastic_enabled:
                 st.sidebar.subheader("Output Options")
                 raw_draw_mode = st.sidebar.checkbox(
                     "Show pre-truncation (raw) donation rate",
-                    value=False,
+                    value=st.session_state.raw_draw_mode,
                     help="Display the raw Normal(anchor, σ) draw before any processing. This shows negative values and the full range of the stochastic draw before flooring at 0 and rescaling by personal maximum."
                 )
             else:
@@ -1353,8 +1463,7 @@ def configure_sidebar(selected_decisions):
             population_mode = "Copula (synthetic)"
             income_spec_mode = "categorical only"
             sigma_in_copula = False
-            sigma_in_research = True
-            sigma_multiplier_ui = 1.0
+            sigma_value_ui = 9.0
             anchor_observed_weight = 0.75
             raw_draw_mode = False
 
@@ -1532,7 +1641,7 @@ def configure_sidebar(selected_decisions):
         st.session_state.income_spec_mode = income_spec_mode
         st.session_state.sigma_in_copula = sigma_in_copula
         st.session_state.sigma_in_research = sigma_in_research
-        st.session_state.sigma_multiplier_ui = sigma_multiplier_ui
+        st.session_state.sigma_value_ui = sigma_value_ui
         st.session_state.anchor_observed_weight = anchor_observed_weight
         st.session_state.raw_draw_mode = raw_draw_mode
         st.session_state.n_agents = n_agents

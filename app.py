@@ -207,15 +207,28 @@ if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
     )
 else:
     sigma_in_copula = False  # Default for other modes
-    # Provide sigma slider for documentation & compare-both modes as well
-    sigma_value_ui = st.sidebar.slider(
-        "σ (standard deviation) on 0–112 scale",
-        min_value=0.0,
-        max_value=15.0,
-        value=9.0,
-        step=0.1,
-        help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+    
+    # Add option to disable sigma in Research mode
+    st.sidebar.subheader("Stochastic Component")
+    sigma_in_research = st.sidebar.checkbox(
+        "Use Normal(anchor, σ) draw in Research mode",
+        value=True,  # Default to enabled
+        help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used."
     )
+    
+    # Show sigma slider only if stochastic component is enabled
+    if sigma_in_research:
+        sigma_value_ui = st.sidebar.slider(
+            "σ (standard deviation) on 0–112 scale",
+            min_value=0.0,
+            max_value=15.0,
+            value=9.0,
+            step=0.1,
+            help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+        )
+    else:
+        st.sidebar.info("ℹ️ Stochastic component disabled - using anchor values directly")
+        sigma_value_ui = 0.0  # Set to 0 when disabled
 
 # Anchor weights slider (not for dependent variable mode which uses pre-computed values)
 if population_mode != "Dependent variable resampling":
@@ -232,8 +245,14 @@ if population_mode != "Dependent variable resampling":
 else:
     anchor_observed_weight = 0.75  # Default value used in pre-computation
 
-# Raw output option
-if population_mode != "Copula (synthetic)" or sigma_in_copula:
+# Raw output option - only show if stochastic component is enabled
+stochastic_enabled = (
+    (population_mode == "Copula (synthetic)" and sigma_in_copula) or
+    (population_mode == "Research Specification" and sigma_in_research) or
+    (population_mode == "Compare both" and (sigma_in_copula or sigma_in_research))
+)
+
+if stochastic_enabled:
     st.sidebar.subheader("Output Options")
     raw_draw_mode = st.sidebar.checkbox(
         "Show pre-truncation (raw) donation rate",
@@ -241,7 +260,7 @@ if population_mode != "Copula (synthetic)" or sigma_in_copula:
         help="Display the raw Normal(anchor, σ) draw before any processing. This shows negative values and the full range of the stochastic draw before flooring at 0 and rescaling by personal maximum."
     )
 else:
-    raw_draw_mode = False  # Not applicable for deterministic copula mode
+    raw_draw_mode = False  # Not applicable when stochastic component is disabled
 
 # Run simulation button
 st.sidebar.markdown("---")
@@ -271,14 +290,26 @@ def run_single_simulation():
                         # Set stochastic flag for copula mode if checkbox is enabled
                         if pop_mode == "copula":
                             orchestrator.config['donation_default']['stochastic']['in_copula'] = sigma_in_copula
-                        # Apply selected sigma value
-                        orchestrator.config['donation_default']['stochastic']['sigma_value'] = sigma_value_ui
+                        
+                        # Apply sigma value based on mode and user preferences
+                        if pop_mode == "documentation" and not sigma_in_research:
+                            # Research mode with sigma disabled - set to 0
+                            orchestrator.config['donation_default']['stochastic']['sigma_value'] = 0.0
+                        else:
+                            # Apply selected sigma value
+                            orchestrator.config['donation_default']['stochastic']['sigma_value'] = sigma_value_ui
                         # Apply chosen anchor weights
                         orchestrator.config['donation_default']['anchor_weights']['observed'] = anchor_observed_weight
                         orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - anchor_observed_weight
-                        # Set raw output flag if applicable
-                        if pop_mode == "documentation" or (pop_mode == "copula" and sigma_in_copula):
+                        # Set raw output flag if applicable (only when stochastic component is enabled)
+                        stochastic_enabled = (
+                            (pop_mode == "documentation" and sigma_in_research) or
+                            (pop_mode == "copula" and sigma_in_copula)
+                        )
+                        if stochastic_enabled:
                             orchestrator.config['donation_default']['stochastic']['raw_output'] = raw_draw_mode
+                        else:
+                            orchestrator.config['donation_default']['stochastic']['raw_output'] = False
                 
                 # Handle multiple decisions
                 decision_param = None if len(selected_decisions) == len(all_decisions) else selected_decisions

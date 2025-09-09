@@ -89,25 +89,26 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     weights = params['anchor_weights']
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
     
-    # Step 4: Add stochastic component
-    # Allow disabling stochastic component via config flag (stochastic.enabled = False)
-    if not params.get('stochastic', {}).get('enabled', True):
-        # Skip Normal draw; behave like anchor-only scaling (similar to copula deterministic)
-        donation_rate = np.clip(s100_anchor / 100.0, 0.0, 1.0)
-        return {"donation_default": donation_rate}
-
-    # Use the overall SD from observed behavior, scaled to 0-100 range
+    # Step 4: Add stochastic component (if enabled)
+    # Check if stochastic component should be applied
     sd_params = params['stochastic']
-    if sd_params['sigma_strategy'] == 'overall_sd_twt_sospeso':
-        # The sigma value should be the SD of the 0-100 scaled observed behavior
-        # Original SD = 9.8995 on 0-112 scale
-        # Scaled SD = 9.8995 * 100 / 112 ≈ 8.84
-        sigma_0_100 = sd_params['sigma_value'] * 100 / (obs_max - obs_min)
-    else:
-        sigma_0_100 = 8.84  # fallback based on calculation above
+    use_stochastic = sd_params.get('sigma_value', 0) > 0
     
-    # Draw from Normal(anchor, sigma) (0-100 scale)
-    draw_raw = rng.normal(s100_anchor, sigma_0_100)
+    if use_stochastic:
+        # Use the overall SD from observed behavior, scaled to 0-100 range
+        if sd_params['sigma_strategy'] == 'overall_sd_twt_sospeso':
+            # The sigma value should be the SD of the 0-100 scaled observed behavior
+            # Original SD = 9.8995 on 0-112 scale
+            # Scaled SD = 9.8995 * 100 / 112 ≈ 8.84
+            sigma_0_100 = sd_params['sigma_value'] * 100 / (obs_max - obs_min)
+        else:
+            sigma_0_100 = 8.84  # fallback based on calculation above
+        
+        # Draw from Normal(anchor, sigma) (0-100 scale)
+        draw_raw = rng.normal(s100_anchor, sigma_0_100)
+    else:
+        # No stochastic component - use anchor directly
+        draw_raw = s100_anchor
 
     # Store raw draw (can be negative)
     raw_flag = params.get('stochastic', {}).get('raw_output', False)

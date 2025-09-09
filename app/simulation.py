@@ -208,17 +208,26 @@ def run_simulation_from_sidebar():
                         # Set stochastic flag for copula mode if checkbox is enabled
                         if pop_mode == "copula":
                             orchestrator.config['donation_default']['stochastic']['in_copula'] = st.session_state.sigma_in_copula
-                        if pop_mode == "documentation":
-                            orchestrator.config['donation_default']['stochastic']['enabled'] = st.session_state.sigma_in_research
-                        # Apply selected sigma value
-                        base_sigma = orchestrator.config['donation_default']['stochastic'].get('sigma_value', 9.8995)
-                        orchestrator.config['donation_default']['stochastic']['sigma_value'] = base_sigma * st.session_state.sigma_multiplier_ui
+                        
+                        # Apply sigma value based on mode and user preferences
+                        if pop_mode == "documentation" and not st.session_state.sigma_in_research:
+                            # Research mode with sigma disabled - set to 0
+                            orchestrator.config['donation_default']['stochastic']['sigma_value'] = 0.0
+                        else:
+                            # Apply selected sigma value
+                            orchestrator.config['donation_default']['stochastic']['sigma_value'] = st.session_state.sigma_value_ui
                         # Apply chosen anchor weights
                         orchestrator.config['donation_default']['anchor_weights']['observed'] = st.session_state.anchor_observed_weight
                         orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - st.session_state.anchor_observed_weight
-                        # Set raw output flag if applicable
-                        if pop_mode == "documentation" or (pop_mode == "copula" and st.session_state.sigma_in_copula):
+                        # Set raw output flag if applicable (only when stochastic component is enabled)
+                        stochastic_enabled = (
+                            (pop_mode == "documentation" and st.session_state.sigma_in_research) or
+                            (pop_mode == "copula" and st.session_state.sigma_in_copula)
+                        )
+                        if stochastic_enabled:
                             orchestrator.config['donation_default']['stochastic']['raw_output'] = st.session_state.raw_draw_mode
+                        else:
+                            orchestrator.config['donation_default']['stochastic']['raw_output'] = False
 
 
                 
