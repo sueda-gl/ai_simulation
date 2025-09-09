@@ -30,7 +30,7 @@ st.markdown(get_css_styles(), unsafe_allow_html=True)
 initialize_session_state()
 
 # Main title
-st.markdown('<h1 class="main-header">Enhanced AI Agent Simulation</h1>', unsafe_allow_html=True)
+st.markdown('<h1 class="main-header">COOPECON AI Agent Simulation</h1>', unsafe_allow_html=True)
 
 # Page routing
 if st.session_state.page == 'page1':

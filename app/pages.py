@@ -674,6 +674,29 @@ V5,12.00,100,1""")
         # Clear consumption limits when disabled
         st.session_state.sim_params.consumption_limits = {}
     
+    # Population Mode Selection (Global Parameter)
+    st.markdown('<h3 class="section-header">🧬 Population Generation Mode</h3>', unsafe_allow_html=True)
+    st.caption("This setting applies to all decisions and determines how agents are generated")
+    
+    population_mode = st.radio(
+        "Population Mode",
+        ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
+        index=["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"].index(st.session_state.population_mode) if st.session_state.population_mode in ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"] else 0,
+        horizontal=True,
+        help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\nCompare all: Show all three modes side-by-side"
+    )
+    st.session_state.population_mode = population_mode
+    
+    # Show description of selected mode
+    if population_mode == "Copula (synthetic)":
+        st.info("🧬 **Copula Mode**: Generates unlimited synthetic agents using fitted copula from 280 original participants. Preserves correlation structure.")
+    elif population_mode == "Research Specification":
+        st.info("📄 **Research Specification**: Uses original 280 participants with stochastic component (Normal draws). Follows research documentation methodology.")
+    elif population_mode == "Research Baseline":
+        st.info("⚖️ **Research Baseline**: Uses original 280 participants with NO stochastic component. Returns pure anchor values (deterministic).")
+    else:  # Compare all
+        st.info("🔬 **Compare All**: Runs all three population modes side-by-side for comprehensive comparison.")
+    
     # Navigation
     render_navigation('page1')
 
@@ -698,16 +721,13 @@ def render_donation_default_tab():
     col1, col2 = st.columns(2)
     
     with col1:
-        # Population mode selector
+        # Show current population mode (configured on Page 1)
         st.markdown('<h4 class="subsection-header">Population Generation</h4>', unsafe_allow_html=True)
-        population_mode = st.radio(
-            "Population Mode",
-            ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
-            index=["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"].index(st.session_state.population_mode) if st.session_state.population_mode in ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"] else 0,
-            help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\nCompare all: Show all three modes side-by-side",
-            key="tab_population_mode"
-        )
-        st.session_state.population_mode = population_mode
+        population_mode = st.session_state.population_mode  # Use value from Page 1
+        
+        # Display current mode as read-only info
+        st.info(f"🔧 **Current Mode**: {population_mode}")
+        st.caption("💡 Population mode is configured on Page 1: Common Simulation Parameters")
         
         # Income specification selector
         if population_mode != "Dependent variable resampling":
@@ -1363,14 +1383,11 @@ def configure_sidebar(selected_decisions):
         
         # Only show donation-specific parameters if donation_default is selected
         if "donation_default" in selected_decisions:
-            # Population mode selector
+            # Show current population mode (configured on Page 1)
             st.sidebar.subheader("Population Generation")
-            population_mode = st.sidebar.radio(
-                "Population Mode",
-                ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
-                index=0,
-                help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component\nCompare all: Show all three modes side-by-side"
-            )
+            population_mode = st.session_state.population_mode  # Use value from Page 1
+            st.sidebar.info(f"🔧 **Mode**: {population_mode}")
+            st.sidebar.caption("💡 Configured on Page 1")
             
             # Income specification selector
             if population_mode != "Dependent variable resampling":
