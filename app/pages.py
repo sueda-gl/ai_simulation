@@ -790,6 +790,10 @@ def render_donation_default_tab():
     else:
         st.session_state.raw_draw_mode = False
     
+    # Display Global Parameters
+    st.markdown("---")
+    render_global_parameters_readonly("donation_default")
+    
     # Simulation Settings
     st.markdown("---")
     st.markdown('<h3 class="section-header">⚙️ Simulation Settings</h3>', unsafe_allow_html=True)
@@ -860,6 +864,58 @@ def render_donation_default_tab():
         run_individual_decision("donation_default")
 
 
+def render_global_parameters_readonly(decision_name=None):
+    """Render global parameters in read-only mode for display in decision tabs"""
+    st.markdown('<h3 class="section-header">🌐 Global Parameters (Read-Only)</h3>', unsafe_allow_html=True)
+    
+    # Show which parameters this specific decision uses if provided
+    if decision_name:
+        decision_params = get_decision_global_parameters([decision_name])
+        if decision_params:
+            st.info(f"✅ This decision uses: {', '.join([p.replace('_', ' ').title() for p in sorted(decision_params)])}")
+        else:
+            st.info("ℹ️ This is a trait-based decision (doesn't use global parameters)")
+    
+    # Income Distribution Parameters
+    st.markdown('<h4 class="subsection-header">💵 Income Distribution</h4>', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.text(f"Distribution Type: {st.session_state.sim_params.income_distribution}")
+        st.text(f"Minimum Income: ${st.session_state.sim_params.income_min:,.0f}")
+        st.text(f"{st.session_state.sim_params.income_avg_type.title()} Income: ${st.session_state.sim_params.income_avg:,.0f}")
+    
+    with col2:
+        st.text(f"Maximum Income: ${st.session_state.sim_params.income_max:,.0f}")
+        st.text(f"Discount Threshold: ${st.session_state.sim_params.discount_income_threshold:,.0f}")
+    
+    # Market Parameters
+    st.markdown('<h4 class="subsection-header">🏪 Market Parameters</h4>', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.text(f"Number of Vendors: {st.session_state.sim_params.num_vendors}")
+        st.text(f"Min Vendor Price: ${st.session_state.sim_params.vendor_price_min:.2f}")
+    
+    with col2:
+        st.text(f"Average Market Price: ${st.session_state.sim_params.market_price:.2f}")
+        st.text(f"Max Vendor Price: ${st.session_state.sim_params.vendor_price_max:.2f}")
+    
+    # Pricing Parameters
+    st.markdown('<h4 class="subsection-header">💰 Pricing Parameters</h4>', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.text(f"Platform Markup: {st.session_state.sim_params.platform_markup:.0%}")
+        st.text(f"Price Range: ±{st.session_state.sim_params.price_range:.0%}")
+    
+    with col2:
+        st.text(f"Bidding Percentage: {st.session_state.sim_params.bidding_percentage:.0%}")
+        st.text(f"Price Grid Categories: {st.session_state.sim_params.price_grid}")
+    
+    st.caption("💡 To modify these parameters, go to Page 1: Common Simulation Parameters")
+
+
 def render_decision_tab(decision_name):
     """Render configuration for a specific decision"""
     if decision_name == "donation_default":
@@ -871,14 +927,9 @@ def render_decision_tab(decision_name):
         st.info(f"Configuration for {decision_name} will be implemented here.")
         st.caption("This decision currently uses default values.")
         
-        # Show what global parameters this decision uses
-        decision_params = get_decision_global_parameters([decision_name])
-        if decision_params:
-            st.markdown("**Uses Global Parameters:**")
-            for param in sorted(decision_params):
-                st.write(f"• {param.replace('_', ' ').title()}")
-        else:
-            st.markdown("**This is a trait-based decision (no global parameters)**")
+        # Display Global Parameters
+        st.markdown("---")
+        render_global_parameters_readonly(decision_name)
         
         # Basic Simulation Settings
         st.markdown("---")
@@ -923,7 +974,8 @@ def render_decision_tab(decision_name):
 
 def render_global_parameters_tab(selected_decisions):
     """Render global parameters that are applicable to selected decisions"""
-    st.markdown('<h3 class="section-header">🌐 Global Parameters</h3>', unsafe_allow_html=True)
+    st.markdown('<h3 class="section-header">🌐 Global Parameters (Editable)</h3>', unsafe_allow_html=True)
+    st.info("⚠️ These parameters were configured on Page 1. Changes here will override those settings.")
     
     all_applicable = get_decision_global_parameters(selected_decisions)
     
@@ -1187,7 +1239,7 @@ def render_page2():
         return
     
     # Create tabs
-    tab_names = ["📊 Overview"] + [f"🎯 {d.replace('_', ' ').title()}" for d in selected_decisions] + ["🌐 Global Parameters"]
+    tab_names = ["📊 Overview"] + [f"🎯 {d.replace('_', ' ').title()}" for d in selected_decisions]
     tabs = st.tabs(tab_names)
     
     # Overview Tab
@@ -1198,10 +1250,6 @@ def render_page2():
     for i, decision in enumerate(selected_decisions):
         with tabs[i + 1]:
             render_decision_tab(decision)
-    
-    # Global Parameters Tab
-    with tabs[len(selected_decisions) + 1]:
-        render_global_parameters_tab(selected_decisions)
     
     # Navigation
     render_navigation('page2')
