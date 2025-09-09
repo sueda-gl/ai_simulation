@@ -7,7 +7,7 @@ import streamlit as st
 import sys
 from pathlib import Path
 
-# Add project root to path
+# Add  thoject root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 # Import from our modularized app
@@ -17,7 +17,7 @@ from app.pages import render_page1, render_page2, render_results_page
 
 # Page configuration
 st.set_page_config(
-    page_title="Enhanced AI Agent Simulation",
+    page_title="COOPECON AI Agent Simulation",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"

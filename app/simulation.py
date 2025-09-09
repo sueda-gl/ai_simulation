@@ -198,6 +198,9 @@ def run_simulation_from_sidebar():
                     orchestrator = OrchestratorDepVar()
                     # Set raw output mode for dependent variable resampling
                     orchestrator.set_raw_output(st.session_state.raw_draw_mode)
+                elif pop_mode == "baseline":
+                    from src.orchestrator_baseline import OrchestratorBaseline
+                    orchestrator = OrchestratorBaseline()
                 else:  # copula
                     orchestrator = Orchestrator()
                 
@@ -242,9 +245,9 @@ def run_simulation_from_sidebar():
             # Run based on population and income specification modes
             results = {}
             
-            if st.session_state.population_mode == "Compare both":
-                # Compare population modes
-                for pop_name, pop_type in [("copula", "copula"), ("doc_mode", "documentation")]:
+            if st.session_state.population_mode == "Compare all":
+                # Compare all three population modes
+                for pop_name, pop_type in [("copula", "copula"), ("research_spec", "documentation"), ("research_baseline", "baseline")]:
                     if st.session_state.income_spec_mode == "Compare both":
                         results[f"{pop_name}_categorical"] = _run(pop_type, "categorical")
                         results[f"{pop_name}_continuous"] = _run(pop_type, "continuous")
@@ -257,7 +260,13 @@ def run_simulation_from_sidebar():
                 results["depvar"] = _run("depvar", "categorical")  # income mode is ignored
             else:
                 # Single population mode
-                pop_type = "documentation" if "Research" in st.session_state.population_mode else "copula"
+                if st.session_state.population_mode == "Research Specification":
+                    pop_type = "documentation"
+                elif st.session_state.population_mode == "Research Baseline":
+                    pop_type = "baseline"
+                else:  # Copula (synthetic)
+                    pop_type = "copula"
+                    
                 if st.session_state.income_spec_mode == "Compare both":
                     results["categorical"] = _run(pop_type, "categorical")
                     results["continuous"] = _run(pop_type, "continuous")

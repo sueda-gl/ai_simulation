@@ -702,9 +702,9 @@ def render_donation_default_tab():
         st.markdown('<h4 class="subsection-header">Population Generation</h4>', unsafe_allow_html=True)
         population_mode = st.radio(
             "Population Mode",
-            ["Copula (synthetic)", "Research Specification", "Compare both"],
-            index=["Copula (synthetic)", "Research Specification", "Compare both"].index(st.session_state.population_mode),
-            help="Copula: Generate synthetic agents via fitted copula\nResearch: Use original participants with stochastic draws\nCompare both: Show both Copula and Research modes",
+            ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
+            index=["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"].index(st.session_state.population_mode) if st.session_state.population_mode in ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"] else 0,
+            help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\nCompare all: Show all three modes side-by-side",
             key="tab_population_mode"
         )
         st.session_state.population_mode = population_mode
@@ -789,8 +789,18 @@ def render_donation_default_tab():
                 st.session_state.sigma_coefficient = 0.0
                 st.session_state.sigma_value_ui = 0.0
                 
-        else:  # Compare both
-            # Show both Copula and Research controls
+        elif population_mode == "Research Baseline":
+            # Research Baseline mode - no stochastic component, anchor values only
+            st.session_state.sigma_in_copula = False  # Not applicable
+            st.session_state.sigma_in_research = False  # No stochastic component
+            st.session_state.sigma_coefficient = 0.0
+            st.session_state.sigma_value_ui = 0.0
+            
+            st.info("📊 Research Baseline Mode: Uses original 280 participants with anchor values only (no stochastic component)")
+            st.caption("🎯 This mode returns the deterministic anchor = 0.75 × observed + 0.25 × predicted")
+                
+        else:  # Compare all
+            # Show controls for all three modes
             st.markdown("**Copula Mode Controls:**")
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
@@ -800,14 +810,17 @@ def render_donation_default_tab():
             )
             st.session_state.sigma_in_copula = sigma_in_copula
             
-            st.markdown("**Research Mode Controls:**")
+            st.markdown("**Research Specification Controls:**")
             sigma_in_research = st.checkbox(
-                "Use Normal(anchor, σ) draw in Research mode",
+                "Use Normal(anchor, σ) draw in Research Specification mode",
                 value=st.session_state.sigma_in_research,
-                help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
+                help="When enabled, Research Specification mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
                 key="tab_sigma_in_research_compare"
             )
             st.session_state.sigma_in_research = sigma_in_research
+            
+            st.markdown("**Research Baseline:** Always uses anchor values only (no stochastic component)")
+            st.caption("🎯 Research Baseline = deterministic anchor = 0.75 × observed + 0.25 × predicted")
             
             # Show sigma coefficient slider if either mode has stochastic enabled
             if sigma_in_copula or sigma_in_research:
@@ -1354,9 +1367,9 @@ def configure_sidebar(selected_decisions):
             st.sidebar.subheader("Population Generation")
             population_mode = st.sidebar.radio(
                 "Population Mode",
-                ["Copula (synthetic)", "Research Specification", "Compare both"],
+                ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
                 index=0,
-                help="Copula: Generate synthetic agents via fitted copula\nResearch: Use original participants with stochastic draws\nCompare both: Show both Copula and Research modes"
+                help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component\nCompare all: Show all three modes side-by-side"
             )
             
             # Income specification selector
@@ -1426,8 +1439,18 @@ def configure_sidebar(selected_decisions):
                     sigma_coefficient = 0.0
                     sigma_value_ui = 0.0
                     
-            else:  # Compare both
-                # Show both controls
+            elif population_mode == "Research Baseline":
+                # Research Baseline mode - no stochastic component
+                sigma_in_copula = False  # Not applicable
+                sigma_in_research = False  # No stochastic component
+                sigma_coefficient = 0.0
+                sigma_value_ui = 0.0
+                
+                st.sidebar.info("📊 Research Baseline: Anchor values only (no stochastic component)")
+                st.sidebar.caption("🎯 Returns deterministic anchor = 0.75 × observed + 0.25 × predicted")
+                    
+            else:  # Compare all
+                # Show controls for all three modes
                 st.sidebar.markdown("**Copula Mode:**")
                 sigma_in_copula = st.sidebar.checkbox(
                     "Add Normal(anchor, σ) draw to Copula runs",
@@ -1435,12 +1458,15 @@ def configure_sidebar(selected_decisions):
                     help="When enabled, Copula mode will also use the stochastic component"
                 )
                 
-                st.sidebar.markdown("**Research Mode:**")
+                st.sidebar.markdown("**Research Specification:**")
                 sigma_in_research = st.sidebar.checkbox(
-                    "Use Normal(anchor, σ) draw in Research mode",
+                    "Use Normal(anchor, σ) draw in Research Specification mode",
                     value=st.session_state.sigma_in_research,
-                    help="When enabled, Research mode will add stochastic variation"
+                    help="When enabled, Research Specification mode will add stochastic variation"
                 )
+                
+                st.sidebar.markdown("**Research Baseline:** Always uses anchor values only")
+                st.sidebar.caption("🎯 Baseline = deterministic anchor")
                 
                 # Show sigma coefficient slider if either mode has stochastic enabled
                 if sigma_in_copula or sigma_in_research:
@@ -1792,8 +1818,8 @@ def render_single_run_results():
     results_dict = st.session_state.simulation_results
     
     # Show results based on mode
-    if st.session_state.population_mode == "Compare both":
-        render_population_comparison(results_dict)
+    if st.session_state.population_mode == "Compare all":
+        render_all_modes_comparison(results_dict)
     elif st.session_state.population_mode == "Dependent variable resampling":
         render_dependent_variable_results(results_dict)
     elif st.session_state.income_spec_mode == "Compare both":
@@ -1805,12 +1831,12 @@ def render_single_run_results():
         show_overview(df, f" ({mode_name.title()})")
     
     # Get DataFrame for individual agent analysis
-    if st.session_state.population_mode == "Compare both":
+    if st.session_state.population_mode == "Compare all":
         if st.session_state.income_spec_mode == "Compare both":
-            df = next((results_dict[k] for k in ["copula_categorical", "doc_mode_categorical", "copula_continuous", "doc_mode_continuous"] if k in results_dict), pd.DataFrame())
+            df = next((results_dict[k] for k in ["copula_categorical", "research_spec_categorical", "research_baseline_categorical", "copula_continuous", "research_spec_continuous", "research_baseline_continuous"] if k in results_dict), pd.DataFrame())
         else:
             income_type = "continuous" if st.session_state.income_spec_mode == "continuous only" else "categorical"
-            df = next((results_dict[k] for k in [f"copula_{income_type}", f"doc_mode_{income_type}"] if k in results_dict), pd.DataFrame())
+            df = next((results_dict[k] for k in [f"copula_{income_type}", f"research_spec_{income_type}", f"research_baseline_{income_type}"] if k in results_dict), pd.DataFrame())
     elif st.session_state.income_spec_mode == "Compare both":
         df = next((results_dict[k] for k in ["categorical", "continuous"] if k in results_dict), pd.DataFrame())
     else:
@@ -1881,6 +1907,90 @@ def render_population_comparison(results_dict):
                 show_overview(results_dict[doc_key], f" (Research, {income_type.title()})")
             else:
                 st.caption(f"Research {income_type} results not available")
+
+
+def render_all_modes_comparison(results_dict):
+    """Render comparison of all three population modes"""
+    st.markdown("### 🔬 All Population Modes Comparison")
+    
+    if st.session_state.income_spec_mode == "Compare both":
+        # 3x2 grid: copula vs research_spec vs research_baseline x categorical vs continuous
+        st.markdown("#### Categorical Income Treatment")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**🧬 Copula (Synthetic)**")
+            if "copula_categorical" in results_dict:
+                show_overview(results_dict["copula_categorical"], " (Copula, Cat)")
+            else:
+                st.caption("Copula categorical results not available")
+        
+        with col2:
+            st.markdown("**📄 Research Specification**")
+            if "research_spec_categorical" in results_dict:
+                show_overview(results_dict["research_spec_categorical"], " (Research Spec, Cat)")
+            else:
+                st.caption("Research Specification categorical results not available")
+        
+        with col3:
+            st.markdown("**⚖️ Research Baseline**")
+            if "research_baseline_categorical" in results_dict:
+                show_overview(results_dict["research_baseline_categorical"], " (Research Baseline, Cat)")
+            else:
+                st.caption("Research Baseline categorical results not available")
+        
+        st.markdown("---")
+        st.markdown("#### Continuous Income Treatment")
+        col4, col5, col6 = st.columns(3)
+        
+        with col4:
+            st.markdown("**🧬 Copula (Synthetic)**")
+            if "copula_continuous" in results_dict:
+                show_overview(results_dict["copula_continuous"], " (Copula, Cont)")
+            else:
+                st.caption("Copula continuous results not available")
+        
+        with col5:
+            st.markdown("**📄 Research Specification**")
+            if "research_spec_continuous" in results_dict:
+                show_overview(results_dict["research_spec_continuous"], " (Research Spec, Cont)")
+            else:
+                st.caption("Research Specification continuous results not available")
+        
+        with col6:
+            st.markdown("**⚖️ Research Baseline**")
+            if "research_baseline_continuous" in results_dict:
+                show_overview(results_dict["research_baseline_continuous"], " (Research Baseline, Cont)")
+            else:
+                st.caption("Research Baseline continuous results not available")
+    else:
+        # Single income mode, compare all three population modes
+        income_type = "continuous" if st.session_state.income_spec_mode == "continuous only" else "categorical"
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("#### 🧬 Copula (Synthetic)")
+            copula_key = f"copula_{income_type}"
+            if copula_key in results_dict:
+                show_overview(results_dict[copula_key], f" (Copula, {income_type.title()})")
+            else:
+                st.caption(f"Copula {income_type} results not available")
+        
+        with col2:
+            st.markdown("#### 📄 Research Specification")
+            research_spec_key = f"research_spec_{income_type}"
+            if research_spec_key in results_dict:
+                show_overview(results_dict[research_spec_key], f" (Research Spec, {income_type.title()})")
+            else:
+                st.caption(f"Research Specification {income_type} results not available")
+        
+        with col3:
+            st.markdown("#### ⚖️ Research Baseline")
+            baseline_key = f"research_baseline_{income_type}"
+            if baseline_key in results_dict:
+                show_overview(results_dict[baseline_key], f" (Research Baseline, {income_type.title()})")
+            else:
+                st.caption(f"Research Baseline {income_type} results not available")
 
 
 def render_dependent_variable_results(results_dict):
