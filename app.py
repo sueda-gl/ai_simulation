@@ -196,15 +196,18 @@ if population_mode == "Copula (synthetic)" or population_mode == "Compare both":
         value=False,
         help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Documentation mode"
     )
-    # Slider to adjust sigma (original SD ≈ 9 on 0–112 scale).
-    sigma_value_ui = st.sidebar.slider(
-        "σ (standard deviation) on 0–112 scale",
+    # Show coefficient slider for Copula mode
+    st.sidebar.caption("📊 Base σ = 9.8995 (empirical)")
+    sigma_coefficient = st.sidebar.slider(
+        "σ Coefficient (multiplier)",
         min_value=0.0,
-        max_value=15.0,
-        value=9.0,
+        max_value=2.0,
+        value=1.0,
         step=0.1,
-        help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+        help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient"
     )
+    sigma_value_ui = 9.8995 * sigma_coefficient
+    st.sidebar.caption(f"🎯 Effective σ = {sigma_value_ui:.2f}")
 else:
     sigma_in_copula = False  # Default for other modes
     
@@ -218,17 +221,21 @@ else:
     
     # Show sigma slider only if stochastic component is enabled
     if sigma_in_research:
-        sigma_value_ui = st.sidebar.slider(
-            "σ (standard deviation) on 0–112 scale",
+        st.sidebar.caption("📊 Base σ = 9.8995 (empirical)")
+        sigma_coefficient = st.sidebar.slider(
+            "σ Coefficient (multiplier)",
             min_value=0.0,
-            max_value=15.0,
-            value=9.0,
+            max_value=2.0,
+            value=1.0,
             step=0.1,
-            help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+            help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient"
         )
+        sigma_value_ui = 9.8995 * sigma_coefficient
+        st.sidebar.caption(f"🎯 Effective σ = {sigma_value_ui:.2f}")
     else:
         st.sidebar.info("ℹ️ Stochastic component disabled - using anchor values directly")
-        sigma_value_ui = 0.0  # Set to 0 when disabled
+        sigma_coefficient = 0.0
+        sigma_value_ui = 0.0
 
 # Anchor weights slider (not for dependent variable mode which uses pre-computed values)
 if population_mode != "Dependent variable resampling":

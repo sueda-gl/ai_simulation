@@ -206,7 +206,8 @@ def initialize_session_state():
         'income_spec_mode': 'categorical only',
         'sigma_in_copula': False,
         'sigma_in_research': True,  # Enable sigma in Research mode by default
-        'sigma_value_ui': 9.0,
+        'sigma_value_ui': 9.8995,  # Static empirical SD value
+        'sigma_coefficient': 1.0,  # Coefficient to multiply the static SD (0-2)
         'anchor_observed_weight': 0.75,
         'raw_draw_mode': False,
         'n_agents': 1000,

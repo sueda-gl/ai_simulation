@@ -738,16 +738,22 @@ def render_donation_default_tab():
             st.session_state.sigma_in_copula = sigma_in_copula
             st.session_state.sigma_in_research = True  # Default for research mode
             
-            sigma_value_ui = st.slider(
-                "σ (standard deviation) on 0–112 scale",
+            # Show static sigma value and coefficient slider
+            st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
+            sigma_coefficient = st.slider(
+                "σ Coefficient (multiplier)",
                 min_value=0.0,
-                max_value=15.0,
-                value=st.session_state.sigma_value_ui,
+                max_value=2.0,
+                value=st.session_state.sigma_coefficient,
                 step=0.1,
-                help="Controls the spread of the Normal(anchor, σ) draw",
-                key="tab_sigma_value"
+                help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+                key="tab_sigma_coefficient"
             )
-            st.session_state.sigma_value_ui = sigma_value_ui
+            st.session_state.sigma_coefficient = sigma_coefficient
+            effective_sigma = 9.8995 * sigma_coefficient
+            st.caption(f"🎯 Effective σ = 9.8995 × {sigma_coefficient:.1f} = {effective_sigma:.2f}")
+            # Keep the static value in sigma_value_ui for backward compatibility
+            st.session_state.sigma_value_ui = effective_sigma
             
         elif population_mode == "Research Specification":
             # Show only Research controls
@@ -760,21 +766,27 @@ def render_donation_default_tab():
             st.session_state.sigma_in_research = sigma_in_research
             st.session_state.sigma_in_copula = False  # Not applicable
             
-            # Show sigma slider only if stochastic component is enabled
+            # Show sigma coefficient slider only if stochastic component is enabled
             if sigma_in_research:
-                sigma_value_ui = st.slider(
-                    "σ (standard deviation) on 0–112 scale",
+                st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
+                sigma_coefficient = st.slider(
+                    "σ Coefficient (multiplier)",
                     min_value=0.0,
-                    max_value=15.0,
-                    value=st.session_state.sigma_value_ui,
+                    max_value=2.0,
+                    value=st.session_state.sigma_coefficient,
                     step=0.1,
-                    help="Controls the spread of the Normal(anchor, σ) draw",
-                    key="tab_sigma_value_research"
+                    help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+                    key="tab_sigma_coefficient_research"
                 )
-                st.session_state.sigma_value_ui = sigma_value_ui
+                st.session_state.sigma_coefficient = sigma_coefficient
+                effective_sigma = 9.8995 * sigma_coefficient
+                st.caption(f"🎯 Effective σ = 9.8995 × {sigma_coefficient:.1f} = {effective_sigma:.2f}")
+                # Keep the static value in sigma_value_ui for backward compatibility
+                st.session_state.sigma_value_ui = effective_sigma
             else:
                 st.info("ℹ️ Stochastic component disabled - using anchor values directly")
                 # Set sigma to 0 when disabled to ensure no variability
+                st.session_state.sigma_coefficient = 0.0
                 st.session_state.sigma_value_ui = 0.0
                 
         else:  # Compare both
@@ -797,20 +809,26 @@ def render_donation_default_tab():
             )
             st.session_state.sigma_in_research = sigma_in_research
             
-            # Show sigma slider if either mode has stochastic enabled
+            # Show sigma coefficient slider if either mode has stochastic enabled
             if sigma_in_copula or sigma_in_research:
-                sigma_value_ui = st.slider(
-                    "σ (standard deviation) on 0–112 scale",
+                st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
+                sigma_coefficient = st.slider(
+                    "σ Coefficient (multiplier)",
                     min_value=0.0,
-                    max_value=15.0,
-                    value=st.session_state.sigma_value_ui,
+                    max_value=2.0,
+                    value=st.session_state.sigma_coefficient,
                     step=0.1,
-                    help="Controls the spread of the Normal(anchor, σ) draw",
-                    key="tab_sigma_value_compare"
+                    help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+                    key="tab_sigma_coefficient_compare"
                 )
-                st.session_state.sigma_value_ui = sigma_value_ui
+                st.session_state.sigma_coefficient = sigma_coefficient
+                effective_sigma = 9.8995 * sigma_coefficient
+                st.caption(f"🎯 Effective σ = 9.8995 × {sigma_coefficient:.1f} = {effective_sigma:.2f}")
+                # Keep the static value in sigma_value_ui for backward compatibility
+                st.session_state.sigma_value_ui = effective_sigma
             else:
                 st.info("ℹ️ Stochastic component disabled for both modes - using anchor values directly")
+                st.session_state.sigma_coefficient = 0.0
                 st.session_state.sigma_value_ui = 0.0
         
         # Anchor weights
@@ -1365,14 +1383,20 @@ def configure_sidebar(selected_decisions):
                 )
                 sigma_in_research = True  # Default for research mode
                 
-                sigma_value_ui = st.sidebar.slider(
-                    "σ (standard deviation) on 0–112 scale",
+                # Show static sigma value and coefficient slider
+                st.sidebar.caption("📊 Base σ = 9.8995 (empirical)")
+                sigma_coefficient = st.sidebar.slider(
+                    "σ Coefficient (multiplier)",
                     min_value=0.0,
-                    max_value=15.0,
-                    value=st.session_state.sigma_value_ui,
+                    max_value=2.0,
+                    value=st.session_state.sigma_coefficient,
                     step=0.1,
-                    help="Controls the spread of the Normal(anchor, σ) draw"
+                    help="Coefficient to multiply the base σ"
                 )
+                effective_sigma = 9.8995 * sigma_coefficient
+                st.sidebar.caption(f"🎯 Effective σ = {effective_sigma:.2f}")
+                # Keep the static value in sigma_value_ui for backward compatibility
+                sigma_value_ui = effective_sigma
                 
             elif population_mode == "Research Specification":
                 # Show only Research controls
@@ -1383,18 +1407,23 @@ def configure_sidebar(selected_decisions):
                 )
                 sigma_in_copula = False  # Not applicable
                 
-                # Show sigma slider only if stochastic component is enabled
+                # Show sigma coefficient slider only if stochastic component is enabled
                 if sigma_in_research:
-                    sigma_value_ui = st.sidebar.slider(
-                        "σ (standard deviation) on 0–112 scale",
+                    st.sidebar.caption("📊 Base σ = 9.8995 (empirical)")
+                    sigma_coefficient = st.sidebar.slider(
+                        "σ Coefficient (multiplier)",
                         min_value=0.0,
-                        max_value=15.0,
-                        value=st.session_state.sigma_value_ui,
+                        max_value=2.0,
+                        value=st.session_state.sigma_coefficient,
                         step=0.1,
-                        help="Controls the spread of the Normal(anchor, σ) draw"
+                        help="Coefficient to multiply the base σ"
                     )
+                    effective_sigma = 9.8995 * sigma_coefficient
+                    st.sidebar.caption(f"🎯 Effective σ = {effective_sigma:.2f}")
+                    sigma_value_ui = effective_sigma
                 else:
                     st.sidebar.info("ℹ️ Stochastic component disabled")
+                    sigma_coefficient = 0.0
                     sigma_value_ui = 0.0
                     
             else:  # Compare both
@@ -1413,18 +1442,23 @@ def configure_sidebar(selected_decisions):
                     help="When enabled, Research mode will add stochastic variation"
                 )
                 
-                # Show sigma slider if either mode has stochastic enabled
+                # Show sigma coefficient slider if either mode has stochastic enabled
                 if sigma_in_copula or sigma_in_research:
-                    sigma_value_ui = st.sidebar.slider(
-                        "σ (standard deviation) on 0–112 scale",
+                    st.sidebar.caption("📊 Base σ = 9.8995 (empirical)")
+                    sigma_coefficient = st.sidebar.slider(
+                        "σ Coefficient (multiplier)",
                         min_value=0.0,
-                        max_value=15.0,
-                        value=st.session_state.sigma_value_ui,
+                        max_value=2.0,
+                        value=st.session_state.sigma_coefficient,
                         step=0.1,
-                        help="Controls the spread of the Normal(anchor, σ) draw"
+                        help="Coefficient to multiply the base σ"
                     )
+                    effective_sigma = 9.8995 * sigma_coefficient
+                    st.sidebar.caption(f"🎯 Effective σ = {effective_sigma:.2f}")
+                    sigma_value_ui = effective_sigma
                 else:
                     st.sidebar.info("ℹ️ Stochastic disabled for both modes")
+                    sigma_coefficient = 0.0
                     sigma_value_ui = 0.0
             
             # Anchor weights slider
@@ -1641,6 +1675,7 @@ def configure_sidebar(selected_decisions):
         st.session_state.income_spec_mode = income_spec_mode
         st.session_state.sigma_in_copula = sigma_in_copula
         st.session_state.sigma_in_research = sigma_in_research
+        st.session_state.sigma_coefficient = sigma_coefficient
         st.session_state.sigma_value_ui = sigma_value_ui
         st.session_state.anchor_observed_weight = anchor_observed_weight
         st.session_state.raw_draw_mode = raw_draw_mode
