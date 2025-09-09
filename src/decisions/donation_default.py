@@ -6,7 +6,6 @@ import sys
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from src.parameter_processor import ParameterProcessor
 
 def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
@@ -99,24 +98,8 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     weights = params['anchor_weights']
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
     
-    # NEW: Apply global parameter context if available
-    if simulation_config is not None:
-        processor = ParameterProcessor()
-        context = processor.get_decision_context('donation_default', simulation_config)
-        
-        if context:
-            # Apply behavioral modifiers from global parameters
-            inequality_factor = context.get('inequality_factor', 1.0)
-            competition_factor = context.get('competition_factor', 1.0)
-            trust_factor = context.get('trust_factor', 1.0)
-            prosperity_factor = context.get('prosperity_factor', 1.0)
-            temporal_factor = context.get('temporal_factor', 1.0)
-            
-            # Combine all factors
-            global_modifier = inequality_factor * competition_factor * trust_factor * prosperity_factor * temporal_factor
-            
-            # Apply modifier to anchor (with bounds)
-            s100_anchor = np.clip(s100_anchor * global_modifier, 0, 100)
+    # Note: donation_default currently doesn't use any global parameters
+    # The anchor is computed purely from research-based regression and agent traits
     
     # Step 4: Determine if we should use stochastic component
     # Check population context and stochastic flag

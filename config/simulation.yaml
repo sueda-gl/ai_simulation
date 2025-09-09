@@ -2,39 +2,68 @@
 # These parameters apply to the entire simulation and are used across multiple decisions
 
 simulation:
+  # Simulation execution mode
+  simulation_execution_mode: "snapshot"  # "snapshot" or "live"
+  simulation_mode: "Single Run"  # "Single Run" or "Monte-Carlo Study"
+  
   # Time parameters
-  periods: 1
-  duration_hours: 1.0  # Duration in hours (converted to seconds for simulation)
+  periods: 1  # ✅ As specified
+  duration_hours: 1.0  # ✅ As specified
   
   # Market parameters
-  num_vendors: 5
-  market_price: 10.0
-  vendor_price_min: 8.0
-  vendor_price_max: 12.0
+  num_vendors: 1  # ✅ Changed from 5 to 1
+  market_price: 100.0  # ✅ Changed from 10.0 to 100.0
+  vendor_price_min: 50.0  # ✅ Changed from 8.0 to 50.0
+  vendor_price_max: 150.0  # ✅ Changed from 12.0 to 150.0
   
-  # Product offering
-  products_per_vendor: 100  # NV
-  carryover: false
+  # Product offering (legacy - for backward compatibility)
+  products_per_vendor: 100  # ✅ As specified
+  carryover: false  # ✅ As specified
+  
+  # Vendor configuration
+  vendor_config_mode: "random"  # ✅ Generate randomly as specified
+  
+  # Random vendor generation parameters
+  vendor_products_min: 50  # ✅ As specified
+  vendor_products_max: 150  # ✅ As specified
+  vendor_products_avg: 100  # ✅ As specified
+  vendor_carryover_probability: 0.0  # ✅ Changed from 0.5 to 0.0 (unchecked)
+  
+  # Uploaded vendor configuration
+  vendor_config_data: null  # List of vendor configs from CSV
+  vendor_prices: null  # Legacy - for backward compatibility
+  vendor_price_source: "random"  # ✅ Generate randomly as specified
+  vendor_prices_file: null  # Legacy - Path to CSV file if using file source
   
   # Pricing parameters
   bidding_percentage: 0.5  # bp (proportion available for bidding)
-  platform_markup: 0.1  # m
-  price_range: 0.25  # r
-  price_grid: 11  # g (must be odd)
+  platform_markup: 0.1  # ✅ 10% as specified
+  price_range: 0.25  # ✅ As specified
+  price_grid: 11  # ✅ As specified
   
   # Income distribution parameters
-  income_min: 1000.0
-  income_max: 10000.0
-  income_avg: 5000.0
-  income_distribution: "lognormal"  # lognormal, pareto, weibull
+  income_min: 0.0  # ✅ Changed from 1000.0 to 0
+  income_max: 100000.0  # ✅ Changed from 10000.0 to 100000
+  income_avg: 25000.0  # ✅ Changed from 5000.0 to 25000
+  income_avg_type: "average"  # ✅ As specified
+  discount_income_threshold: 12500.0  # Set to middle of new range
+  income_distribution: "lognormal"  # ✅ As specified
+  
+  # Distribution-specific parameters
+  # Lognormal parameters
+  lognormal_sigma: 0.5  # Shape parameter (standard deviation of log)
+  
+  # Pareto parameters
+  pareto_alpha: 2.5  # Shape parameter (higher = less inequality)
+  
+  # Weibull parameters
+  weibull_shape: 2.0  # Shape parameter (k)
   
   # Income categories
-  num_discount_categories: 3  # NDIC
-  num_fixed_categories: 5  # NFIC
+  num_discount_categories: 10  # ✅ Changed from 3 to 10
+  num_fixed_categories: 10  # ✅ Changed from 5 to 10
   
   # Consumption limits (per product and income category per period)
+  apply_consumption_limits: false  # ✅ Changed from true to false (unchecked)
   consumption_limits: {}  # Will be populated dynamically
-  
-  # Vendor prices (either generated or from file)
-  vendor_price_source: "random"  # "random" or "file"
-  vendor_prices_file: null  # Path to CSV file if using file source
+  consumption_limits_source: "manual"  # "manual" or "upload"

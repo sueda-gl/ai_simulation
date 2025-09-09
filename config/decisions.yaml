@@ -7,6 +7,9 @@ donation_default:
   # Uses anchor formula: 0.75 * observed_prosocial + 0.25 * predicted_prosocial
   # Predicted prosocial comes from regression with these exact coefficients:
   
+  # Global parameters this decision uses (currently none - purely trait-based)
+  uses_global_parameters: []
+  
   regression:
     intercept: 1.22985660120368
     
@@ -63,72 +66,84 @@ donation_default:
 # Placeholder blocks for remaining 12 decisions
 disclose_income:
   # Decision 1: Disclose income for Fixed status
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "disclose_income"
   default_value: "NA"
 
 disclose_documents:
-  # Decision 2: Disclose documents for Discount status  
+  # Decision 2: Disclose documents for Discount status
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "disclose_documents"
   default_value: "NA"
 
 rejected_transaction_defaults:
   # Decision 4: Select prioritized defaults for handling rejected transactions
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "rejected_transaction_defaults"
   default_value: "NA"
 
 vendor_choice_weights:
   # Decision 5: Select default weights for vendor/product choice
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "vendor_choice_weights"
   default_value: "NA"
 
 consumption_quantity:
   # Decision 6: Decide consumption quantity per calendar period
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "consumption_quantity"
   default_value: "NA"
 
 consumption_frequency:
   # Decision 7: Decide consumption frequency per day
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "consumption_frequency"
   default_value: "NA"
 
 vendor_selection:
   # Decision 8: Select vendor/product from sorted list
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "vendor_selection"
   default_value: "NA"
 
 purchase_vs_bid:
   # Decision 9: Decide between Purchase Now and Bid
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "purchase_vs_bid"
   default_value: "NA"
 
 bid_value:
   # Decision 10: Select bid value if Bid chosen
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "bid_value"
   default_value: "NA"
 
 rejected_transaction_option:
   # Decision 11: Select option after rejected transaction
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "rejected_transaction_option"
   default_value: "NA"
 
 rejected_bid_value:
   # Decision 12: Select bid value after rejected transaction
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "rejected_bid_value"
   default_value: "NA"
 
 final_donation_rate:
   # Decision 13: Select donation rate after transaction accepted
+  uses_global_parameters: []  # To be determined when implemented
   placeholder: true
   output_field: "final_donation_rate"
   default_value: "NA"
