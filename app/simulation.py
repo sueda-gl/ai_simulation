@@ -211,7 +211,8 @@ def run_simulation_from_sidebar():
                         if pop_mode == "documentation":
                             orchestrator.config['donation_default']['stochastic']['enabled'] = st.session_state.sigma_in_research
                         # Apply selected sigma value
-                        orchestrator.config['donation_default']['stochastic']['sigma_value'] = st.session_state.sigma_value_ui
+                        base_sigma = orchestrator.config['donation_default']['stochastic'].get('sigma_value', 9.8995)
+                        orchestrator.config['donation_default']['stochastic']['sigma_value'] = base_sigma * st.session_state.sigma_multiplier_ui
                         # Apply chosen anchor weights
                         orchestrator.config['donation_default']['anchor_weights']['observed'] = st.session_state.anchor_observed_weight
                         orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - st.session_state.anchor_observed_weight

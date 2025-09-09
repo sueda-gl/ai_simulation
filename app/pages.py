@@ -748,17 +748,17 @@ def render_donation_default_tab():
             st.session_state.sigma_in_research = sigma_in_research
         else:
             st.session_state.sigma_in_research = True
-        # σ slider (always visible)
-        sigma_value_ui = st.slider(
-            "σ (standard deviation) on 0–112 scale",
+        # σ multiplier slider (0–2× base SD)
+        sigma_multiplier_ui = st.slider(
+            "σ multiplier (0 = no noise, 1 = baseline SD, 2 = double SD)",
             min_value=0.0,
-            max_value=15.0,
-            value=st.session_state.sigma_value_ui,
+            max_value=2.0,
+            value=st.session_state.get("sigma_multiplier_ui", 1.0),
             step=0.1,
-            key="tab_sigma_value",
-            help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+            key="tab_sigma_multiplier",
+            help="Multiplier applied to the baseline σ (9.90)."
         )
-        st.session_state.sigma_value_ui = sigma_value_ui
+        st.session_state.sigma_multiplier_ui = sigma_multiplier_ui
         
         # Anchor weights
         if population_mode != "Dependent variable resampling":
@@ -1302,23 +1302,25 @@ def configure_sidebar(selected_decisions):
                     value=False,
                     help="When enabled, Copula mode will also use the stochastic component (Normal distribution draw) like Research mode"
                 )
-                sigma_value_ui = st.sidebar.slider(
-                    "σ (standard deviation) on 0–112 scale",
+                sigma_multiplier_ui = st.sidebar.slider(
+                    "σ multiplier (0 = no noise, 1 = baseline SD, 2 = double SD)",
                     min_value=0.0,
-                    max_value=15.0,
-                    value=9.0,
+                    max_value=2.0,
+                    value=st.session_state.get("sigma_multiplier_ui", 1.0),
                     step=0.1,
-                    help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+                    key="tab_sigma_multiplier",
+                    help="Multiplier applied to the baseline σ (9.90)."
                 )
             else:
                 sigma_in_copula = False
-                sigma_value_ui = st.sidebar.slider(
-                    "σ (standard deviation) on 0–112 scale",
+                sigma_multiplier_ui = st.sidebar.slider(
+                    "σ multiplier (0 = no noise, 1 = baseline SD, 2 = double SD)",
                     min_value=0.0,
-                    max_value=15.0,
-                    value=9.0,
+                    max_value=2.0,
+                    value=st.session_state.get("sigma_multiplier_ui", 1.0),
                     step=0.1,
-                    help="Controls the spread of the Normal(anchor, σ) draw. Set to 0 to disable variability."
+                    key="tab_sigma_multiplier",
+                    help="Multiplier applied to the baseline σ (9.90)."
                 )
             
             # Anchor weights slider
@@ -1352,7 +1354,7 @@ def configure_sidebar(selected_decisions):
             income_spec_mode = "categorical only"
             sigma_in_copula = False
             sigma_in_research = True
-            sigma_value_ui = 9.0
+            sigma_multiplier_ui = 1.0
             anchor_observed_weight = 0.75
             raw_draw_mode = False
 
@@ -1530,7 +1532,7 @@ def configure_sidebar(selected_decisions):
         st.session_state.income_spec_mode = income_spec_mode
         st.session_state.sigma_in_copula = sigma_in_copula
         st.session_state.sigma_in_research = sigma_in_research
-        st.session_state.sigma_value_ui = sigma_value_ui
+        st.session_state.sigma_multiplier_ui = sigma_multiplier_ui
         st.session_state.anchor_observed_weight = anchor_observed_weight
         st.session_state.raw_draw_mode = raw_draw_mode
         st.session_state.n_agents = n_agents
