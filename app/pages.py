@@ -120,37 +120,7 @@ def render_page1():
         # Market Parameters Section (simplified - vendor config moved to dedicated section)
         st.markdown('<h3 class="section-header">🏪 Market Parameters</h3>', unsafe_allow_html=True)
         
-        st.info("ℹ️ Vendor configuration (number, prices, products, carryover) is now managed in the dedicated Vendor Configuration section below.")
-        
-        # Product Offering Section
-        st.markdown('<h3 class="section-header">📦 Product Offering</h3>', unsafe_allow_html=True)
-        
-        products_per_vendor = st.number_input(
-            "Products per Vendor (NV)",
-            min_value=1,
-            max_value=10000,
-            value=st.session_state.sim_params.products_per_vendor,
-            help="Number of products offered by each vendor at the beginning of each period"
-        )
-        st.session_state.sim_params.products_per_vendor = products_per_vendor
-        
-        carryover = st.checkbox(
-            "Carryover Unsold Products",
-            value=st.session_state.sim_params.carryover,
-            help="If checked, unsold products carry over to the next period"
-        )
-        st.session_state.sim_params.carryover = carryover
-        
-        bidding_percentage = st.slider(
-            "Bidding Percentage (bp)",
-            min_value=0.0,
-            max_value=1.0,  # Extended from 0.5 to 1.0 as requested
-            value=st.session_state.sim_params.bidding_percentage,
-            step=0.05,
-            help="Proportion of products available for bidding (NA = bp × NV). Now supports up to 100%!"
-        )
-        st.session_state.sim_params.bidding_percentage = bidding_percentage
-        st.caption(f"Products for auction per vendor: {st.session_state.sim_params.get_num_auction_products()}")
+        st.info("ℹ️ Vendor configuration (number, prices, products, carryover) is managed in the Vendor Configuration section above.")
     
     with col2:
         # Pricing Parameters Section
@@ -378,32 +348,29 @@ def render_page1():
             
             vendor_price_min = st.number_input(
                 "Min Price per Vendor ($)",
-                min_value=0.01,
-                max_value=1000.0,
-                value=st.session_state.sim_params.vendor_price_min,
-                step=0.01,
-                help="Minimum price any vendor can have"
-            )
+                min_value=1,
+                max_value=100000,
+                value=int(st.session_state.sim_params.vendor_price_min * 100),
+                help="Minimum price any vendor can have (in cents, will be converted to dollars)"
+            ) / 100.0
             st.session_state.sim_params.vendor_price_min = vendor_price_min
             
             vendor_price_max = st.number_input(
                 "Max Price per Vendor ($)",
-                min_value=st.session_state.sim_params.vendor_price_min,
-                max_value=1000.0,
-                value=st.session_state.sim_params.vendor_price_max,
-                step=0.01,
-                help="Maximum price any vendor can have"
-            )
+                min_value=int(st.session_state.sim_params.vendor_price_min * 100),
+                max_value=100000,
+                value=int(st.session_state.sim_params.vendor_price_max * 100),
+                help="Maximum price any vendor can have (in cents, will be converted to dollars)"
+            ) / 100.0
             st.session_state.sim_params.vendor_price_max = vendor_price_max
             
             market_price = st.number_input(
                 "Average Price per Vendor ($)",
-                min_value=st.session_state.sim_params.vendor_price_min,
-                max_value=st.session_state.sim_params.vendor_price_max,
-                value=st.session_state.sim_params.market_price,
-                step=0.01,
-                help="Target average price across all vendors"
-            )
+                min_value=int(st.session_state.sim_params.vendor_price_min * 100),
+                max_value=int(st.session_state.sim_params.vendor_price_max * 100),
+                value=int(st.session_state.sim_params.market_price * 100),
+                help="Target average price across all vendors (in cents, will be converted to dollars)"
+            ) / 100.0
             st.session_state.sim_params.market_price = market_price
             
             # Price validation
@@ -573,6 +540,36 @@ V5,12.00,100,1""")
             except Exception as e:
                 st.error(f"❌ Error loading vendor configuration: {e}")
                 st.caption("Please check your CSV format and try again.")
+    
+    # Product Offering Section
+    st.markdown('<h3 class="section-header">📦 Product Offering</h3>', unsafe_allow_html=True)
+    
+    products_per_vendor = st.number_input(
+        "Products per Vendor (NV)",
+        min_value=1,
+        max_value=10000,
+        value=st.session_state.sim_params.products_per_vendor,
+        help="Number of products offered by each vendor at the beginning of each period"
+    )
+    st.session_state.sim_params.products_per_vendor = products_per_vendor
+    
+    carryover = st.checkbox(
+        "Carryover Unsold Products",
+        value=st.session_state.sim_params.carryover,
+        help="If checked, unsold products carry over to the next period"
+    )
+    st.session_state.sim_params.carryover = carryover
+    
+    bidding_percentage = st.slider(
+        "Bidding Percentage (bp)",
+        min_value=0.0,
+        max_value=1.0,  # Extended from 0.5 to 1.0 as requested
+        value=st.session_state.sim_params.bidding_percentage,
+        step=0.05,
+        help="Proportion of products available for bidding (NA = bp × NV). Now supports up to 100%!"
+    )
+    st.session_state.sim_params.bidding_percentage = bidding_percentage
+    st.caption(f"Products for auction per vendor: {st.session_state.sim_params.get_num_auction_products()}")
     
     # Consumption Limits Configuration
     st.markdown('<h3 class="section-header">🛒 Consumption Limits</h3>', unsafe_allow_html=True)
@@ -1180,12 +1177,12 @@ def render_global_parameters_tab(selected_decisions):
             if 'market_price' in all_applicable:
                 market_price = st.number_input(
                     "Average Market Price ($)",
-                    min_value=0.01,
-                    max_value=1000.0,
-                    value=st.session_state.sim_params.market_price,
-                    step=0.01,
-                    key="tab_market_price"
-                )
+                    min_value=1,
+                    max_value=100000,
+                    value=int(st.session_state.sim_params.market_price * 100),
+                    key="tab_market_price",
+                    help="Average market price (in cents, will be converted to dollars)"
+                ) / 100.0
                 st.session_state.sim_params.market_price = market_price
             
             if 'vendor_price_max' in all_applicable:
@@ -1619,12 +1616,11 @@ def configure_sidebar(selected_decisions):
             if 'market_price' in all_applicable:
                 market_price = st.sidebar.number_input(
                     "Average Market Price ($)",
-                    min_value=0.01,
-                    max_value=1000.0,
-                    value=st.session_state.sim_params.market_price,
-                    step=0.01,
-                    help="✅ Applicable for selected decisions"
-                )
+                    min_value=1,
+                    max_value=100000,
+                    value=int(st.session_state.sim_params.market_price * 100),
+                    help="✅ Applicable for selected decisions (in cents, converted to dollars)"
+                ) / 100.0
                 st.session_state.sim_params.market_price = market_price
 
         # Only show pricing parameters if they are applicable
