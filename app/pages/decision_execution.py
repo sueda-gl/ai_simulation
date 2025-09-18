@@ -115,6 +115,11 @@ def run_individual_decision(decision_name):
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
             st.session_state.decision_params.selected_decisions = [decision_name]
             
+            # Set state variables correctly for individual runs
+            # This ensures the results display shows only the executed decision
+            st.session_state.custom_decisions = [decision_name]  # Only this decision was run with custom parameters
+            st.session_state.default_decisions = []  # No decisions used default values (since only one was run)
+            
             # Run simulation
             run_simulation_from_sidebar()
             

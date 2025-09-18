@@ -191,10 +191,39 @@ def render_results_page():
     with st.expander("🔧 Debug: Session State", expanded=False):
         st.write(f"simulation_results: {'Yes' if st.session_state.simulation_results is not None else 'No'}")
         st.write(f"mc_results: {'Yes' if st.session_state.mc_results is not None else 'No'}")
+        
+        # Debug decision state variables
+        st.write("**Decision State Variables:**")
+        if hasattr(st.session_state, 'custom_decisions'):
+            st.write(f"custom_decisions: {st.session_state.custom_decisions}")
+        else:
+            st.write("custom_decisions: NOT SET")
+            
+        if hasattr(st.session_state, 'default_decisions'):
+            st.write(f"default_decisions: {st.session_state.default_decisions}")
+        else:
+            st.write("default_decisions: NOT SET")
+            
+        # Show actual results columns
+        if st.session_state.simulation_results:
+            results_dict = st.session_state.simulation_results
+            df = next(iter(results_dict.values())) if results_dict else pd.DataFrame()
+            st.write(f"**Actual Result Columns:** {list(df.columns) if not df.empty else 'No data'}")
+            
         if st.session_state.mc_results is not None:
             st.write(f"mc_results keys: {list(st.session_state.mc_results.keys())}")
             st.write(f"summary shape: {st.session_state.mc_results['summary'].shape if st.session_state.mc_results['summary'] is not None else 'None'}")
             st.write(f"detailed shape: {st.session_state.mc_results['detailed'].shape if st.session_state.mc_results['detailed'] is not None else 'None'}")
+            
+        # Add clear session state button
+        if st.button("🗑️ Clear Session State (Fix Stale Data)"):
+            # Clear the problematic state variables
+            if hasattr(st.session_state, 'custom_decisions'):
+                delattr(st.session_state, 'custom_decisions')
+            if hasattr(st.session_state, 'default_decisions'):
+                delattr(st.session_state, 'default_decisions')
+            st.success("✅ Cleared decision state variables. Try running your simulation again.")
+            st.rerun()
     
     # Display single run results
     if st.session_state.simulation_results is not None:
@@ -228,13 +257,32 @@ def render_single_run_results():
         results_dict = st.session_state.simulation_results
         df = next(iter(results_dict.values())) if results_dict else pd.DataFrame()
         
-        for decision in ALL_DECISIONS:
+        # Only show decisions that were actually executed
+        executed_decisions = st.session_state.custom_decisions + st.session_state.default_decisions
+        
+        # Smart UI: Use dropdown only when there are multiple decisions
+        use_dropdown = len(executed_decisions) > 1
+        
+        for decision in executed_decisions:
             decision_title = decision.replace('_', ' ').title()
             
             # Determine if this decision was customized or uses defaults
             if decision in st.session_state.custom_decisions:
                 # Custom decision - show green checkmark
-                with st.expander(f"✅ {decision_title} (Custom Parameters)", expanded=False):
+                if use_dropdown:
+                    # Multiple decisions - use collapsible dropdown
+                    with st.expander(f"✅ {decision_title} (Custom Parameters)", expanded=False):
+                        st.success("This decision was configured with custom parameters on Page 2")
+                        st.write("**Configuration Source:** Page 2 Decision Tab")
+                        
+                        # Show decision-specific results if available
+                        if not df.empty and decision in df.columns:
+                            render_decision_results(df, decision, decision_title)
+                        else:
+                            st.info("Results data not available for this decision")
+                else:
+                    # Single decision - show content directly (better UX)
+                    st.markdown(f'<h4 class="subsection-header">✅ {decision_title} (Custom Parameters)</h4>', unsafe_allow_html=True)
                     st.success("This decision was configured with custom parameters on Page 2")
                     st.write("**Configuration Source:** Page 2 Decision Tab")
                     
@@ -246,7 +294,22 @@ def render_single_run_results():
                         
             else:
                 # Default decision - show gear icon
-                with st.expander(f"🔧 {decision_title} (Default Values)", expanded=False):
+                if use_dropdown:
+                    # Multiple decisions - use collapsible dropdown
+                    with st.expander(f"🔧 {decision_title} (Default Values)", expanded=False):
+                        default_description = DEFAULT_DECISION_DESCRIPTIONS.get(decision, "Standard default behavior")
+                        st.info("This decision used default values since it was not selected for customization")
+                        st.write(f"**Default Behavior:** {default_description}")
+                        
+                        # Show decision-specific results if available
+                        if not df.empty and decision in df.columns:
+                            st.markdown("**📊 Results with Default Values:**")
+                            render_decision_results(df, decision, decision_title)
+                        else:
+                            st.caption("💡 To see results and customize this decision, select it on Page 2")
+                else:
+                    # Single decision - show content directly (better UX)
+                    st.markdown(f'<h4 class="subsection-header">🔧 {decision_title} (Default Values)</h4>', unsafe_allow_html=True)
                     default_description = DEFAULT_DECISION_DESCRIPTIONS.get(decision, "Standard default behavior")
                     st.info("This decision used default values since it was not selected for customization")
                     st.write(f"**Default Behavior:** {default_description}")
