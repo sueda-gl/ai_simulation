@@ -449,8 +449,22 @@ def render_results_page():
 def render_single_run_results():
     """Render single run simulation results"""
     
-    # Show decision configuration summary
-    if hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
+    # Show decision configuration summary when we have both custom and default decisions (combined simulation)
+    # OR when in single mode (not comparison modes)
+    is_comparison_mode = (
+        st.session_state.population_mode == "Compare all" or
+        st.session_state.population_mode == "Dependent variable resampling" or
+        st.session_state.income_spec_mode == "Compare both"
+    )
+    
+    # Show if: (not comparison mode) OR (has both custom and default decisions from combined simulation)
+    has_combined_simulation = (
+        hasattr(st.session_state, 'custom_decisions') and 
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) > 0  # Only show if there are actual default decisions
+    )
+    
+    if (not is_comparison_mode or has_combined_simulation) and hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
         st.markdown('<h3 class="section-header">📋 Decision Configuration Summary</h3>', unsafe_allow_html=True)
         st.caption("Expand any decision to view its configuration details")
         
@@ -479,9 +493,12 @@ def render_single_run_results():
                         st.success("This decision was configured with custom parameters on Page 2")
                         st.write("**Configuration Source:** Page 2 Decision Tab")
                         
-                        # Show decision-specific results if available
+                        # Show decision-specific results if available (but not in comparison mode)
                         if not df.empty and decision in df.columns:
-                            render_decision_results(df, decision, decision_title)
+                            if is_comparison_mode:
+                                st.info("📊 Detailed results are shown in the comparison grids below")
+                            else:
+                                render_decision_results(df, decision, decision_title)
                         else:
                             st.info("Results data not available for this decision")
                 else:
@@ -490,9 +507,12 @@ def render_single_run_results():
                     st.success("This decision was configured with custom parameters on Page 2")
                     st.write("**Configuration Source:** Page 2 Decision Tab")
                     
-                    # Show decision-specific results if available
+                    # Show decision-specific results if available (but not in comparison mode)
                     if not df.empty and decision in df.columns:
-                        render_decision_results(df, decision, decision_title)
+                        if is_comparison_mode:
+                            st.info("📊 Detailed results are shown in the comparison grids below")
+                        else:
+                            render_decision_results(df, decision, decision_title)
                     else:
                         st.info("Results data not available for this decision")
                         
@@ -505,10 +525,13 @@ def render_single_run_results():
                         st.info("This decision used default values since it was not selected for customization")
                         st.write(f"**Default Behavior:** {default_description}")
                         
-                        # Show decision-specific results if available
+                        # Show decision-specific results if available (but not in comparison mode)
                         if not df.empty and decision in df.columns:
-                            st.markdown("**📊 Results with Default Values:**")
-                            render_decision_results(df, decision, decision_title)
+                            if is_comparison_mode:
+                                st.info("📊 Detailed results are shown in the comparison grids below")
+                            else:
+                                st.markdown("**📊 Results with Default Values:**")
+                                render_decision_results(df, decision, decision_title)
                         else:
                             st.caption("💡 To see results and customize this decision, select it on Page 2")
                 else:
@@ -518,10 +541,13 @@ def render_single_run_results():
                     st.info("This decision used default values since it was not selected for customization")
                     st.write(f"**Default Behavior:** {default_description}")
                     
-                    # Show decision-specific results if available
+                    # Show decision-specific results if available (but not in comparison mode)
                     if not df.empty and decision in df.columns:
-                        st.markdown("**📊 Results with Default Values:**")
-                        render_decision_results(df, decision, decision_title)
+                        if is_comparison_mode:
+                            st.info("📊 Detailed results are shown in the comparison grids below")
+                        else:
+                            st.markdown("**📊 Results with Default Values:**")
+                            render_decision_results(df, decision, decision_title)
                     else:
                         st.caption("💡 To see results and customize this decision, select it on Page 2")
         
