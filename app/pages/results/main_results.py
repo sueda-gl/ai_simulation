@@ -493,10 +493,10 @@ def render_single_run_results():
                         st.success("This decision was configured with custom parameters on Page 2")
                         st.write("**Configuration Source:** Page 2 Decision Tab")
                         
-                        # Show decision-specific results if available (but not in comparison mode)
+                        # Show decision-specific results if available (but not for custom decisions in comparison mode)
                         if not df.empty and decision in df.columns:
                             if is_comparison_mode:
-                                st.info("📊 Detailed results are shown in the comparison grids below")
+                                st.info("📊 Custom decision results are shown in the comparison grids below")
                             else:
                                 render_decision_results(df, decision, decision_title)
                         else:
@@ -507,10 +507,10 @@ def render_single_run_results():
                     st.success("This decision was configured with custom parameters on Page 2")
                     st.write("**Configuration Source:** Page 2 Decision Tab")
                     
-                    # Show decision-specific results if available (but not in comparison mode)
+                    # Show decision-specific results if available (but not for custom decisions in comparison mode)
                     if not df.empty and decision in df.columns:
                         if is_comparison_mode:
-                            st.info("📊 Detailed results are shown in the comparison grids below")
+                            st.info("📊 Custom decision results are shown in the comparison grids below")
                         else:
                             render_decision_results(df, decision, decision_title)
                     else:
@@ -525,13 +525,10 @@ def render_single_run_results():
                         st.info("This decision used default values since it was not selected for customization")
                         st.write(f"**Default Behavior:** {default_description}")
                         
-                        # Show decision-specific results if available (but not in comparison mode)
+                        # Show decision-specific results if available
                         if not df.empty and decision in df.columns:
-                            if is_comparison_mode:
-                                st.info("📊 Detailed results are shown in the comparison grids below")
-                            else:
-                                st.markdown("**📊 Results with Default Values:**")
-                                render_decision_results(df, decision, decision_title)
+                            st.markdown("**📊 Results with Default Values:**")
+                            render_decision_results(df, decision, decision_title)
                         else:
                             st.caption("💡 To see results and customize this decision, select it on Page 2")
                 else:
@@ -541,13 +538,10 @@ def render_single_run_results():
                     st.info("This decision used default values since it was not selected for customization")
                     st.write(f"**Default Behavior:** {default_description}")
                     
-                    # Show decision-specific results if available (but not in comparison mode)
+                    # Show decision-specific results if available
                     if not df.empty and decision in df.columns:
-                        if is_comparison_mode:
-                            st.info("📊 Detailed results are shown in the comparison grids below")
-                        else:
-                            st.markdown("**📊 Results with Default Values:**")
-                            render_decision_results(df, decision, decision_title)
+                        st.markdown("**📊 Results with Default Values:**")
+                        render_decision_results(df, decision, decision_title)
                     else:
                         st.caption("💡 To see results and customize this decision, select it on Page 2")
         
