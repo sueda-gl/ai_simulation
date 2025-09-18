@@ -9,7 +9,8 @@ from app.components import show_overview, show_monte_carlo_results
 from app.pages.results.comparisons import (
     render_all_modes_comparison,
     render_dependent_variable_results,
-    render_income_comparison
+    render_income_comparison,
+    render_population_comparison
 )
 from app.pages.results.details import (
     render_individual_agent_details,
@@ -554,36 +555,49 @@ def render_single_run_results():
             st.write(f"- Decisions: {len(st.session_state.decision_params.selected_decisions)}")
     
     
-    # Show high-level summary only (detailed results are in decision dropdowns above)
+    # Show results based on comparison mode
     results_dict = st.session_state.simulation_results
     
     if results_dict:
-        st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
-        df = next(iter(results_dict.values()))
-        mode_name = next(iter(results_dict.keys()))
-        
-        # Show high-level metrics only
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Agents", f"{len(df):,}")
-        
-        with col2:
-            trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
-                         'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
-            st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
-        
-        with col3:
-            decision_cols = [c for c in df.columns if c not in trait_cols]
-            st.metric("Decisions Computed", len(decision_cols))
-        
-        with col4:
-            # Show overall donation rate if available
-            donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
-            if donation_col in df.columns:
-                st.metric("Avg Donation Rate", f"{df[donation_col].mean():.1%}")
-        
-        st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
+        # Show results based on mode
+        if st.session_state.population_mode == "Compare all":
+            render_all_modes_comparison(results_dict)
+        elif st.session_state.population_mode == "Dependent variable resampling":
+            render_dependent_variable_results(results_dict)
+        elif st.session_state.income_spec_mode == "Compare both":
+            render_income_comparison(results_dict)
+        else:
+            # Single mode display - show high-level summary
+            st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
+            df = next(iter(results_dict.values()))
+            mode_name = next(iter(results_dict.keys()))
+            
+            # Show high-level metrics only
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Total Agents", f"{len(df):,}")
+            
+            with col2:
+                trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
+                             'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
+                st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
+            
+            with col3:
+                decision_cols = [c for c in df.columns if c not in trait_cols]
+                st.metric("Decisions Computed", len(decision_cols))
+            
+            with col4:
+                # Show overall donation rate if available
+                donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
+                if donation_col in df.columns:
+                    st.metric("Avg Donation Rate", f"{df[donation_col].mean():.1%}")
+            
+            st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
+            
+            # For single mode, also show the overview
+            from app.components import show_overview
+            show_overview(df, f" ({mode_name.title()})")
     
     # Get DataFrame for individual agent analysis
     if st.session_state.population_mode == "Compare all":
