@@ -191,6 +191,7 @@ def render_results_page():
     with st.expander("🔧 Debug: Session State", expanded=False):
         st.write(f"simulation_results: {'Yes' if st.session_state.simulation_results is not None else 'No'}")
         st.write(f"mc_results: {'Yes' if st.session_state.mc_results is not None else 'No'}")
+        st.write(f"individual_results: {list(st.session_state.get('individual_results', {}).keys()) if hasattr(st.session_state, 'individual_results') else 'None'}")
         if st.session_state.mc_results is not None:
             st.write(f"mc_results keys: {list(st.session_state.mc_results.keys())}")
             st.write(f"summary shape: {st.session_state.mc_results['summary'].shape if st.session_state.mc_results['summary'] is not None else 'None'}")
@@ -200,6 +201,43 @@ def render_results_page():
     if st.session_state.simulation_results is not None:
         render_single_run_results()
     
+    # Display individual decision results (when running single decisions)
+    elif hasattr(st.session_state, 'individual_results') and st.session_state.individual_results:
+        # Check if we have recent individual results
+        recent_decisions = list(st.session_state.individual_results.keys())
+        if recent_decisions:
+            st.markdown('<h3 class="section-header">📊 Individual Decision Results</h3>', unsafe_allow_html=True)
+            
+            # Define which decisions should show graphs
+            DECISIONS_WITH_GRAPHS = ["disclose_income", "disclose_documents", "purchase_vs_bid"]
+            
+            # Show results for each individual decision
+            for decision_name in recent_decisions:
+                decision_results = st.session_state.individual_results[decision_name]
+                if decision_results and decision_results is not None:
+                    df = next(iter(decision_results.values())) if decision_results else pd.DataFrame()
+                    
+                    if not df.empty and decision_name in df.columns:
+                        decision_title = decision_name.replace('_', ' ').title()
+                        
+                        with st.expander(f"📊 {decision_title} Results", expanded=True):
+                            # Show graph only for specified decisions
+                            if decision_name in DECISIONS_WITH_GRAPHS:
+                                render_decision_results(df, decision_name, decision_title)
+                            else:
+                                # Just show basic stats without graphs
+                                col1, col2, col3 = st.columns(3)
+                                with col1:
+                                    st.metric("Total Agents", f"{len(df):,}")
+                                with col2:
+                                    if decision_name == "donation_default":
+                                        donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
+                                        if donation_col in df.columns:
+                                            st.metric("Average Donation Rate", f"{df[donation_col].mean():.1%}")
+                                    else:
+                                        st.metric("Unique Values", df[decision_name].nunique())
+                                st.caption("Results visualization not shown for this parameter")
+                    
     # Display Monte Carlo results
     elif st.session_state.mc_results is not None:
         show_monte_carlo_results(st.session_state.mc_results)
@@ -221,12 +259,42 @@ def render_single_run_results():
         st.markdown('<h3 class="section-header">📋 Decision Configuration Summary</h3>', unsafe_allow_html=True)
         st.caption("Expand any decision to view its configuration details")
         
+        # Debug: Show which decisions should have graphs
+        with st.expander("🔍 Debug: Graph Visibility", expanded=False):
+            st.write("**Decisions that SHOULD show graphs:**")
+            st.write("- disclose_income")
+            st.write("- disclose_documents") 
+            st.write("- purchase_vs_bid")
+            st.write("")
+            st.write(f"**Custom decisions:** {st.session_state.custom_decisions}")
+            st.write(f"**Default decisions:** {st.session_state.default_decisions}")
+        
         from app.pages.decision_execution import DEFAULT_DECISION_VALUES, DEFAULT_DECISION_DESCRIPTIONS
         from app.models import ALL_DECISIONS
         
         # Create individual dropdowns for each decision with full results
         results_dict = st.session_state.simulation_results
         df = next(iter(results_dict.values())) if results_dict else pd.DataFrame()
+        
+        # Debug: Show available columns
+        if not df.empty:
+            with st.expander("🔍 Debug: Available Data Columns", expanded=False):
+                st.write(f"**DataFrame shape:** {df.shape}")
+                st.write(f"**Available columns:** {list(df.columns)}")
+        
+        # Define parameters that should not show graphs (only show for disclose_income, disclose_documents, and purchase_vs_bid)
+        FIXED_PARAMS_NO_GRAPHS = [
+            "donation_default",
+            "rejected_transaction_defaults",
+            "vendor_choice_weights",
+            "consumption_quantity",
+            "consumption_frequency",
+            "vendor_selection",
+            "bid_value",
+            "rejected_transaction_option", 
+            "rejected_bid_value",
+            "final_donation_rate"
+        ]
         
         for decision in ALL_DECISIONS:
             decision_title = decision.replace('_', ' ').title()
@@ -238,11 +306,16 @@ def render_single_run_results():
                     st.success("This decision was configured with custom parameters on Page 2")
                     st.write("**Configuration Source:** Page 2 Decision Tab")
                     
-                    # Show decision-specific results if available
-                    if not df.empty and decision in df.columns:
-                        render_decision_results(df, decision, decision_title)
+                    # Apply same graph visibility rules to custom decisions
+                    if decision not in FIXED_PARAMS_NO_GRAPHS:
+                        # Show decision-specific results if available
+                        if not df.empty and decision in df.columns:
+                            st.markdown("**📊 Results:**")
+                            render_decision_results(df, decision, decision_title)
+                        else:
+                            st.info(f"Results data not available for this decision. DataFrame columns: {list(df.columns) if not df.empty else 'Empty DataFrame'}")
                     else:
-                        st.info("Results data not available for this decision")
+                        st.caption("Results visualization not shown for this parameter")
                         
             else:
                 # Default decision - show gear icon
@@ -251,12 +324,16 @@ def render_single_run_results():
                     st.info("This decision used default values since it was not selected for customization")
                     st.write(f"**Default Behavior:** {default_description}")
                     
-                    # Show decision-specific results if available
-                    if not df.empty and decision in df.columns:
-                        st.markdown("**📊 Results with Default Values:**")
-                        render_decision_results(df, decision, decision_title)
+                    # For fixed parameters, don't show graphs
+                    if decision not in FIXED_PARAMS_NO_GRAPHS:
+                        # Show decision-specific results if available
+                        if not df.empty and decision in df.columns:
+                            st.markdown("**📊 Results with Default Values:**")
+                            render_decision_results(df, decision, decision_title)
+                        else:
+                            st.caption("💡 To see results and customize this decision, select it on Page 2")
                     else:
-                        st.caption("💡 To see results and customize this decision, select it on Page 2")
+                        st.caption("Results visualization not shown for this parameter")
         
         st.markdown("---")
     
