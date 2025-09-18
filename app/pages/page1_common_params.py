@@ -319,11 +319,172 @@ def render_page1():
             
         elif income_distribution == "pareto":
             st.markdown("**Pareto Distribution Parameters**")
-            # Parameters will be added here
+            st.caption("X ~ Pareto(x_m, α), where x_m is the minimum value")
+            
+            # Add helpful tip about parameter values
+            with st.expander("💡 Parameter Guidelines"):
+                st.markdown("""
+                **Understanding x_m and α:**
+                - x_m is the minimum value - nothing will be below this
+                - α is the shape parameter (tail index):
+                  - Small α (e.g., 1.5): Very heavy tail, extreme values more common
+                  - Large α (e.g., 5): Lighter tail, more concentrated near minimum
+                - For income distributions:
+                  - α typically ranges from 1.5 to 3.0
+                  - α ≈ 1.16 gives 80-20 rule (Pareto principle)
+                  - α ≈ 2.0 gives moderate inequality
+                """)
+            
+            # x_m and alpha parameters
+            col_xm, col_alpha = st.columns(2)
+            
+            with col_xm:
+                pareto_x_m = st.number_input(
+                    "x_m - Minimum Value ($)",
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=st.session_state.sim_params.pareto_x_m,
+                    step=100.0,
+                    help="The minimum value (scale parameter). No values will be below this.",
+                    key="pareto_x_m_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'pareto_x_m', st.session_state.pareto_x_m_input)
+                )
+            
+            with col_alpha:
+                pareto_alpha = st.number_input(
+                    "α (alpha) - Shape Parameter",
+                    min_value=1.01,
+                    max_value=10.0,
+                    value=st.session_state.sim_params.pareto_alpha,
+                    step=0.1,
+                    help="Tail index: smaller values = heavier tail (more inequality)",
+                    key="pareto_alpha_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'pareto_alpha', st.session_state.pareto_alpha_input)
+                )
+            
+            # Optional maximum value
+            col_max_empty, col_max = st.columns(2)
+            
+            with col_max:
+                # Checkbox for enabling max
+                use_max = st.checkbox(
+                    "Set Maximum Value",
+                    value=st.session_state.sim_params.pareto_max is not None,
+                    help="Enable rejection sampling to enforce maximum bound",
+                    key="use_pareto_max"
+                )
+                
+                if use_max:
+                    if st.session_state.sim_params.pareto_max is None:
+                        st.session_state.sim_params.pareto_max = st.session_state.sim_params.pareto_x_m * 100
+                    
+                    pareto_max = st.number_input(
+                        "Maximum Value ($)",
+                        min_value=st.session_state.sim_params.pareto_x_m + 1000.0,
+                        max_value=10000000.0,
+                        value=st.session_state.sim_params.pareto_max,
+                        step=1000.0,
+                        help="Rejection sampling: values above this will be resampled",
+                        key="pareto_max_input",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'pareto_max', st.session_state.pareto_max_input)
+                    )
+                else:
+                    st.session_state.sim_params.pareto_max = None
+            
+            # Show income range info
+            max_display = "∞" if st.session_state.sim_params.pareto_max is None else f"${st.session_state.sim_params.pareto_max:,.0f}"
+            st.info(f"📊 Income Range: [${st.session_state.sim_params.pareto_x_m:,.0f}, {max_display}]")
             
         elif income_distribution == "weibull":
             st.markdown("**Weibull Distribution Parameters**")
-            # Parameters will be added here
+            st.caption("X = a + Y, where Y ~ Weibull(k, λ)")
+            
+            # Add helpful tip about parameter values
+            with st.expander("💡 Parameter Guidelines"):
+                st.markdown("""
+                **Understanding k and λ:**
+                - k is the shape parameter:
+                  - k < 1: Early failures more likely (decreasing hazard)
+                  - k = 1: Constant failure rate (exponential distribution)
+                  - k > 1: Later failures more likely (increasing hazard)
+                  - k ≈ 2: Rayleigh-like distribution
+                  - k ≈ 3.4: Approximates normal distribution
+                - λ is the scale parameter:
+                  - Larger λ → wider spread of values
+                  - λ represents the characteristic life (63.2th percentile)
+                """)
+            
+            # k and lambda parameters
+            col_k, col_lambda = st.columns(2)
+            
+            with col_k:
+                weibull_k = st.number_input(
+                    "k - Shape Parameter",
+                    min_value=0.1,
+                    max_value=10.0,
+                    value=st.session_state.sim_params.weibull_k,
+                    step=0.1,
+                    help="Shape parameter: k<1 decreasing hazard, k=1 exponential, k>1 increasing hazard",
+                    key="weibull_k_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'weibull_k', st.session_state.weibull_k_input)
+                )
+            
+            with col_lambda:
+                weibull_lambda = st.number_input(
+                    "λ - Scale Parameter",
+                    min_value=100.0,
+                    max_value=1000000.0,
+                    value=st.session_state.sim_params.weibull_lambda,
+                    step=1000.0,
+                    help="Scale parameter: stretches or shrinks the distribution",
+                    key="weibull_lambda_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'weibull_lambda', st.session_state.weibull_lambda_input)
+                )
+            
+            # Min and Max parameters
+            col_min, col_max = st.columns(2)
+            
+            with col_min:
+                weibull_min = st.number_input(
+                    "a - Minimum Value ($)",
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=st.session_state.sim_params.weibull_min,
+                    step=100.0,
+                    help="Linear shift: all values will be at least this amount",
+                    key="weibull_min_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'weibull_min', st.session_state.weibull_min_input)
+                )
+            
+            with col_max:
+                # Checkbox for enabling max
+                use_max = st.checkbox(
+                    "Set Maximum Value",
+                    value=st.session_state.sim_params.weibull_max is not None,
+                    help="Enable rejection sampling to enforce maximum bound",
+                    key="use_weibull_max"
+                )
+                
+                if use_max:
+                    if st.session_state.sim_params.weibull_max is None:
+                        st.session_state.sim_params.weibull_max = st.session_state.sim_params.weibull_min + 100000.0
+                    
+                    weibull_max = st.number_input(
+                        "b - Maximum Value ($)",
+                        min_value=st.session_state.sim_params.weibull_min + 1000.0,
+                        max_value=1000000.0,
+                        value=st.session_state.sim_params.weibull_max,
+                        step=1000.0,
+                        help="Rejection sampling: values above this will be resampled",
+                        key="weibull_max_input",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'weibull_max', st.session_state.weibull_max_input)
+                    )
+                else:
+                    st.session_state.sim_params.weibull_max = None
+            
+            # Show income range info
+            max_display = "∞" if st.session_state.sim_params.weibull_max is None else f"${st.session_state.sim_params.weibull_max:,.0f}"
+            st.info(f"📊 Income Range: [${st.session_state.sim_params.weibull_min:,.0f}, {max_display}]")
         
         # Always show distribution preview
         st.markdown("### 📊 Distribution Preview")

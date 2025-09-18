@@ -73,9 +73,20 @@ def render_global_parameters_readonly(decision_name=None):
             else:
                 st.text("Maximum Income: ∞ (no constraint)")
         elif st.session_state.sim_params.income_distribution == "pareto":
-            st.text(f"Pareto α: {st.session_state.sim_params.pareto_alpha:.1f}")
+            st.text(f"Pareto x_m (minimum): ${st.session_state.sim_params.pareto_x_m:.0f}")
+            st.text(f"Pareto α (shape): {st.session_state.sim_params.pareto_alpha:.1f}")
+            if st.session_state.sim_params.pareto_max is not None:
+                st.text(f"Maximum Income: ${st.session_state.sim_params.pareto_max:.0f}")
+            else:
+                st.text("Maximum Income: ∞ (no constraint)")
         elif st.session_state.sim_params.income_distribution == "weibull":
-            st.text(f"Weibull k: {st.session_state.sim_params.weibull_shape:.1f}")
+            st.text(f"Weibull k (shape): {st.session_state.sim_params.weibull_k:.1f}")
+            st.text(f"Weibull λ (scale): ${st.session_state.sim_params.weibull_lambda:.0f}")
+            st.text(f"Minimum Income: ${st.session_state.sim_params.weibull_min:.0f}")
+            if st.session_state.sim_params.weibull_max is not None:
+                st.text(f"Maximum Income: ${st.session_state.sim_params.weibull_max:.0f}")
+            else:
+                st.text("Maximum Income: ∞ (no constraint)")
         
         st.text(f"Discount Threshold: ${st.session_state.sim_params.discount_income_threshold:,.0f}")
         

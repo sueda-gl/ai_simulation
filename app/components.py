@@ -453,16 +453,7 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
             annotation_position="top"
         )
         
-        # Add average/median line
-        avg_median_line_color = "blue" if sim_params.income_avg_type == "average" else "green"
-        fig.add_vline(
-            x=sim_params.income_avg,
-            line_dash="solid",
-            line_color=avg_median_line_color,
-            line_width=2,
-            annotation_text=f"{sim_params.income_avg_type.title()}: ${sim_params.income_avg:,.0f}",
-            annotation_position="bottom"
-        )
+        # Don't show any target line - distribution is based on user parameters
         
         # Update layout
         fig.update_layout(
@@ -491,18 +482,7 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
         with col_stat4:
             st.metric("Sample Size", f"{n_samples:,}")
         
-        # Show comparison with target
-        target_value = sim_params.income_avg
-        actual_value = actual_mean if sim_params.income_avg_type == "average" else actual_median
-        deviation = abs(actual_value - target_value)
-        deviation_pct = (deviation / target_value) * 100 if target_value > 0 else 0
-        
-        if deviation_pct < 5:
-            st.success(f"✅ Distribution closely matches target {sim_params.income_avg_type} (deviation: {deviation_pct:.1f}%)")
-        elif deviation_pct < 10:
-            st.warning(f"⚠️ Moderate deviation from target {sim_params.income_avg_type} (deviation: {deviation_pct:.1f}%)")
-        else:
-            st.error(f"❌ Large deviation from target {sim_params.income_avg_type} (deviation: {deviation_pct:.1f}%)")
+        # Distribution is based on user-specified parameters - no target comparison needed
         
     except Exception as e:
         st.error(f"❌ Error generating income distribution histogram: {e}")

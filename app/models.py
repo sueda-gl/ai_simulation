@@ -72,10 +72,15 @@ class SimulationParameters:
     lognormal_max: Optional[float] = None  # Maximum value (rejection sampling)
     
     # Pareto parameters  
-    pareto_alpha: float = 2.5  # Shape parameter (higher = less inequality)
+    pareto_alpha: float = 2.5  # Shape parameter (tail index)
+    pareto_x_m: float = 1000.0  # Minimum value (scale parameter)
+    pareto_max: Optional[float] = None  # Maximum value (rejection sampling)
     
     # Weibull parameters
-    weibull_shape: float = 2.0  # Shape parameter (k)
+    weibull_k: float = 2.0  # Shape parameter (k)
+    weibull_lambda: float = 10000.0  # Scale parameter (λ)
+    weibull_min: float = 0.0  # Minimum value (linear shift)
+    weibull_max: Optional[float] = None  # Maximum value (rejection sampling)
     
     # Income categories
     num_discount_categories: int = 10  # ✅ Changed from 3 to 10
@@ -150,34 +155,55 @@ class SimulationParameters:
                 samples = np.clip(samples, self.lognormal_min, self.lognormal_max)
             
         elif self.income_distribution == "pareto":
-            # For Pareto distribution: use user-specified alpha parameter
+            # Use user-specified x_m (minimum) and alpha parameters
+            x_m = self.pareto_x_m
             alpha = self.pareto_alpha
             
-            if self.income_avg_type == "median":
-                # Use median to set scale
-                median = self.income_avg
-                scale = median / (2**(1/alpha) - 1)
-            else:
-                # Use mean to estimate scale
-                mean = self.income_avg
-                scale = mean * (alpha - 1) / alpha
+            # Pareto distribution with scale parameter x_m
+            # Note: scipy's pareto is defined as P(X > x) = (x_m/x)^alpha for x >= x_m
+            samples = stats.pareto.rvs(b=alpha, scale=x_m, size=n_samples, random_state=rng)
             
-            samples = stats.pareto.rvs(b=alpha, scale=scale, size=n_samples, random_state=rng)
+            # Apply rejection sampling if maximum is set
+            if self.pareto_max is not None:
+                # Keep resampling values that exceed the maximum
+                max_iterations = 1000  # Prevent infinite loops
+                for _ in range(max_iterations):
+                    mask = samples > self.pareto_max
+                    if not np.any(mask):
+                        break
+                    # Resample values that are too high
+                    n_resample = np.sum(mask)
+                    samples[mask] = stats.pareto.rvs(b=alpha, scale=x_m, size=n_resample, random_state=rng)
+                
+                # Final clip to ensure no values exceed max
+                samples = np.clip(samples, x_m, self.pareto_max)
             
         elif self.income_distribution == "weibull":
-            # For Weibull distribution: use user-specified shape parameter
-            shape = self.weibull_shape
+            # Use user-specified k (shape) and lambda (scale) parameters
+            k = self.weibull_k
+            lambda_param = self.weibull_lambda
             
-            if self.income_avg_type == "median":
-                median = self.income_avg
-                scale = median / (np.log(2)**(1/shape))
-            else:
-                mean = self.income_avg
-                # Use gamma function properly
-                from math import gamma
-                scale = mean / gamma(1 + 1/shape)
+            # Sample from Weibull distribution
+            Y = stats.weibull_min.rvs(c=k, scale=lambda_param, size=n_samples, random_state=rng)
             
-            samples = stats.weibull_min.rvs(c=shape, scale=scale, size=n_samples, random_state=rng)
+            # Apply linear shift (X = a + Y)
+            samples = self.weibull_min + Y
+            
+            # Apply rejection sampling if maximum is set
+            if self.weibull_max is not None:
+                # Keep resampling values that exceed the maximum
+                max_iterations = 1000  # Prevent infinite loops
+                for _ in range(max_iterations):
+                    mask = samples > self.weibull_max
+                    if not np.any(mask):
+                        break
+                    # Resample values that are too high
+                    n_resample = np.sum(mask)
+                    Y_new = stats.weibull_min.rvs(c=k, scale=lambda_param, size=n_resample, random_state=rng)
+                    samples[mask] = self.weibull_min + Y_new
+                
+                # Final clip to ensure no values exceed max
+                samples = np.clip(samples, self.weibull_min, self.weibull_max)
         
         else:
             # Fallback to uniform distribution
@@ -208,6 +234,38 @@ def initialize_session_state():
         st.session_state.page = 'page1'
     if 'sim_params' not in st.session_state:
         st.session_state.sim_params = SimulationParameters()
+    else:
+        # Migrate old session state objects by adding missing attributes
+        sim_params = st.session_state.sim_params
+        
+        # Add lognormal parameters if missing
+        if not hasattr(sim_params, 'lognormal_mu'):
+            sim_params.lognormal_mu = 10.0
+        if not hasattr(sim_params, 'lognormal_min'):
+            sim_params.lognormal_min = 0.0
+        if not hasattr(sim_params, 'lognormal_max'):
+            sim_params.lognormal_max = None
+            
+        # Add pareto parameters if missing
+        if not hasattr(sim_params, 'pareto_x_m'):
+            sim_params.pareto_x_m = 1000.0
+        if not hasattr(sim_params, 'pareto_max'):
+            sim_params.pareto_max = None
+            
+        # Add weibull parameters if missing
+        if not hasattr(sim_params, 'weibull_k'):
+            # Check if old weibull_shape exists and migrate it
+            if hasattr(sim_params, 'weibull_shape'):
+                sim_params.weibull_k = sim_params.weibull_shape
+            else:
+                sim_params.weibull_k = 2.0
+        if not hasattr(sim_params, 'weibull_lambda'):
+            sim_params.weibull_lambda = 10000.0
+        if not hasattr(sim_params, 'weibull_min'):
+            sim_params.weibull_min = 0.0
+        if not hasattr(sim_params, 'weibull_max'):
+            sim_params.weibull_max = None
+            
     if 'decision_params' not in st.session_state:
         st.session_state.decision_params = DecisionParameters()
     if 'simulation_results' not in st.session_state:
