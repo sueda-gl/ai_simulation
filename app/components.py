@@ -77,7 +77,7 @@ def show_overview(df, title_suffix=""):
                 xaxis_tickformat='.0%',
                 showlegend=False
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
         
         with col2:
             st.markdown("**📈 Statistics**")
@@ -256,7 +256,7 @@ def show_monte_carlo_results(mc_data):
                 fig.update_yaxes(tickformat='.1%')
                 fig.update_xaxes(title="Run Number")
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
     
         # Summary statistics table
         st.subheader("📋 Summary Statistics")
@@ -347,7 +347,7 @@ def show_dependent_variable_comparison(df):
                 showlegend=False,
                 height=400
             )
-            st.plotly_chart(fig_orig, use_container_width=True)
+            st.plotly_chart(fig_orig, width="stretch")
         
         with col_resamp:
             st.subheader(f"📊 Resampled ({len(df):,} agents)")
@@ -375,7 +375,7 @@ def show_dependent_variable_comparison(df):
                 showlegend=False,
                 height=400
             )
-            st.plotly_chart(fig_resamp, use_container_width=True)
+            st.plotly_chart(fig_resamp, width="stretch")
         
         # Additional info
         st.caption(f"The resampled distribution is created by bootstrap sampling with replacement from the {len(original_donations)} original donation rates.")
@@ -409,7 +409,7 @@ def show_dependent_variable_comparison(df):
             xaxis_tickformat='.0%',
             height=400
         )
-        st.plotly_chart(fig_combined, use_container_width=True)
+        st.plotly_chart(fig_combined, width="stretch")
         
         # Show unique values info
         st.markdown("### 📊 Distribution Details")
@@ -477,7 +477,7 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
         discount_rate = sim_params.get_discount_qualification_rate(n_samples)
         
         # Display the plot
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         
         # Show distribution statistics
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)

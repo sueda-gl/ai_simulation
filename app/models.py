@@ -274,3 +274,4 @@ ALL_DECISIONS = [
     "rejected_bid_value",
     "final_donation_rate"
 ]
+

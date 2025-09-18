@@ -12,6 +12,14 @@ from src.build_master_traits import get_master_trait_list
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
 
+# Import default decision values
+try:
+    from app.pages.decision_execution import get_actual_default_value
+except ImportError:
+    # Fallback if import fails
+    def get_actual_default_value(decision_name, sim_params=None):
+        return "NA"
+
 class OrchestratorBaseline:
     """
     Orchestrator for Research Baseline mode - uses original participants with NO stochastic component.
@@ -144,14 +152,14 @@ class OrchestratorBaseline:
                         print(f"Error in decision {decision_name} for agent {idx}: {e}")
                         # Use default value for failed decisions
                         default_field = decision_params.get('output_field', decision_name)
-                        default_value = decision_params.get('default_value', 'NA')
+                        default_value = get_actual_default_value(decision_name)
                         agent_results[default_field] = default_value
                         agent_state[default_field] = default_value
                 else:
                     # Decision module not loaded - use default
                     decision_params = self.config.get(decision_name, {})
                     default_field = decision_params.get('output_field', decision_name)
-                    default_value = decision_params.get('default_value', 'NA')
+                    default_value = get_actual_default_value(decision_name)
                     agent_results[default_field] = default_value
                     agent_state[default_field] = default_value
             
