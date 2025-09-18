@@ -66,7 +66,10 @@ class SimulationParameters:
     
     # Distribution-specific parameters
     # Lognormal parameters
+    lognormal_mu: float = 10.0  # Location parameter (mean of log)
     lognormal_sigma: float = 0.5  # Shape parameter (standard deviation of log)
+    lognormal_min: float = 0.0  # Minimum value (linear shift)
+    lognormal_max: Optional[float] = None  # Maximum value (rejection sampling)
     
     # Pareto parameters  
     pareto_alpha: float = 2.5  # Shape parameter (higher = less inequality)
@@ -120,19 +123,31 @@ class SimulationParameters:
         rng = np.random.default_rng(seed)
         
         if self.income_distribution == "lognormal":
-            # For lognormal: use user-specified sigma parameter
+            # Use user-specified mu and sigma parameters
+            mu = self.lognormal_mu
             sigma = self.lognormal_sigma
             
-            if self.income_avg_type == "median":
-                # If median is specified, use it as the scale parameter
-                median = self.income_avg
-                mu = np.log(median)
-            else:
-                # If mean is specified, estimate mu parameter
-                mean = self.income_avg
-                mu = np.log(mean) - sigma**2 / 2
+            # Sample from lognormal distribution
+            Y = stats.lognorm.rvs(s=sigma, scale=np.exp(mu), size=n_samples, random_state=rng)
             
-            samples = stats.lognorm.rvs(s=sigma, scale=np.exp(mu), size=n_samples, random_state=rng)
+            # Apply linear shift (X = a + Y)
+            samples = self.lognormal_min + Y
+            
+            # Apply rejection sampling if maximum is set
+            if self.lognormal_max is not None:
+                # Keep resampling values that exceed the maximum
+                max_iterations = 1000  # Prevent infinite loops
+                for _ in range(max_iterations):
+                    mask = samples > self.lognormal_max
+                    if not np.any(mask):
+                        break
+                    # Resample values that are too high
+                    n_resample = np.sum(mask)
+                    Y_new = stats.lognorm.rvs(s=sigma, scale=np.exp(mu), size=n_resample, random_state=rng)
+                    samples[mask] = self.lognormal_min + Y_new
+                
+                # Final clip to ensure no values exceed max
+                samples = np.clip(samples, self.lognormal_min, self.lognormal_max)
             
         elif self.income_distribution == "pareto":
             # For Pareto distribution: use user-specified alpha parameter
@@ -274,4 +289,5 @@ ALL_DECISIONS = [
     "rejected_bid_value",
     "final_donation_rate"
 ]
+
 

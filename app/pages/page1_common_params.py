@@ -230,26 +230,39 @@ def render_page1():
         
         # Distribution-specific parameters
         if income_distribution == "lognormal":
-            st.markdown("**Income Distribution Parameters**")
-            st.caption("Lognormal income: X = minimum_income + Y, where Y ~ Lognormal(μ, σ)")
+            st.markdown("**Lognormal Distribution Parameters**")
+            st.caption("X = a + Y, where Y ~ Lognormal(μ, σ)")
             
+            # Add helpful tip about parameter values
+            with st.expander("💡 Parameter Guidelines"):
+                st.markdown("""
+                **Understanding μ and σ:**
+                - Y ~ Lognormal(μ, σ) means ln(Y) ~ Normal(μ, σ)
+                - Mean of Y = exp(μ + σ²/2)
+                - For realistic income distributions:
+                  - μ typically ranges from 8 to 12
+                  - σ typically ranges from 0.3 to 1.0
+                - Example: μ=10, σ=0.5 gives Y with mean ≈ $25,000
+                """)
+            
+            # Mu and Sigma parameters
             col_mu, col_sigma = st.columns(2)
             
             with col_mu:
                 lognormal_mu = st.number_input(
-                    "μ (mu) - Mean of ln(income)",
-                    min_value=-5.0,
-                    max_value=5.0,
+                    "μ (mu) - Mean of ln(Y)",
+                    min_value=0.0,
+                    max_value=15.0,
                     value=st.session_state.sim_params.lognormal_mu,
                     step=0.1,
-                    help="Mean parameter of the log-transformed values",
+                    help="Mean parameter of the log-transformed values. For income distributions, typically 8-12.",
                     key="lognormal_mu_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_mu', st.session_state.lognormal_mu_input)
                 )
             
             with col_sigma:
                 lognormal_sigma = st.number_input(
-                    "σ (sigma) - Std Dev of ln(income)",
+                    "σ (sigma) - Std Dev of ln(Y)",
                     min_value=0.1,
                     max_value=3.0,
                     value=st.session_state.sim_params.lognormal_sigma,
@@ -259,155 +272,62 @@ def render_page1():
                     on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_sigma', st.session_state.lognormal_sigma_input)
                 )
             
-            # Minimum income
-            minimum_income = st.number_input(
-                "Minimum Income ($)",
-                min_value=0.0,
-                max_value=100000.0,
-                value=st.session_state.sim_params.minimum_income,
-                step=100.0,
-                help="Minimum income level (applied as linear shift)",
-                key="minimum_income_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'minimum_income', st.session_state.minimum_income_input)
-            )
+            # Min and Max parameters
+            col_min, col_max = st.columns(2)
             
-            # Optional maximum income
-            use_max_income = st.checkbox(
-                "Apply Maximum Income Limit",
-                value=st.session_state.sim_params.use_maximum_income,
-                help="Use rejection sampling to enforce maximum income bound",
-                key="use_maximum_income_checkbox",
-                on_change=lambda: setattr(st.session_state.sim_params, 'use_maximum_income', st.session_state.use_maximum_income_checkbox)
-            )
-            
-            if st.session_state.sim_params.use_maximum_income:
-                # Initialize maximum_income if None
-                if st.session_state.sim_params.maximum_income is None:
-                    st.session_state.sim_params.maximum_income = st.session_state.sim_params.minimum_income + 50000
-                
-                maximum_income = st.number_input(
-                    "Maximum Income ($)",
-                    min_value=st.session_state.sim_params.minimum_income + 1000,
-                    max_value=1000000.0,
-                    value=st.session_state.sim_params.maximum_income,
-                    step=1000.0,
-                    help="Maximum income level (enforced via rejection sampling)",
-                    key="maximum_income_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'maximum_income', st.session_state.maximum_income_input)
+            with col_min:
+                lognormal_min = st.number_input(
+                    "a - Minimum Value ($)",
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=st.session_state.sim_params.lognormal_min,
+                    step=100.0,
+                    help="Linear shift: all values will be at least this amount",
+                    key="lognormal_min_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_min', st.session_state.lognormal_min_input)
                 )
-            else:
-                st.session_state.sim_params.maximum_income = None
+            
+            with col_max:
+                # Checkbox for enabling max
+                use_max = st.checkbox(
+                    "Set Maximum Value",
+                    value=st.session_state.sim_params.lognormal_max is not None,
+                    help="Enable rejection sampling to enforce maximum bound",
+                    key="use_lognormal_max"
+                )
+                
+                if use_max:
+                    if st.session_state.sim_params.lognormal_max is None:
+                        st.session_state.sim_params.lognormal_max = st.session_state.sim_params.lognormal_min + 100000.0
+                    
+                    lognormal_max = st.number_input(
+                        "b - Maximum Value ($)",
+                        min_value=st.session_state.sim_params.lognormal_min + 1000.0,
+                        max_value=1000000.0,
+                        value=st.session_state.sim_params.lognormal_max,
+                        step=1000.0,
+                        help="Rejection sampling: values above this will be resampled",
+                        key="lognormal_max_input",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_max', st.session_state.lognormal_max_input)
+                    )
+                else:
+                    st.session_state.sim_params.lognormal_max = None
             
             # Show income range info
-            max_display = "∞" if not st.session_state.sim_params.use_maximum_income else f"${st.session_state.sim_params.maximum_income:,.0f}"
-            st.caption(f"📊 Income Range: [${st.session_state.sim_params.minimum_income:,.0f}, {max_display}]")
+            max_display = "∞" if st.session_state.sim_params.lognormal_max is None else f"${st.session_state.sim_params.lognormal_max:,.0f}"
+            st.info(f"📊 Income Range: [${st.session_state.sim_params.lognormal_min:,.0f}, {max_display}]")
             
         elif income_distribution == "pareto":
-            pareto_alpha = st.slider(
-                "Pareto α (Shape Parameter)",
-                min_value=1.1,
-                max_value=5.0,
-                value=st.session_state.sim_params.pareto_alpha,
-                step=0.1,
-                help="Shape parameter. Higher values = less inequality, more concentrated around lower incomes"
-            )
-            st.session_state.sim_params.pareto_alpha = pareto_alpha
+            st.markdown("**Pareto Distribution Parameters**")
+            # Parameters will be added here
             
         elif income_distribution == "weibull":
-            weibull_shape = st.slider(
-                "Weibull k (Shape Parameter)",
-                min_value=0.5,
-                max_value=5.0,
-                value=st.session_state.sim_params.weibull_shape,
-                step=0.1,
-                help="Shape parameter. k=1: exponential, k=2: Rayleigh-like, k>3: bell-shaped"
-            )
-            st.session_state.sim_params.weibull_shape = weibull_shape
+            st.markdown("**Weibull Distribution Parameters**")
+            # Parameters will be added here
         
-        col_inc1, col_inc2 = st.columns(2)
-        with col_inc1:
-            income_min = st.number_input(
-                "Minimum Income ($)",
-                min_value=0.0,
-                max_value=1000000.0,
-                value=st.session_state.sim_params.income_min,
-                step=100.0,
-                key="income_min_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'income_min', st.session_state.income_min_input)
-            )
-            
-            # Income average/median type selector
-            # Initialize the widget key if it doesn't exist
-            if "page1_income_avg_type" not in st.session_state:
-                st.session_state.page1_income_avg_type = "Average" if st.session_state.sim_params.income_avg_type == "average" else "Median"
-            
-            income_avg_type = st.radio(
-                "Central Tendency Type",
-                ["Average", "Median"],
-                horizontal=True,
-                help="Specify whether the central value represents the average (mean) or median of the income distribution",
-                key="page1_income_avg_type"
-            )
-            
-            # Sync the widget's state to sim_params
-            st.session_state.sim_params.income_avg_type = st.session_state.page1_income_avg_type.lower()
-            
-            # Dynamic label based on selection
-            central_label = f"{st.session_state.page1_income_avg_type} Income ($)"
-            income_avg = st.number_input(
-                central_label,
-                min_value=st.session_state.sim_params.income_min,
-                max_value=1000000.0,
-                value=st.session_state.sim_params.income_avg,
-                step=100.0,
-                help=f"The {st.session_state.page1_income_avg_type.lower()} income value for the distribution",
-                key="income_avg_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'income_avg', st.session_state.income_avg_input)
-            )
-        
-        with col_inc2:
-            income_max = st.number_input(
-                "Maximum Income ($)",
-                min_value=st.session_state.sim_params.income_avg,
-                max_value=10000000.0,
-                value=st.session_state.sim_params.income_max,
-                step=100.0,
-                key="income_max_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'income_max', st.session_state.income_max_input)
-            )
-            
-            # Discount threshold
-            discount_income_threshold = st.number_input(
-                "Threshold Income for Discount ($)",
-                min_value=st.session_state.sim_params.income_min,
-                max_value=st.session_state.sim_params.income_max,
-                value=st.session_state.sim_params.discount_income_threshold,
-                step=100.0,
-                help="Income threshold below which agents qualify for discounts (pending document disclosure)",
-                key="discount_threshold_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'discount_income_threshold', st.session_state.discount_threshold_input)
-            )
-            
-            # Show threshold validation and info
-            if st.session_state.sim_params.income_min <= st.session_state.sim_params.discount_income_threshold <= st.session_state.sim_params.income_max:
-                threshold_pct = ((st.session_state.sim_params.discount_income_threshold - st.session_state.sim_params.income_min) / 
-                               (st.session_state.sim_params.income_max - st.session_state.sim_params.income_min)) * 100
-                st.caption(f"✅ Threshold at {threshold_pct:.1f}% of income range")
-            else:
-                st.error("❌ Threshold must be between minimum and maximum income!")
-        
-        # Income Distribution Preview
-        st.markdown('<h4 class="subsection-header">📈 Distribution Preview</h4>', unsafe_allow_html=True)
-        
-        # Add toggle for showing histogram
-        show_histogram = st.checkbox(
-            "Show Income Distribution Histogram",
-            value=False,
-            help="Generate and display a preview of the income distribution with current parameters"
-        )
-        
-        if show_histogram:
-            show_income_distribution_histogram(st.session_state.sim_params)
+        # Always show distribution preview
+        st.markdown("### 📊 Distribution Preview")
+        show_income_distribution_histogram(st.session_state.sim_params)
         
         # Income Categories Section
         st.markdown('<h3 class="section-header">📊 Income Categories</h3>', unsafe_allow_html=True)

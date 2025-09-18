@@ -477,7 +477,7 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
         discount_rate = sim_params.get_discount_qualification_rate(n_samples)
         
         # Display the plot
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
         
         # Show distribution statistics
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
