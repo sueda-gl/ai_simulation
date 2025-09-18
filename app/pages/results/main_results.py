@@ -19,168 +19,371 @@ import plotly.express as px
 
 
 def render_decision_results(df, decision_name, decision_title):
-    """Render detailed results for a specific decision"""
+    """Render detailed results for a specific decision using decision-specific visualizations"""
     if decision_name not in df.columns:
         st.warning(f"No results available for {decision_title}")
         return
     
     decision_data = df[decision_name]
     
-    # Check if data is numeric
+    # Get the appropriate visualization function for this decision
+    viz_function = DECISION_VISUALIZATIONS.get(decision_name, render_generic_decision)
+    
+    # Call the specific visualization function
+    viz_function(df, decision_name, decision_title, decision_data)
+
+
+# =============================================================================
+# DECISION-SPECIFIC VISUALIZATION FUNCTIONS
+# =============================================================================
+
+def render_donation_default(df, decision_name, decision_title, decision_data):
+    """Visualization for donation_default - percentage-based with distribution analysis"""
+    # TODO: Implement specialized donation visualization
+    # For now, use generic numeric visualization
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_final_donation_rate(df, decision_name, decision_title, decision_data):
+    """Visualization for final_donation_rate - percentage-based analysis"""
+    # TODO: Implement specialized final donation rate visualization
+    # For now, use generic numeric visualization
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_disclose_income(df, decision_name, decision_title, decision_data):
+    """Visualization for disclose_income - binary Y/N choice"""
+    
+    # Binary choice metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    value_counts = decision_data.value_counts()
+    total = len(decision_data)
+    
+    with col1:
+        st.metric("Total Agents", f"{total:,}")
+    with col2:
+        yes_count = value_counts.get('Y', 0)
+        st.metric("Disclosed (Y)", f"{yes_count:,} ({yes_count/total:.1%})")
+    with col3:
+        no_count = value_counts.get('N', 0)
+        st.metric("Not Disclosed (N)", f"{no_count:,} ({no_count/total:.1%})")
+    with col4:
+        st.metric("Disclosure Rate", f"{yes_count/total:.1%}")
+    
+    # Binary choice visualization - pie chart
+    col_plot, col_stats = st.columns([2, 1])
+    
+    with col_plot:
+        if len(value_counts) > 0:
+            fig = px.pie(
+                values=value_counts.values,
+                names=value_counts.index,
+                title=f"{decision_title} Distribution",
+                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col_stats:
+        st.markdown("**📊 Choice Breakdown**")
+        breakdown_df = pd.DataFrame({
+            'Choice': value_counts.index,
+            'Count': value_counts.values,
+            'Percentage': [f"{(count/total)*100:.1f}%" for count in value_counts.values]
+        })
+        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+
+
+def render_disclose_documents(df, decision_name, decision_title, decision_data):
+    """Visualization for disclose_documents - binary Y/N choice"""
+    # Same as disclose_income - reuse the implementation
+    render_disclose_income(df, decision_name, decision_title, decision_data)
+
+
+def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
+    """Visualization for purchase_vs_bid - binary purchase/bid choice"""
+    
+    # Purchase vs Bid metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    value_counts = decision_data.value_counts()
+    total = len(decision_data)
+    
+    with col1:
+        st.metric("Total Agents", f"{total:,}")
+    with col2:
+        purchase_count = value_counts.get('purchase', 0)
+        st.metric("Purchase", f"{purchase_count:,} ({purchase_count/total:.1%})")
+    with col3:
+        bid_count = value_counts.get('bid', 0)
+        st.metric("Bid", f"{bid_count:,} ({bid_count/total:.1%})")
+    with col4:
+        st.metric("Purchase Rate", f"{purchase_count/total:.1%}")
+    
+    # Purchase vs Bid visualization - donut chart
+    col_plot, col_stats = st.columns([2, 1])
+    
+    with col_plot:
+        if len(value_counts) > 0:
+            fig = px.pie(
+                values=value_counts.values,
+                names=value_counts.index,
+                title=f"{decision_title} Distribution",
+                hole=0.4,  # Donut chart
+                color_discrete_map={'purchase': '#4CAF50', 'bid': '#FF9800'}  # Green for purchase, Orange for bid
+            )
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col_stats:
+        st.markdown("**🛒 Transaction Choices**")
+        breakdown_df = pd.DataFrame({
+            'Choice': value_counts.index,
+            'Count': value_counts.values,
+            'Percentage': [f"{(count/total)*100:.1f}%" for count in value_counts.values]
+        })
+        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+
+
+def render_rejected_transaction_defaults(df, decision_name, decision_title, decision_data):
+    """Visualization for rejected_transaction_defaults"""
+    
+    # Check the actual simulation execution mode from session state
+    simulation_mode = "unknown"
+    if hasattr(st.session_state, 'sim_params') and hasattr(st.session_state.sim_params, 'simulation_execution_mode'):
+        simulation_mode = st.session_state.sim_params.simulation_execution_mode
+    
+    # Simple metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Agents", f"{len(decision_data):,}")
+    
+    with col2:
+        st.metric("Mode", simulation_mode.title())
+    
+    if simulation_mode == "snapshot":
+        # Snapshot mode - show forgo transaction behavior
+        with col3:
+            st.metric("Decision", "Forgo Transaction")
+        
+        with col4:
+            st.metric("Option", "5")
+        
+        # Pie chart showing 100% forgo transaction
+        col_plot, col_info = st.columns([2, 1])
+        
+        with col_plot:
+            # Create pie chart for forgo transaction
+            fig = px.pie(
+                values=[100],
+                names=["Forgo Transaction (Option 5)"],
+                title="Transaction Rejection Handling",
+                color_discrete_sequence=['#FF6B6B']  # Red color for rejection
+            )
+            fig.update_layout(showlegend=True)
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col_info:
+            st.markdown("**📋 Snapshot Mode Behavior**")
+            st.info("In snapshot mode, all agents choose to forgo the transaction when it's rejected (Option 5).")
+            
+            st.markdown("**📊 Decision Breakdown**")
+            breakdown_df = pd.DataFrame({
+                'Option': ['Option 5'],
+                'Choice': ['Forgo Transaction'],
+                'Count': [len(decision_data)],
+                'Percentage': ['100.0%']
+            })
+            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+    
+    else:
+        # Live/Real-time mode - this decision is not relevant
+        with col3:
+            st.metric("Status", "Not Applicable")
+        
+        with col4:
+            st.metric("Reason", "Live Mode")
+        
+        # Show explanation instead of chart
+        if simulation_mode == "live":
+            st.info("In live simulation mode, customers will be asked in real-time for their decisions when transactions are rejected. This default behavior is not applicable.")
+        else:
+            st.warning(f"Simulation execution mode is set to '{simulation_mode}'. This decision is only relevant for snapshot mode.")
+
+
+def render_vendor_choice_weights(df, decision_name, decision_title, decision_data):
+    """Visualization for vendor_choice_weights - weight distribution analysis"""
+    # TODO: Implement specialized visualization for vendor weight analysis
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_consumption_quantity(df, decision_name, decision_title, decision_data):
+    """Visualization for consumption_quantity - quantity analysis"""
+    # TODO: Implement specialized visualization for consumption quantities
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_consumption_frequency(df, decision_name, decision_title, decision_data):
+    """Visualization for consumption_frequency - frequency analysis"""
+    # TODO: Implement specialized visualization for consumption frequency
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_vendor_selection(df, decision_name, decision_title, decision_data):
+    """Visualization for vendor_selection - vendor choice analysis"""
+    # TODO: Implement specialized visualization for vendor selection patterns
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_bid_value(df, decision_name, decision_title, decision_data):
+    """Visualization for bid_value - bid amount analysis"""
+    
+    # Simple description in blue box
+
+
+
+def render_rejected_transaction_option(df, decision_name, decision_title, decision_data):
+    """Visualization for rejected_transaction_option"""
+    # TODO: Implement specialized visualization for rejection options
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_rejected_bid_value(df, decision_name, decision_title, decision_data):
+    """Visualization for rejected_bid_value"""
+    # TODO: Implement specialized visualization for rejected bid handling
+    render_generic_decision(df, decision_name, decision_title, decision_data)
+
+
+def render_generic_decision(df, decision_name, decision_title, decision_data):
+    """Generic fallback visualization for unknown decision types"""
+    
+    # Try to determine if numeric
     try:
-        # Try to convert to numeric, coercing errors to NaN
         numeric_data = pd.to_numeric(decision_data, errors='coerce')
         is_numeric = not numeric_data.isna().all()
     except:
         is_numeric = False
     
-    # Show metrics
+    # Generic metrics
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("Total Agents", f"{len(decision_data):,}")
     
     if is_numeric:
-        # Numeric decision - show statistical metrics
         with col2:
-            st.metric("Mean", f"{numeric_data.mean():.1%}" if decision_name == "donation_default" else f"{numeric_data.mean():.2f}")
-        
+            st.metric("Mean", f"{numeric_data.mean():.2f}")
         with col3:
             st.metric("Std Dev", f"{numeric_data.std():.3f}")
-        
         with col4:
-            st.metric("Range", f"{numeric_data.min():.1%} - {numeric_data.max():.1%}" if decision_name == "donation_default" else f"{numeric_data.min():.2f} - {numeric_data.max():.2f}")
+            st.metric("Range", f"{numeric_data.min():.2f} - {numeric_data.max():.2f}")
         
-        # Show distribution plot and statistics
+        # Generic numeric visualization
         col_plot, col_stats = st.columns([2, 1])
         
         with col_plot:
-            # Create histogram for numeric data
             fig = px.histogram(
                 df, 
                 x=decision_name,
                 nbins=30,
                 title=f"Distribution of {decision_title}",
-                labels={decision_name: decision_title, 'count': 'Number of Agents'},
-                marginal="box"
+                labels={decision_name: decision_title, 'count': 'Number of Agents'}
             )
-            
-            # Format based on decision type
-            if decision_name == "donation_default":
-                fig.update_layout(xaxis_tickformat='.0%')
-            
             fig.update_layout(showlegend=False)
-            st.plotly_chart(fig, width="stretch")
+            st.plotly_chart(fig, use_container_width=True)
         
         with col_stats:
             st.markdown("**📈 Statistics**")
             stats = numeric_data.describe()
-            
-            # Format statistics based on decision type
-            if decision_name == "donation_default":
-                stats_df = pd.DataFrame({
-                    'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                    'Value': [
-                        f"{stats['mean']:.1%}",
-                        f"{stats['std']:.3f}",
-                        f"{stats['min']:.1%}",
-                        f"{stats['max']:.1%}",
-                        f"{stats['50%']:.1%}",
-                        f"{stats['25%']:.1%}",
-                        f"{stats['75%']:.1%}"
-                    ]
-                })
-            else:
-                stats_df = pd.DataFrame({
-                    'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                    'Value': [
-                        f"{stats['mean']:.2f}",
-                        f"{stats['std']:.3f}",
-                        f"{stats['min']:.2f}",
-                        f"{stats['max']:.2f}",
-                        f"{stats['50%']:.2f}",
-                        f"{stats['25%']:.2f}",
-                        f"{stats['75%']:.2f}"
-                    ]
-                })
-            
+            stats_df = pd.DataFrame({
+                'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
+                'Value': [f"{stats[key]:.2f}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
+            })
             st.dataframe(stats_df, use_container_width=True, hide_index=True)
-    
     else:
-        # Non-numeric decision - show categorical analysis
-        with col2:
-            # Handle unhashable types (like dictionaries) safely
-            try:
-                # Convert complex types to strings for counting
-                string_data = decision_data.astype(str)
-                unique_values = string_data.nunique()
+        # Non-numeric generic visualization
+        try:
+            string_data = decision_data.astype(str)
+            unique_values = string_data.nunique()
+            with col2:
                 st.metric("Unique Values", f"{unique_values}")
-            except Exception:
-                st.metric("Unique Values", "N/A")
-        
-        with col3:
-            try:
-                # Convert to string for mode calculation
-                string_data = decision_data.astype(str)
+            with col3:
                 most_common = string_data.mode().iloc[0] if len(string_data.mode()) > 0 else "N/A"
-                st.metric("Most Common", str(most_common)[:20] + "..." if len(str(most_common)) > 20 else str(most_common))
-            except Exception:
-                st.metric("Most Common", "N/A")
+                st.metric("Most Common", str(most_common)[:15] + "..." if len(str(most_common)) > 15 else str(most_common))
+            with col4:
+                st.metric("Valid Values", f"{decision_data.notna().sum():,}")
+        except:
+            with col2:
+                st.metric("Data Type", "Complex")
         
-        with col4:
-            non_na_count = decision_data.notna().sum()
-            st.metric("Valid Values", f"{non_na_count:,}")
-        
-        # Show value counts and distribution
+        # Generic categorical visualization
         col_plot, col_stats = st.columns([2, 1])
         
         with col_plot:
             try:
-                # Convert complex types to strings for value counting
                 string_data = decision_data.astype(str)
-                value_counts = string_data.value_counts().head(10)  # Top 10 values
+                value_counts = string_data.value_counts().head(10)
                 
                 if len(value_counts) > 0:
                     fig = px.bar(
-                        x=value_counts.index.astype(str),
+                        x=value_counts.index,
                         y=value_counts.values,
                         title=f"Distribution of {decision_title}",
                         labels={'x': decision_title, 'y': 'Count'}
                     )
                     fig.update_layout(showlegend=False)
-                    st.plotly_chart(fig, width="stretch")
-                else:
-                    st.info("No valid data to display")
+                    st.plotly_chart(fig, use_container_width=True)
             except Exception as e:
-                st.error(f"Error creating visualization: {str(e)}")
-                st.info("Data contains complex types that cannot be visualized directly")
+                st.info("Complex data structure - cannot visualize directly")
         
         with col_stats:
-            st.markdown("**📈 Value Counts**")
+            st.markdown("**📊 Value Counts**")
             try:
-                # Convert complex types to strings for value counting
                 string_data = decision_data.astype(str)
                 value_counts = string_data.value_counts().head(10)
-                
-                if len(value_counts) > 0:
-                    # Show top values
-                    counts_df = pd.DataFrame({
-                        'Value': value_counts.index.astype(str),
-                        'Count': value_counts.values,
-                        'Percentage': (value_counts.values / len(decision_data) * 100).round(1)
-                    })
-                    st.dataframe(counts_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No valid data available")
-            except Exception as e:
-                st.error(f"Error calculating value counts: {str(e)}")
-                
-                # For dictionary data, show a special format
-                if any(isinstance(val, dict) for val in decision_data.dropna()):
-                    st.markdown("**Dictionary Data Detected:**")
-                    sample_dict = next((val for val in decision_data.dropna() if isinstance(val, dict)), None)
-                    if sample_dict:
-                        st.json(sample_dict)
+                counts_df = pd.DataFrame({
+                    'Value': value_counts.index,
+                    'Count': value_counts.values,
+                    'Percentage': [f"{(count/len(decision_data))*100:.1f}%" for count in value_counts.values]
+                })
+                st.dataframe(counts_df, use_container_width=True, hide_index=True)
+            except:
+                st.write("Complex data structure")
+
+
+# =============================================================================
+# DECISION VISUALIZATION REGISTRY
+# =============================================================================
+
+DECISION_VISUALIZATIONS = {
+    # Donation decisions
+    'donation_default': render_donation_default,
+    'donation_default_raw': render_donation_default,  # Same as donation_default
+    'final_donation_rate': render_final_donation_rate,
+    
+    # Disclosure decisions
+    'disclose_income': render_disclose_income,
+    'disclose_documents': render_disclose_documents,
+    
+    # Transaction decisions
+    'rejected_transaction_defaults': render_rejected_transaction_defaults,
+    'purchase_vs_bid': render_purchase_vs_bid,
+    'rejected_transaction_option': render_rejected_transaction_option,
+    'rejected_bid_value': render_rejected_bid_value,
+    
+    # Vendor decisions
+    'vendor_choice_weights': render_vendor_choice_weights,
+    'vendor_selection': render_vendor_selection,
+    
+    # Consumption decisions
+    'consumption_quantity': render_consumption_quantity,
+    'consumption_frequency': render_consumption_frequency,
+    
+    # Bidding decisions
+    'bid_value': render_bid_value,
+    
+    # Note: Any decision not in this registry will automatically use render_generic_decision
+}
 
 
 def render_results_page():
