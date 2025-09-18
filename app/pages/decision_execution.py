@@ -33,16 +33,16 @@ DEFAULT_DECISION_DESCRIPTIONS = {
     "donation_default": "10%",
     "disclose_income": "random Y/N", 
     "disclose_documents": "random Y/N for those qualified (income below threshold), while granting the discount to all those who submitted document",
-    "rejected_transaction_defaults": "Snapshot mode: forgo all transactions. Live mode: Users will be asked in real time",
+    "rejected_transaction_defaults": "Default behavior for handling rejected transactions will be applied",
     "vendor_choice_weights": "equal weight of 25% to Price, Quality, Proximity, and Sustainability",
     "consumption_quantity": "random within consumption limit",
     "consumption_frequency": "Consumption quantity divided by Period duration",
     "vendor_selection": "deterministic based on vendor choice weights",
     "purchase_vs_bid": "random choice",
     "bid_value": "random within bidding price range",
-    "rejected_transaction_option": "forgo transaction",
-    "rejected_bid_value": "Not relevant given choice of Option 5",
-    "final_donation_rate": "keep default 10%"
+    "rejected_transaction_option": "Default option for handling rejected transactions will be used",
+    "rejected_bid_value": "Default handling for rejected bid values will be applied",
+    "final_donation_rate": "Default donation rate will be maintained"
 }
 
 
