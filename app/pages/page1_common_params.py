@@ -486,6 +486,42 @@ def render_page1():
             max_display = "∞" if st.session_state.sim_params.weibull_max is None else f"${st.session_state.sim_params.weibull_max:,.0f}"
             st.info(f"📊 Income Range: [${st.session_state.sim_params.weibull_min:,.0f}, {max_display}]")
         
+        # Discount Threshold Configuration
+        st.markdown("### 💰 Discount Threshold")
+        
+        # Calculate dynamic min/max based on income distribution
+        income_min = st.session_state.sim_params.income_min
+        income_max = st.session_state.sim_params.income_max
+        
+        # For distributions without explicit min/max, use reasonable defaults
+        if income_distribution == "lognormal":
+            income_min = st.session_state.sim_params.lognormal_min
+            income_max = st.session_state.sim_params.lognormal_max if st.session_state.sim_params.lognormal_max else income_min + 100000
+        elif income_distribution == "pareto":
+            income_min = st.session_state.sim_params.pareto_x_m
+            income_max = st.session_state.sim_params.pareto_max if st.session_state.sim_params.pareto_max else income_min * 10
+        elif income_distribution == "weibull":
+            income_min = st.session_state.sim_params.weibull_min
+            income_max = st.session_state.sim_params.weibull_max if st.session_state.sim_params.weibull_max else income_min + 100000
+        
+        discount_income_threshold = st.number_input(
+            "Threshold Income for Discount ($)",
+            min_value=income_min,
+            max_value=income_max,
+            value=st.session_state.sim_params.discount_income_threshold,
+            step=100.0,
+            help="Income threshold below which agents qualify for discounts (pending document disclosure)",
+            key="discount_threshold_input",
+            on_change=lambda: setattr(st.session_state.sim_params, 'discount_income_threshold', st.session_state.discount_threshold_input)
+        )
+        
+        # Show threshold validation and info
+        if income_min <= discount_income_threshold <= income_max:
+            threshold_pct = ((discount_income_threshold - income_min) / (income_max - income_min)) * 100
+            st.caption(f"✅ Threshold at {threshold_pct:.1f}% of income range")
+        else:
+            st.error("❌ Threshold must be between minimum and maximum income!")
+        
         # Always show distribution preview
         st.markdown("### 📊 Distribution Preview")
         show_income_distribution_histogram(st.session_state.sim_params)
