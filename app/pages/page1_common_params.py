@@ -288,30 +288,40 @@ def render_page1():
                 )
             
             with col_max:
-                # Checkbox for enabling max
-                use_max = st.checkbox(
-                    "Set Maximum Value",
-                    value=st.session_state.sim_params.lognormal_max is not None,
-                    help="Enable rejection sampling to enforce maximum bound",
-                    key="use_lognormal_max"
-                )
-                
-                if use_max:
-                    if st.session_state.sim_params.lognormal_max is None:
-                        st.session_state.sim_params.lognormal_max = st.session_state.sim_params.lognormal_min + 100000.0
-                    
+                # Always show maximum value input with better UX
+                if st.session_state.sim_params.lognormal_max is None:
+                    # Show text input when no maximum is set
+                    st.text_input(
+                        "b - Maximum Value ($)",
+                        value="No maximum set",
+                        disabled=True,
+                        help="Click the + button below to set a maximum value",
+                        key="lognormal_max_display"
+                    )
+                    # Add buttons to set/clear maximum
+                    col_set, col_clear = st.columns(2)
+                    with col_set:
+                        if st.button("+ Set Maximum", key="lognormal_set_max", use_container_width=True):
+                            st.session_state.sim_params.lognormal_max = 100000.0
+                            st.rerun()
+                else:
+                    # Show number input when maximum is set
                     lognormal_max = st.number_input(
                         "b - Maximum Value ($)",
                         min_value=st.session_state.sim_params.lognormal_min + 1000.0,
                         max_value=1000000.0,
                         value=st.session_state.sim_params.lognormal_max,
-                        step=1000.0,
-                        help="Rejection sampling: values above this will be resampled",
+                        step=100000.0,
+                        help="Maximum income value for rejection sampling",
                         key="lognormal_max_input",
-                        on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_max', st.session_state.lognormal_max_input)
+                        format="%d",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_max', float(st.session_state.lognormal_max_input))
                     )
-                else:
-                    st.session_state.sim_params.lognormal_max = None
+                    
+                    # Add button to clear maximum
+                    if st.button("✕ Remove Maximum", key="lognormal_clear_max", use_container_width=True):
+                        st.session_state.sim_params.lognormal_max = None
+                        st.rerun()
             
             # Show income range info
             max_display = "∞" if st.session_state.sim_params.lognormal_max is None else f"${st.session_state.sim_params.lognormal_max:,.0f}"
@@ -366,30 +376,40 @@ def render_page1():
             col_max_empty, col_max = st.columns(2)
             
             with col_max:
-                # Checkbox for enabling max
-                use_max = st.checkbox(
-                    "Set Maximum Value",
-                    value=st.session_state.sim_params.pareto_max is not None,
-                    help="Enable rejection sampling to enforce maximum bound",
-                    key="use_pareto_max"
-                )
-                
-                if use_max:
-                    if st.session_state.sim_params.pareto_max is None:
-                        st.session_state.sim_params.pareto_max = st.session_state.sim_params.pareto_x_m * 100
-                    
+                # Always show maximum value input with better UX
+                if st.session_state.sim_params.pareto_max is None:
+                    # Show text input when no maximum is set
+                    st.text_input(
+                        "Maximum Value ($)",
+                        value="No maximum set",
+                        disabled=True,
+                        help="Click the + button below to set a maximum value",
+                        key="pareto_max_display"
+                    )
+                    # Add buttons to set/clear maximum
+                    col_set, col_clear = st.columns(2)
+                    with col_set:
+                        if st.button("+ Set Maximum", key="pareto_set_max", use_container_width=True):
+                            st.session_state.sim_params.pareto_max = 100000.0
+                            st.rerun()
+                else:
+                    # Show number input when maximum is set
                     pareto_max = st.number_input(
                         "Maximum Value ($)",
                         min_value=st.session_state.sim_params.pareto_x_m + 1000.0,
                         max_value=10000000.0,
                         value=st.session_state.sim_params.pareto_max,
-                        step=1000.0,
-                        help="Rejection sampling: values above this will be resampled",
+                        step=100000.0,
+                        help="Maximum income value for rejection sampling",
                         key="pareto_max_input",
-                        on_change=lambda: setattr(st.session_state.sim_params, 'pareto_max', st.session_state.pareto_max_input)
+                        format="%d",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'pareto_max', float(st.session_state.pareto_max_input))
                     )
-                else:
-                    st.session_state.sim_params.pareto_max = None
+                    
+                    # Add button to clear maximum
+                    if st.button("✕ Remove Maximum", key="pareto_clear_max", use_container_width=True):
+                        st.session_state.sim_params.pareto_max = None
+                        st.rerun()
             
             # Show income range info
             max_display = "∞" if st.session_state.sim_params.pareto_max is None else f"${st.session_state.sim_params.pareto_max:,.0f}"
@@ -457,30 +477,40 @@ def render_page1():
                 )
             
             with col_max:
-                # Checkbox for enabling max
-                use_max = st.checkbox(
-                    "Set Maximum Value",
-                    value=st.session_state.sim_params.weibull_max is not None,
-                    help="Enable rejection sampling to enforce maximum bound",
-                    key="use_weibull_max"
-                )
-                
-                if use_max:
-                    if st.session_state.sim_params.weibull_max is None:
-                        st.session_state.sim_params.weibull_max = st.session_state.sim_params.weibull_min + 100000.0
-                    
+                # Always show maximum value input with better UX
+                if st.session_state.sim_params.weibull_max is None:
+                    # Show text input when no maximum is set
+                    st.text_input(
+                        "b - Maximum Value ($)",
+                        value="No maximum set",
+                        disabled=True,
+                        help="Click the + button below to set a maximum value",
+                        key="weibull_max_display"
+                    )
+                    # Add buttons to set/clear maximum
+                    col_set, col_clear = st.columns(2)
+                    with col_set:
+                        if st.button("+ Set Maximum", key="weibull_set_max", use_container_width=True):
+                            st.session_state.sim_params.weibull_max = 100000.0
+                            st.rerun()
+                else:
+                    # Show number input when maximum is set
                     weibull_max = st.number_input(
                         "b - Maximum Value ($)",
                         min_value=st.session_state.sim_params.weibull_min + 1000.0,
                         max_value=1000000.0,
                         value=st.session_state.sim_params.weibull_max,
-                        step=1000.0,
-                        help="Rejection sampling: values above this will be resampled",
+                        step=100000.0,
+                        help="Maximum income value for rejection sampling",
                         key="weibull_max_input",
-                        on_change=lambda: setattr(st.session_state.sim_params, 'weibull_max', st.session_state.weibull_max_input)
+                        format="%d",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'weibull_max', float(st.session_state.weibull_max_input))
                     )
-                else:
-                    st.session_state.sim_params.weibull_max = None
+                    
+                    # Add button to clear maximum
+                    if st.button("✕ Remove Maximum", key="weibull_clear_max", use_container_width=True):
+                        st.session_state.sim_params.weibull_max = None
+                        st.rerun()
             
             # Show income range info
             max_display = "∞" if st.session_state.sim_params.weibull_max is None else f"${st.session_state.sim_params.weibull_max:,.0f}"
@@ -668,32 +698,63 @@ def render_page1():
                 
                 vendor_price_min = st.number_input(
                     "Min Price per Vendor ($)",
-                    min_value=1,
-                    max_value=100000,
-                    value=int(st.session_state.sim_params.vendor_price_min * 100),
-                    help="Minimum price any vendor can have (in cents, will be converted to dollars)",
+                    min_value=0.01,
+                    max_value=1000.0,
+                    value=st.session_state.sim_params.vendor_price_min,
+                    step=1.0,
+                    help="Minimum price any vendor can have",
                     key="vendor_price_min_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_min', st.session_state.vendor_price_min_input / 100.0)
+                    format="%.2f",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_min', st.session_state.vendor_price_min_input)
                 )
+                
+                # Ensure vendor_price_max is at least vendor_price_min before creating the widget
+                min_for_max = st.session_state.sim_params.vendor_price_min
+                current_max = st.session_state.sim_params.vendor_price_max
+                
+                # Auto-adjust vendor_price_max if it's below vendor_price_min
+                if current_max < min_for_max:
+                    st.session_state.sim_params.vendor_price_max = st.session_state.sim_params.vendor_price_min
+                    current_max = min_for_max
+                    st.warning(f"⚠️ Auto-adjusted: Max price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
                 
                 vendor_price_max = st.number_input(
                     "Max Price per Vendor ($)",
-                    min_value=int(st.session_state.sim_params.vendor_price_min * 100),
-                    max_value=100000,
-                    value=int(st.session_state.sim_params.vendor_price_max * 100),
-                    help="Maximum price any vendor can have (in cents, will be converted to dollars)",
+                    min_value=min_for_max,
+                    max_value=1000.0,
+                    value=current_max,
+                    step=1.0,
+                    help="Maximum price any vendor can have",
                     key="vendor_price_max_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_max', st.session_state.vendor_price_max_input / 100.0)
+                    format="%.2f",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_max', st.session_state.vendor_price_max_input)
                 )
+                
+                # Ensure market_price is within bounds before creating the widget
+                min_price_dollars = st.session_state.sim_params.vendor_price_min
+                max_price_dollars = st.session_state.sim_params.vendor_price_max
+                current_price_dollars = st.session_state.sim_params.market_price
+                
+                # Auto-adjust market_price if it's outside the new bounds
+                if current_price_dollars < min_price_dollars:
+                    st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_min
+                    current_price_dollars = min_price_dollars
+                    st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
+                elif current_price_dollars > max_price_dollars:
+                    st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_max
+                    current_price_dollars = max_price_dollars
+                    st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_max:.2f} (cannot be above max price)")
                 
                 market_price = st.number_input(
                     "Average Price per Vendor ($)",
-                    min_value=int(st.session_state.sim_params.vendor_price_min * 100),
-                    max_value=int(st.session_state.sim_params.vendor_price_max * 100),
-                    value=int(st.session_state.sim_params.market_price * 100),
-                    help="Target average price across all vendors (in cents, will be converted to dollars)",
+                    min_value=min_price_dollars,
+                    max_value=max_price_dollars,
+                    value=current_price_dollars,
+                    step=1.0,
+                    help="Target average price across all vendors",
                     key="market_price_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.market_price_input / 100.0)
+                    format="%.2f",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.market_price_input)
                 )
                 
                 # Price validation
