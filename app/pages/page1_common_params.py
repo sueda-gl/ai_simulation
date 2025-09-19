@@ -534,11 +534,24 @@ def render_page1():
             income_min = st.session_state.sim_params.weibull_min
             income_max = st.session_state.sim_params.weibull_max if st.session_state.sim_params.weibull_max else income_min + 100000
         
+        # Ensure discount threshold is within bounds before creating the widget
+        current_threshold = st.session_state.sim_params.discount_income_threshold
+        
+        # Auto-adjust discount threshold if it's outside the income distribution bounds
+        if current_threshold < income_min:
+            st.session_state.sim_params.discount_income_threshold = income_min
+            current_threshold = income_min
+            st.warning(f"⚠️ Auto-adjusted: Discount threshold was set to ${income_min:,.0f} (cannot be below income minimum)")
+        elif current_threshold > income_max:
+            st.session_state.sim_params.discount_income_threshold = income_max
+            current_threshold = income_max
+            st.warning(f"⚠️ Auto-adjusted: Discount threshold was set to ${income_max:,.0f} (cannot be above income maximum)")
+        
         discount_income_threshold = st.number_input(
             "Threshold Income for Discount ($)",
             min_value=income_min,
             max_value=income_max,
-            value=st.session_state.sim_params.discount_income_threshold,
+            value=current_threshold,
             step=100.0,
             help="Income threshold below which agents qualify for discounts (pending document disclosure)",
             key="discount_threshold_input",
