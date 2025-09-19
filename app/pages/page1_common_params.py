@@ -625,12 +625,14 @@ def render_page1():
             # Single vendor price
             single_vendor_price = st.number_input(
                 "Product Price ($)",
-                min_value=1,
-                max_value=100000,
-                value=int(st.session_state.sim_params.market_price * 100),
-                help="Price for the single vendor (in cents, will be converted to dollars)",
+                min_value=0.01,
+                max_value=1000.0,
+                value=st.session_state.sim_params.market_price,
+                step=1.0,
+                help="Price for the single vendor",
                 key="single_vendor_price_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.single_vendor_price_input / 100.0)
+                format="%.2f",
+                on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.single_vendor_price_input)
             )
             # Also set min and max to the same value for consistency
             st.session_state.sim_params.vendor_price_min = st.session_state.sim_params.market_price
