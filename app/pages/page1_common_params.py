@@ -603,6 +603,19 @@ def render_page1():
     st.markdown('<h3 class="section-header">🏪 Vendor Configuration</h3>', unsafe_allow_html=True)
     st.caption("Configure all vendor settings: number, prices, products, and carryover behavior")
     
+    # Add reset to defaults button
+    col_reset, col_empty = st.columns([2, 3])
+    with col_reset:
+        if st.button("🔄 Reset Vendor Settings to Defaults", help="Reset all vendor prices and products to default values"):
+            st.session_state.sim_params.vendor_price_min = 50.0
+            st.session_state.sim_params.vendor_price_max = 150.0
+            st.session_state.sim_params.market_price = 100.0
+            st.session_state.sim_params.vendor_products_min = 50
+            st.session_state.sim_params.vendor_products_max = 150
+            st.session_state.sim_params.vendor_products_avg = 100
+            st.success("✅ Reset to defaults: Min Price=$50, Max Price=$150, Avg Price=$100, Min Products=50, Max Products=150")
+            st.rerun()
+    
     # Number of Vendors (moved from Market Parameters)
     num_vendors = st.number_input(
         "Number of Vendors (N)",

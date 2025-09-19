@@ -266,6 +266,25 @@ def initialize_session_state():
         if not hasattr(sim_params, 'weibull_max'):
             sim_params.weibull_max = None
             
+        # Migrate old vendor price/product values to new defaults
+        # This ensures users get the updated default values
+        # Check for various old values that need migration
+        if hasattr(sim_params, 'vendor_price_min'):
+            if sim_params.vendor_price_min in [8.0, 100.0]:  # Old values
+                sim_params.vendor_price_min = 50.0
+        if hasattr(sim_params, 'vendor_price_max'):
+            if sim_params.vendor_price_max in [12.0, 100.0]:  # Old values  
+                sim_params.vendor_price_max = 150.0
+        if hasattr(sim_params, 'market_price'):
+            if sim_params.market_price == 10.0:  # Old value
+                sim_params.market_price = 100.0
+        if hasattr(sim_params, 'vendor_products_min'):
+            if sim_params.vendor_products_min in [1, 100]:  # Old values
+                sim_params.vendor_products_min = 50
+        if hasattr(sim_params, 'vendor_products_max'):
+            if sim_params.vendor_products_max in [1, 100]:  # Old values
+                sim_params.vendor_products_max = 150
+            
     if 'decision_params' not in st.session_state:
         st.session_state.decision_params = DecisionParameters()
     if 'simulation_results' not in st.session_state:
