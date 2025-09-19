@@ -493,9 +493,15 @@ def render_single_run_results():
                         st.success("This decision was configured with custom parameters on Page 2")
                         st.write("**Configuration Source:** Page 2 Decision Tab")
                         
-                        # Show decision-specific results if available (but not for custom decisions in comparison mode)
+                        # Show decision-specific results if available
                         if not df.empty and decision in df.columns:
-                            if is_comparison_mode:
+                            if is_comparison_mode and decision == "donation_default":
+                                # For donation_default in comparison mode, show the actual comparison grids
+                                if st.session_state.population_mode == "Compare all":
+                                    render_all_modes_comparison(results_dict)
+                                elif st.session_state.income_spec_mode == "Compare both":
+                                    render_income_comparison(results_dict)
+                            elif is_comparison_mode:
                                 st.info("📊 Custom decision results are shown in the comparison grids below")
                             else:
                                 render_decision_results(df, decision, decision_title)
@@ -507,9 +513,15 @@ def render_single_run_results():
                     st.success("This decision was configured with custom parameters on Page 2")
                     st.write("**Configuration Source:** Page 2 Decision Tab")
                     
-                    # Show decision-specific results if available (but not for custom decisions in comparison mode)
+                    # Show decision-specific results if available
                     if not df.empty and decision in df.columns:
-                        if is_comparison_mode:
+                        if is_comparison_mode and decision == "donation_default":
+                            # For donation_default in comparison mode, show the actual comparison grids
+                            if st.session_state.population_mode == "Compare all":
+                                render_all_modes_comparison(results_dict)
+                            elif st.session_state.income_spec_mode == "Compare both":
+                                render_income_comparison(results_dict)
+                        elif is_comparison_mode:
                             st.info("📊 Custom decision results are shown in the comparison grids below")
                         else:
                             render_decision_results(df, decision, decision_title)
@@ -579,45 +591,52 @@ def render_single_run_results():
     results_dict = st.session_state.simulation_results
     
     if results_dict:
-        # Show results based on mode
-        if st.session_state.population_mode == "Compare all":
-            render_all_modes_comparison(results_dict)
-        elif st.session_state.population_mode == "Dependent variable resampling":
-            render_dependent_variable_results(results_dict)
-        elif st.session_state.income_spec_mode == "Compare both":
-            render_income_comparison(results_dict)
-        else:
-            # Single mode display - show high-level summary
-            st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
-            df = next(iter(results_dict.values()))
-            mode_name = next(iter(results_dict.keys()))
-            
-            # Show high-level metrics only
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Total Agents", f"{len(df):,}")
-            
-            with col2:
-                trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
-                             'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
-                st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
-            
-            with col3:
-                decision_cols = [c for c in df.columns if c not in trait_cols]
-                st.metric("Decisions Computed", len(decision_cols))
-            
-            with col4:
-                # Show overall donation rate if available
-                donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
-                if donation_col in df.columns:
-                    st.metric("Avg Donation Rate", f"{df[donation_col].mean():.1%}")
-            
-            st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
-            
-            # For single mode, also show the overview
-            from app.components import show_overview
-            show_overview(df, f" ({mode_name.title()})")
+        # Show results based on mode (but only if donation_default is not being shown in dropdown)
+        has_donation_default_in_dropdown = (
+            has_combined_simulation and 
+            "donation_default" in st.session_state.custom_decisions and
+            is_comparison_mode
+        )
+        
+        if not has_donation_default_in_dropdown:
+            if st.session_state.population_mode == "Compare all":
+                render_all_modes_comparison(results_dict)
+            elif st.session_state.population_mode == "Dependent variable resampling":
+                render_dependent_variable_results(results_dict)
+            elif st.session_state.income_spec_mode == "Compare both":
+                render_income_comparison(results_dict)
+            else:
+                # Single mode display - show high-level summary
+                st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
+                df = next(iter(results_dict.values()))
+                mode_name = next(iter(results_dict.keys()))
+                
+                # Show high-level metrics only
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Total Agents", f"{len(df):,}")
+                
+                with col2:
+                    trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
+                                 'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
+                    st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
+                
+                with col3:
+                    decision_cols = [c for c in df.columns if c not in trait_cols]
+                    st.metric("Decisions Computed", len(decision_cols))
+                
+                with col4:
+                    # Show overall donation rate if available
+                    donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
+                    if donation_col in df.columns:
+                        st.metric("Avg Donation Rate", f"{df[donation_col].mean():.1%}")
+                
+                st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
+                
+                # For single mode, also show the overview
+                from app.components import show_overview
+                show_overview(df, f" ({mode_name.title()})")
     
     # Get DataFrame for individual agent analysis
     if st.session_state.population_mode == "Compare all":
