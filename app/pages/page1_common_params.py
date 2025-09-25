@@ -57,8 +57,12 @@ def render_page1():
         else:
             st.info("🎯 Monte-Carlo: Execute multiple runs for statistical analysis")
         
-        # Simulation Settings Section
-        st.markdown('<h3 class="section-header">⚙️ Simulation Settings</h3>', unsafe_allow_html=True)
+        # Create sub-columns for Simulation Settings and Time Parameters
+        col1_left, col1_right = st.columns(2)
+        
+        with col1_left:
+            # Simulation Settings Section
+            st.markdown('<h3 class="section-header">⚙️ Simulation Settings</h3>', unsafe_allow_html=True)
         
         n_agents = st.number_input(
             "Number of Agents",
@@ -119,8 +123,9 @@ def render_page1():
             on_change=lambda: setattr(st.session_state, 'save_results', st.session_state.save_results_checkbox)
         )
         
-        # Time Parameters Section
-        st.markdown('<h3 class="section-header">⏱️ Time Parameters</h3>', unsafe_allow_html=True)
+        with col1_right:
+            # Time Parameters Section
+            st.markdown('<h3 class="section-header">⏱️ Time Parameters</h3>', unsafe_allow_html=True)
         
         periods = st.number_input(
             "Number of Periods",
@@ -143,6 +148,368 @@ def render_page1():
             on_change=lambda: setattr(st.session_state.sim_params, 'duration_hours', float(st.session_state.duration_hours_input))
         )
         st.caption(f"Duration in seconds: {st.session_state.sim_params.get_duration_seconds():.0f}")
+        
+        # Vendor Configuration - Single Source of Truth
+        st.markdown('<h3 class="section-header">🏪 Vendor Configuration</h3>', unsafe_allow_html=True)
+        st.caption("Configure all vendor settings: number, prices, products, and carryover behavior")
+        
+        # Add reset to defaults button
+
+        
+        # Number of Vendors (moved from Market Parameters)
+        num_vendors = st.number_input(
+            "Number of Vendors (N)",
+            min_value=1,
+            max_value=50,
+            value=st.session_state.sim_params.num_vendors,
+            help="Total number of vendors operating on the platform",
+            key="num_vendors_input",
+            on_change=lambda: setattr(st.session_state.sim_params, 'num_vendors', st.session_state.num_vendors_input)
+        )
+        
+        # Check if we have single vendor (simplified interface) or multiple vendors (full interface)
+        if st.session_state.sim_params.num_vendors == 1:
+            # Single Vendor Configuration - Simplified Interface
+
+            
+            col_single_left, col_single_right = st.columns(2)
+            
+            with col_single_left:
+                # Single vendor price
+                single_vendor_price = st.number_input(
+                    "Product Price ($)",
+                    min_value=0.01,
+                    max_value=1000.0,
+                    value=st.session_state.sim_params.market_price,
+                    step=1.0,
+                    help="Price for the single vendor",
+                    key="single_vendor_price_input",
+                    format="%.2f",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.single_vendor_price_input)
+                )
+                # Also set min and max to the same value for consistency
+                st.session_state.sim_params.vendor_price_min = st.session_state.sim_params.market_price
+                st.session_state.sim_params.vendor_price_max = st.session_state.sim_params.market_price
+                
+            with col_single_right:
+                # Single vendor products
+                single_vendor_products = st.number_input(
+                    "Products Offered",
+                    min_value=1,
+                    max_value=10000,
+                    value=st.session_state.sim_params.vendor_products_avg,
+                    help="Number of products offered by the vendor",
+                    key="single_vendor_products_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.single_vendor_products_input)
+                )
+                # Also set min and max to the same value for consistency
+                st.session_state.sim_params.vendor_products_min = st.session_state.sim_params.vendor_products_avg
+                st.session_state.sim_params.vendor_products_max = st.session_state.sim_params.vendor_products_avg
+            
+            # Single vendor carryover
+            def update_single_vendor_carryover():
+                st.session_state.sim_params.global_carryover = st.session_state.single_vendor_carryover
+                st.session_state.sim_params.override_carryover = True  # Always override in single vendor mode
+            
+            single_vendor_carryover = st.checkbox(
+                "Enable Product Carryover to Next Period",
+                value=st.session_state.sim_params.global_carryover,
+                help="If checked, unsold products carry over to the next period",
+                key="single_vendor_carryover",
+                on_change=update_single_vendor_carryover
+            )
+            
+            # Summary for single vendor
+
+                
+        else:
+            # Multiple Vendors Configuration - Full Interface
+            st.info("🏢 **Multiple Vendors Mode**: Full configuration for multiple vendors")
+            
+            # Vendor Setup Mode
+            # Initialize the widget key if it doesn't exist
+            if "page1_vendor_setup_mode" not in st.session_state:
+                st.session_state.page1_vendor_setup_mode = "Generate Randomly" if st.session_state.sim_params.vendor_config_mode == "random" else "Upload Vendor Config File"
+            
+            vendor_setup_mode = st.radio(
+                "Vendor Setup Mode",
+                ["Generate Randomly", "Upload Vendor Config File"],
+                horizontal=True,
+                help="Choose how to configure vendor properties (price, products, carryover)",
+                key="page1_vendor_setup_mode"
+            )
+            
+            # Sync the widget's state to sim_params
+            st.session_state.sim_params.vendor_config_mode = "random" if st.session_state.page1_vendor_setup_mode == "Generate Randomly" else "upload"
+            
+            if st.session_state.page1_vendor_setup_mode == "Generate Randomly":
+                
+                # Create columns for organized layout
+                col_left, col_right = st.columns(2)
+            
+                with col_left:
+                    # Price Configuration
+                    st.markdown('<h4 class="subsection-header">💰 Price Configuration</h4>', unsafe_allow_html=True)
+                    
+                    vendor_price_min = st.number_input(
+                        "Min Price per Vendor ($)",
+                        min_value=0.01,
+                        max_value=1000.0,
+                        value=st.session_state.sim_params.vendor_price_min,
+                        step=1.0,
+                        help="Minimum price any vendor can have",
+                        key="vendor_price_min_input",
+                        format="%.2f",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_min', st.session_state.vendor_price_min_input)
+                    )
+                    
+                    # Ensure vendor_price_max is at least vendor_price_min before creating the widget
+                    min_for_max = st.session_state.sim_params.vendor_price_min
+                    current_max = st.session_state.sim_params.vendor_price_max
+                    
+                    # Auto-adjust vendor_price_max if it's below vendor_price_min
+                    if current_max < min_for_max:
+                        st.session_state.sim_params.vendor_price_max = st.session_state.sim_params.vendor_price_min
+                        current_max = min_for_max
+                        st.warning(f"⚠️ Auto-adjusted: Max price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
+                    
+                    vendor_price_max = st.number_input(
+                        "Max Price per Vendor ($)",
+                        min_value=min_for_max,
+                        max_value=1000.0,
+                        value=current_max,
+                        step=1.0,
+                        help="Maximum price any vendor can have",
+                        key="vendor_price_max_input",
+                        format="%.2f",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_max', st.session_state.vendor_price_max_input)
+                    )
+                    
+                    # Ensure market_price is within bounds before creating the widget
+                    min_price_dollars = st.session_state.sim_params.vendor_price_min
+                    max_price_dollars = st.session_state.sim_params.vendor_price_max
+                    current_price_dollars = st.session_state.sim_params.market_price
+                    
+                    # Auto-adjust market_price if it's outside the new bounds
+                    if current_price_dollars < min_price_dollars:
+                        st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_min
+                        current_price_dollars = min_price_dollars
+                        st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
+                    elif current_price_dollars > max_price_dollars:
+                        st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_max
+                        current_price_dollars = max_price_dollars
+                        st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_max:.2f} (cannot be above max price)")
+                    
+                    market_price = st.number_input(
+                        "Average Price per Vendor ($)",
+                        min_value=min_price_dollars,
+                        max_value=max_price_dollars,
+                        value=current_price_dollars,
+                        step=1.0,
+                        help="Target average price across all vendors",
+                        key="market_price_input",
+                        format="%.2f",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.market_price_input)
+                    )
+                    
+                    # Price validation
+                    price_total_min = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_price_min
+                    price_total_max = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_price_max
+                    price_total_avg = st.session_state.sim_params.num_vendors * st.session_state.sim_params.market_price
+                    price_valid = price_total_min <= price_total_avg <= price_total_max
+                
+ 
+            
+                with col_right:
+                    # Products Configuration
+                    st.markdown('<h4 class="subsection-header">📦 Products Configuration</h4>', unsafe_allow_html=True)
+                    
+                    vendor_products_min = st.number_input(
+                    "Min Products per Vendor",
+                    min_value=1,
+                    max_value=10000,
+                    value=st.session_state.sim_params.vendor_products_min,
+                    help="Minimum products any vendor can offer per period",
+                    key="vendor_products_min_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_min', st.session_state.vendor_products_min_input)
+                )
+                    
+                    # Ensure vendor_products_max is at least vendor_products_min before creating the widget
+                    min_for_max_products = st.session_state.sim_params.vendor_products_min
+                    current_max_products = st.session_state.sim_params.vendor_products_max
+                    
+                    # Auto-adjust vendor_products_max if it's below vendor_products_min
+                    if current_max_products < min_for_max_products:
+                        st.session_state.sim_params.vendor_products_max = st.session_state.sim_params.vendor_products_min
+                        current_max_products = min_for_max_products
+                        st.warning(f"⚠️ Auto-adjusted: Max products was set to {st.session_state.sim_params.vendor_products_min} (cannot be below min products)")
+                    
+                    vendor_products_max = st.number_input(
+                    "Max Products per Vendor",
+                    min_value=min_for_max_products,
+                    max_value=10000,
+                    value=current_max_products,
+                    help="Maximum products any vendor can offer per period",
+                    key="vendor_products_max_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_max', st.session_state.vendor_products_max_input)
+                )
+                    
+                    # Ensure vendor_products_avg is within bounds before creating the widget
+                    min_products = st.session_state.sim_params.vendor_products_min
+                    max_products = st.session_state.sim_params.vendor_products_max
+                    current_avg_products = st.session_state.sim_params.vendor_products_avg
+                    
+                    # Auto-adjust vendor_products_avg if it's outside the new bounds
+                    if current_avg_products < min_products:
+                        st.session_state.sim_params.vendor_products_avg = st.session_state.sim_params.vendor_products_min
+                        current_avg_products = min_products
+                        st.warning(f"⚠️ Auto-adjusted: Average products was set to {st.session_state.sim_params.vendor_products_min} (cannot be below min products)")
+                    elif current_avg_products > max_products:
+                        st.session_state.sim_params.vendor_products_avg = st.session_state.sim_params.vendor_products_max
+                        current_avg_products = max_products
+                        st.warning(f"⚠️ Auto-adjusted: Average products was set to {st.session_state.sim_params.vendor_products_max} (cannot be above max products)")
+                    
+                    vendor_products_avg = st.number_input(
+                    "Average Products per Vendor",
+                    min_value=min_products,
+                    max_value=max_products,
+                    value=current_avg_products,
+                    help="Target average products per vendor",
+                    key="vendor_products_avg_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.vendor_products_avg_input)
+                )
+                    
+                    # Products validation
+                    products_total_min = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_products_min
+                    products_total_max = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_products_max
+                    products_total_avg = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_products_avg
+                    products_valid = products_total_min <= products_total_avg <= products_total_max
+            
+                # Carryover Configuration (full width)
+                st.markdown('<h4 class="subsection-header">🔄 Carryover Configuration</h4>', unsafe_allow_html=True)
+                
+                # Initialize the widget key if it doesn't exist
+                if "page1_carryover_mode" not in st.session_state:
+                    # Determine initial mode based on current settings
+                    if st.session_state.sim_params.override_carryover:
+                        if st.session_state.sim_params.global_carryover:
+                            st.session_state.page1_carryover_mode = "All vendors have carryover"
+                        else:
+                            st.session_state.page1_carryover_mode = "No vendors have carryover"
+                    else:
+                        st.session_state.page1_carryover_mode = "Use probability"
+                
+                carryover_mode = st.radio(
+                    "Carryover Mode",
+                    ["All vendors have carryover", "No vendors have carryover", "Use probability"],
+                    horizontal=True,
+                    help="Choose how to apply carryover settings to vendors",
+                    key="page1_carryover_mode"
+                )
+                
+                # Apply the selected mode
+                if st.session_state.page1_carryover_mode == "All vendors have carryover":
+                    st.session_state.sim_params.override_carryover = True
+                    st.session_state.sim_params.global_carryover = True
+                    expected_carryover_vendors = st.session_state.sim_params.num_vendors
+                    st.info(f"✅ All {st.session_state.sim_params.num_vendors} vendors will have carryover enabled")
+                    
+                elif st.session_state.page1_carryover_mode == "No vendors have carryover":
+                    st.session_state.sim_params.override_carryover = True
+                    st.session_state.sim_params.global_carryover = False
+                    expected_carryover_vendors = 0
+                    st.info(f"❌ None of the {st.session_state.sim_params.num_vendors} vendors will have carryover")
+                    
+                else:  # Use probability
+                    st.session_state.sim_params.override_carryover = False
+                    
+                    vendor_carryover_probability = st.slider(
+                        "Carryover Probability (p)",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=st.session_state.sim_params.vendor_carryover_probability,
+                        step=0.05,
+                        help="Probability that any given vendor will have carryover enabled (Bernoulli per vendor)",
+                        key="vendor_carryover_probability_slider",
+                        on_change=lambda: setattr(st.session_state.sim_params, 'vendor_carryover_probability', st.session_state.vendor_carryover_probability_slider)
+                    )
+                    expected_carryover_vendors = int(st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_carryover_probability)
+                    st.info(f"🎲 Expected ~{expected_carryover_vendors} vendors (out of {st.session_state.sim_params.num_vendors}) to have carryover based on {st.session_state.sim_params.vendor_carryover_probability:.0%} probability")
+                
+                # Summary chips
+
+    
+            else:
+                
+                # Hide all random generation inputs when upload mode is selected
+                st.markdown('<h4 class="subsection-header">📁 Upload Vendor Configuration</h4>', unsafe_allow_html=True)
+                st.info("Upload a CSV file with complete vendor configuration. This will override all random generation settings.")
+            
+                # Show expected format
+                with st.expander("📋 Expected CSV Format", expanded=False):
+                    st.code("""vendor_id,price,products_per_period,carryover
+V1,8.50,120,1
+V2,9.25,95,0
+V3,10.00,80,1
+V4,11.75,110,0
+V5,12.00,100,1""")
+                st.caption("Required columns: vendor_id, price, products_per_period, carryover (0=disabled, 1=enabled)")
+            
+            uploaded_file = st.file_uploader(
+                "Upload Vendor Configuration CSV",
+                type=['csv'],
+                help="CSV file with complete vendor configuration"
+            )
+            
+            if uploaded_file is not None:
+                try:
+                    vendor_config_df = pd.read_csv(uploaded_file)
+                    
+                    # Validate required columns
+                    required_columns = ['vendor_id', 'price', 'products_per_period', 'carryover']
+                    missing_columns = [col for col in required_columns if col not in vendor_config_df.columns]
+                    
+                    if missing_columns:
+                        st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+                    else:
+                        # Convert to list of dictionaries and store
+                        st.session_state.sim_params.vendor_config_data = vendor_config_df.to_dict('records')
+                        
+                        # Update num_vendors to match uploaded data
+                        st.session_state.sim_params.num_vendors = len(vendor_config_df)
+                        
+                        # Show validation and summary
+                        st.success(f"✅ Loaded configuration for {len(vendor_config_df)} vendors")
+                        
+                        # Summary metrics
+                        col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
+                        
+                        with col_sum1:
+                            st.metric("Vendors Loaded", len(vendor_config_df))
+                        with col_sum2:
+                            st.metric("Avg Price", f"${vendor_config_df['price'].mean():.2f}")
+                        with col_sum3:
+                            st.metric("Avg Products/Vendor", f"{vendor_config_df['products_per_period'].mean():.0f}")
+                        with col_sum4:
+                            st.metric("Vendors with Carryover", f"{vendor_config_df['carryover'].sum()}")
+                        
+                        # Show totals
+                        total_products = vendor_config_df['products_per_period'].sum()
+                        total_revenue = (vendor_config_df['price'] * vendor_config_df['products_per_period']).sum()
+                        
+                        col_total1, col_total2 = st.columns(2)
+                        with col_total1:
+                            st.metric("Total Products", f"{total_products:,}")
+                        with col_total2:
+                            st.metric("Expected Total Revenue", f"${total_revenue:,.2f}")
+                        
+                        # Show preview
+                        with st.expander("👀 Preview Loaded Data", expanded=False):
+                            st.dataframe(vendor_config_df, use_container_width=True)
+                            
+                except Exception as e:
+                    st.error(f"❌ Error loading vendor configuration: {e}")
+                    st.caption("Please check your CSV format and try again.")
     
     with col2:
         # Market Parameters Section
@@ -288,40 +655,34 @@ def render_page1():
                 )
             
             with col_max:
-                # Always show maximum value input with better UX
-                if st.session_state.sim_params.lognormal_max is None:
-                    # Show text input when no maximum is set
-                    st.text_input(
-                        "b - Maximum Value ($)",
-                        value="No maximum set",
-                        disabled=True,
-                        help="Click the + button below to set a maximum value",
-                        key="lognormal_max_display"
-                    )
-                    # Add buttons to set/clear maximum
-                    col_set, col_clear = st.columns(2)
-                    with col_set:
-                        if st.button("+ Set Maximum", key="lognormal_set_max", use_container_width=True):
-                            st.session_state.sim_params.lognormal_max = 100000.0
-                            st.rerun()
-                else:
-                    # Show number input when maximum is set
-                    lognormal_max = st.number_input(
-                        "b - Maximum Value ($)",
-                        min_value=st.session_state.sim_params.lognormal_min + 1000.0,
-                        max_value=1000000.0,
-                        value=st.session_state.sim_params.lognormal_max,
-                        step=100000.0,
-                        help="Maximum income value for rejection sampling",
-                        key="lognormal_max_input",
-                        format="%d",
-                        on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_max', float(st.session_state.lognormal_max_input))
-                    )
-                    
-                    # Add button to clear maximum
-                    if st.button("✕ Remove Maximum", key="lognormal_clear_max", use_container_width=True):
+                # Single interactive text field that handles None values gracefully
+                def update_lognormal_max():
+                    input_value = st.session_state.lognormal_max_text_input.strip()
+                    # Check if user entered "None", "none", empty string, or similar
+                    if input_value.lower() in ['none', 'no maximum', 'unlimited', ''] or input_value == '0':
                         st.session_state.sim_params.lognormal_max = None
-                        st.rerun()
+                    else:
+                        try:
+                            # Try to convert to float
+                            value = float(input_value.replace(',', '').replace('$', ''))
+                            if value > 0:
+                                st.session_state.sim_params.lognormal_max = value
+                            else:
+                                st.session_state.sim_params.lognormal_max = None
+                        except ValueError:
+                            # If conversion fails, keep the current value
+                            pass
+                
+                # Display "None" when no maximum, otherwise show the formatted value
+                display_value = "None" if st.session_state.sim_params.lognormal_max is None else f"{st.session_state.sim_params.lognormal_max:,.0f}"
+                
+                lognormal_max = st.text_input(
+                        "b - Maximum Value ($)",
+                    value=display_value,
+                    help="Maximum income value for rejection sampling. Enter 'None' for no maximum limit, or a numeric value.",
+                    key="lognormal_max_text_input",
+                    on_change=update_lognormal_max
+                )
             
             # Show income range info
             max_display = "∞" if st.session_state.sim_params.lognormal_max is None else f"${st.session_state.sim_params.lognormal_max:,.0f}"
@@ -376,40 +737,34 @@ def render_page1():
             col_max_empty, col_max = st.columns(2)
             
             with col_max:
-                # Always show maximum value input with better UX
-                if st.session_state.sim_params.pareto_max is None:
-                    # Show text input when no maximum is set
-                    st.text_input(
-                        "Maximum Value ($)",
-                        value="No maximum set",
-                        disabled=True,
-                        help="Click the + button below to set a maximum value",
-                        key="pareto_max_display"
-                    )
-                    # Add buttons to set/clear maximum
-                    col_set, col_clear = st.columns(2)
-                    with col_set:
-                        if st.button("+ Set Maximum", key="pareto_set_max", use_container_width=True):
-                            st.session_state.sim_params.pareto_max = 100000.0
-                            st.rerun()
-                else:
-                    # Show number input when maximum is set
-                    pareto_max = st.number_input(
-                        "Maximum Value ($)",
-                        min_value=st.session_state.sim_params.pareto_x_m + 1000.0,
-                        max_value=10000000.0,
-                        value=st.session_state.sim_params.pareto_max,
-                        step=100000.0,
-                        help="Maximum income value for rejection sampling",
-                        key="pareto_max_input",
-                        format="%d",
-                        on_change=lambda: setattr(st.session_state.sim_params, 'pareto_max', float(st.session_state.pareto_max_input))
-                    )
-                    
-                    # Add button to clear maximum
-                    if st.button("✕ Remove Maximum", key="pareto_clear_max", use_container_width=True):
+                # Single interactive text field that handles None values gracefully
+                def update_pareto_max():
+                    input_value = st.session_state.pareto_max_text_input.strip()
+                    # Check if user entered "None", "none", empty string, or similar
+                    if input_value.lower() in ['none', 'no maximum', 'unlimited', ''] or input_value == '0':
                         st.session_state.sim_params.pareto_max = None
-                        st.rerun()
+                    else:
+                        try:
+                            # Try to convert to float
+                            value = float(input_value.replace(',', '').replace('$', ''))
+                            if value > 0:
+                                st.session_state.sim_params.pareto_max = value
+                            else:
+                                st.session_state.sim_params.pareto_max = None
+                        except ValueError:
+                            # If conversion fails, keep the current value
+                            pass
+                
+                # Display "None" when no maximum, otherwise show the formatted value
+                display_value = "None" if st.session_state.sim_params.pareto_max is None else f"{st.session_state.sim_params.pareto_max:,.0f}"
+                
+                pareto_max = st.text_input(
+                        "Maximum Value ($)",
+                    value=display_value,
+                    help="Maximum income value for rejection sampling. Enter 'None' for no maximum limit, or a numeric value.",
+                    key="pareto_max_text_input",
+                    on_change=update_pareto_max
+                )
             
             # Show income range info
             max_display = "∞" if st.session_state.sim_params.pareto_max is None else f"${st.session_state.sim_params.pareto_max:,.0f}"
@@ -477,40 +832,34 @@ def render_page1():
                 )
             
             with col_max:
-                # Always show maximum value input with better UX
-                if st.session_state.sim_params.weibull_max is None:
-                    # Show text input when no maximum is set
-                    st.text_input(
-                        "b - Maximum Value ($)",
-                        value="No maximum set",
-                        disabled=True,
-                        help="Click the + button below to set a maximum value",
-                        key="weibull_max_display"
-                    )
-                    # Add buttons to set/clear maximum
-                    col_set, col_clear = st.columns(2)
-                    with col_set:
-                        if st.button("+ Set Maximum", key="weibull_set_max", use_container_width=True):
-                            st.session_state.sim_params.weibull_max = 100000.0
-                            st.rerun()
-                else:
-                    # Show number input when maximum is set
-                    weibull_max = st.number_input(
-                        "b - Maximum Value ($)",
-                        min_value=st.session_state.sim_params.weibull_min + 1000.0,
-                        max_value=1000000.0,
-                        value=st.session_state.sim_params.weibull_max,
-                        step=100000.0,
-                        help="Maximum income value for rejection sampling",
-                        key="weibull_max_input",
-                        format="%d",
-                        on_change=lambda: setattr(st.session_state.sim_params, 'weibull_max', float(st.session_state.weibull_max_input))
-                    )
-                    
-                    # Add button to clear maximum
-                    if st.button("✕ Remove Maximum", key="weibull_clear_max", use_container_width=True):
+                # Single interactive text field that handles None values gracefully
+                def update_weibull_max():
+                    input_value = st.session_state.weibull_max_text_input.strip()
+                    # Check if user entered "None", "none", empty string, or similar
+                    if input_value.lower() in ['none', 'no maximum', 'unlimited', ''] or input_value == '0':
                         st.session_state.sim_params.weibull_max = None
-                        st.rerun()
+                    else:
+                        try:
+                            # Try to convert to float
+                            value = float(input_value.replace(',', '').replace('$', ''))
+                            if value > 0:
+                                st.session_state.sim_params.weibull_max = value
+                            else:
+                                st.session_state.sim_params.weibull_max = None
+                        except ValueError:
+                            # If conversion fails, keep the current value
+                            pass
+                
+                # Display "None" when no maximum, otherwise show the formatted value
+                display_value = "None" if st.session_state.sim_params.weibull_max is None else f"{st.session_state.sim_params.weibull_max:,.0f}"
+                
+                weibull_max = st.text_input(
+                        "b - Maximum Value ($)",
+                    value=display_value,
+                    help="Maximum income value for rejection sampling. Enter 'None' for no maximum limit, or a numeric value.",
+                    key="weibull_max_text_input",
+                    on_change=update_weibull_max
+                )
             
             # Show income range info
             max_display = "∞" if st.session_state.sim_params.weibull_max is None else f"${st.session_state.sim_params.weibull_max:,.0f}"
@@ -612,516 +961,164 @@ def render_page1():
                 on_change=update_nfic
             )
     
-    # Vendor Configuration - Single Source of Truth
-    st.markdown('<h3 class="section-header">🏪 Vendor Configuration</h3>', unsafe_allow_html=True)
-    st.caption("Configure all vendor settings: number, prices, products, and carryover behavior")
+    # Create columns for Consumption Limits and Population Mode side by side
+    col_limits, col_population = st.columns(2)
     
-    # Add reset to defaults button
-    col_reset, col_empty = st.columns([2, 3])
-    with col_reset:
-        if st.button("🔄 Reset Vendor Settings to Defaults", help="Reset all vendor prices and products to default values"):
-            st.session_state.sim_params.vendor_price_min = 50.0
-            st.session_state.sim_params.vendor_price_max = 150.0
-            st.session_state.sim_params.market_price = 100.0
-            st.session_state.sim_params.vendor_products_min = 50
-            st.session_state.sim_params.vendor_products_max = 150
-            st.session_state.sim_params.vendor_products_avg = 100
-            st.success("✅ Reset to defaults: Min Price=$50, Max Price=$150, Avg Price=$100, Min Products=50, Max Products=150")
-            st.rerun()
-    
-    # Number of Vendors (moved from Market Parameters)
-    num_vendors = st.number_input(
-        "Number of Vendors (N)",
-        min_value=1,
-        max_value=50,
-        value=st.session_state.sim_params.num_vendors,
-        help="Total number of vendors operating on the platform",
-        key="num_vendors_input",
-        on_change=lambda: setattr(st.session_state.sim_params, 'num_vendors', st.session_state.num_vendors_input)
-    )
-    
-    # Check if we have single vendor (simplified interface) or multiple vendors (full interface)
-    if st.session_state.sim_params.num_vendors == 1:
-        # Single Vendor Configuration - Simplified Interface
+    with col_limits:
+        # Consumption Limits Configuration
+        st.markdown('<h3 class="section-header">🛒 Consumption Limits</h3>', unsafe_allow_html=True)
 
-        
-        col_single_left, col_single_right = st.columns(2)
-        
-        with col_single_left:
-            # Single vendor price
-            single_vendor_price = st.number_input(
-                "Product Price ($)",
-                min_value=0.01,
-                max_value=1000.0,
-                value=st.session_state.sim_params.market_price,
-                step=1.0,
-                help="Price for the single vendor",
-                key="single_vendor_price_input",
-                format="%.2f",
-                on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.single_vendor_price_input)
-            )
-            # Also set min and max to the same value for consistency
-            st.session_state.sim_params.vendor_price_min = st.session_state.sim_params.market_price
-            st.session_state.sim_params.vendor_price_max = st.session_state.sim_params.market_price
-            
-        with col_single_right:
-            # Single vendor products
-            single_vendor_products = st.number_input(
-                "Products Offered",
-                min_value=1,
-                max_value=10000,
-                value=st.session_state.sim_params.vendor_products_avg,
-                help="Number of products offered by the vendor",
-                key="single_vendor_products_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.single_vendor_products_input)
-            )
-            # Also set min and max to the same value for consistency
-            st.session_state.sim_params.vendor_products_min = st.session_state.sim_params.vendor_products_avg
-            st.session_state.sim_params.vendor_products_max = st.session_state.sim_params.vendor_products_avg
-        
-        # Single vendor carryover
-        def update_single_vendor_carryover():
-            st.session_state.sim_params.global_carryover = st.session_state.single_vendor_carryover
-            st.session_state.sim_params.override_carryover = True  # Always override in single vendor mode
-        
-        single_vendor_carryover = st.checkbox(
-            "Enable Carryover for Vendor",
-            value=st.session_state.sim_params.global_carryover,
-            help="If checked, unsold products carry over to the next period",
-            key="single_vendor_carryover",
-            on_change=update_single_vendor_carryover
-        )
-        
-        # Summary for single vendor
-
-            
-    else:
-        # Multiple Vendors Configuration - Full Interface
-        st.info("🏢 **Multiple Vendors Mode**: Full configuration for multiple vendors")
-        
-        # Vendor Setup Mode
         # Initialize the widget key if it doesn't exist
-        if "page1_vendor_setup_mode" not in st.session_state:
-            st.session_state.page1_vendor_setup_mode = "Generate Randomly" if st.session_state.sim_params.vendor_config_mode == "random" else "Upload Vendor Config File"
-        
-        vendor_setup_mode = st.radio(
-            "Vendor Setup Mode",
-            ["Generate Randomly", "Upload Vendor Config File"],
-            horizontal=True,
-            help="Choose how to configure vendor properties (price, products, carryover)",
-            key="page1_vendor_setup_mode"
-        )
-        
-        # Sync the widget's state to sim_params
-        st.session_state.sim_params.vendor_config_mode = "random" if st.session_state.page1_vendor_setup_mode == "Generate Randomly" else "upload"
-        
-        if st.session_state.page1_vendor_setup_mode == "Generate Randomly":
-            
-            # Create columns for organized layout
-            col_left, col_right = st.columns(2)
-        
-            with col_left:
-                # Price Configuration
-                st.markdown('<h4 class="subsection-header">💰 Price Configuration</h4>', unsafe_allow_html=True)
-                
-                vendor_price_min = st.number_input(
-                    "Min Price per Vendor ($)",
-                    min_value=0.01,
-                    max_value=1000.0,
-                    value=st.session_state.sim_params.vendor_price_min,
-                    step=1.0,
-                    help="Minimum price any vendor can have",
-                    key="vendor_price_min_input",
-                    format="%.2f",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_min', st.session_state.vendor_price_min_input)
-                )
-                
-                # Ensure vendor_price_max is at least vendor_price_min before creating the widget
-                min_for_max = st.session_state.sim_params.vendor_price_min
-                current_max = st.session_state.sim_params.vendor_price_max
-                
-                # Auto-adjust vendor_price_max if it's below vendor_price_min
-                if current_max < min_for_max:
-                    st.session_state.sim_params.vendor_price_max = st.session_state.sim_params.vendor_price_min
-                    current_max = min_for_max
-                    st.warning(f"⚠️ Auto-adjusted: Max price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
-                
-                vendor_price_max = st.number_input(
-                    "Max Price per Vendor ($)",
-                    min_value=min_for_max,
-                    max_value=1000.0,
-                    value=current_max,
-                    step=1.0,
-                    help="Maximum price any vendor can have",
-                    key="vendor_price_max_input",
-                    format="%.2f",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_price_max', st.session_state.vendor_price_max_input)
-                )
-                
-                # Ensure market_price is within bounds before creating the widget
-                min_price_dollars = st.session_state.sim_params.vendor_price_min
-                max_price_dollars = st.session_state.sim_params.vendor_price_max
-                current_price_dollars = st.session_state.sim_params.market_price
-                
-                # Auto-adjust market_price if it's outside the new bounds
-                if current_price_dollars < min_price_dollars:
-                    st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_min
-                    current_price_dollars = min_price_dollars
-                    st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
-                elif current_price_dollars > max_price_dollars:
-                    st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_max
-                    current_price_dollars = max_price_dollars
-                    st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_max:.2f} (cannot be above max price)")
-                
-                market_price = st.number_input(
-                    "Average Price per Vendor ($)",
-                    min_value=min_price_dollars,
-                    max_value=max_price_dollars,
-                    value=current_price_dollars,
-                    step=1.0,
-                    help="Target average price across all vendors",
-                    key="market_price_input",
-                    format="%.2f",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'market_price', st.session_state.market_price_input)
-                )
-                
-                # Price validation
-                price_total_min = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_price_min
-                price_total_max = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_price_max
-                price_total_avg = st.session_state.sim_params.num_vendors * st.session_state.sim_params.market_price
-                price_valid = price_total_min <= price_total_avg <= price_total_max
-            
- 
-        
-            with col_right:
-                # Products Configuration
-                st.markdown('<h4 class="subsection-header">📦 Products Configuration</h4>', unsafe_allow_html=True)
-                
-                vendor_products_min = st.number_input(
-                "Min Products per Vendor",
-                min_value=1,
-                max_value=10000,
-                value=st.session_state.sim_params.vendor_products_min,
-                help="Minimum products any vendor can offer per period",
-                key="vendor_products_min_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_min', st.session_state.vendor_products_min_input)
-            )
-                
-                vendor_products_max = st.number_input(
-                "Max Products per Vendor",
-                min_value=st.session_state.sim_params.vendor_products_min,
-                max_value=10000,
-                value=st.session_state.sim_params.vendor_products_max,
-                help="Maximum products any vendor can offer per period",
-                key="vendor_products_max_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_max', st.session_state.vendor_products_max_input)
-            )
-                
-                vendor_products_avg = st.number_input(
-                "Average Products per Vendor",
-                min_value=st.session_state.sim_params.vendor_products_min,
-                max_value=st.session_state.sim_params.vendor_products_max,
-                value=st.session_state.sim_params.vendor_products_avg,
-                help="Target average products per vendor",
-                key="vendor_products_avg_input",
-                on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.vendor_products_avg_input)
-            )
-                
-                # Products validation
-                products_total_min = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_products_min
-                products_total_max = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_products_max
-                products_total_avg = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_products_avg
-                products_valid = products_total_min <= products_total_avg <= products_total_max
-        
-            # Carryover Configuration (full width)
-            st.markdown('<h4 class="subsection-header">🔄 Carryover Configuration</h4>', unsafe_allow_html=True)
-            
-            # Initialize the widget key if it doesn't exist
-            if "page1_carryover_mode" not in st.session_state:
-                # Determine initial mode based on current settings
-                if st.session_state.sim_params.override_carryover:
-                    if st.session_state.sim_params.global_carryover:
-                        st.session_state.page1_carryover_mode = "All vendors have carryover"
-                    else:
-                        st.session_state.page1_carryover_mode = "No vendors have carryover"
-                else:
-                    st.session_state.page1_carryover_mode = "Use probability"
-            
-            carryover_mode = st.radio(
-                "Carryover Mode",
-                ["All vendors have carryover", "No vendors have carryover", "Use probability"],
-                horizontal=True,
-                help="Choose how to apply carryover settings to vendors",
-                key="page1_carryover_mode"
-            )
-            
-            # Apply the selected mode
-            if st.session_state.page1_carryover_mode == "All vendors have carryover":
-                st.session_state.sim_params.override_carryover = True
-                st.session_state.sim_params.global_carryover = True
-                expected_carryover_vendors = st.session_state.sim_params.num_vendors
-                st.info(f"✅ All {st.session_state.sim_params.num_vendors} vendors will have carryover enabled")
-                
-            elif st.session_state.page1_carryover_mode == "No vendors have carryover":
-                st.session_state.sim_params.override_carryover = True
-                st.session_state.sim_params.global_carryover = False
-                expected_carryover_vendors = 0
-                st.info(f"❌ None of the {st.session_state.sim_params.num_vendors} vendors will have carryover")
-                
-            else:  # Use probability
-                st.session_state.sim_params.override_carryover = False
-                
-                vendor_carryover_probability = st.slider(
-                    "Carryover Probability (p)",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=st.session_state.sim_params.vendor_carryover_probability,
-                    step=0.05,
-                    help="Probability that any given vendor will have carryover enabled (Bernoulli per vendor)",
-                    key="vendor_carryover_probability_slider",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'vendor_carryover_probability', st.session_state.vendor_carryover_probability_slider)
-                )
-                expected_carryover_vendors = int(st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_carryover_probability)
-                st.info(f"🎲 Expected ~{expected_carryover_vendors} vendors (out of {st.session_state.sim_params.num_vendors}) to have carryover based on {st.session_state.sim_params.vendor_carryover_probability:.0%} probability")
-            
-            # Summary chips
-            st.markdown('<h4 class="subsection-header">📊 Configuration Summary</h4>', unsafe_allow_html=True)
-            col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
-            
-            with col_sum1:
-                st.metric("Total Vendors", f"{st.session_state.sim_params.num_vendors}")
-            with col_sum2:
-                st.metric("Expected Total Products", f"{products_total_avg:,}")
-            with col_sum3:
-                st.metric("Expected Total Revenue", f"${price_total_avg:.2f}")
-            with col_sum4:
-                st.metric("Expected Vendors with Carryover", f"{expected_carryover_vendors}")
+        if "page1_apply_limits" not in st.session_state:
+            # Use the existing apply_consumption_limits value
+            st.session_state.page1_apply_limits = "Yes" if st.session_state.sim_params.apply_consumption_limits else "No"
 
-        else:
-            
-            # Hide all random generation inputs when upload mode is selected
-            st.markdown('<h4 class="subsection-header">📁 Upload Vendor Configuration</h4>', unsafe_allow_html=True)
-            st.info("Upload a CSV file with complete vendor configuration. This will override all random generation settings.")
-        
-            # Show expected format
-            with st.expander("📋 Expected CSV Format", expanded=False):
-                st.code("""vendor_id,price,products_per_period,carryover
-V1,8.50,120,1
-V2,9.25,95,0
-V3,10.00,80,1
-V4,11.75,110,0
-V5,12.00,100,1""")
-            st.caption("Required columns: vendor_id, price, products_per_period, carryover (0=disabled, 1=enabled)")
-        
-        uploaded_file = st.file_uploader(
-            "Upload Vendor Configuration CSV",
-            type=['csv'],
-            help="CSV file with complete vendor configuration"
-        )
-        
-        if uploaded_file is not None:
-            try:
-                vendor_config_df = pd.read_csv(uploaded_file)
-                
-                # Validate required columns
-                required_columns = ['vendor_id', 'price', 'products_per_period', 'carryover']
-                missing_columns = [col for col in required_columns if col not in vendor_config_df.columns]
-                
-                if missing_columns:
-                    st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
-                else:
-                    # Convert to list of dictionaries and store
-                    st.session_state.sim_params.vendor_config_data = vendor_config_df.to_dict('records')
-                    
-                    # Update num_vendors to match uploaded data
-                    st.session_state.sim_params.num_vendors = len(vendor_config_df)
-                    
-                    # Show validation and summary
-                    st.success(f"✅ Loaded configuration for {len(vendor_config_df)} vendors")
-                    
-                    # Summary metrics
-                    col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
-                    
-                    with col_sum1:
-                        st.metric("Vendors Loaded", len(vendor_config_df))
-                    with col_sum2:
-                        st.metric("Avg Price", f"${vendor_config_df['price'].mean():.2f}")
-                    with col_sum3:
-                        st.metric("Avg Products/Vendor", f"{vendor_config_df['products_per_period'].mean():.0f}")
-                    with col_sum4:
-                        st.metric("Vendors with Carryover", f"{vendor_config_df['carryover'].sum()}")
-                    
-                    # Show totals
-                    total_products = vendor_config_df['products_per_period'].sum()
-                    total_revenue = (vendor_config_df['price'] * vendor_config_df['products_per_period']).sum()
-                    
-                    col_total1, col_total2 = st.columns(2)
-                    with col_total1:
-                        st.metric("Total Products", f"{total_products:,}")
-                    with col_total2:
-                        st.metric("Expected Total Revenue", f"${total_revenue:,.2f}")
-                    
-                    # Show preview
-                    with st.expander("👀 Preview Loaded Data", expanded=False):
-                        st.dataframe(vendor_config_df, use_container_width=True)
-                        
-            except Exception as e:
-                st.error(f"❌ Error loading vendor configuration: {e}")
-                st.caption("Please check your CSV format and try again.")
-    
-    # Consumption Limits Configuration
-    st.markdown('<h3 class="section-header">🛒 Consumption Limits</h3>', unsafe_allow_html=True)
-    
-    # Initialize the widget key if it doesn't exist
-    if "page1_apply_limits" not in st.session_state:
-        # Use the existing apply_consumption_limits value
-        st.session_state.page1_apply_limits = "Yes" if st.session_state.sim_params.apply_consumption_limits else "No"
-    
-    apply_limits = st.radio(
-        "Apply Consumption Limits?",
-        ["Yes", "No"],
-        horizontal=True,
-        help="Choose whether to apply consumption limits per income category",
-        key="page1_apply_limits"
-    )
-    
-    # Sync the widget's state to the sim_params
-    st.session_state.sim_params.apply_consumption_limits = (st.session_state.page1_apply_limits == "Yes")
-    
-    if st.session_state.sim_params.apply_consumption_limits:
-        st.caption("Set consumption limits per product for each income category per period")
-        
-        # Configuration source
-        # Initialize the widget key if it doesn't exist
-        if "page1_limits_source" not in st.session_state:
-            # Use the existing consumption_limits_source value
-            st.session_state.page1_limits_source = "Manual Entry" if st.session_state.sim_params.consumption_limits_source == "manual" else "Upload CSV"
-        
-        limits_source = st.radio(
-            "Limits Configuration Source",
-            ["Manual Entry", "Upload CSV"],
+        apply_limits = st.radio(
+            "Apply Consumption Limits?",
+            ["Yes", "No"],
             horizontal=True,
-            key="page1_limits_source"
+            help="Choose whether to apply consumption limits per income category",
+            key="page1_apply_limits"
         )
-        
+
         # Sync the widget's state to the sim_params
-        st.session_state.sim_params.consumption_limits_source = "manual" if st.session_state.page1_limits_source == "Manual Entry" else "upload"
-        
-        if st.session_state.page1_limits_source == "Manual Entry":
-            
-            # Create a simple interface for setting consumption limits
-            total_categories = st.session_state.sim_params.num_fixed_categories
-            
-            # Initialize consumption limits in session state if not exists
-            if "consumption_limits_temp" not in st.session_state:
-                st.session_state.consumption_limits_temp = st.session_state.sim_params.consumption_limits.copy()
-            
-            consumption_limits = {}
-            cols = st.columns(min(5, total_categories))
-            for i in range(total_categories):
-                col_idx = i % len(cols)
-                with cols[col_idx]:
-                    key = f"consumption_limit_{i}"
-                    cat_key = f"cat_{i+1}"
-                    
-                    # Initialize widget key if it doesn't exist
-                    if key not in st.session_state:
-                        st.session_state[key] = st.session_state.sim_params.consumption_limits.get(cat_key, 10)
-                    
-                    limit = st.number_input(
-                        f"Category {i+1} Limit",
-                        min_value=0,
-                        max_value=100,
-                        value=st.session_state[key],
-                        key=key,
-                        on_change=lambda k=key, c=cat_key: st.session_state.consumption_limits_temp.update({c: st.session_state[k]})
-                    )
-                    consumption_limits[cat_key] = st.session_state[key]
-            
-            st.session_state.sim_params.consumption_limits = consumption_limits
-            
-        else:
-            
-            st.info("Upload a CSV file with consumption limits. Required columns: `category_id`, `limit`")
-            
-            # Show expected format
-            with st.expander("📋 Expected CSV Format", expanded=False):
-                st.code("""category_id,limit
+        st.session_state.sim_params.apply_consumption_limits = (st.session_state.page1_apply_limits == "Yes")
+
+        if st.session_state.sim_params.apply_consumption_limits:
+            st.caption("Set consumption limits per product for each income category per period")
+
+            # Configuration source
+            # Initialize the widget key if it doesn't exist
+            if "page1_limits_source" not in st.session_state:
+                # Use the existing consumption_limits_source value
+                st.session_state.page1_limits_source = "Manual Entry" if st.session_state.sim_params.consumption_limits_source == "manual" else "Upload CSV"
+
+            limits_source = st.radio(
+                "Limits Configuration Source",
+                ["Manual Entry", "Upload CSV"],
+                horizontal=True,
+                key="page1_limits_source"
+            )
+
+            # Sync the widget's state to the sim_params
+            st.session_state.sim_params.consumption_limits_source = "manual" if st.session_state.page1_limits_source == "Manual Entry" else "upload"
+
+            if st.session_state.page1_limits_source == "Manual Entry":
+
+                # Create a simple interface for setting consumption limits
+                total_categories = st.session_state.sim_params.num_fixed_categories
+
+                # Initialize consumption limits in session state if not exists
+                if "consumption_limits_temp" not in st.session_state:
+                    st.session_state.consumption_limits_temp = st.session_state.sim_params.consumption_limits.copy()
+
+                consumption_limits = {}
+                cols = st.columns(min(5, total_categories))
+                for i in range(total_categories):
+                    col_idx = i % len(cols)
+                    with cols[col_idx]:
+                        key = f"consumption_limit_{i}"
+                        cat_key = f"cat_{i+1}"
+
+                        # Initialize widget key if it doesn't exist
+                        if key not in st.session_state:
+                            st.session_state[key] = st.session_state.sim_params.consumption_limits.get(cat_key, 10)
+
+                        limit = st.number_input(
+                            f"Category {i+1} Limit",
+                            min_value=0,
+                            max_value=100,
+                            value=st.session_state[key],
+                            key=key,
+                            on_change=lambda k=key, c=cat_key: st.session_state.consumption_limits_temp.update({c: st.session_state[k]})
+                        )
+                        consumption_limits[cat_key] = st.session_state[key]
+
+                st.session_state.sim_params.consumption_limits = consumption_limits
+
+            else:
+
+                st.info("Upload a CSV file with consumption limits. Required columns: `category_id`, `limit`")
+
+                # Show expected format
+                with st.expander("📋 Expected CSV Format", expanded=False):
+                    st.code("""category_id,limit
 1,10
 2,12
 3,9
 4,15
 5,8""")
-            
-            limits_file = st.file_uploader(
-                "Upload Consumption Limits CSV",
-                type=['csv'],
-                help="CSV file with consumption limits per category"
-            )
-            
-            if limits_file is not None:
-                try:
-                    limits_df = pd.read_csv(limits_file)
-                    
-                    # Validate required columns
-                    required_columns = ['category_id', 'limit']
-                    missing_columns = [col for col in required_columns if col not in limits_df.columns]
-                    
-                    if missing_columns:
-                        st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
-                    else:
-                        # Convert to dictionary format
-                        consumption_limits = {}
-                        for _, row in limits_df.iterrows():
-                            consumption_limits[f"cat_{int(row['category_id'])}"] = float(row['limit'])
-                        
-                        st.session_state.sim_params.consumption_limits = consumption_limits
-                        
-                        # Show summary
-                        st.success(f"✅ Loaded limits for {len(limits_df)} categories")
-                        
-                        # Show preview
-                        with st.expander("👀 Preview Loaded Limits", expanded=False):
-                            st.dataframe(limits_df, use_container_width=True)
-                            
-                except Exception as e:
-                    st.error(f"❌ Error loading consumption limits: {e}")
-                    st.caption("Please check your CSV format and try again.")
+
+                limits_file = st.file_uploader(
+                    "Upload Consumption Limits CSV",
+                    type=['csv'],
+                    help="CSV file with consumption limits per category"
+                )
+
+                if limits_file is not None:
+                    try:
+                        limits_df = pd.read_csv(limits_file)
+
+                        # Validate required columns
+                        required_columns = ['category_id', 'limit']
+                        missing_columns = [col for col in required_columns if col not in limits_df.columns]
+
+                        if missing_columns:
+                            st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+                        else:
+                            # Convert to dictionary format
+                            consumption_limits = {}
+                            for _, row in limits_df.iterrows():
+                                consumption_limits[f"cat_{int(row['category_id'])}"] = float(row['limit'])
+
+                            st.session_state.sim_params.consumption_limits = consumption_limits
+
+                            # Show summary
+                            st.success(f"✅ Loaded limits for {len(limits_df)} categories")
+
+                            # Show preview
+                            with st.expander("👀 Preview Loaded Limits", expanded=False):
+                                st.dataframe(limits_df, use_container_width=True)
+
+                    except Exception as e:
+                        st.error(f"❌ Error loading consumption limits: {e}")
+                        st.caption("Please check your CSV format and try again.")
+
+        else:
+            st.info("ℹ️ Consumption limits are disabled. Agents will have no consumption restrictions.")
+            # Clear consumption limits when disabled
+            st.session_state.sim_params.consumption_limits = {}
     
-    else:
-        st.info("ℹ️ Consumption limits are disabled. Agents will have no consumption restrictions.")
-        # Clear consumption limits when disabled
-        st.session_state.sim_params.consumption_limits = {}
-    
-    # Population Mode Selection (Global Parameter)
-    st.markdown('<h3 class="section-header">🧬 Population Generation Mode</h3>', unsafe_allow_html=True)
-    st.caption("This setting applies to all decisions and determines how agents are generated")
-    
-    # Initialize the widget key if it doesn't exist
-    if "page1_population_mode" not in st.session_state:
-        # Use the existing population_mode value or default to "Copula (synthetic)"
-        st.session_state.page1_population_mode = getattr(st.session_state, "population_mode", "Copula (synthetic)")
-    
-    population_mode = st.radio(
-        "Population Mode",
-        ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
-        horizontal=True,
-        help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\nCompare all: Show all three modes side-by-side",
-        key="page1_population_mode"
-    )
-    
-    # Sync the widget's state to the main population_mode variable
-    st.session_state.population_mode = st.session_state.page1_population_mode
-    
-    # Show description of selected mode
-    if st.session_state.population_mode == "Copula (synthetic)":
-        st.info("🧬 **Copula Mode**: Generates unlimited synthetic agents using fitted copula from 280 original participants. Preserves correlation structure.")
-    elif st.session_state.population_mode == "Research Specification":
-        st.info("📄 **Research Specification**: Uses original 280 participants with stochastic component (Normal draws). Follows research documentation methodology.")
-    elif st.session_state.population_mode == "Research Baseline":
-        st.info("⚖️ **Research Baseline**: Uses original 280 participants with NO stochastic component. Returns pure anchor values (deterministic).")
-    else:  # Compare all
-        st.info("🔬 **Compare All**: Runs all three population modes side-by-side for comprehensive comparison.")
+    with col_population:
+        # Population Mode Selection (Global Parameter)
+        st.markdown('<h3 class="section-header">🧬 Population Generation Mode</h3>', unsafe_allow_html=True)
+        st.caption("This setting applies to all decisions and determines how agents are generated")
+
+        # Initialize the widget key if it doesn't exist
+        if "page1_population_mode" not in st.session_state:
+            # Use the existing population_mode value or default to "Copula (synthetic)"
+            st.session_state.page1_population_mode = getattr(st.session_state, "population_mode", "Copula (synthetic)")
+
+        population_mode = st.radio(
+            "Population Mode",
+            ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
+            horizontal=True,
+            help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\nCompare all: Show all three modes side-by-side",
+            key="page1_population_mode"
+        )
+
+        # Sync the widget's state to the main population_mode variable
+        st.session_state.population_mode = st.session_state.page1_population_mode
+
+        # Show description of selected mode
+        if st.session_state.population_mode == "Copula (synthetic)":
+            st.info("🧬 **Copula Mode**: Generates unlimited synthetic agents using fitted copula from 280 original participants. Preserves correlation structure.")
+        elif st.session_state.population_mode == "Research Specification":
+            st.info("📄 **Research Specification**: Uses original 280 participants with stochastic component (Normal draws). Follows research documentation methodology.")
+        elif st.session_state.population_mode == "Research Baseline":
+            st.info("⚖️ **Research Baseline**: Uses original 280 participants with NO stochastic component. Returns pure anchor values (deterministic).")
+        else:  # Compare all
+            st.info("🔬 **Compare All**: Runs all three population modes side-by-side for comprehensive comparison.")
     
     # Navigation
     render_navigation('page1')

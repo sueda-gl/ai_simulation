@@ -15,8 +15,15 @@ import yaml
 from app.models import get_decision_global_parameters, get_all_global_parameters
 
 
-def show_overview(df, title_suffix=""):
-    """Helper function to show simulation overview for a DataFrame"""
+def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
+    """Helper function to show simulation overview for a DataFrame
+    
+    Args:
+        df: Results DataFrame
+        title_suffix: Additional text for titles
+        result_key: Unique key for this result (needed for selection)
+        enable_selection: Whether to show inline selection button
+    """
     st.subheader(f"Simulation Overview{title_suffix}")
     
     # Check if this is dependent variable mode (only has donation_default column)
@@ -96,6 +103,49 @@ def show_overview(df, title_suffix=""):
                 ]
             })
             st.dataframe(stats_df, hide_index=True)
+    
+    # Add inline selection button if enabled
+    if enable_selection and result_key:
+        render_inline_selection_button(result_key, df)
+
+
+def render_inline_selection_button(result_key, result_df):
+    """Render selection button directly under the chart"""
+    
+    # Import here to avoid circular imports
+    from app.pages.decision_execution import (
+        save_selected_configuration, 
+        is_configuration_selected
+    )
+    
+    is_selected = is_configuration_selected(result_key)
+    
+    # Create a compact selection interface
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Show key metric for quick reference
+        donation_col = 'donation_default'
+        if 'donation_default_raw' in result_df.columns:
+            donation_col = 'donation_default_raw'
+        mean_donation = result_df[donation_col].mean()
+        st.caption(f"📊 Quick Summary: {len(result_df):,} agents, avg {mean_donation:.1%}")
+    
+    with col2:
+        # Selection button
+        if is_selected:
+            st.success("✅ Selected")
+        else:
+            if st.button(
+                "🎯 Use This Config",
+                key=f"inline_select_{result_key}",
+                type="primary",
+                use_container_width=True,
+                help="Select this configuration for combined simulations"
+            ):
+                save_selected_configuration(result_key, result_df)
+                st.success("Configuration selected!")
+                st.rerun()
 
 
 def show_parameter_applicability_analysis(selected_decisions):

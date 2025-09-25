@@ -3,6 +3,8 @@
 Decision execution functions for running individual and combined simulations.
 """
 import streamlit as st
+import pandas as pd
+from datetime import datetime
 from app.simulation import run_simulation_from_sidebar
 from app.models import ALL_DECISIONS
 
@@ -111,9 +113,54 @@ def run_individual_decision(decision_name):
     """Run a single decision simulation"""
     with st.spinner(f"Running {decision_name} simulation..."):
         try:
+            # Clear any selected configuration for donation_default to allow full comparison
+            if decision_name == "donation_default" and hasattr(st.session_state, 'selected_donation_config'):
+                st.info("🔄 Clearing selected configuration to show all comparison variants")
+                delattr(st.session_state, 'selected_donation_config')
+                
+                # Also restore original session state values if they were overridden
+                if hasattr(st.session_state, '_original_population_mode'):
+                    st.session_state.population_mode = st.session_state._original_population_mode
+                    st.session_state.income_spec_mode = st.session_state._original_income_spec_mode
+                    delattr(st.session_state, '_original_population_mode')
+                    delattr(st.session_state, '_original_income_spec_mode')
+                    st.info("🔄 Restored original UI settings for comparison")
+            
             # Temporarily modify selected decisions
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
             st.session_state.decision_params.selected_decisions = [decision_name]
+            
+            # If this is donation_default, collect and apply coefficient parameters
+            if decision_name == "donation_default":
+                # Collect regression coefficients from session state
+                coeffs = {
+                    'intercept': st.session_state.get('donation_coeff_intercept', 1.22985660120368),
+                    'beta_group': {
+                        'MidSub': st.session_state.get('donation_coeff_midsub', 0.856140306694656),
+                        'NoSub': st.session_state.get('donation_coeff_nosub', -0.926633374153906),
+                        'FullSub': st.session_state.get('donation_coeff_fullsub', 0.0)
+                    },
+                    'beta_income_q': {
+                        'Q1': st.session_state.get('donation_coeff_q1', -0.520290427509808),
+                        'Q2': st.session_state.get('donation_coeff_q2', 3.754612744416796),
+                        'Q3': st.session_state.get('donation_coeff_q3', 4.001714810873598),
+                        'Q4_Q5': st.session_state.get('donation_coeff_q45', 0.0)
+                    },
+                    'beta_income_linear': st.session_state.get('donation_coeff_linear', 0.0256),
+                    'beta_study': {
+                        'Incoming': st.session_state.get('donation_coeff_incoming', -6.920193024391676),
+                        'Law5yr': st.session_state.get('donation_coeff_law', -2.081331674770856),
+                        'UG3yr': st.session_state.get('donation_coeff_ug', -2.139093511519692),
+                        'Grad2yr': st.session_state.get('donation_coeff_grad', 0.0)
+                    },
+                    'beta_hh': st.session_state.get('donation_coeff_hh', 0.634001208840808),
+                    'income_mode': st.session_state.get('income_spec_mode', 'categorical')
+                }
+                
+                # Store the coefficients in decision_params for the simulation
+                if not hasattr(st.session_state, 'custom_coefficients'):
+                    st.session_state.custom_coefficients = {}
+                st.session_state.custom_coefficients['donation_default'] = coeffs
             
             # Set state variables correctly for individual runs
             # This ensures the results display shows only the executed decision
@@ -191,3 +238,169 @@ def run_combined_simulation(selected_decisions):
             st.error(f"❌ Error running complete simulation: {str(e)}")
             import traceback
             st.text(traceback.format_exc())
+
+
+# ==================== CONFIGURATION SELECTION SYSTEM ====================
+
+def save_selected_configuration(result_key, result_df):
+    """Save the selected configuration for later use in combined simulations"""
+    
+    # Extract configuration details from the result key
+    config_details = extract_configuration_details(result_key)
+    
+    # Get current coefficient values from session state
+    coefficients = get_current_coefficients()
+    
+    # Get current stochastic parameters
+    stochastic_params = get_current_stochastic_params()
+    
+    # Calculate key metrics from the result
+    metrics = calculate_result_metrics(result_df)
+    
+    # Create complete configuration object
+    config = {
+        'result_key': result_key,
+        'population_mode': config_details['population_mode'],
+        'income_spec_mode': config_details['income_spec_mode'],
+        'coefficients': coefficients,
+        'stochastic_params': stochastic_params,
+        'metrics': metrics,
+        'selected_timestamp': datetime.now(),
+        'total_agents': len(result_df),
+        'source': 'individual_donation_run'
+    }
+    
+    # Store in session state
+    st.session_state.selected_donation_config = config
+    
+    return config
+
+
+def extract_configuration_details(result_key):
+    """Extract population and income mode from result key"""
+    
+    # Population mode detection
+    if 'copula' in result_key:
+        population_mode = 'Copula (synthetic)'
+    elif 'research_spec' in result_key or 'documentation' in result_key:
+        population_mode = 'Research Specification'
+    elif 'baseline' in result_key:
+        population_mode = 'Research Baseline'
+    else:
+        # For single-mode results, use current session state
+        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+    
+    # Income mode detection
+    if 'categorical' in result_key:
+        income_spec_mode = 'categorical only'
+    elif 'continuous' in result_key:
+        income_spec_mode = 'continuous only'
+    else:
+        # For single-mode results, use current session state
+        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    
+    return {
+        'population_mode': population_mode,
+        'income_spec_mode': income_spec_mode
+    }
+
+
+def get_current_coefficients():
+    """Collect all current coefficient values from session state"""
+    return {
+        'intercept': st.session_state.get('donation_coeff_intercept', 1.22985660120368),
+        'beta_group': {
+            'MidSub': st.session_state.get('donation_coeff_midsub', 0.856140306694656),
+            'NoSub': st.session_state.get('donation_coeff_nosub', -0.926633374153906),
+            'FullSub': st.session_state.get('donation_coeff_fullsub', 0.0)
+        },
+        'beta_income_q': {
+            'Q1': st.session_state.get('donation_coeff_q1', -0.520290427509808),
+            'Q2': st.session_state.get('donation_coeff_q2', 3.754612744416796),
+            'Q3': st.session_state.get('donation_coeff_q3', 4.001714810873598),
+            'Q4_Q5': st.session_state.get('donation_coeff_q45', 0.0)
+        },
+        'beta_income_linear': st.session_state.get('donation_coeff_linear', 0.0256),
+        'beta_study': {
+            'Incoming': st.session_state.get('donation_coeff_incoming', -6.920193024391676),
+            'Law5yr': st.session_state.get('donation_coeff_law', -2.081331674770856),
+            'UG3yr': st.session_state.get('donation_coeff_ug', -2.139093511519692),
+            'Grad2yr': st.session_state.get('donation_coeff_grad', 0.0)
+        },
+        'beta_hh': st.session_state.get('donation_coeff_hh', 0.634001208840808)
+    }
+
+
+def get_current_stochastic_params():
+    """Collect current stochastic parameters from session state"""
+    return {
+        'stochastic': {
+            'sigma_value': st.session_state.get('sigma_value_ui', 9.8995),
+            'sigma_coefficient': st.session_state.get('sigma_coefficient', 1.0),
+            'sigma_in_copula': st.session_state.get('sigma_in_copula', False),
+            'sigma_in_research': st.session_state.get('sigma_in_research', True),
+            'raw_output': st.session_state.get('raw_draw_mode', False)
+        },
+        'anchor_weights': {
+            'observed': st.session_state.get('anchor_observed_weight', 0.75),
+            'predicted': 1 - st.session_state.get('anchor_observed_weight', 0.75)
+        }
+    }
+
+
+def calculate_result_metrics(result_df):
+    """Calculate key metrics from result DataFrame"""
+    
+    # Determine which donation column to use
+    donation_col = 'donation_default'
+    if 'donation_default_raw' in result_df.columns and st.session_state.get('raw_draw_mode', False):
+        donation_col = 'donation_default_raw'
+    
+    metrics = {
+        'mean_donation': result_df[donation_col].mean(),
+        'std_donation': result_df[donation_col].std(),
+        'median_donation': result_df[donation_col].median(),
+        'min_donation': result_df[donation_col].min(),
+        'max_donation': result_df[donation_col].max(),
+        'q25_donation': result_df[donation_col].quantile(0.25),
+        'q75_donation': result_df[donation_col].quantile(0.75),
+        'donation_column_used': donation_col
+    }
+    
+    return metrics
+
+
+def format_result_name(result_key):
+    """Format result key into human-readable name"""
+    
+    name_mapping = {
+        'copula_categorical': '🔬 Copula + Categorical Income',
+        'copula_continuous': '🔬 Copula + Continuous Income',
+        'research_spec_categorical': '📊 Research Spec + Categorical Income',
+        'research_spec_continuous': '📊 Research Spec + Continuous Income',
+        'research_baseline_categorical': '📈 Research Baseline + Categorical Income',
+        'research_baseline_continuous': '📈 Research Baseline + Continuous Income',
+        'categorical': '💰 Categorical Income Mode',
+        'continuous': '📈 Continuous Income Mode',
+        'copula': '🔬 Copula Population',
+        'documentation': '📊 Research Specification',
+        'baseline': '📈 Research Baseline'
+    }
+    
+    return name_mapping.get(result_key, f"📊 {result_key.replace('_', ' ').title()}")
+
+
+def is_configuration_selected(result_key):
+    """Check if a specific configuration is currently selected"""
+    
+    if not hasattr(st.session_state, 'selected_donation_config'):
+        return False
+    
+    return st.session_state.selected_donation_config.get('result_key') == result_key
+
+
+def clear_selected_configuration():
+    """Clear the currently selected configuration"""
+    
+    if hasattr(st.session_state, 'selected_donation_config'):
+        del st.session_state.selected_donation_config

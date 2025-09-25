@@ -16,6 +16,10 @@ def render_overview_tab(selected_decisions):
     # Display Global Parameters
     render_global_parameters_readonly()
     
+    # Show selected donation configuration if available
+    if 'donation_default' in selected_decisions:
+        render_selected_donation_config_display()
+    
     # Add combined run button
     st.markdown('<h3 class="section-header">🚀 Complete Simulation</h3>', unsafe_allow_html=True)
     
@@ -53,20 +57,25 @@ def render_page2():
             disabled=True
         )
     else:
-        # Use session state to preserve selections when navigating between pages
-        # But default to empty list if nothing was previously selected
-        default_selections = st.session_state.decision_params.selected_decisions if hasattr(st.session_state.decision_params, 'selected_decisions') and st.session_state.decision_params.selected_decisions else []
+        # Use widget key with session state initialization for proper state management
+        # Initialize the widget key if it doesn't exist
+        if "page2_decision_selection" not in st.session_state:
+            # Check if we have stored selections in decision_params, otherwise default to empty
+            initial_selections = []
+            if hasattr(st.session_state.decision_params, 'selected_decisions') and st.session_state.decision_params.selected_decisions:
+                initial_selections = st.session_state.decision_params.selected_decisions
+            st.session_state.page2_decision_selection = initial_selections
         
         selected_decisions = st.multiselect(
             "Select Decisions to Run",
             ALL_DECISIONS,
-            default=default_selections,
+            key="page2_decision_selection",
             help="Select one or more decisions to run",
             placeholder="Choose decisions..."
         )
     
-    # Store selected decisions
-    st.session_state.decision_params.selected_decisions = selected_decisions
+    # Store selected decisions (sync from widget state)
+    st.session_state.decision_params.selected_decisions = st.session_state.page2_decision_selection
     
     if not selected_decisions:
         st.warning("Please select at least one decision to configure parameters")
@@ -89,3 +98,100 @@ def render_page2():
     
     # Navigation
     render_navigation('page2')
+
+
+def render_selected_donation_config_display():
+    """Display the selected donation configuration in the overview tab"""
+    
+    if not hasattr(st.session_state, 'selected_donation_config'):
+        # No configuration selected yet
+        st.markdown('<h3 class="section-header">🎯 Donation Configuration</h3>', unsafe_allow_html=True)
+        st.info("💡 **No donation configuration selected yet**")
+        st.caption("Run the donation decision individually first, then select your preferred configuration from the results.")
+        return
+    
+    config = st.session_state.selected_donation_config
+    
+    st.markdown('<h3 class="section-header">🎯 Selected Donation Configuration</h3>', unsafe_allow_html=True)
+    
+    # Main configuration display
+    with st.container():
+        st.success(f"✅ **Configuration Selected**: {config['population_mode']} + {config['income_spec_mode']}")
+        
+        # Metrics and details in columns
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Population Mode", config['population_mode'])
+        
+        with col2:
+            st.metric("Income Mode", config['income_spec_mode'])
+        
+        with col3:
+            st.metric("Avg Donation Rate", f"{config['metrics']['mean_donation']:.1%}")
+        
+        with col4:
+            st.metric("Total Agents", f"{config['total_agents']:,}")
+        
+        # Additional details in expandable section
+        with st.expander("📊 Configuration Details", expanded=False):
+            
+            # Coefficient summary
+            st.markdown("**🔢 Regression Coefficients:**")
+            coeffs = config['coefficients']
+            
+            coeff_col1, coeff_col2 = st.columns(2)
+            
+            with coeff_col1:
+                st.metric("Intercept", f"{coeffs['intercept']:.6f}")
+                st.metric("Honesty-Humility", f"{coeffs['beta_hh']:.6f}")
+                
+                # Group effects
+                st.markdown("**👥 Group Effects:**")
+                for group, coeff in coeffs['beta_group'].items():
+                    st.caption(f"{group}: {coeff:.6f}")
+            
+            with coeff_col2:
+                # Income effects
+                if config['income_spec_mode'] == 'categorical only':
+                    st.markdown("**💰 Income Quintile Effects:**")
+                    for quintile, coeff in coeffs['beta_income_q'].items():
+                        st.caption(f"{quintile}: {coeff:.6f}")
+                else:
+                    st.metric("Linear Income Coeff", f"{coeffs['beta_income_linear']:.6f}")
+                
+                # Study effects  
+                st.markdown("**🎓 Study Programme Effects:**")
+                for study, coeff in coeffs['beta_study'].items():
+                    st.caption(f"{study}: {coeff:.6f}")
+            
+            # Stochastic parameters
+            st.markdown("**🎲 Stochastic Parameters:**")
+            stoch = config['stochastic_params']
+            
+            stoch_col1, stoch_col2 = st.columns(2)
+            
+            with stoch_col1:
+                st.metric("Sigma Value", f"{stoch['stochastic']['sigma_value']:.4f}")
+                st.metric("Sigma Coefficient", f"{stoch['stochastic']['sigma_coefficient']:.2f}")
+            
+            with stoch_col2:
+                st.metric("Observed Weight", f"{stoch['anchor_weights']['observed']:.2f}")
+                st.metric("Predicted Weight", f"{stoch['anchor_weights']['predicted']:.2f}")
+            
+            # Selection metadata
+            st.markdown("**ℹ️ Selection Info:**")
+            st.caption(f"Selected at: {config['selected_timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+            st.caption(f"Source: {config['source']}")
+        
+        # Action buttons
+        action_col1, action_col2 = st.columns([3, 1])
+        
+        with action_col1:
+            st.caption("This configuration will be used for the donation decision in complete simulations")
+        
+        with action_col2:
+            if st.button("🗑️ Clear", help="Clear the selected configuration"):
+                from app.pages.decision_execution import clear_selected_configuration
+                clear_selected_configuration()
+                st.rerun()

@@ -19,8 +19,8 @@ def render_global_parameters_readonly(decision_name=None):
         else:
             st.info("ℹ️ This is a trait-based decision (doesn't use global parameters)")
     
-    # Create columns to match Page 1 layout
-    col1, col2 = st.columns(2)
+    # Create 4-column layout for better space utilization
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         # Simulation Execution Mode
@@ -44,12 +44,6 @@ def render_global_parameters_readonly(decision_name=None):
         
         st.text(f"Show Agent Details: {'Yes' if st.session_state.show_individual_agents else 'No'}")
         st.text(f"Save Results: {'Yes' if st.session_state.save_results else 'No'}")
-        
-        # Time Parameters
-        st.markdown('<h4 class="subsection-header">⏱️ Time Parameters</h4>', unsafe_allow_html=True)
-        st.text(f"Number of Periods: {st.session_state.sim_params.periods}")
-        st.text(f"Duration per Period: {st.session_state.sim_params.duration_hours:.0f} hours")
-        st.text(f"Duration in Seconds: {st.session_state.sim_params.get_duration_seconds():.0f}")
     
     with col2:
         # Market Parameters
@@ -59,6 +53,20 @@ def render_global_parameters_readonly(decision_name=None):
         st.text(f"Bidding Percentage: {st.session_state.sim_params.bidding_percentage:.0%}")
         st.text(f"Price Grid Categories: {st.session_state.sim_params.price_grid}")
         
+        # Income Categories
+        st.markdown('<h4 class="subsection-header">📊 Income Categories</h4>', unsafe_allow_html=True)
+        st.text(f"Discount Categories (NDIC): {st.session_state.sim_params.num_discount_categories}")
+        st.text(f"Fixed Categories (NFIC): {st.session_state.sim_params.num_fixed_categories}")
+        
+        # Consumption Limits
+        st.markdown('<h4 class="subsection-header">🛒 Consumption Limits</h4>', unsafe_allow_html=True)
+        limits_status = "Enabled" if st.session_state.sim_params.apply_consumption_limits else "Disabled"
+        st.text(f"Apply Limits: {limits_status}")
+        if st.session_state.sim_params.apply_consumption_limits:
+            limits_source = "Manual Entry" if st.session_state.sim_params.consumption_limits_source == "manual" else "Upload CSV"
+            st.text(f"Configuration Source: {limits_source}")
+    
+    with col3:
         # Income Distribution
         st.markdown('<h4 class="subsection-header">💵 Income Distribution</h4>', unsafe_allow_html=True)
         st.text(f"Distribution Type: {st.session_state.sim_params.income_distribution.title()}")
@@ -90,16 +98,13 @@ def render_global_parameters_readonly(decision_name=None):
         
         st.text(f"Discount Threshold: ${st.session_state.sim_params.discount_income_threshold:,.0f}")
         
-        # Income Categories
-        st.markdown('<h4 class="subsection-header">📊 Income Categories</h4>', unsafe_allow_html=True)
-        st.text(f"Discount Categories (NDIC): {st.session_state.sim_params.num_discount_categories}")
-        st.text(f"Fixed Categories (NFIC): {st.session_state.sim_params.num_fixed_categories}")
+        # Population Generation Mode
+        st.markdown('<h4 class="subsection-header">🧬 Population Generation Mode</h4>', unsafe_allow_html=True)
+        st.text(f"Population Mode: {st.session_state.population_mode}")
     
-    # Vendor Configuration (full width)
-    st.markdown('<h4 class="subsection-header">🏪 Vendor Configuration</h4>', unsafe_allow_html=True)
-    col_vendor1, col_vendor2 = st.columns(2)
-    
-    with col_vendor1:
+    with col4:
+        # Vendor Configuration
+        st.markdown('<h4 class="subsection-header">🏪 Vendor Configuration</h4>', unsafe_allow_html=True)
         st.text(f"Number of Vendors: {st.session_state.sim_params.num_vendors}")
         if st.session_state.sim_params.num_vendors == 1:
             st.text("Mode: Single Vendor (Simplified)")
@@ -118,37 +123,21 @@ def render_global_parameters_readonly(decision_name=None):
                 st.text(f"Min Price: ${st.session_state.sim_params.vendor_price_min:.2f}")
                 st.text(f"Max Price: ${st.session_state.sim_params.vendor_price_max:.2f}")
                 st.text(f"Avg Price: ${st.session_state.sim_params.market_price:.2f}")
-    
-    with col_vendor2:
-        if st.session_state.sim_params.num_vendors > 1:
-            if st.session_state.sim_params.vendor_config_mode == "random":
                 st.text(f"Min Products: {st.session_state.sim_params.vendor_products_min}")
                 st.text(f"Max Products: {st.session_state.sim_params.vendor_products_max}")
                 st.text(f"Avg Products: {st.session_state.sim_params.vendor_products_avg}")
-            
-            # Carryover settings for multiple vendors
-            if st.session_state.sim_params.override_carryover:
-                carryover_status = "Enabled" if st.session_state.sim_params.global_carryover else "Disabled"
-                st.text(f"Carryover: {carryover_status} (All vendors)")
-            else:
-                st.text(f"Carryover Probability: {st.session_state.sim_params.vendor_carryover_probability:.0%}")
-    
-    # Consumption Limits
-    st.markdown('<h4 class="subsection-header">🛒 Consumption Limits</h4>', unsafe_allow_html=True)
-    col_limits1, col_limits2 = st.columns(2)
-    
-    with col_limits1:
-        limits_status = "Enabled" if st.session_state.sim_params.apply_consumption_limits else "Disabled"
-        st.text(f"Apply Limits: {limits_status}")
+                # Carryover settings for multiple vendors
+                if st.session_state.sim_params.override_carryover:
+                    carryover_status = "Enabled" if st.session_state.sim_params.global_carryover else "Disabled"
+                    st.text(f"Carryover: {carryover_status} (All vendors)")
+                else:
+                    st.text(f"Carryover Probability: {st.session_state.sim_params.vendor_carryover_probability:.0%}")
         
-    with col_limits2:
-        if st.session_state.sim_params.apply_consumption_limits:
-            limits_source = "Manual Entry" if st.session_state.sim_params.consumption_limits_source == "manual" else "Upload CSV"
-            st.text(f"Configuration Source: {limits_source}")
-    
-    # Population Generation Mode
-    st.markdown('<h4 class="subsection-header">🧬 Population Generation Mode</h4>', unsafe_allow_html=True)
-    st.text(f"Population Mode: {st.session_state.population_mode}")
+        # Time Parameters
+        st.markdown('<h4 class="subsection-header">⏱️ Time Parameters</h4>', unsafe_allow_html=True)
+        st.text(f"Number of Periods: {st.session_state.sim_params.periods}")
+        st.text(f"Duration per Period: {st.session_state.sim_params.duration_hours:.0f} hours")
+        st.text(f"Duration in Seconds: {st.session_state.sim_params.get_duration_seconds():.0f}")
     
     st.markdown("---")
     st.caption("💡 To modify these parameters, go to Page 1: Common Simulation Parameters")

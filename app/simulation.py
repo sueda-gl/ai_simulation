@@ -231,7 +231,20 @@ def run_simulation_from_sidebar():
                             orchestrator.config['donation_default']['stochastic']['raw_output'] = st.session_state.raw_draw_mode
                         else:
                             orchestrator.config['donation_default']['stochastic']['raw_output'] = False
-
+                        
+                        # Apply selected donation configuration if it exists
+                        if hasattr(st.session_state, 'selected_donation_config'):
+                            apply_selected_donation_config(orchestrator, pop_mode, inc_mode)
+                        # Fallback: Apply custom regression coefficients if they exist
+                        elif hasattr(st.session_state, 'custom_coefficients') and 'donation_default' in st.session_state.custom_coefficients:
+                            custom_coeffs = st.session_state.custom_coefficients['donation_default']
+                            # Update regression_coefficients in the config
+                            if 'regression_coefficients' not in orchestrator.config['donation_default']:
+                                orchestrator.config['donation_default']['regression_coefficients'] = {}
+                            orchestrator.config['donation_default']['regression_coefficients'].update(custom_coeffs)
+                            
+                            # Ensure the income mode matches the selected specification
+                            orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = inc_mode
 
                 
                 # Handle multiple decisions
@@ -241,6 +254,23 @@ def run_simulation_from_sidebar():
                     seed=st.session_state.seed if st.session_state.sim_params.simulation_mode == "Single Run" else st.session_state.base_seed,
                     single_decision=decision_param
                 )
+            
+            # CRITICAL FIX: Apply selected donation configuration BEFORE determining result variants
+            # This ensures we generate only the selected configuration, not all variants
+            if hasattr(st.session_state, 'selected_donation_config'):
+                config = st.session_state.selected_donation_config
+                
+                # Show user that we're using selected configuration
+                st.info(f"🎯 Using selected donation configuration: {config['population_mode']} + {config['income_spec_mode']}")
+                
+                # Override session state variables that control result generation
+                if not hasattr(st.session_state, '_original_population_mode'):
+                    st.session_state._original_population_mode = st.session_state.population_mode
+                    st.session_state._original_income_spec_mode = st.session_state.income_spec_mode
+                
+                # Override to match selected configuration - this controls how many results are generated
+                st.session_state.population_mode = config['population_mode']
+                st.session_state.income_spec_mode = config['income_spec_mode']
             
             # Run based on population and income specification modes
             results = {}
@@ -296,6 +326,14 @@ def run_simulation_from_sidebar():
                 st.sidebar.caption(f"✅ Results saved with timestamp {timestamp}")
             
             st.session_state.simulation_results = results
+            
+            # Add a flag to indicate we're using selected configuration
+            if hasattr(st.session_state, 'selected_donation_config'):
+                st.session_state._using_selected_config = True
+            
+            # DON'T restore session state here - we need the results page to see the selected configuration values
+            # The restoration will happen when navigating away from results
+            
             st.session_state.page = 'results'
             st.rerun()
             
@@ -303,9 +341,94 @@ def run_simulation_from_sidebar():
         st.error(f"❌ Simulation failed: {str(e)}")
         import traceback
         st.text(traceback.format_exc())
+        
+        # CLEANUP: Restore original session state even on error
+        if hasattr(st.session_state, '_original_population_mode'):
+            st.session_state.population_mode = st.session_state._original_population_mode
+            st.session_state.income_spec_mode = st.session_state._original_income_spec_mode
+            delattr(st.session_state, '_original_population_mode')
+            delattr(st.session_state, '_original_income_spec_mode')
 
 
 def run_simulation():
     """Run simulation with current parameters"""
     st.session_state.page = 'results'
     # Simulation will be triggered on results page
+
+
+def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
+    """Apply the selected donation configuration to the orchestrator"""
+    
+    config = st.session_state.selected_donation_config
+    
+    # Override coefficients
+    if 'regression_coefficients' not in orchestrator.config['donation_default']:
+        orchestrator.config['donation_default']['regression_coefficients'] = {}
+    
+    # Apply all coefficients from selected configuration
+    orchestrator.config['donation_default']['regression_coefficients'].update(config['coefficients'])
+    
+    # Set income mode to match current simulation mode (not necessarily the selected one)
+    # This allows users to run different income modes with the same coefficient set
+    orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = inc_mode
+    
+    # Apply stochastic parameters
+    stoch_params = config['stochastic_params']
+    
+    # Update stochastic settings
+    orchestrator.config['donation_default']['stochastic'].update({
+        'sigma_value': stoch_params['stochastic']['sigma_value'],
+        'sigma_coefficient': stoch_params['stochastic']['sigma_coefficient'],
+        'sigma_in_copula': stoch_params['stochastic']['sigma_in_copula'],
+        'sigma_in_research': stoch_params['stochastic']['sigma_in_research'],
+        'raw_output': stoch_params['stochastic']['raw_output']
+    })
+    
+    # Update anchor weights
+    orchestrator.config['donation_default']['anchor_weights'].update(stoch_params['anchor_weights'])
+    
+    # Override session state variables to match selected configuration
+    # This ensures the UI reflects the selected configuration
+    st.session_state.sigma_value_ui = stoch_params['stochastic']['sigma_value']
+    st.session_state.sigma_coefficient = stoch_params['stochastic']['sigma_coefficient']
+    st.session_state.sigma_in_copula = stoch_params['stochastic']['sigma_in_copula']
+    st.session_state.sigma_in_research = stoch_params['stochastic']['sigma_in_research']
+    st.session_state.raw_draw_mode = stoch_params['stochastic']['raw_output']
+    st.session_state.anchor_observed_weight = stoch_params['anchor_weights']['observed']
+    
+    # Override coefficient session state variables
+    coeffs = config['coefficients']
+    st.session_state.donation_coeff_intercept = coeffs['intercept']
+    st.session_state.donation_coeff_hh = coeffs['beta_hh']
+    st.session_state.donation_coeff_linear = coeffs['beta_income_linear']
+    
+    # Group coefficients
+    for group, coeff in coeffs['beta_group'].items():
+        if group == 'MidSub':
+            st.session_state.donation_coeff_midsub = coeff
+        elif group == 'NoSub':
+            st.session_state.donation_coeff_nosub = coeff
+        elif group == 'FullSub':
+            st.session_state.donation_coeff_fullsub = coeff
+    
+    # Income quintile coefficients
+    for quintile, coeff in coeffs['beta_income_q'].items():
+        if quintile == 'Q1':
+            st.session_state.donation_coeff_q1 = coeff
+        elif quintile == 'Q2':
+            st.session_state.donation_coeff_q2 = coeff
+        elif quintile == 'Q3':
+            st.session_state.donation_coeff_q3 = coeff
+        elif quintile == 'Q4_Q5':
+            st.session_state.donation_coeff_q45 = coeff
+    
+    # Study programme coefficients
+    for study, coeff in coeffs['beta_study'].items():
+        if study == 'Incoming':
+            st.session_state.donation_coeff_incoming = coeff
+        elif study == 'Law5yr':
+            st.session_state.donation_coeff_law = coeff
+        elif study == 'UG3yr':
+            st.session_state.donation_coeff_ug = coeff
+        elif study == 'Grad2yr':
+            st.session_state.donation_coeff_grad = coeff

@@ -10,7 +10,9 @@ donation_default:
   # Global parameters this decision uses (currently none - purely trait-based)
   uses_global_parameters: []
   
-  regression:
+  # Configurable regression coefficients for both categorical and continuous income modes
+  regression_coefficients:
+    # Base model parameters
     intercept: 1.22985660120368
     
     # Group coefficients (reference: FullSub = 0)
@@ -21,12 +23,15 @@ donation_default:
       NoSub: -0.926633374153906
       FullSub: 0.0  # reference category (maps from HighSub in data)
     
-    # Income quintile coefficients (reference: Q4/Q5 = 0)  
+    # CATEGORICAL INCOME: Income quintile coefficients (reference: Q4/Q5 = 0)  
     beta_income_q:
       Q1: -0.520290427509808
       Q2: 3.754612744416796
       Q3: 4.001714810873598
       Q4_Q5: 0.0  # reference category
+    
+    # CONTINUOUS INCOME: Linear income coefficient
+    beta_income_linear: 0.0256  # from linear model specification
     
     # Study programme coefficients (reference: Graduate 2-yr = 0)
     beta_study:
@@ -36,6 +41,28 @@ donation_default:
       Grad2yr: 0.0  # reference category (CLEF/CLEAM/BIEF)
     
     # Honesty-Humility coefficient (z-score)
+    beta_hh: 0.634001208840808
+    
+    # Income specification mode control
+    income_mode: categorical  # categorical, continuous, or both (for Compare mode)
+  
+  # Legacy regression block (for backward compatibility)
+  regression:
+    intercept: 1.22985660120368
+    beta_group:
+      MidSub: 0.856140306694656
+      NoSub: -0.926633374153906
+      FullSub: 0.0
+    beta_income_q:
+      Q1: -0.520290427509808
+      Q2: 3.754612744416796
+      Q3: 4.001714810873598
+      Q4_Q5: 0.0
+    beta_study:
+      Incoming: -6.920193024391676
+      Law5yr: -2.081331674770856
+      UG3yr: -2.139093511519692
+      Grad2yr: 0.0
     beta_hh: 0.634001208840808
   
   # Anchor mixing weights
