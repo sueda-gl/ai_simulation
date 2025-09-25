@@ -865,14 +865,13 @@ def render_probability_controls(decision_name, df):
         col1, col2, col3 = st.columns([2, 1, 1])
         
         with col1:
+            # Use the actual probability key directly for the slider
             new_prob = st.slider(
                 f"P({options[0]}) - {description}",
                 min_value=0.0, max_value=1.0, value=current_prob, step=0.05,
                 help=f"Probability of {options[0]} vs {options[1]}",
-                key=f"{decision_name}_prob_slider_display"
+                key=f"{decision_name}_probability_y"
             )
-            # Update session state
-            st.session_state[f"{decision_name}_probability_y"] = new_prob
             
         with col2:
             st.metric("Ratio", f"{new_prob:.0%} : {1-new_prob:.0%}")
@@ -900,20 +899,24 @@ def render_probability_controls(decision_name, df):
                         st.metric("Current", f"{actual_y_ratio:.0%} : {1-actual_y_ratio:.0%}")
                         st.caption("Actual Results")
         
-        # Show re-run button if probability changed
-        if abs(new_prob - current_prob) > 0.001:
-            if st.button(
-                f"🔄 Re-run with P({options[0]})={new_prob:.0%}", 
-                key=f"rerun_{decision_name}",
-                type="primary",
-                help="Re-run simulation with new probability settings"
-            ):
-                st.info(f"Re-running simulation with {options[0]} probability = {new_prob:.0%}...")
-                # Trigger re-run by calling the combined simulation again
-                from app.pages.decision_execution import run_combined_simulation
-                if hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
-                    selected_decisions = st.session_state.custom_decisions
-                    run_combined_simulation(selected_decisions)
+        # Always show re-run button for clarity
+        if st.button(
+            f"🔄 Re-run with P({options[0]})={st.session_state[f'{decision_name}_probability_y']:.0%}", 
+            key=f"rerun_{decision_name}",
+            type="primary",
+            help="Re-run simulation with new probability settings"
+        ):
+            st.info(f"Re-running simulation with {options[0]} probability = {st.session_state[f'{decision_name}_probability_y']:.0%}...")
+            # Clear existing results to force a fresh simulation
+            if hasattr(st.session_state, 'simulation_results'):
+                st.session_state.simulation_results = None
+            # Trigger re-run by calling the combined simulation again
+            from app.pages.decision_execution import run_combined_simulation
+            if hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
+                selected_decisions = st.session_state.custom_decisions
+                run_combined_simulation(selected_decisions)
+                # Force page refresh after simulation
+                st.rerun()
 
 
 def get_dynamic_description(decision_name):

@@ -1,17 +1,22 @@
-# Core app and UI
-streamlit>=1.28
-plotly>=5.17
+# Core app and UI - pinned versions for deployment stability
+streamlit==1.28.2
+plotly==5.17.0
 
 # Data and numerics
-pandas>=2.0
-numpy>=1.24
-scipy>=1.10
-pyarrow>=12.0
-openpyxl>=3.1
+pandas==2.0.3
+numpy==1.24.4
+scipy==1.10.1
+pyarrow==12.0.1
+openpyxl==3.1.2
 
 # ML / utils
-scikit-learn>=1.3
-joblib>=1.3
+scikit-learn==1.3.2
+joblib==1.3.2
 
 # Config
-PyYAML>=6.0
+PyYAML==6.0.1
+
+# Additional dependencies that might be needed
+altair<5
+click<9
+protobuf<4

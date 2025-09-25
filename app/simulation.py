@@ -293,7 +293,9 @@ def run_simulation_from_sidebar():
                     prob_info.append(f"{decision}: {prob_y:.0%} {options[0]} / {1-prob_y:.0%} {options[1]}")
                 
                 if prob_info:
-                    st.info(f"🎲 Using probability settings: {', '.join(prob_info)}")
+                    st.success(f"🎲 Using probability settings: {', '.join(prob_info)}")
+                    # Also print to console for debugging
+                    print(f"[DEBUG] Probability settings: {random_decision_probabilities}")
             
             # Run based on population and income specification modes
             results = {}
@@ -386,6 +388,9 @@ def collect_probability_settings():
             # Get current probability from session state or use default
             prob_key = f"{decision_name}_probability_y"
             current_prob = st.session_state.get(prob_key, default_value.get("probability_y", 0.5))
+            
+            # Debug print
+            print(f"[DEBUG] collect_probability_settings: {decision_name} = {current_prob}")
             
             probability_settings[decision_name] = {
                 "probability_y": current_prob,

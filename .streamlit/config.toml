@@ -1,0 +1,41 @@
+[server]
+# Maximum file upload size (in MB)
+maxUploadSize = 200
+
+# Port configuration
+port = 8501
+
+# Disable CORS protection (only for development)
+enableCORS = false
+
+# Disable XSRF protection (only for development) 
+enableXsrfProtection = true
+
+# Enable static serving
+enableStaticServing = true
+
+[browser]
+# Disable auto-opening browser
+serverAddress = "localhost"
+gatherUsageStats = false
+
+[runner]
+# Magic commands
+magicEnabled = false
+
+# Install packages on the fly
+installTracer = false
+
+# Disable watchdog
+fastReruns = true
+
+[client]
+# Show error details
+showErrorDetails = true
+
+[theme]
+# You can customize theme if needed
+primaryColor = "#1f77b4"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"

@@ -18,12 +18,6 @@ def disclose_income(agent_state: dict, params: dict, rng, simulation_config: dic
                 choice = options[1]  # N
             return {"disclose_income": choice}
     
-    # Fallback to legacy behavior
-    try:
-        from app.pages.decision_execution import get_actual_default_value
-        default_value = get_actual_default_value("disclose_income")
-    except ImportError:
-        # Fallback to old behavior if import fails
-        default_value = params.get("default_value", "NA")
-    
-    return {"disclose_income": default_value}
+    # Fallback to simple 50/50 random choice
+    choice = rng.choice(["Y", "N"])
+    return {"disclose_income": choice}

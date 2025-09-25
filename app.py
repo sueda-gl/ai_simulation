@@ -12,8 +12,10 @@ import subprocess
 import time
 from datetime import datetime
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
+# Add project root to path - use absolute path for deployment
+project_root = Path(__file__).resolve().parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 from src.orchestrator import Orchestrator
 from src.trait_engine import TraitEngine

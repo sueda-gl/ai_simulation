@@ -18,12 +18,6 @@ def purchase_vs_bid(agent_state: dict, params: dict, rng, simulation_config: dic
                 choice = options[1]  # bid
             return {"purchase_vs_bid": choice}
     
-    # Fallback to legacy behavior
-    try:
-        from app.pages.decision_execution import get_actual_default_value
-        default_value = get_actual_default_value("purchase_vs_bid")
-    except ImportError:
-        # Fallback to old behavior if import fails
-        default_value = params.get("default_value", "NA")
-    
-    return {"purchase_vs_bid": default_value}
+    # Fallback to simple 50/50 random choice
+    choice = rng.choice(["purchase", "bid"])
+    return {"purchase_vs_bid": choice}

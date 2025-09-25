@@ -1,0 +1,5 @@
+# System dependencies for Streamlit deployment
+# These are installed via apt-get on Streamlit Cloud
+
+# Required for some Python packages
+libgomp1
