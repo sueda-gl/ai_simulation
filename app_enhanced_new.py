@@ -7,22 +7,13 @@ import streamlit as st
 import sys
 from pathlib import Path
 
-# Add project root to path - use absolute path for deployment
-project_root = Path(__file__).resolve().parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
+# Add  thoject root to path
+sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
-# Import from our modularized app with error handling
-try:
-    from app.models import initialize_session_state
-    from app.components import get_css_styles
-    from app.pages import render_page1, render_page2, render_results_page
-except ImportError as e:
-    st.error(f"Import Error: {str(e)}")
-    st.error("Current sys.path:")
-    for p in sys.path:
-        st.write(f"  - {p}")
-    st.stop()
+# Import from our modularized app
+from app.models import initialize_session_state
+from app.components import get_css_styles
+from app.pages import render_page1, render_page2, render_results_page
 
 # Page configuration
 st.set_page_config(
