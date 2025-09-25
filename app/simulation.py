@@ -190,7 +190,7 @@ def run_simulation_from_sidebar():
     try:
         with st.spinner("🔄 Generating synthetic agents and running simulation..."):
             # Helper to run simulation with chosen orchestrator and income mode
-            def _run(pop_mode: str, inc_mode: str):
+            def _run(pop_mode: str, inc_mode: str, prob_settings=None):
                 # Initialize appropriate orchestrator
                 if pop_mode == "documentation":
                     orchestrator = OrchestratorDocMode()
@@ -233,6 +233,15 @@ def run_simulation_from_sidebar():
                             orchestrator.config['donation_default']['stochastic']['raw_output'] = False
                         
                         # Apply selected donation configuration if it exists
+                        # Ensure all orchestrators have probability settings available
+                        if prob_settings:
+                            # For orchestrators with simulation_config
+                            if hasattr(orchestrator, 'simulation_config'):
+                                orchestrator.simulation_config['random_decisions'] = prob_settings
+                            else:
+                                # For orchestrators without simulation_config, create minimal config
+                                orchestrator.simulation_config = {'random_decisions': prob_settings}
+                        
                         if hasattr(st.session_state, 'selected_donation_config'):
                             apply_selected_donation_config(orchestrator, pop_mode, inc_mode)
                         # Fallback: Apply custom regression coefficients if they exist
@@ -272,6 +281,20 @@ def run_simulation_from_sidebar():
                 st.session_state.population_mode = config['population_mode']
                 st.session_state.income_spec_mode = config['income_spec_mode']
             
+            # Collect current probability settings for random decisions
+            random_decision_probabilities = collect_probability_settings()
+            
+            # Debug: Show probability settings being applied
+            if random_decision_probabilities:
+                prob_info = []
+                for decision, settings in random_decision_probabilities.items():
+                    prob_y = settings['probability_y']
+                    options = settings['options']
+                    prob_info.append(f"{decision}: {prob_y:.0%} {options[0]} / {1-prob_y:.0%} {options[1]}")
+                
+                if prob_info:
+                    st.info(f"🎲 Using probability settings: {', '.join(prob_info)}")
+            
             # Run based on population and income specification modes
             results = {}
             
@@ -279,15 +302,15 @@ def run_simulation_from_sidebar():
                 # Compare all three population modes
                 for pop_name, pop_type in [("copula", "copula"), ("research_spec", "documentation"), ("research_baseline", "baseline")]:
                     if st.session_state.income_spec_mode == "Compare both":
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical")
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous")
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
                     elif st.session_state.income_spec_mode == "continuous only":
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous")
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
                     else:  # categorical only
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical")
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
             elif st.session_state.population_mode == "Dependent variable resampling":
                 # Dependent variable mode - only one result regardless of income spec
-                results["depvar"] = _run("depvar", "categorical")  # income mode is ignored
+                results["depvar"] = _run("depvar", "categorical", random_decision_probabilities)  # income mode is ignored
             else:
                 # Single population mode
                 if st.session_state.population_mode == "Research Specification":
@@ -298,12 +321,12 @@ def run_simulation_from_sidebar():
                     pop_type = "copula"
                     
                 if st.session_state.income_spec_mode == "Compare both":
-                    results["categorical"] = _run(pop_type, "categorical")
-                    results["continuous"] = _run(pop_type, "continuous")
+                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
+                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
                 elif st.session_state.income_spec_mode == "continuous only":
-                    results["continuous"] = _run(pop_type, "continuous")
+                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
                 else:  # categorical only
-                    results["categorical"] = _run(pop_type, "categorical")
+                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
             
             # Save results if requested
             if st.session_state.save_results:
@@ -348,6 +371,29 @@ def run_simulation_from_sidebar():
             st.session_state.income_spec_mode = st.session_state._original_income_spec_mode
             delattr(st.session_state, '_original_population_mode')
             delattr(st.session_state, '_original_income_spec_mode')
+
+
+def collect_probability_settings():
+    """Collect current probability settings for random decisions from session state"""
+    
+    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
+    
+    probability_settings = {}
+    
+    # Check each decision for probability settings
+    for decision_name, default_value in DEFAULT_DECISION_VALUES.items():
+        if isinstance(default_value, dict) and default_value.get("type") == "random_probability":
+            # Get current probability from session state or use default
+            prob_key = f"{decision_name}_probability_y"
+            current_prob = st.session_state.get(prob_key, default_value.get("probability_y", 0.5))
+            
+            probability_settings[decision_name] = {
+                "probability_y": current_prob,
+                "options": default_value.get("options", ["Y", "N"]),
+                "type": "random_probability"
+            }
+    
+    return probability_settings
 
 
 def run_simulation():

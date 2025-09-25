@@ -126,11 +126,14 @@ class OrchestratorDocMode:
                         params = self.config.get(decision_name, {})
                         if decision_name == 'donation_default':
                             decision_output = self.decision_modules[decision_name](
-                                agent_state, params, agent_rng, pop_context=self.pop_context
+                                agent_state, params, agent_rng, pop_context=self.pop_context, 
+                                simulation_config=getattr(self, 'simulation_config', None)
                             )
                         else:
                             decision_output = self.decision_modules[decision_name](
-                                agent_state, params, agent_rng)
+                                agent_state, params, agent_rng, 
+                                simulation_config=getattr(self, 'simulation_config', None)
+                            )
                         agent_state.update(decision_output)
                 results.append(agent_state)
         

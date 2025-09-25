@@ -139,7 +139,7 @@ class OrchestratorBaseline:
                             agent_state, 
                             decision_params, 
                             agent_rng,
-                            simulation_config=None,
+                            simulation_config=getattr(self, 'simulation_config', None),
                             pop_context=self.pop_context
                         )
                         

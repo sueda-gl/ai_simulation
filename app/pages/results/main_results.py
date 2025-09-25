@@ -544,7 +544,7 @@ def render_single_run_results():
                 if use_dropdown:
                     # Multiple decisions - use collapsible dropdown
                     with st.expander(f"🔧 {decision_title} (Default Values)", expanded=False):
-                        default_description = DEFAULT_DECISION_DESCRIPTIONS.get(decision, "Standard default behavior")
+                        default_description = get_dynamic_description(decision)
                         st.info("This decision used default values since it was not selected for customization")
                         st.write(f"**Default Behavior:** {default_description}")
                         
@@ -552,12 +552,15 @@ def render_single_run_results():
                         if not df.empty and decision in df.columns:
                             st.markdown("**📊 Results with Default Values:**")
                             render_decision_results(df, decision, decision_title)
+                            
+                            # Add probability controls for random decisions
+                            render_probability_controls(decision, df)
                         else:
                             st.caption("💡 To see results and customize this decision, select it on Page 2")
                 else:
                     # Single decision - show content directly (better UX)
                     st.markdown(f'<h4 class="subsection-header">🔧 {decision_title} (Default Values)</h4>', unsafe_allow_html=True)
-                    default_description = DEFAULT_DECISION_DESCRIPTIONS.get(decision, "Standard default behavior")
+                    default_description = get_dynamic_description(decision)
                     st.info("This decision used default values since it was not selected for customization")
                     st.write(f"**Default Behavior:** {default_description}")
                     
@@ -565,6 +568,9 @@ def render_single_run_results():
                     if not df.empty and decision in df.columns:
                         st.markdown("**📊 Results with Default Values:**")
                         render_decision_results(df, decision, decision_title)
+                        
+                        # Add probability controls for random decisions
+                        render_probability_controls(decision, df)
                     else:
                         st.caption("💡 To see results and customize this decision, select it on Page 2")
         
@@ -839,3 +845,90 @@ def extract_configuration_details_from_key(result_key):
         'population_short': population_short,
         'income_short': income_short
     }
+
+
+def render_probability_controls(decision_name, df):
+    """Render probability controls for random Y/N decisions directly under their display"""
+    
+    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
+    
+    # Check if this is a random decision that needs controls
+    default_value = DEFAULT_DECISION_VALUES.get(decision_name)
+    
+    if isinstance(default_value, dict) and default_value.get("type") == "random_probability":
+        st.markdown("**🎛️ Adjust Probability Settings:**")
+        
+        options = default_value.get("options", ["Y", "N"])
+        description = default_value.get("description", "Probability")
+        current_prob = st.session_state.get(f"{decision_name}_probability_y", default_value.get("probability_y", 0.5))
+        
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            new_prob = st.slider(
+                f"P({options[0]}) - {description}",
+                min_value=0.0, max_value=1.0, value=current_prob, step=0.05,
+                help=f"Probability of {options[0]} vs {options[1]}",
+                key=f"{decision_name}_prob_slider_display"
+            )
+            # Update session state
+            st.session_state[f"{decision_name}_probability_y"] = new_prob
+            
+        with col2:
+            st.metric("Ratio", f"{new_prob:.0%} : {1-new_prob:.0%}")
+            st.caption(f"{options[0]} : {options[1]}")
+        
+        with col3:
+            # Show current distribution in results if available
+            if decision_name in df.columns:
+                decision_counts = df[decision_name].value_counts()
+                if len(decision_counts) >= 2:
+                    # Get the actual distribution from results
+                    if options[0] in decision_counts.index:
+                        actual_y_count = decision_counts[options[0]]
+                    else:
+                        actual_y_count = 0
+                    
+                    if options[1] in decision_counts.index:
+                        actual_n_count = decision_counts[options[1]]  
+                    else:
+                        actual_n_count = 0
+                    
+                    total_count = actual_y_count + actual_n_count
+                    if total_count > 0:
+                        actual_y_ratio = actual_y_count / total_count
+                        st.metric("Current", f"{actual_y_ratio:.0%} : {1-actual_y_ratio:.0%}")
+                        st.caption("Actual Results")
+        
+        # Show re-run button if probability changed
+        if abs(new_prob - current_prob) > 0.001:
+            if st.button(
+                f"🔄 Re-run with P({options[0]})={new_prob:.0%}", 
+                key=f"rerun_{decision_name}",
+                type="primary",
+                help="Re-run simulation with new probability settings"
+            ):
+                st.info(f"Re-running simulation with {options[0]} probability = {new_prob:.0%}...")
+                # Trigger re-run by calling the combined simulation again
+                from app.pages.decision_execution import run_combined_simulation
+                if hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
+                    selected_decisions = st.session_state.custom_decisions
+                    run_combined_simulation(selected_decisions)
+
+
+def get_dynamic_description(decision_name):
+    """Get dynamic description for decisions showing current probability settings"""
+    
+    from app.pages.decision_execution import DEFAULT_DECISION_VALUES, DEFAULT_DECISION_DESCRIPTIONS
+    
+    default_value = DEFAULT_DECISION_VALUES.get(decision_name)
+    
+    # For parametric random decisions, show current probability
+    if isinstance(default_value, dict) and default_value.get("type") == "random_probability":
+        options = default_value.get("options", ["Y", "N"])
+        current_prob = st.session_state.get(f"{decision_name}_probability_y", default_value.get("probability_y", 0.5))
+        
+        return f"{current_prob:.0%} chance of {options[0]}, {1-current_prob:.0%} chance of {options[1]}"
+    
+    # For other decisions, use static description
+    return DEFAULT_DECISION_DESCRIPTIONS.get(decision_name, "Standard default behavior")

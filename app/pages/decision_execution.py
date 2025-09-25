@@ -11,8 +11,18 @@ from app.models import ALL_DECISIONS
 # Default values for unselected decisions
 DEFAULT_DECISION_VALUES = {
     "donation_default": 0.10,  # 10%
-    "disclose_income": "RANDOM_Y_N",  # Will be randomly chosen as Y or N
-    "disclose_documents": "RANDOM_Y_N_THRESHOLD",  # Random Y/N for those qualified
+    "disclose_income": {
+        "type": "random_probability",
+        "probability_y": 0.5,  # 50% chance of Y (disclosing)
+        "options": ["Y", "N"],
+        "description": "Probability of disclosing income for Fixed status"
+    },
+    "disclose_documents": {
+        "type": "random_probability", 
+        "probability_y": 0.5,  # 50% chance of Y (disclosing)
+        "options": ["Y", "N"],
+        "description": "Probability of disclosing documents for Discount status"
+    },
     "rejected_transaction_defaults": "SIMULATION_MODE_DEPENDENT",  # Option 5 for snapshot, real-time for live
     "vendor_choice_weights": {
         "price": 0.25,
@@ -23,7 +33,12 @@ DEFAULT_DECISION_VALUES = {
     "consumption_quantity": "RANDOM_WITHIN_LIMIT",  # Random within consumption limit
     "consumption_frequency": "CALCULATED",  # Consumption quantity / Period duration
     "vendor_selection": "deterministic",  # Deterministic based on weights
-    "purchase_vs_bid": "RANDOM_CHOICE",  # Random purchase or bid
+    "purchase_vs_bid": {
+        "type": "random_probability",
+        "probability_y": 0.5,  # 50% chance of purchase (vs bid)
+        "options": ["purchase", "bid"],
+        "description": "Probability of purchasing immediately vs bidding"
+    },
     "bid_value": "RANDOM_WITHIN_RANGE",  # Random within bidding price range
     "rejected_transaction_option": "forgo_transaction",  # Option 5 (forgo transaction)
     "rejected_bid_value": "NA",  # Not relevant given Option 5
@@ -33,14 +48,14 @@ DEFAULT_DECISION_VALUES = {
 # Description text for display purposes
 DEFAULT_DECISION_DESCRIPTIONS = {
     "donation_default": "10%",
-    "disclose_income": "random Y/N", 
-    "disclose_documents": "random Y/N for those qualified (income below threshold), while granting the discount to all those who submitted document",
+    "disclose_income": "configurable probability Y/N (default 50% each)", 
+    "disclose_documents": "configurable probability Y/N for qualified users (default 50% each)",
     "rejected_transaction_defaults": "Default behavior for handling rejected transactions will be applied",
     "vendor_choice_weights": "equal weight of 25% to Price, Quality, Proximity, and Sustainability",
     "consumption_quantity": "random within consumption limit",
     "consumption_frequency": "Consumption quantity divided by Period duration",
     "vendor_selection": "deterministic based on vendor choice weights",
-    "purchase_vs_bid": "random choice",
+    "purchase_vs_bid": "configurable probability purchase/bid (default 50% each)",
     "bid_value": "random within bidding price range",
     "rejected_transaction_option": "Default option for handling rejected transactions will be used",
     "rejected_bid_value": "Default handling for rejected bid values will be applied",
@@ -58,8 +73,22 @@ def get_actual_default_value(decision_name, sim_params=None):
     
     base_value = DEFAULT_DECISION_VALUES.get(decision_name)
     
+    # NEW: Handle parametric random decisions with configurable probabilities
+    if isinstance(base_value, dict) and base_value.get("type") == "random_probability":
+        # Get probability from session state or use default
+        prob_key = f"{decision_name}_probability_y"
+        probability_y = st.session_state.get(prob_key, base_value.get("probability_y", 0.5))
+        
+        options = base_value.get("options", ["Y", "N"])
+        
+        # Weighted random choice
+        if random.random() < probability_y:
+            return options[0]  # First option (Y or purchase)
+        else:
+            return options[1]  # Second option (N or bid)
+    
     # Handle rejected_transaction_defaults based on simulation execution mode
-    if decision_name == "rejected_transaction_defaults":
+    elif decision_name == "rejected_transaction_defaults":
         # Check simulation execution mode from session state
         if hasattr(st.session_state, 'sim_params') and hasattr(st.session_state.sim_params, 'simulation_execution_mode'):
             if st.session_state.sim_params.simulation_execution_mode == "snapshot":
@@ -72,16 +101,6 @@ def get_actual_default_value(decision_name, sim_params=None):
             # Default to snapshot behavior if mode is unknown
             return "forgo_transaction"
     
-    # Handle random Y/N decisions
-    elif base_value == "RANDOM_Y_N":
-        return random.choice(["Y", "N"])
-    
-    # Handle random Y/N with threshold check (for disclose_documents)
-    elif base_value == "RANDOM_Y_N_THRESHOLD":
-        # This would need agent-specific income to properly implement
-        # For now, return random Y/N
-        return random.choice(["Y", "N"])
-    
     # Handle random within consumption limit
     elif base_value == "RANDOM_WITHIN_LIMIT":
         # This needs to be handled per agent based on their income category
@@ -93,10 +112,6 @@ def get_actual_default_value(decision_name, sim_params=None):
         # This will be calculated based on consumption quantity / period duration
         # Return a placeholder that the simulation will interpret
         return "CALCULATED"
-    
-    # Handle random purchase vs bid choice
-    elif base_value == "RANDOM_CHOICE":
-        return random.choice(["purchase", "bid"])
     
     # Handle random bid value within range
     elif base_value == "RANDOM_WITHIN_RANGE":
