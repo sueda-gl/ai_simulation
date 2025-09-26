@@ -258,6 +258,22 @@ def run_simulation_from_sidebar():
                             
                             # Ensure the income mode matches the selected specification
                             orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = inc_mode
+                        # NEW FALLBACK: Use current session state coefficients if no custom coefficients are set
+                        else:
+                            # Ensure session state coefficients are loaded from YAML
+                            from app.models import load_donation_coefficients_from_yaml
+                            if 'donation_coeff_intercept' not in st.session_state:
+                                load_donation_coefficients_from_yaml()
+                            
+                            # Collect current coefficients from session state (loaded from YAML on app start)
+                            from app.pages.decision_execution import get_current_coefficients
+                            current_coeffs = get_current_coefficients()
+                            current_coeffs['income_mode'] = inc_mode
+                            
+                            # Update orchestrator config with current session state coefficients
+                            if 'regression_coefficients' not in orchestrator.config['donation_default']:
+                                orchestrator.config['donation_default']['regression_coefficients'] = {}
+                            orchestrator.config['donation_default']['regression_coefficients'].update(current_coeffs)
 
                 
                 # Handle multiple decisions
