@@ -15,7 +15,7 @@ donation_default:
   regression_coefficients:
     # CATEGORICAL INCOME SPECIFICATION
     categorical:
-      intercept: 0.0
+      intercept: 1.319818
       beta_group:
         MidSub: 0.8773149
         NoSub: -0.913715
@@ -37,7 +37,7 @@ donation_default:
 
     # CONTINUOUS INCOME SPECIFICATION  
     continuous:
-      intercept: 0.0
+      intercept: -0.339596
       beta_group:
         MidSub: 0.7952602
         NoSub: -0.8990889
