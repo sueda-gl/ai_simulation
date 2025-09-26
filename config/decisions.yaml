@@ -11,59 +11,65 @@ donation_default:
   uses_global_parameters: []
   
   # Configurable regression coefficients for both categorical and continuous income modes
+  # Now supports separate coefficient sets for each income specification
   regression_coefficients:
-    # Base model parameters
-    intercept: 1.22985660120368
+    # CATEGORICAL INCOME SPECIFICATION
+    categorical:
+      intercept: 1.519818
+      beta_group:
+        MidSub: 0.8773149
+        NoSub: -0.913715
+        FullSub: 0.0  # reference category (maps from HighSub in data)
+      beta_income_q:
+        Q1: -0.4214298
+        Q2: -0.7364032
+        Q3: 3.539434
+        Q4_Q5: 0.0  # reference category
+      beta_study:
+        Incoming: -6.882558
+        Law5yr: -2.003814
+        UG3yr: -2.11522
+        Grad2yr: 0.0  # reference category (CLEF/CLEAM/BIEF)
+      beta_hh: 0.6042141
     
-    # Group coefficients (reference: FullSub = 0)
-    # Note: In data, HighSub is used instead of FullSub, but coefficients are for FullSub
-    # The code maps HighSub -> FullSub for coefficient lookup
-    beta_group:
-      MidSub: 0.856140306694656
-      NoSub: -0.926633374153906
-      FullSub: 0.0  # reference category (maps from HighSub in data)
+    # CONTINUOUS INCOME SPECIFICATION  
+    continuous:
+      intercept: -0.1395969
+      beta_group:
+        MidSub: 0.7952602
+        NoSub: -0.8990889
+        FullSub: 0.0  # reference category (maps from HighSub in data)
+      beta_income_linear: 0.0255512  # continuous income coefficient
+      beta_study:
+        Incoming: -7.303586
+        Law5yr: -2.048199
+        UG3yr: -2.016326
+        Grad2yr: 0.0  # reference category (CLEF/CLEAM/BIEF)
+      beta_hh: 0.7840063
     
-    # CATEGORICAL INCOME: Income quintile coefficients (reference: Q4/Q5 = 0)  
-    beta_income_q:
-      Q1: -0.520290427509808
-      Q2: 3.754612744416796
-      Q3: 4.001714810873598
-      Q4_Q5: 0.0  # reference category
-    
-    # CONTINUOUS INCOME: Linear income coefficient
-    beta_income_linear: 0.0256  # from linear model specification
-    
-    # Study programme coefficients (reference: Graduate 2-yr = 0)
-    beta_study:
-      Incoming: -6.920193024391676
-      Law5yr: -2.081331674770856
-      UG3yr: -2.139093511519692
-      Grad2yr: 0.0  # reference category (CLEF/CLEAM/BIEF)
-    
-    # Honesty-Humility coefficient (z-score)
-    beta_hh: 0.634001208840808
-    
-    # Income specification mode control
+    # Income specification mode control (runtime override by UI)
     income_mode: categorical  # categorical, continuous, or both (for Compare mode)
   
-  # Legacy regression block (for backward compatibility)
+  # Legacy regression block (for backward compatibility) - uses categorical coefficients
   regression:
-    intercept: 1.22985660120368
+    intercept: 1.519818
     beta_group:
-      MidSub: 0.856140306694656
-      NoSub: -0.926633374153906
+      MidSub: 0.8773149
+      NoSub: -0.913715
       FullSub: 0.0
     beta_income_q:
-      Q1: -0.520290427509808
-      Q2: 3.754612744416796
-      Q3: 4.001714810873598
+      Q1: -0.4214298
+      Q2: -0.7364032
+      Q3: 3.539434
       Q4_Q5: 0.0
+    beta_income_linear: 0.0255512  # continuous coefficient for legacy compatibility
     beta_study:
-      Incoming: -6.920193024391676
-      Law5yr: -2.081331674770856
-      UG3yr: -2.139093511519692
+      Incoming: -6.882558
+      Law5yr: -2.003814
+      UG3yr: -2.11522
       Grad2yr: 0.0
-    beta_hh: 0.634001208840808
+    beta_hh: 0.6042141
+    income_mode: categorical  # can be overridden at runtime
   
   # Anchor mixing weights
   anchor_weights:

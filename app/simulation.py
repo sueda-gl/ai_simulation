@@ -207,7 +207,11 @@ def run_simulation_from_sidebar():
                 # Override income specification in config based on choice (not for depvar mode)
                 if hasattr(orchestrator, 'config') and 'donation_default' in orchestrator.config:
                     if pop_mode != "depvar":  # depvar mode doesn't use these settings
+                        # Set income_mode in both legacy and new locations for compatibility
                         orchestrator.config['donation_default']['regression']['income_mode'] = inc_mode
+                        if 'regression_coefficients' not in orchestrator.config['donation_default']:
+                            orchestrator.config['donation_default']['regression_coefficients'] = {}
+                        orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = inc_mode
                         # Set stochastic flag for copula mode if checkbox is enabled
                         if pop_mode == "copula":
                             orchestrator.config['donation_default']['stochastic']['in_copula'] = st.session_state.sigma_in_copula

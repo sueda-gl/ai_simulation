@@ -30,8 +30,29 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     observed_prosocial = agent_state['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
     
     # Step 1: Compute predicted prosocial behavior using configurable regression
-    # Try to use new configurable coefficients, fall back to legacy regression block
-    coeffs = params.get('regression_coefficients', params.get('regression', {}))
+    # Try to use new structured coefficients, fall back to legacy regression block
+    regression_coeffs = params.get('regression_coefficients', {})
+    
+    # Determine income mode (can be overridden at runtime)
+    # Check both new and legacy locations for income_mode parameter
+    income_mode = regression_coeffs.get('income_mode', params.get('regression', {}).get('income_mode', 'categorical'))
+    
+    # Normalize UI format to internal format
+    if 'continuous' in str(income_mode).lower():
+        normalized_mode = 'continuous'
+    else:
+        normalized_mode = 'categorical'  # default
+    
+    # Select appropriate coefficient set based on income mode
+    if 'categorical' in regression_coeffs and 'continuous' in regression_coeffs:
+        # New structured format - select based on normalized income mode
+        if normalized_mode == 'continuous':
+            coeffs = regression_coeffs['continuous']
+        else:
+            coeffs = regression_coeffs['categorical']  # default to categorical
+    else:
+        # Fall back to legacy format or old regression block
+        coeffs = regression_coeffs if regression_coeffs else params.get('regression', {})
     
     # Start with intercept
     predicted = coeffs.get('intercept', 1.22985660120368)
@@ -43,8 +64,7 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         predicted += beta_group[group_mapped]
     
     # ---------------- Income effect ----------------
-    income_mode = coeffs.get('income_mode', 'categorical')
-    if income_mode == 'continuous':
+    if normalized_mode == 'continuous':
         beta_lin = coeffs.get('beta_income_linear', 0.0256)
         predicted += beta_lin * income_level
     else:
