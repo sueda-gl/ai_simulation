@@ -19,11 +19,11 @@ donation_default:
       beta_group:
         MidSub: 0.8773149
         NoSub: -0.913715
-        FullSub: 0 # reference category (maps from HighSub in data)
+        FullSub: 0.0 # reference category (maps from HighSub in data)
       beta_income_q:
         # Note: Income level 16 is the reference category (coefficient = 0)
         # These map totalallowance levels to quintiles:
-        Q1: 0 # Level 16 (reference category, omitted in regression)
+        Q1: 0.0 # Level 16 (reference category, omitted in regression)
         Q2: -0.4214298 # Level 32
         Q3: -0.7364032 # Level 72
         Q4: 3.539434 # Level 128
@@ -32,7 +32,7 @@ donation_default:
         Incoming: -6.882558
         Law5yr: -2.003814
         UG3yr: -2.11522
-        Grad2yr: 0 # reference category (CLEF/CLEAM/BIEF)
+        Grad2yr: 0.0 # reference category (CLEF/CLEAM/BIEF)
       beta_hh: 0.6042141
 
     # CONTINUOUS INCOME SPECIFICATION  
@@ -41,13 +41,13 @@ donation_default:
       beta_group:
         MidSub: 0.7952602
         NoSub: -0.8990889
-        FullSub: 0 # reference category (maps from HighSub in data)
+        FullSub: 0.0 # reference category (maps from HighSub in data)
       beta_income_linear: 0.0255512 # continuous income coefficient
       beta_study:
         Incoming: -7.303586
         Law5yr: -2.048199
         UG3yr: -2.016326
-        Grad2yr: 0 # reference category (CLEF/CLEAM/BIEF)
+        Grad2yr: 0.0 # reference category (CLEF/CLEAM/BIEF)
       beta_hh: 0.7840063
 
     # Income specification mode control (runtime override by UI)
@@ -59,10 +59,10 @@ donation_default:
     beta_group:
       MidSub: 0.8773149
       NoSub: -0.913715
-      FullSub: 0
+      FullSub: 0.0
     beta_income_q:
       # Note: Income level 16 is the reference category (coefficient = 0)
-      Q1: 0 # Level 16 (reference)
+      Q1: 0.0 # Level 16 (reference)
       Q2: -0.4214298 # Level 32
       Q3: -0.7364032 # Level 72
       Q4: 3.539434 # Level 128
@@ -73,7 +73,7 @@ donation_default:
       Incoming: -6.882558
       Law5yr: -2.003814
       UG3yr: -2.11522
-      Grad2yr: 0
+      Grad2yr: 0.0
     beta_hh: 0.6042141
     income_mode: categorical # can be overridden at runtime
 
