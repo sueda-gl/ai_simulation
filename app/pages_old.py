@@ -458,7 +458,7 @@ def render_page1():
                 help="Probability that any given vendor will have carryover enabled (Bernoulli per vendor)"
             )
             st.session_state.sim_params.vendor_carryover_probability = vendor_carryover_probability
-            expected_carryover_vendors = int(num_vendors * vendor_carryover_probability)
+            expected_carryover_vendors = round(num_vendors * vendor_carryover_probability)
         
         # Summary chips
         st.markdown('<h4 class="subsection-header">📊 Configuration Summary</h4>', unsafe_allow_html=True)

@@ -243,6 +243,8 @@ def render_page1():
             st.session_state.sim_params.vendor_config_mode = "random" if st.session_state.page1_vendor_setup_mode == "Generate Randomly" else "upload"
             
             if st.session_state.page1_vendor_setup_mode == "Generate Randomly":
+                # Show visual indicator for active mode
+                st.info("🎲 **Random Generation Mode**: Configure parameters below to randomly generate vendor properties")
                 
                 # Create columns for organized layout
                 col_left, col_right = st.columns(2)
@@ -318,7 +320,7 @@ def render_page1():
                     price_total_avg = st.session_state.sim_params.num_vendors * st.session_state.sim_params.market_price
                     price_valid = price_total_min <= price_total_avg <= price_total_max
                 
- 
+
             
                 with col_right:
                     # Products Configuration
@@ -385,7 +387,7 @@ def render_page1():
                     products_total_avg = st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_products_avg
                     products_valid = products_total_min <= products_total_avg <= products_total_max
             
-                # Carryover Configuration (full width)
+                # Carryover Configuration (full width) - ONLY SHOWN IN RANDOM MODE
                 st.markdown('<h4 class="subsection-header">🔄 Carryover Configuration</h4>', unsafe_allow_html=True)
                 
                 # Initialize the widget key if it doesn't exist
@@ -433,27 +435,65 @@ def render_page1():
                         key="vendor_carryover_probability_slider",
                         on_change=lambda: setattr(st.session_state.sim_params, 'vendor_carryover_probability', st.session_state.vendor_carryover_probability_slider)
                     )
-                    expected_carryover_vendors = int(st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_carryover_probability)
+                    expected_carryover_vendors = round(st.session_state.sim_params.num_vendors * st.session_state.sim_params.vendor_carryover_probability)
                     st.info(f"🎲 Expected ~{expected_carryover_vendors} vendors (out of {st.session_state.sim_params.num_vendors}) to have carryover based on {st.session_state.sim_params.vendor_carryover_probability:.0%} probability")
                 
-                # Summary chips
-
-    
-            else:
+            else:  # Upload Vendor Config File Mode
                 
-                # Hide all random generation inputs when upload mode is selected
-                st.markdown('<h4 class="subsection-header">📁 Upload Vendor Configuration</h4>', unsafe_allow_html=True)
-                st.info("Upload a CSV file with complete vendor configuration. This will override all random generation settings.")
-            
-                # Show expected format
-                with st.expander("📋 Expected CSV Format", expanded=False):
+                # Show visual indicator for upload mode
+                st.warning("📁 **Upload Mode Active**: Random generation settings are disabled. Vendor configuration will be read from CSV file.")
+                
+                # Enhanced guidance section
+                st.info("📁 Upload a CSV file with complete vendor configuration. This will override all random generation settings including carryover options.")
+                
+                # Comprehensive format guidance
+                with st.expander("📋 Expected CSV Format & Field Specifications", expanded=False):
+                    st.markdown("**Required columns and data types:**")
+                    
+                    # Field specifications
+                    col_spec1, col_spec2 = st.columns(2)
+                    with col_spec1:
+                        st.markdown("""
+                        - **vendor_id** (string): Unique vendor identifier
+                          - Examples: `V1`, `V2`, `PREMIUM_VENDOR`, `BUDGET_SHOP`
+                          - Must be unique across all rows
+                        
+                        - **price** (float): Product price per unit in dollars
+                          - Examples: `8.50`, `12.75`, `100.00`
+                          - Must be positive (> 0.00)
+                        """)
+                    
+                    with col_spec2:
+                        st.markdown("""
+                        - **products_per_period** (integer): Products offered per period
+                          - Examples: `50`, `120`, `200`
+                          - Must be positive integer (≥ 1)
+                        
+                        - **carryover** (integer): Inventory carryover enabled
+                          - Examples: `0` (disabled), `1` (enabled)
+                          - Must be exactly 0 or 1
+                        """)
+                    
+                    st.markdown("**Sample CSV Format:**")
                     st.code("""vendor_id,price,products_per_period,carryover
 V1,8.50,120,1
 V2,9.25,95,0
 V3,10.00,80,1
-V4,11.75,110,0
-V5,12.00,100,1""")
-                st.caption("Required columns: vendor_id, price, products_per_period, carryover (0=disabled, 1=enabled)")
+PREMIUM_VENDOR,15.75,200,1
+BUDGET_SHOP,5.25,50,0""")
+                    
+                    st.markdown("**Validation Rules:**")
+                    st.markdown("""
+                    ✅ All columns must be present with exact names  
+                    ✅ `vendor_id` values must be unique  
+                    ✅ `price` must be positive numbers  
+                    ✅ `products_per_period` must be positive integers  
+                    ✅ `carryover` must be exactly 0 or 1  
+                    ✅ File must contain at least 1 vendor  
+                    ✅ No empty cells allowed
+                    """)
+                    
+
             
             uploaded_file = st.file_uploader(
                 "Upload Vendor Configuration CSV",
@@ -465,21 +505,97 @@ V5,12.00,100,1""")
                 try:
                     vendor_config_df = pd.read_csv(uploaded_file)
                     
-                    # Validate required columns
+                    # Comprehensive validation
+                    validation_errors = []
+                    
+                    # Check required columns
                     required_columns = ['vendor_id', 'price', 'products_per_period', 'carryover']
                     missing_columns = [col for col in required_columns if col not in vendor_config_df.columns]
                     
                     if missing_columns:
-                        st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
+                        validation_errors.append(f"Missing required columns: {', '.join(missing_columns)}")
                     else:
+                        # Check for empty dataframe
+                        if len(vendor_config_df) == 0:
+                            validation_errors.append("CSV file is empty - no vendor data found")
+                        else:
+                            # Check for duplicate vendor IDs
+                            if vendor_config_df['vendor_id'].duplicated().any():
+                                duplicate_ids = vendor_config_df[vendor_config_df['vendor_id'].duplicated()]['vendor_id'].tolist()
+                                validation_errors.append(f"Duplicate vendor_id values found: {', '.join(map(str, duplicate_ids))}")
+                            
+                            # Check for empty cells
+                            if vendor_config_df.isnull().any().any():
+                                null_info = []
+                                for col in vendor_config_df.columns:
+                                    null_count = vendor_config_df[col].isnull().sum()
+                                    if null_count > 0:
+                                        null_info.append(f"{col}: {null_count} empty cells")
+                                validation_errors.append(f"Empty cells found - {', '.join(null_info)}")
+                            
+                            # Validate price column
+                            try:
+                                prices = pd.to_numeric(vendor_config_df['price'], errors='coerce')
+                                if prices.isnull().any():
+                                    validation_errors.append("price column contains non-numeric values")
+                                elif (prices <= 0).any():
+                                    invalid_prices = vendor_config_df[prices <= 0]['vendor_id'].tolist()
+                                    validation_errors.append(f"price must be positive - invalid vendors: {', '.join(map(str, invalid_prices))}")
+                            except:
+                                validation_errors.append("price column validation failed")
+                            
+                            # Validate products_per_period column
+                            try:
+                                products = pd.to_numeric(vendor_config_df['products_per_period'], errors='coerce')
+                                if products.isnull().any():
+                                    validation_errors.append("products_per_period column contains non-numeric values")
+                                elif (products <= 0).any():
+                                    invalid_products = vendor_config_df[products <= 0]['vendor_id'].tolist()
+                                    validation_errors.append(f"products_per_period must be positive - invalid vendors: {', '.join(map(str, invalid_products))}")
+                                elif (products != products.astype(int)).any():
+                                    fractional_products = vendor_config_df[products != products.astype(int)]['vendor_id'].tolist()
+                                    validation_errors.append(f"products_per_period must be integers - fractional values found for vendors: {', '.join(map(str, fractional_products))}")
+                            except:
+                                validation_errors.append("products_per_period column validation failed")
+                            
+                            # Validate carryover column
+                            try:
+                                carryover = pd.to_numeric(vendor_config_df['carryover'], errors='coerce')
+                                if carryover.isnull().any():
+                                    validation_errors.append("carryover column contains non-numeric values")
+                                elif not carryover.isin([0, 1]).all():
+                                    invalid_carryover = vendor_config_df[~carryover.isin([0, 1])]['vendor_id'].tolist()
+                                    validation_errors.append(f"carryover must be 0 or 1 - invalid vendors: {', '.join(map(str, invalid_carryover))}")
+                            except:
+                                validation_errors.append("carryover column validation failed")
+                    
+                    # Display validation results
+                    if validation_errors:
+                        st.error("❌ **Validation Failed** - Please fix the following issues:")
+                        for i, error in enumerate(validation_errors, 1):
+                            st.error(f"{i}. {error}")
+                        
+                        st.markdown("**Troubleshooting suggestions:**")
+                        st.markdown("""
+                        - Ensure file is saved as CSV format (.csv extension)
+                        - Check column names match exactly: `vendor_id`, `price`, `products_per_period`, `carryover`
+                        - Verify all cells have values (no empty cells)
+                        - Ensure vendor_id values are unique
+                        - Check that prices are positive numbers
+                        - Ensure products_per_period are positive integers (no decimals)
+                        - Verify carryover values are exactly 0 or 1
+                        """)
+                    else:
+                        # Validation passed - process the data
                         # Convert to list of dictionaries and store
                         st.session_state.sim_params.vendor_config_data = vendor_config_df.to_dict('records')
                         
                         # Update num_vendors to match uploaded data
                         st.session_state.sim_params.num_vendors = len(vendor_config_df)
                         
-                        # Show validation and summary
-                        st.success(f"✅ Loaded configuration for {len(vendor_config_df)} vendors")
+                        # Show success message with carryover note
+                        carryover_count = vendor_config_df['carryover'].sum()
+                        st.success(f"✅ **Successfully loaded configuration for {len(vendor_config_df)} vendors** ({carryover_count} with carryover enabled)")
                         
                         # Summary metrics
                         col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
@@ -508,8 +624,15 @@ V5,12.00,100,1""")
                             st.dataframe(vendor_config_df, use_container_width=True)
                             
                 except Exception as e:
-                    st.error(f"❌ Error loading vendor configuration: {e}")
-                    st.caption("Please check your CSV format and try again.")
+                    st.error(f"❌ **Failed to read CSV file**: {str(e)}")
+                    st.markdown("**Common file issues:**")
+                    st.markdown("""
+                    - File might not be a valid CSV format
+                    - File might be corrupted or empty
+                    - Special characters in vendor names might cause parsing errors
+                    - File encoding issues (try saving as UTF-8)
+                    """)
+                    st.caption("💡 Try opening the file in a text editor to check for obvious formatting issues.")
     
     with col2:
         # Market Parameters Section
@@ -585,18 +708,25 @@ V5,12.00,100,1""")
 
         
         # Income Distribution Section
-        st.markdown('<h3 class="section-header">💵 Income Distribution</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 class="section-header">💵 Annual Income Distribution</h3>', unsafe_allow_html=True)
+        
+        # Initialize the widget key if it doesn't exist
+        if "page1_income_distribution" not in st.session_state:
+            st.session_state.page1_income_distribution = st.session_state.sim_params.income_distribution if st.session_state.sim_params.income_distribution in ["lognormal", "generalised_gamma", "dagum"] else "lognormal"
         
         income_distribution = st.selectbox(
             "Income Distribution Type",
-            ["lognormal", "pareto", "weibull"],
-            index=["lognormal", "pareto", "weibull"].index(st.session_state.sim_params.income_distribution),
-            help="Distribution function for generating agent incomes"
+            ["lognormal", "generalised_gamma", "dagum"],
+            index=["lognormal", "generalised_gamma", "dagum"].index(st.session_state.page1_income_distribution),
+            help="Distribution function for generating agent incomes",
+            key="page1_income_distribution"
         )
-        st.session_state.sim_params.income_distribution = income_distribution
+        
+        # Sync the widget's state to sim_params
+        st.session_state.sim_params.income_distribution = st.session_state.page1_income_distribution
         
         # Distribution-specific parameters
-        if income_distribution == "lognormal":
+        if st.session_state.page1_income_distribution == "lognormal":
             st.markdown("**Lognormal Distribution Parameters**")
             st.caption("X = a + Y, where Y ~ Lognormal(μ, σ)")
             
@@ -688,182 +818,235 @@ V5,12.00,100,1""")
             max_display = "∞" if st.session_state.sim_params.lognormal_max is None else f"${st.session_state.sim_params.lognormal_max:,.0f}"
             st.info(f"📊 Income Range: [${st.session_state.sim_params.lognormal_min:,.0f}, {max_display}]")
             
-        elif income_distribution == "pareto":
-            st.markdown("**Pareto Distribution Parameters**")
-            st.caption("X ~ Pareto(x_m, α), where x_m is the minimum value")
+        elif st.session_state.page1_income_distribution == "generalised_gamma":
+            st.markdown("**Generalised Gamma Distribution Parameters**")
+            st.caption("X = a + Y, where Y ~ GeneralisedGamma(k, c, λ)")
             
             # Add helpful tip about parameter values
             with st.expander("💡 Parameter Guidelines"):
                 st.markdown("""
-                **Understanding x_m and α:**
-                - x_m is the minimum value - nothing will be below this
-                - α is the shape parameter (tail index):
-                  - Small α (e.g., 1.5): Very heavy tail, extreme values more common
-                  - Large α (e.g., 5): Lighter tail, more concentrated near minimum
-                - For income distributions:
-                  - α typically ranges from 1.5 to 3.0
-                  - α ≈ 1.16 gives 80-20 rule (Pareto principle)
-                  - α ≈ 2.0 gives moderate inequality
+                **Understanding k, c, and λ:**
+                - k (shape 1): Controls tail thickness
+                  - k < 1: Heavy tail behavior
+                  - k = 1: Exponential-like
+                  - k > 1: Lighter tail, more bell-shaped
+                  - Typical range: 0.3 to 3.0
+                - c (shape 2): Controls skewness and body shape
+                  - c < 1: Right skewed
+                  - c = 1: Special case (Gamma distribution)
+                  - c > 1: More symmetric
+                  - Typical range: 0.5 to 5.0
+                - λ (scale): Sets the overall scale/spread
+                  - Larger λ → wider distribution
+                  - Roughly corresponds to median income
+                - **Special cases:**
+                  - k=1, c=1: Exponential distribution
+                  - c→∞: Approaches Weibull distribution
+                  - k=c: Approaches lognormal as both increase
                 """)
             
-            # x_m and alpha parameters
-            col_xm, col_alpha = st.columns(2)
-            
-            with col_xm:
-                pareto_x_m = st.number_input(
-                    "x_m - Minimum Value ($)",
-                    min_value=0.0,
-                    max_value=100000.0,
-                    value=st.session_state.sim_params.pareto_x_m,
-                    step=100.0,
-                    help="The minimum value (scale parameter). No values will be below this.",
-                    key="pareto_x_m_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'pareto_x_m', st.session_state.pareto_x_m_input)
-                )
-            
-            with col_alpha:
-                pareto_alpha = st.number_input(
-                    "α (alpha) - Shape Parameter",
-                    min_value=1.01,
-                    max_value=10.0,
-                    value=st.session_state.sim_params.pareto_alpha,
-                    step=0.1,
-                    help="Tail index: smaller values = heavier tail (more inequality)",
-                    key="pareto_alpha_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'pareto_alpha', st.session_state.pareto_alpha_input)
-                )
-            
-            # Optional maximum value
-            col_max_empty, col_max = st.columns(2)
-            
-            with col_max:
-                # Single interactive text field that handles None values gracefully
-                def update_pareto_max():
-                    input_value = st.session_state.pareto_max_text_input.strip()
-                    # Check if user entered "None", "none", empty string, or similar
-                    if input_value.lower() in ['none', 'no maximum', 'unlimited', ''] or input_value == '0':
-                        st.session_state.sim_params.pareto_max = None
-                    else:
-                        try:
-                            # Try to convert to float
-                            value = float(input_value.replace(',', '').replace('$', ''))
-                            if value > 0:
-                                st.session_state.sim_params.pareto_max = value
-                            else:
-                                st.session_state.sim_params.pareto_max = None
-                        except ValueError:
-                            # If conversion fails, keep the current value
-                            pass
-                
-                # Display "None" when no maximum, otherwise show the formatted value
-                display_value = "None" if st.session_state.sim_params.pareto_max is None else f"{st.session_state.sim_params.pareto_max:,.0f}"
-                
-                pareto_max = st.text_input(
-                        "Maximum Value ($)",
-                    value=display_value,
-                    help="Maximum income value for rejection sampling. Enter 'None' for no maximum limit, or a numeric value.",
-                    key="pareto_max_text_input",
-                    on_change=update_pareto_max
-                )
-            
-            # Show income range info
-            max_display = "∞" if st.session_state.sim_params.pareto_max is None else f"${st.session_state.sim_params.pareto_max:,.0f}"
-            st.info(f"📊 Income Range: [${st.session_state.sim_params.pareto_x_m:,.0f}, {max_display}]")
-            
-        elif income_distribution == "weibull":
-            st.markdown("**Weibull Distribution Parameters**")
-            st.caption("X = a + Y, where Y ~ Weibull(k, λ)")
-            
-            # Add helpful tip about parameter values
-            with st.expander("💡 Parameter Guidelines"):
-                st.markdown("""
-                **Understanding k and λ:**
-                - k is the shape parameter:
-                  - k < 1: Early failures more likely (decreasing hazard)
-                  - k = 1: Constant failure rate (exponential distribution)
-                  - k > 1: Later failures more likely (increasing hazard)
-                  - k ≈ 2: Rayleigh-like distribution
-                  - k ≈ 3.4: Approximates normal distribution
-                - λ is the scale parameter:
-                  - Larger λ → wider spread of values
-                  - λ represents the characteristic life (63.2th percentile)
-                """)
-            
-            # k and lambda parameters
-            col_k, col_lambda = st.columns(2)
+            # k, c, and lambda parameters
+            col_k, col_c, col_lambda = st.columns(3)
             
             with col_k:
-                weibull_k = st.number_input(
-                    "k - Shape Parameter",
+                gg_k = st.number_input(
+                    "k - Shape 1 (tail)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.sim_params.weibull_k,
+                    value=st.session_state.sim_params.gg_k,
                     step=0.1,
-                    help="Shape parameter: k<1 decreasing hazard, k=1 exponential, k>1 increasing hazard",
-                    key="weibull_k_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'weibull_k', st.session_state.weibull_k_input)
+                    help="Shape parameter controlling tail thickness (0.3-3.0 typical)",
+                    key="gg_k_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'gg_k', st.session_state.gg_k_input)
+                )
+            
+            with col_c:
+                gg_c = st.number_input(
+                    "c - Shape 2 (skew)",
+                    min_value=0.1,
+                    max_value=10.0,
+                    value=st.session_state.sim_params.gg_c,
+                    step=0.1,
+                    help="Shape parameter controlling skewness (0.5-5.0 typical)",
+                    key="gg_c_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'gg_c', st.session_state.gg_c_input)
                 )
             
             with col_lambda:
-                weibull_lambda = st.number_input(
-                    "λ - Scale Parameter",
+                gg_lambda = st.number_input(
+                    "λ - Scale ($)",
                     min_value=100.0,
                     max_value=1000000.0,
-                    value=st.session_state.sim_params.weibull_lambda,
+                    value=st.session_state.sim_params.gg_lambda,
                     step=1000.0,
-                    help="Scale parameter: stretches or shrinks the distribution",
-                    key="weibull_lambda_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'weibull_lambda', st.session_state.weibull_lambda_input)
+                    help="Scale parameter: sets overall income scale",
+                    key="gg_lambda_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'gg_lambda', st.session_state.gg_lambda_input)
                 )
             
             # Min and Max parameters
             col_min, col_max = st.columns(2)
             
             with col_min:
-                weibull_min = st.number_input(
+                gg_min = st.number_input(
                     "a - Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
-                    value=st.session_state.sim_params.weibull_min,
+                    value=st.session_state.sim_params.gg_min,
                     step=100.0,
                     help="Linear shift: all values will be at least this amount",
-                    key="weibull_min_input",
-                    on_change=lambda: setattr(st.session_state.sim_params, 'weibull_min', st.session_state.weibull_min_input)
+                    key="gg_min_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'gg_min', st.session_state.gg_min_input)
                 )
             
             with col_max:
                 # Single interactive text field that handles None values gracefully
-                def update_weibull_max():
-                    input_value = st.session_state.weibull_max_text_input.strip()
+                def update_gg_max():
+                    input_value = st.session_state.gg_max_text_input.strip()
                     # Check if user entered "None", "none", empty string, or similar
                     if input_value.lower() in ['none', 'no maximum', 'unlimited', ''] or input_value == '0':
-                        st.session_state.sim_params.weibull_max = None
+                        st.session_state.sim_params.gg_max = None
                     else:
                         try:
                             # Try to convert to float
                             value = float(input_value.replace(',', '').replace('$', ''))
                             if value > 0:
-                                st.session_state.sim_params.weibull_max = value
+                                st.session_state.sim_params.gg_max = value
                             else:
-                                st.session_state.sim_params.weibull_max = None
+                                st.session_state.sim_params.gg_max = None
                         except ValueError:
                             # If conversion fails, keep the current value
                             pass
                 
                 # Display "None" when no maximum, otherwise show the formatted value
-                display_value = "None" if st.session_state.sim_params.weibull_max is None else f"{st.session_state.sim_params.weibull_max:,.0f}"
+                display_value = "None" if st.session_state.sim_params.gg_max is None else f"{st.session_state.sim_params.gg_max:,.0f}"
                 
-                weibull_max = st.text_input(
-                        "b - Maximum Value ($)",
+                gg_max = st.text_input(
+                    "b - Maximum Value ($)",
                     value=display_value,
                     help="Maximum income value for rejection sampling. Enter 'None' for no maximum limit, or a numeric value.",
-                    key="weibull_max_text_input",
-                    on_change=update_weibull_max
+                    key="gg_max_text_input",
+                    on_change=update_gg_max
                 )
             
             # Show income range info
-            max_display = "∞" if st.session_state.sim_params.weibull_max is None else f"${st.session_state.sim_params.weibull_max:,.0f}"
-            st.info(f"📊 Income Range: [${st.session_state.sim_params.weibull_min:,.0f}, {max_display}]")
+            max_display = "∞" if st.session_state.sim_params.gg_max is None else f"${st.session_state.sim_params.gg_max:,.0f}"
+            st.info(f"📊 Income Range: [${st.session_state.sim_params.gg_min:,.0f}, {max_display}]")
+            
+        elif st.session_state.page1_income_distribution == "dagum":
+            st.markdown("**Dagum (Type I) Distribution Parameters**")
+            st.caption("X = min + Y, where Y ~ Dagum(a, p, b)")
+            
+            # Add helpful tip about parameter values
+            with st.expander("💡 Parameter Guidelines"):
+                st.markdown("""
+                **Understanding a, p, and b:**
+                - a (tail shape): Controls tail heaviness
+                  - a > 1: Finite mean (required for income modeling)
+                  - a > 2: Finite variance
+                  - Typical range: 1.5 to 3.0 for income data
+                  - Smaller a → heavier tail (more inequality)
+                - p (body shape): Controls the distribution body
+                  - p < 1: Very peaked near minimum
+                  - p = 1: Moderate peakedness
+                  - p > 1: More spread out, bell-shaped
+                  - Typical range: 0.5 to 5.0
+                - b (scale): Sets the median-like scale
+                  - Roughly corresponds to median income
+                  - Adjust based on your income range
+                - **Inequality properties:**
+                  - Lower a → higher inequality (heavier tail)
+                  - Higher p → lower inequality (more concentrated)
+                  - Dagum often fits income data better than Pareto
+                """)
+            
+            # a, p, and b parameters
+            col_a, col_p, col_b = st.columns(3)
+            
+            with col_a:
+                dagum_a = st.number_input(
+                    "a - Shape (tail)",
+                    min_value=0.1,
+                    max_value=10.0,
+                    value=st.session_state.sim_params.dagum_a,
+                    step=0.1,
+                    help="Tail thickness: smaller values = heavier tail (>1 for finite mean)",
+                    key="dagum_a_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'dagum_a', st.session_state.dagum_a_input)
+                )
+            
+            with col_p:
+                dagum_p = st.number_input(
+                    "p - Shape (body)",
+                    min_value=0.1,
+                    max_value=10.0,
+                    value=st.session_state.sim_params.dagum_p,
+                    step=0.1,
+                    help="Body shape: controls concentration around median",
+                    key="dagum_p_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'dagum_p', st.session_state.dagum_p_input)
+                )
+            
+            with col_b:
+                dagum_b = st.number_input(
+                    "b - Scale ($)",
+                    min_value=100.0,
+                    max_value=1000000.0,
+                    value=st.session_state.sim_params.dagum_b,
+                    step=1000.0,
+                    help="Scale parameter: sets median income level",
+                    key="dagum_b_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'dagum_b', st.session_state.dagum_b_input)
+                )
+            
+            # Min and Max parameters
+            col_min, col_max = st.columns(2)
+            
+            with col_min:
+                dagum_min = st.number_input(
+                    "Minimum Value ($)",
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=st.session_state.sim_params.dagum_min,
+                    step=100.0,
+                    help="Linear shift: all values will be at least this amount",
+                    key="dagum_min_input",
+                    on_change=lambda: setattr(st.session_state.sim_params, 'dagum_min', st.session_state.dagum_min_input)
+                )
+            
+            with col_max:
+                # Single interactive text field that handles None values gracefully
+                def update_dagum_max():
+                    input_value = st.session_state.dagum_max_text_input.strip()
+                    # Check if user entered "None", "none", empty string, or similar
+                    if input_value.lower() in ['none', 'no maximum', 'unlimited', ''] or input_value == '0':
+                        st.session_state.sim_params.dagum_max = None
+                    else:
+                        try:
+                            # Try to convert to float
+                            value = float(input_value.replace(',', '').replace('$', ''))
+                            if value > 0:
+                                st.session_state.sim_params.dagum_max = value
+                            else:
+                                st.session_state.sim_params.dagum_max = None
+                        except ValueError:
+                            # If conversion fails, keep the current value
+                            pass
+                
+                # Display "None" when no maximum, otherwise show the formatted value
+                display_value = "None" if st.session_state.sim_params.dagum_max is None else f"{st.session_state.sim_params.dagum_max:,.0f}"
+                
+                dagum_max = st.text_input(
+                    "Maximum Value ($)",
+                    value=display_value,
+                    help="Maximum income value for rejection sampling. Enter 'None' for no maximum limit, or a numeric value.",
+                    key="dagum_max_text_input",
+                    on_change=update_dagum_max
+                )
+            
+            # Show income range info
+            max_display = "∞" if st.session_state.sim_params.dagum_max is None else f"${st.session_state.sim_params.dagum_max:,.0f}"
+            st.info(f"📊 Income Range: [${st.session_state.sim_params.dagum_min:,.0f}, {max_display}]")
         
         # Discount Threshold Configuration
         st.markdown("### 💰 Discount Threshold")
@@ -873,15 +1056,15 @@ V5,12.00,100,1""")
         income_max = st.session_state.sim_params.income_max
         
         # For distributions without explicit min/max, use reasonable defaults
-        if income_distribution == "lognormal":
+        if st.session_state.page1_income_distribution == "lognormal":
             income_min = st.session_state.sim_params.lognormal_min
             income_max = st.session_state.sim_params.lognormal_max if st.session_state.sim_params.lognormal_max else income_min + 100000
-        elif income_distribution == "pareto":
-            income_min = st.session_state.sim_params.pareto_x_m
-            income_max = st.session_state.sim_params.pareto_max if st.session_state.sim_params.pareto_max else income_min * 10
-        elif income_distribution == "weibull":
-            income_min = st.session_state.sim_params.weibull_min
-            income_max = st.session_state.sim_params.weibull_max if st.session_state.sim_params.weibull_max else income_min + 100000
+        elif st.session_state.page1_income_distribution == "generalised_gamma":
+            income_min = st.session_state.sim_params.gg_min
+            income_max = st.session_state.sim_params.gg_max if st.session_state.sim_params.gg_max else income_min + 200000
+        elif st.session_state.page1_income_distribution == "dagum":
+            income_min = st.session_state.sim_params.dagum_min
+            income_max = st.session_state.sim_params.dagum_max if st.session_state.sim_params.dagum_max else income_min + 150000
         
         # Ensure discount threshold is within bounds before creating the widget
         current_threshold = st.session_state.sim_params.discount_income_threshold

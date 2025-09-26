@@ -52,10 +52,66 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
 
 
 def render_final_donation_rate(df, decision_name, decision_title, decision_data):
-    """Visualization for final_donation_rate - percentage-based analysis"""
-    # TODO: Implement specialized final donation rate visualization
-    # For now, use generic numeric visualization
-    render_generic_decision(df, decision_name, decision_title, decision_data)
+    """Visualization for final_donation_rate with slider control"""
+    
+    # Initialize session state for donation rate (default 10%)
+    slider_key = "final_donation_rate_slider"
+    if slider_key not in st.session_state:
+        st.session_state[slider_key] = 0.10  # 10% as default
+    
+    # Top section: Current settings
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Total Agents", f"{len(decision_data):,}")
+    
+    with col2:
+        current_rate = st.session_state[slider_key]
+        st.metric("Current Rate", f"{current_rate:.1%}")
+    
+    with col3:
+        st.metric("Default", "10%")
+    
+    # Main configuration section
+    st.markdown("---")
+    st.markdown("**🎛️ Configure Final Donation Rate:**")
+    
+    col_slider, col_info = st.columns([2, 1])
+    
+    with col_slider:
+        # Donation rate slider (0% to 100%)
+        donation_rate = st.slider(
+            "Final Donation Rate",
+            min_value=0.0,
+            max_value=1.0,
+            value=st.session_state[slider_key],
+            step=0.01,
+            key=slider_key,
+            help="Set the final donation rate as a percentage"
+        )
+        
+        # Show the current percentage value
+        st.write(f"**Selected Rate: {donation_rate:.1%}**")
+        
+        # Apply button to update the rate
+        if st.button("🔄 Apply New Rate", type="primary", help="Update final donation rate for future simulations"):
+            # Update session state for decision execution
+            st.session_state["final_donation_rate_config"] = donation_rate
+            st.success(f"✅ Final donation rate updated to: {donation_rate:.1%}")
+            st.info("💡 Run a new simulation to see the changes take effect")
+    
+    with col_info:
+        st.markdown("**📋 Rate Information:**")
+        st.write(f"• **Selected**: {donation_rate:.1%}")
+        st.write(f"• **Default**: 10%")
+        st.write(f"• **Range**: 0% - 100%")
+        
+        if donation_rate == 0.10:
+            st.success("✅ Using default rate")
+        elif donation_rate < 0.10:
+            st.info(f"📉 {abs(donation_rate - 0.10):.1%} below default")
+        else:
+            st.info(f"📈 {donation_rate - 0.10:.1%} above default")
 
 
 def render_disclose_income(df, decision_name, decision_title, decision_data):
@@ -152,113 +208,486 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
 
 
 def render_rejected_transaction_defaults(df, decision_name, decision_title, decision_data):
-    """Visualization for rejected_transaction_defaults"""
+    """Visualization for rejected_transaction_defaults with interactive radio buttons"""
+    
+    # Define the 5 options
+    options = [
+        ("reduce_bid", "Option 1: Reduce Bid Amount"),
+        ("switch_vendor", "Option 2: Switch to Different Vendor"),
+        ("switch_product", "Option 3: Choose Different Product"), 
+        ("retry_later", "Option 4: Wait and Retry Later"),
+        ("forgo_transaction", "Option 5: Forgo Transaction")
+    ]
+    
+    option_names = dict(options)
     
     # Check the actual simulation execution mode from session state
     simulation_mode = "unknown"
     if hasattr(st.session_state, 'sim_params') and hasattr(st.session_state.sim_params, 'simulation_execution_mode'):
         simulation_mode = st.session_state.sim_params.simulation_execution_mode
     
-    # Simple metrics
+    # Get current default from results or session state
+    value_counts = decision_data.value_counts()
+    current_default = value_counts.index[0] if len(value_counts) > 0 else "forgo_transaction"
+    
+    # Initialize session state for radio button selection
+    radio_key = "rejected_transaction_defaults_radio"
+    if radio_key not in st.session_state:
+        st.session_state[radio_key] = current_default
+    
+    # Top section: Current results display
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("Total Agents", f"{len(decision_data):,}")
     
     with col2:
-        st.metric("Mode", simulation_mode.title())
+        st.metric("Simulation Mode", simulation_mode.title())
     
-    if simulation_mode == "snapshot":
-        # Snapshot mode - show forgo transaction behavior
-        with col3:
-            st.metric("Decision", "Forgo Transaction")
-        
-        with col4:
-            st.metric("Option", "5")
-        
-        # Pie chart showing 100% forgo transaction
-        col_plot, col_info = st.columns([2, 1])
-        
-        with col_plot:
-            # Create pie chart for forgo transaction
-            fig = px.pie(
-                values=[100],
-                names=["Forgo Transaction (Option 5)"],
-                title="Transaction Rejection Handling",
-                color_discrete_sequence=['#FF6B6B']  # Red color for rejection
-            )
-            fig.update_layout(showlegend=True)
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col_info:
-            st.markdown("**📋 Snapshot Mode Behavior**")
-            st.info("In snapshot mode, all agents choose to forgo the transaction when it's rejected (Option 5).")
-            
-            st.markdown("**📊 Decision Breakdown**")
-            breakdown_df = pd.DataFrame({
-                'Option': ['Option 5'],
-                'Choice': ['Forgo Transaction'],
-                'Count': [len(decision_data)],
-                'Percentage': ['100.0%']
-            })
-            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+    with col3:
+        display_name = option_names.get(current_default, current_default)
+        st.metric("Current Default", display_name.split(":")[0])  # Just "Option X"
     
-    else:
-        # Live/Real-time mode - this decision is not relevant
-        with col3:
-            st.metric("Status", "Not Applicable")
-        
-        with col4:
-            st.metric("Reason", "Live Mode")
-        
-        # Show explanation instead of chart
-        if simulation_mode == "live":
-            st.info("In live simulation mode, customers will be asked in real-time for their decisions when transactions are rejected. This default behavior is not applicable.")
+    with col4:
+        if len(value_counts) > 0:
+            percentage = (value_counts.iloc[0] / len(decision_data)) * 100
+            st.metric("Consistency", f"{percentage:.1f}%")
         else:
-            st.warning(f"Simulation execution mode is set to '{simulation_mode}'. This decision is only relevant for snapshot mode.")
+            st.metric("Consistency", "N/A")
+    
+    # Main configuration section with radio buttons
+    st.markdown("---")
+    st.markdown("**🎛️ Configure Default Behavior for Future Simulations:**")
+    
+    col_radio, col_viz = st.columns([1, 1])
+    
+    with col_radio:
+        st.markdown("**Select Default Option:**")
+        
+        # Create radio buttons for the 5 options
+        selected_option = st.radio(
+            "When transactions are rejected, agents should:",
+            options=[opt[0] for opt in options],
+            format_func=lambda x: option_names[x],
+            key=radio_key,
+            help="Choose the default behavior for rejected transactions"
+        )
+        
+        # Show description based on simulation mode
+        if simulation_mode == "snapshot":
+            st.success(f"✅ **Snapshot Mode**: All agents will use '{option_names[selected_option]}' when transactions are rejected")
+        elif simulation_mode == "live":
+            st.info(f"🔴 **Live Mode**: '{option_names[selected_option]}' will be the fallback default, but agents will be asked in real-time")
+        else:
+            st.caption(f"Selected: {option_names[selected_option]}")
+        
+        # Apply button to update the default
+        if st.button("🔄 Apply New Default", type="primary", help="Update the default behavior for future simulations"):
+            # Update session state for decision execution
+            st.session_state["rejected_transaction_defaults_option"] = selected_option
+            st.success(f"✅ Default updated to: {option_names[selected_option]}")
+            st.info("💡 Run a new simulation to see the changes take effect")
+    
+    with col_viz:
+        # Show current results visualization
+        if len(value_counts) > 0:
+            # Create readable labels for the chart
+            readable_labels = [option_names.get(opt, opt) for opt in value_counts.index]
+            
+            fig = px.pie(
+                values=value_counts.values,
+                names=readable_labels,
+                title="Current Simulation Results",
+                color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig.update_layout(showlegend=True, height=400)
+            st.plotly_chart(fig, use_container_width=True, key="rejected_transaction_defaults_chart")
+        else:
+            st.info("No simulation data available")
+    
 
 
 def render_vendor_choice_weights(df, decision_name, decision_title, decision_data):
-    """Visualization for vendor_choice_weights - weight distribution analysis"""
-    # TODO: Implement specialized visualization for vendor weight analysis
-    render_generic_decision(df, decision_name, decision_title, decision_data)
+    """Visualization for vendor_choice_weights with interactive parameter selection"""
+    
+    # Define the 4 vendor choice parameters
+    parameters = [
+        ("price", "Price", "Cost of the product/service"),
+        ("quality", "Quality", "Quality rating and reviews"),
+        ("proximity", "Proximity", "Distance and convenience"),
+        ("sustainability", "Sustainability", "Environmental and social impact")
+    ]
+    
+    param_names = {param[0]: param[1] for param in parameters}
+    param_descriptions = {param[0]: param[2] for param in parameters}
+    
+    # Initialize session state for parameter selection (all selected by default)
+    selection_key = "vendor_choice_weights_selection"
+    if selection_key not in st.session_state:
+        st.session_state[selection_key] = ["price", "quality", "proximity", "sustainability"]
+    
+    # Top section: Current results display
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Agents", f"{len(decision_data):,}")
+    
+    with col2:
+        # Show number of selected parameters
+        num_selected = len(st.session_state[selection_key])
+        st.metric("Active Parameters", f"{num_selected}/4")
+    
+    with col3:
+        # Show current weight per parameter
+        if num_selected > 0:
+            weight_per_param = 100 / num_selected
+            st.metric("Weight Each", f"{weight_per_param:.1f}%")
+        else:
+            st.metric("Weight Each", "0%")
+    
+    with col4:
+        # Show current configuration
+        if num_selected == 4:
+            st.metric("Configuration", "All Factors")
+        elif num_selected == 1:
+            st.metric("Configuration", "Single Factor")
+        else:
+            st.metric("Configuration", f"{num_selected} Factors")
+    
+    # Main configuration section
+    st.markdown("---")
+    st.markdown("**🎛️ Configure Vendor Choice Parameters:**")
+    
+    col_selection, col_viz = st.columns([1, 1])
+    
+    with col_selection:
+        st.markdown("**Select Parameters to Include:**")
+        
+        # Create checkboxes for each parameter with direct state management
+        selected_params = []
+        
+        for param_key, param_name, param_desc in parameters:
+            # Use a unique key for each checkbox that's independent
+            checkbox_key = f"vendor_weights_{param_key}_checkbox"
+            
+            # Initialize checkbox state from session state if not exists
+            if checkbox_key not in st.session_state:
+                st.session_state[checkbox_key] = param_key in st.session_state[selection_key]
+            
+            # Create checkbox
+            is_selected = st.checkbox(
+                f"{param_name}",
+                key=checkbox_key,
+                help=param_desc
+            )
+            
+            # Add to selected params if checked
+            if is_selected:
+                selected_params.append(param_key)
+        
+        # Update the main selection state only if it has changed
+        if set(selected_params) != set(st.session_state[selection_key]):
+            st.session_state[selection_key] = selected_params
+        
+        # Calculate and display weights
+        if len(selected_params) > 0:
+            weight_per_param = 1.0 / len(selected_params)
+            
+            st.markdown("**📊 Calculated Weights:**")
+            
+            # Show weight distribution
+            weight_data = []
+            for param_key in selected_params:
+                weight_data.append({
+                    'Parameter': param_names[param_key],
+                    'Weight': f"{weight_per_param:.1%}",
+                    'Decimal': f"{weight_per_param:.3f}"
+                })
+            
+            if weight_data:
+                weight_df = pd.DataFrame(weight_data)
+                st.dataframe(weight_df, use_container_width=True, hide_index=True)
+        else:
+            st.warning("⚠️ Please select at least one parameter")
+        
+        # Apply button to update the weights
+        if len(selected_params) > 0:
+            if st.button("🔄 Apply New Weights", type="primary", help="Update vendor choice weights for future simulations"):
+                # Calculate weights dictionary
+                weight_per_param = 1.0 / len(selected_params)
+                new_weights = {}
+                
+                # Set weights for selected parameters
+                for param_key in selected_params:
+                    new_weights[param_key] = weight_per_param
+                
+                # Set zero weights for unselected parameters
+                for param_key, _, _ in parameters:
+                    if param_key not in selected_params:
+                        new_weights[param_key] = 0.0
+                
+                # Update session state for decision execution
+                st.session_state["vendor_choice_weights_config"] = new_weights
+                st.success(f"✅ Weights updated! {len(selected_params)} parameters with {weight_per_param:.1%} each")
+                st.info("💡 Run a new simulation to see the changes take effect")
+    
+    with col_viz:
+        # Show current weights visualization
+        if len(selected_params) > 0:
+            # Create pie chart showing weight distribution
+            weight_per_param = 1.0 / len(selected_params)
+            
+            fig = px.pie(
+                values=[weight_per_param] * len(selected_params),
+                names=[param_names[param] for param in selected_params],
+                title="Vendor Choice Weight Distribution",
+                color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig.update_layout(showlegend=True, height=400)
+            st.plotly_chart(fig, use_container_width=True, key="vendor_choice_weights_chart")
+            
+            # Show summary
+            st.markdown("**📋 Weight Summary:**")
+            summary_text = []
+            for param_key in selected_params:
+                summary_text.append(f"• {param_names[param_key]}: {weight_per_param:.1%}")
+            
+            if len(selected_params) < 4:
+                summary_text.append("")
+                summary_text.append("**Excluded:**")
+                for param_key, param_name, _ in parameters:
+                    if param_key not in selected_params:
+                        summary_text.append(f"• {param_name}: 0%")
+            
+            st.markdown("\n".join(summary_text))
+        else:
+            st.info("Select parameters to see weight distribution")
+    
 
 
 def render_consumption_quantity(df, decision_name, decision_title, decision_data):
     """Visualization for consumption_quantity - quantity analysis"""
-    # TODO: Implement specialized visualization for consumption quantities
-    render_generic_decision(df, decision_name, decision_title, decision_data)
+    st.markdown("**Random within consumption limit**")
 
 
 def render_consumption_frequency(df, decision_name, decision_title, decision_data):
     """Visualization for consumption_frequency - frequency analysis"""
-    # TODO: Implement specialized visualization for consumption frequency
-    render_generic_decision(df, decision_name, decision_title, decision_data)
+    st.markdown("**Consumption quantity divided by period duration**")
 
 
 def render_vendor_selection(df, decision_name, decision_title, decision_data):
     """Visualization for vendor_selection - vendor choice analysis"""
-    # TODO: Implement specialized visualization for vendor selection patterns
-    render_generic_decision(df, decision_name, decision_title, decision_data)
+    st.markdown("**Deterministic based on weights**")
 
 
 def render_bid_value(df, decision_name, decision_title, decision_data):
-    """Visualization for bid_value - bid amount analysis"""
+    """Visualization for bid_value with bidding price range formula"""
     
-    # Simple description in blue box
+    # Get parameters from session state (from Page 1)
+    if hasattr(st.session_state, 'sim_params'):
+        vendor_price = getattr(st.session_state.sim_params, 'market_price', 100.0)  # Default €100
+        platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)  # Default 10%
+        price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)  # Default 25%
+    else:
+        # Fallback defaults
+        vendor_price = 100.0
+        platform_markup = 0.1
+        price_range = 0.25
+    
+    # Calculate bidding range using the formula
+    baseline_price = (1 + platform_markup) * vendor_price  # Pc = (1+m) × vendor_price
+    min_bid_price = (1 - price_range) * baseline_price      # Pmb = (1-r) × Pc
+    max_bid_price = (1 + price_range) * baseline_price      # Ppn = (1+r) × Pc
+    
+    # Top section: Current parameters and calculated range
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Agents", f"{len(decision_data):,}")
+    
+    with col2:
+        st.metric("Vendor Price", f"€{vendor_price:.2f}")
+    
+    with col3:
+        st.metric("Baseline Price (Pc)", f"€{baseline_price:.2f}")
+    
+    with col4:
+        st.metric("Range Parameter (r)", f"{price_range:.1%}")
+    
+    # Bidding range display
+    st.markdown("---")
+    st.markdown("**📊 Bidding Range Formula**")
+    
+    col_formula, col_range = st.columns([1, 1])
+    
+    with col_formula:
+        st.markdown("**Formula Components:**")
+        st.write(f"• **Vendor Price**: €{vendor_price:.2f}")
+        st.write(f"• **Platform Markup (m)**: {platform_markup:.1%}")
+        st.write(f"• **Range Parameter (r)**: {price_range:.1%}")
+        st.write("")
+        st.markdown("**Calculations:**")
+        st.write(f"• **Baseline Price (Pc)**: (1 + {platform_markup:.1%}) × €{vendor_price:.2f} = €{baseline_price:.2f}")
+        st.write(f"• **Min Bid (Pmb)**: (1 - {price_range:.1%}) × €{baseline_price:.2f} = €{min_bid_price:.2f}")
+        st.write(f"• **Max Bid (Ppn)**: (1 + {price_range:.1%}) × €{baseline_price:.2f} = €{max_bid_price:.2f}")
+    
+    with col_range:
+        st.markdown("**📈 Bidding Range:**")
+        
+        # Visual range display
+        range_width = max_bid_price - min_bid_price
+        
+        # Create metrics for the range
+        col_min, col_max = st.columns(2)
+        with col_min:
+            st.metric("Minimum Bid", f"€{min_bid_price:.2f}")
+        with col_max:
+            st.metric("Maximum Bid", f"€{max_bid_price:.2f}")
+        
+        st.metric("Range Width", f"€{range_width:.2f}")
+        
+        # Show the range notation
+        st.success(f"**Bidding Range**: [€{min_bid_price:.2f}, €{max_bid_price:.2f})")
+        st.caption("Range notation: [minimum, maximum)")
+    
+    # Configuration section
+    st.markdown("---")
+    st.markdown("**🎛️ Bidding Behavior:**")
+    
+    st.info("**Default Behavior**: Random bid amount within the calculated range")
+    st.caption("💡 Agents will select random bid values between the minimum and maximum bid prices")
+    
+    # Show example bids
+    if st.button("🎲 Show Example Bids", help="Generate sample bid values within the range"):
+        import random
+        st.markdown("**🎯 Example Bid Values:**")
+        
+        # Generate 5 random example bids
+        example_bids = []
+        for i in range(5):
+            random_bid = random.uniform(min_bid_price, max_bid_price)
+            example_bids.append(f"€{random_bid:.2f}")
+        
+        st.write(f"Sample bids: {', '.join(example_bids)}")
+        st.caption(f"All values fall within [€{min_bid_price:.2f}, €{max_bid_price:.2f})")
+    
+    # Current simulation results summary (if available)
+    if not decision_data.empty:
+        st.markdown("---")
+        st.markdown("**📊 Current Simulation Summary:**")
+        
+        try:
+            # Try to get numeric data for analysis
+            numeric_data = pd.to_numeric(decision_data, errors='coerce')
+            if not numeric_data.isna().all():
+                col_stats1, col_stats2, col_stats3 = st.columns(3)
+                
+                with col_stats1:
+                    st.metric("Mean Bid", f"€{numeric_data.mean():.2f}")
+                
+                with col_stats2:
+                    st.metric("Min Bid", f"€{numeric_data.min():.2f}")
+                
+                with col_stats3:
+                    st.metric("Max Bid", f"€{numeric_data.max():.2f}")
+            else:
+                st.caption("Current results show non-numeric bid data")
+        except:
+            st.caption("Current results show complex bid data structure")
 
 
 
 def render_rejected_transaction_option(df, decision_name, decision_title, decision_data):
-    """Visualization for rejected_transaction_option"""
-    # TODO: Implement specialized visualization for rejection options
-    render_generic_decision(df, decision_name, decision_title, decision_data)
+    """Visualization for rejected_transaction_option with interactive radio buttons"""
+    
+    # Define the 5 options
+    options = [
+        ("reduce_bid", "Option 1: Reduce Bid Amount"),
+        ("switch_vendor", "Option 2: Switch to Different Vendor"),
+        ("switch_product", "Option 3: Choose Different Product"), 
+        ("retry_later", "Option 4: Wait and Retry Later"),
+        ("forgo_transaction", "Option 5: Forgo Transaction")
+    ]
+    
+    option_names = dict(options)
+    
+    # Get current option from results or session state
+    value_counts = decision_data.value_counts()
+    current_option = value_counts.index[0] if len(value_counts) > 0 else "forgo_transaction"
+    
+    # Initialize session state for radio button selection
+    radio_key = "rejected_transaction_option_radio"
+    if radio_key not in st.session_state:
+        st.session_state[radio_key] = current_option
+    
+    # Top section: Current results display
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Agents", f"{len(decision_data):,}")
+    
+    with col2:
+        display_name = option_names.get(current_option, current_option)
+        st.metric("Most Common", display_name.split(":")[0])  # Just "Option X"
+    
+    with col3:
+        if len(value_counts) > 0:
+            percentage = (value_counts.iloc[0] / len(decision_data)) * 100
+            st.metric("Frequency", f"{percentage:.1f}%")
+        else:
+            st.metric("Frequency", "N/A")
+    
+    with col4:
+        st.metric("Unique Options", f"{decision_data.nunique()}")
+    
+    # Main configuration section with radio buttons
+    st.markdown("---")
+    st.markdown("**🎛️ Configure Specific Option for Future Simulations:**")
+    
+    col_radio, col_viz = st.columns([1, 1])
+    
+    with col_radio:
+        st.markdown("**Select Specific Option:**")
+        
+        # Create radio buttons for the 5 options
+        selected_option = st.radio(
+            "When this specific transaction is rejected, agents should:",
+            options=[opt[0] for opt in options],
+            format_func=lambda x: option_names[x],
+            key=radio_key,
+            help="Choose the specific behavior for this rejected transaction scenario"
+        )
+        
+        
+        # Apply button to update the option
+        if st.button("🔄 Apply New Option", type="primary", help="Update the specific option for future simulations"):
+            # Update session state for decision execution
+            st.session_state["rejected_transaction_option_selection"] = selected_option
+            st.success(f"✅ Option updated to: {option_names[selected_option]}")
+            st.info("💡 Run a new simulation to see the changes take effect")
+    
+    with col_viz:
+        # Show current results visualization
+        if len(value_counts) > 0:
+            # Create readable labels for the chart
+            readable_labels = [option_names.get(opt, opt) for opt in value_counts.index]
+            
+            fig = px.pie(
+                values=value_counts.values,
+                names=readable_labels,
+                title="Current Simulation Results",
+                color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig.update_layout(showlegend=True, height=400)
+            st.plotly_chart(fig, use_container_width=True, key="rejected_transaction_option_chart")
+        else:
+            st.info("No simulation data available")
+    
 
 
 def render_rejected_bid_value(df, decision_name, decision_title, decision_data):
     """Visualization for rejected_bid_value"""
-    # TODO: Implement specialized visualization for rejected bid handling
-    render_generic_decision(df, decision_name, decision_title, decision_data)
+    st.markdown("**Not relevant given choice of Option 5**")
 
 
 def render_generic_decision(df, decision_name, decision_title, decision_data):
@@ -550,7 +979,6 @@ def render_single_run_results():
                         
                         # Show decision-specific results if available
                         if not df.empty and decision in df.columns:
-                            st.markdown("**📊 Results with Default Values:**")
                             render_decision_results(df, decision, decision_title)
                             
                             # Add probability controls for random decisions

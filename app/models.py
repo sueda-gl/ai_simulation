@@ -9,6 +9,7 @@ from pathlib import Path
 import yaml
 import numpy as np
 from scipy import stats
+from scipy.stats import gengamma
 
 
 @dataclass
@@ -71,16 +72,19 @@ class SimulationParameters:
     lognormal_min: float = 0.0  # Minimum value (linear shift)
     lognormal_max: Optional[float] = None  # Maximum value (rejection sampling)
     
-    # Pareto parameters  
-    pareto_alpha: float = 2.5  # Shape parameter (tail index)
-    pareto_x_m: float = 1000.0  # Minimum value (scale parameter)
-    pareto_max: Optional[float] = None  # Maximum value (rejection sampling)
+    # Generalised Gamma parameters  
+    gg_k: float = 1.5  # Shape parameter 1 (k)
+    gg_c: float = 2.0  # Shape parameter 2 (c)
+    gg_lambda: float = 20000.0  # Scale parameter (λ)
+    gg_min: float = 0.0  # Minimum value (linear shift)
+    gg_max: Optional[float] = None  # Maximum value (rejection sampling)
     
-    # Weibull parameters
-    weibull_k: float = 2.0  # Shape parameter (k)
-    weibull_lambda: float = 10000.0  # Scale parameter (λ)
-    weibull_min: float = 0.0  # Minimum value (linear shift)
-    weibull_max: Optional[float] = None  # Maximum value (rejection sampling)
+    # Dagum parameters
+    dagum_a: float = 2.0  # Shape parameter (tail thickness)
+    dagum_p: float = 1.5  # Shape parameter (body shape)
+    dagum_b: float = 25000.0  # Scale parameter (median-like)
+    dagum_min: float = 0.0  # Minimum value (linear shift)
+    dagum_max: Optional[float] = None  # Maximum value (rejection sampling)
     
     # Income categories
     num_discount_categories: int = 10  # ✅ Changed from 3 to 10
@@ -154,56 +158,67 @@ class SimulationParameters:
                 # Final clip to ensure no values exceed max
                 samples = np.clip(samples, self.lognormal_min, self.lognormal_max)
             
-        elif self.income_distribution == "pareto":
-            # Use user-specified x_m (minimum) and alpha parameters
-            x_m = self.pareto_x_m
-            alpha = self.pareto_alpha
+        elif self.income_distribution == "generalised_gamma":
+            # Use user-specified k, c, and lambda parameters
+            k = self.gg_k
+            c = self.gg_c
+            lambda_param = self.gg_lambda
             
-            # Pareto distribution with scale parameter x_m
-            # Note: scipy's pareto is defined as P(X > x) = (x_m/x)^alpha for x >= x_m
-            samples = stats.pareto.rvs(b=alpha, scale=x_m, size=n_samples, random_state=rng)
-            
-            # Apply rejection sampling if maximum is set
-            if self.pareto_max is not None:
-                # Keep resampling values that exceed the maximum
-                max_iterations = 1000  # Prevent infinite loops
-                for _ in range(max_iterations):
-                    mask = samples > self.pareto_max
-                    if not np.any(mask):
-                        break
-                    # Resample values that are too high
-                    n_resample = np.sum(mask)
-                    samples[mask] = stats.pareto.rvs(b=alpha, scale=x_m, size=n_resample, random_state=rng)
-                
-                # Final clip to ensure no values exceed max
-                samples = np.clip(samples, x_m, self.pareto_max)
-            
-        elif self.income_distribution == "weibull":
-            # Use user-specified k (shape) and lambda (scale) parameters
-            k = self.weibull_k
-            lambda_param = self.weibull_lambda
-            
-            # Sample from Weibull distribution
-            Y = stats.weibull_min.rvs(c=k, scale=lambda_param, size=n_samples, random_state=rng)
+            # Sample from Generalised Gamma distribution
+            # scipy.stats.gengamma uses (a, c, scale) parameterization
+            # where a=c (shape2), c=k (shape1), scale=lambda
+            Y = stats.gengamma.rvs(a=c, c=k, scale=lambda_param, size=n_samples, random_state=rng)
             
             # Apply linear shift (X = a + Y)
-            samples = self.weibull_min + Y
+            samples = self.gg_min + Y
             
             # Apply rejection sampling if maximum is set
-            if self.weibull_max is not None:
+            if self.gg_max is not None:
                 # Keep resampling values that exceed the maximum
                 max_iterations = 1000  # Prevent infinite loops
                 for _ in range(max_iterations):
-                    mask = samples > self.weibull_max
+                    mask = samples > self.gg_max
                     if not np.any(mask):
                         break
                     # Resample values that are too high
                     n_resample = np.sum(mask)
-                    Y_new = stats.weibull_min.rvs(c=k, scale=lambda_param, size=n_resample, random_state=rng)
-                    samples[mask] = self.weibull_min + Y_new
+                    Y_new = stats.gengamma.rvs(a=c, c=k, scale=lambda_param, size=n_resample, random_state=rng)
+                    samples[mask] = self.gg_min + Y_new
                 
                 # Final clip to ensure no values exceed max
-                samples = np.clip(samples, self.weibull_min, self.weibull_max)
+                samples = np.clip(samples, self.gg_min, self.gg_max)
+            
+        elif self.income_distribution == "dagum":
+            # Use user-specified a (tail), p (body), and b (scale) parameters
+            a = self.dagum_a
+            p = self.dagum_p
+            b = self.dagum_b
+            
+            # Sample from Dagum distribution using inverse CDF method
+            # Dagum CDF: F(x) = (1 + (x/b)^(-a))^(-p)
+            # Inverse CDF: x = b * ((U^(-1/p) - 1)^(-1/a))
+            U = rng.random(n_samples)
+            samples = b * np.power(np.power(U, -1/p) - 1, -1/a)
+            
+            # Apply linear shift
+            samples = self.dagum_min + samples
+            
+            # Apply rejection sampling if maximum is set
+            if self.dagum_max is not None:
+                # Keep resampling values that exceed the maximum
+                max_iterations = 1000  # Prevent infinite loops
+                for _ in range(max_iterations):
+                    mask = samples > self.dagum_max
+                    if not np.any(mask):
+                        break
+                    # Resample values that are too high
+                    n_resample = np.sum(mask)
+                    U_new = rng.random(n_resample)
+                    new_values = b * np.power(np.power(U_new, -1/p) - 1, -1/a)
+                    samples[mask] = self.dagum_min + new_values
+                
+                # Final clip to ensure no values exceed max
+                samples = np.clip(samples, self.dagum_min, self.dagum_max)
         
         else:
             # Fallback to uniform distribution
@@ -246,25 +261,36 @@ def initialize_session_state():
         if not hasattr(sim_params, 'lognormal_max'):
             sim_params.lognormal_max = None
             
-        # Add pareto parameters if missing
-        if not hasattr(sim_params, 'pareto_x_m'):
-            sim_params.pareto_x_m = 1000.0
-        if not hasattr(sim_params, 'pareto_max'):
-            sim_params.pareto_max = None
+        # Add Generalised Gamma parameters if missing
+        if not hasattr(sim_params, 'gg_k'):
+            sim_params.gg_k = 1.5
+        if not hasattr(sim_params, 'gg_c'):
+            sim_params.gg_c = 2.0
+        if not hasattr(sim_params, 'gg_lambda'):
+            sim_params.gg_lambda = 20000.0
+        if not hasattr(sim_params, 'gg_min'):
+            sim_params.gg_min = 0.0
+        if not hasattr(sim_params, 'gg_max'):
+            sim_params.gg_max = None
             
-        # Add weibull parameters if missing
-        if not hasattr(sim_params, 'weibull_k'):
-            # Check if old weibull_shape exists and migrate it
-            if hasattr(sim_params, 'weibull_shape'):
-                sim_params.weibull_k = sim_params.weibull_shape
-            else:
-                sim_params.weibull_k = 2.0
-        if not hasattr(sim_params, 'weibull_lambda'):
-            sim_params.weibull_lambda = 10000.0
-        if not hasattr(sim_params, 'weibull_min'):
-            sim_params.weibull_min = 0.0
-        if not hasattr(sim_params, 'weibull_max'):
-            sim_params.weibull_max = None
+        # Add Dagum parameters if missing
+        if not hasattr(sim_params, 'dagum_a'):
+            sim_params.dagum_a = 2.0
+        if not hasattr(sim_params, 'dagum_p'):
+            sim_params.dagum_p = 1.5
+        if not hasattr(sim_params, 'dagum_b'):
+            sim_params.dagum_b = 25000.0
+        if not hasattr(sim_params, 'dagum_min'):
+            sim_params.dagum_min = 0.0
+        if not hasattr(sim_params, 'dagum_max'):
+            sim_params.dagum_max = None
+            
+        # Migrate old income distribution types to new ones
+        if hasattr(sim_params, 'income_distribution'):
+            if sim_params.income_distribution == 'pareto':
+                sim_params.income_distribution = 'dagum'  # Migrate Pareto to Dagum
+            elif sim_params.income_distribution == 'weibull':
+                sim_params.income_distribution = 'generalised_gamma'  # Migrate Weibull to GG
             
         # Migrate old vendor price/product values to new defaults
         # This ensures users get the updated default values

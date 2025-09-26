@@ -524,9 +524,9 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
         col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
         
         with col_stat1:
-            st.metric("Actual Mean", f"${actual_mean:,.0f}")
+            st.metric("Mean", f"${actual_mean:,.0f}")
         with col_stat2:
-            st.metric("Actual Median", f"${actual_median:,.0f}")
+            st.metric("Median", f"${actual_median:,.0f}")
         with col_stat3:
             st.metric("Discount Qualification", f"{discount_rate:.1%}")
         with col_stat4:

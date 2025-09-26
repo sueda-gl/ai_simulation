@@ -23,12 +23,26 @@ DEFAULT_DECISION_VALUES = {
         "options": ["Y", "N"],
         "description": "Probability of disclosing documents for Discount status"
     },
-    "rejected_transaction_defaults": "SIMULATION_MODE_DEPENDENT",  # Option 5 for snapshot, real-time for live
+    "rejected_transaction_defaults": {
+        "type": "radio_selection",
+        "default_option": "forgo_transaction",
+        "options": [
+            ("reduce_bid", "Option 1: Reduce Bid Amount"),
+            ("switch_vendor", "Option 2: Switch to Different Vendor"), 
+            ("switch_product", "Option 3: Choose Different Product"),
+            ("retry_later", "Option 4: Wait and Retry Later"),
+            ("forgo_transaction", "Option 5: Forgo Transaction")
+        ]
+    },
     "vendor_choice_weights": {
-        "price": 0.25,
-        "quality": 0.25,
-        "proximity": 0.25,
-        "sustainability": 0.25
+        "type": "checkbox_selection",
+        "default_selection": ["price", "quality", "proximity", "sustainability"],
+        "parameters": {
+            "price": {"name": "Price", "description": "Cost of the product/service"},
+            "quality": {"name": "Quality", "description": "Quality rating and reviews"},
+            "proximity": {"name": "Proximity", "description": "Distance and convenience"},
+            "sustainability": {"name": "Sustainability", "description": "Environmental and social impact"}
+        }
     },
     "consumption_quantity": "RANDOM_WITHIN_LIMIT",  # Random within consumption limit
     "consumption_frequency": "CALCULATED",  # Consumption quantity / Period duration
@@ -40,7 +54,17 @@ DEFAULT_DECISION_VALUES = {
         "description": "Probability of purchasing immediately vs bidding"
     },
     "bid_value": "RANDOM_WITHIN_RANGE",  # Random within bidding price range
-    "rejected_transaction_option": "forgo_transaction",  # Option 5 (forgo transaction)
+    "rejected_transaction_option": {
+        "type": "radio_selection",
+        "default_option": "forgo_transaction", 
+        "options": [
+            ("reduce_bid", "Option 1: Reduce Bid Amount"),
+            ("switch_vendor", "Option 2: Switch to Different Vendor"),
+            ("switch_product", "Option 3: Choose Different Product"), 
+            ("retry_later", "Option 4: Wait and Retry Later"),
+            ("forgo_transaction", "Option 5: Forgo Transaction")
+        ]
+    },
     "rejected_bid_value": "NA",  # Not relevant given Option 5
     "final_donation_rate": 0.10  # Keep default 10%
 }
@@ -50,14 +74,14 @@ DEFAULT_DECISION_DESCRIPTIONS = {
     "donation_default": "10%",
     "disclose_income": "configurable probability Y/N (default 50% each)", 
     "disclose_documents": "configurable probability Y/N for qualified users (default 50% each)",
-    "rejected_transaction_defaults": "Default behavior for handling rejected transactions will be applied",
-    "vendor_choice_weights": "equal weight of 25% to Price, Quality, Proximity, and Sustainability",
+    "rejected_transaction_defaults": "Selected option for handling rejected transactions will be applied to all agents",
+    "vendor_choice_weights": "equal weight distribution among selected parameters (Price, Quality, Proximity, Sustainability)",
     "consumption_quantity": "random within consumption limit",
     "consumption_frequency": "Consumption quantity divided by Period duration",
     "vendor_selection": "deterministic based on vendor choice weights",
     "purchase_vs_bid": "configurable probability purchase/bid (default 50% each)",
     "bid_value": "random within bidding price range",
-    "rejected_transaction_option": "Default option for handling rejected transactions will be used",
+    "rejected_transaction_option": "Selected specific option for transaction rejection handling will be used",
     "rejected_bid_value": "Default handling for rejected bid values will be applied",
     "final_donation_rate": "Default donation rate will be maintained"
 }
@@ -87,19 +111,46 @@ def get_actual_default_value(decision_name, sim_params=None):
         else:
             return options[1]  # Second option (N or bid)
     
-    # Handle rejected_transaction_defaults based on simulation execution mode
-    elif decision_name == "rejected_transaction_defaults":
-        # Check simulation execution mode from session state
-        if hasattr(st.session_state, 'sim_params') and hasattr(st.session_state.sim_params, 'simulation_execution_mode'):
-            if st.session_state.sim_params.simulation_execution_mode == "snapshot":
-                # Snapshot mode: assume Option 5 (forgo transaction) for all
-                return "forgo_transaction"
-            else:
-                # Live mode: users will be asked in real time
-                return "REAL_TIME_DECISION"
+    # Handle radio selection decisions (rejected transaction options)
+    elif isinstance(base_value, dict) and base_value.get("type") == "radio_selection":
+        # Get selection from session state or use default
+        if decision_name == "rejected_transaction_defaults":
+            selection_key = "rejected_transaction_defaults_option"
+        elif decision_name == "rejected_transaction_option":
+            selection_key = "rejected_transaction_option_selection"
         else:
-            # Default to snapshot behavior if mode is unknown
-            return "forgo_transaction"
+            selection_key = f"{decision_name}_selection"
+        
+        selected_value = st.session_state.get(selection_key, base_value.get("default_option", "forgo_transaction"))
+        return selected_value
+    
+    # Handle checkbox selection decisions (vendor choice weights)
+    elif isinstance(base_value, dict) and base_value.get("type") == "checkbox_selection":
+        # Get selection from session state or use default
+        selection_key = "vendor_choice_weights_selection"
+        selected_params = st.session_state.get(selection_key, base_value.get("default_selection", []))
+        
+        # Calculate equal weights for selected parameters
+        if len(selected_params) > 0:
+            weight_per_param = 1.0 / len(selected_params)
+            weights = {}
+            
+            # Set weights for all parameters
+            for param_key in base_value.get("parameters", {}).keys():
+                if param_key in selected_params:
+                    weights[param_key] = weight_per_param
+                else:
+                    weights[param_key] = 0.0
+            
+            return weights
+        else:
+            # Fallback to equal weights if nothing selected
+            params = list(base_value.get("parameters", {}).keys())
+            if params:
+                weight_per_param = 1.0 / len(params)
+                return {param: weight_per_param for param in params}
+            else:
+                return {"price": 0.25, "quality": 0.25, "proximity": 0.25, "sustainability": 0.25}
     
     # Handle random within consumption limit
     elif base_value == "RANDOM_WITHIN_LIMIT":
@@ -128,21 +179,32 @@ def run_individual_decision(decision_name):
     """Run a single decision simulation"""
     with st.spinner(f"Running {decision_name} simulation..."):
         try:
+            # Store original state values to restore later (without modifying session state immediately)
+            original_decisions = st.session_state.decision_params.selected_decisions.copy()
+            original_custom_decisions = getattr(st.session_state, 'custom_decisions', [])
+            original_default_decisions = getattr(st.session_state, 'default_decisions', [])
+            
             # Clear any selected configuration for donation_default to allow full comparison
+            had_selected_config = False
+            original_population_mode = None
+            original_income_spec_mode = None
+            
             if decision_name == "donation_default" and hasattr(st.session_state, 'selected_donation_config'):
                 st.info("🔄 Clearing selected configuration to show all comparison variants")
+                had_selected_config = True
                 delattr(st.session_state, 'selected_donation_config')
                 
-                # Also restore original session state values if they were overridden
+                # Store original values without immediate state modification
                 if hasattr(st.session_state, '_original_population_mode'):
+                    original_population_mode = st.session_state.population_mode
+                    original_income_spec_mode = st.session_state.income_spec_mode
                     st.session_state.population_mode = st.session_state._original_population_mode
                     st.session_state.income_spec_mode = st.session_state._original_income_spec_mode
                     delattr(st.session_state, '_original_population_mode')
                     delattr(st.session_state, '_original_income_spec_mode')
                     st.info("🔄 Restored original UI settings for comparison")
             
-            # Temporarily modify selected decisions
-            original_decisions = st.session_state.decision_params.selected_decisions.copy()
+            # Modify selected decisions for simulation
             st.session_state.decision_params.selected_decisions = [decision_name]
             
             # If this is donation_default, collect and apply coefficient parameters
@@ -205,8 +267,10 @@ def run_individual_decision(decision_name):
                             if donation_col in results.columns:
                                 st.metric("Average Donation Rate", f"{results[donation_col].mean():.1%}")
             
-            # Restore original decisions
+            # Restore all original state in one operation to minimize reruns
             st.session_state.decision_params.selected_decisions = original_decisions
+            st.session_state.custom_decisions = original_custom_decisions
+            st.session_state.default_decisions = original_default_decisions
             
         except Exception as e:
             st.error(f"❌ Error running {decision_name}: {str(e)}")

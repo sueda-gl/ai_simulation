@@ -376,7 +376,7 @@ def render_donation_default_tab():
             st.session_state.donation_coeff_grad = grad_coeff
     
     # Reset to defaults button
-    if st.button("🔄 Reset All Coefficients to Defaults"):
+    if st.button("🔄 Reset All Coefficients to Defaults", key="reset_donation_coefficients"):
         # Reset all coefficients to their default values
         st.session_state.donation_coeff_intercept = 1.22985660120368
         st.session_state.donation_coeff_hh = 0.634001208840808
@@ -397,7 +397,7 @@ def render_donation_default_tab():
     
     # Individual run button
     st.markdown("---")
-    if st.button("🚀 Run Donation Default Only", type="secondary", width="stretch"):
+    if st.button("🚀 Run Donation Default Only", type="secondary", width="stretch", key="run_donation_default"):
         run_individual_decision("donation_default")
 
 

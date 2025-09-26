@@ -33,7 +33,7 @@ def render_overview_tab(selected_decisions):
         if len(unselected_decisions) > 0:
             st.caption(f"💡 Unselected decisions will use default values to provide complete simulation experience")
     with col2:
-        if st.button("🚀 Run Complete Simulation", type="primary", width="stretch"):
+        if st.button("🚀 Run Complete Simulation", type="primary", width="stretch", key="run_complete_simulation"):
             run_combined_simulation(selected_decisions)
     
 
@@ -45,10 +45,23 @@ def render_page2():
     # Decision selection
     st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)
     
+    # Initialize states properly
+    if "page2_manual_selections" not in st.session_state:
+        st.session_state.page2_manual_selections = []
+    
+    if "page2_select_all_state" not in st.session_state:
+        st.session_state.page2_select_all_state = False
+    
     # Multi-select with "Select All" functionality
-    select_all = st.checkbox("Select All Decisions", value=False)
+    select_all = st.checkbox(
+        "Select All Decisions", 
+        value=st.session_state.page2_select_all_state,
+        key="page2_select_all_checkbox",
+        on_change=lambda: setattr(st.session_state, 'page2_select_all_state', st.session_state.page2_select_all_checkbox)
+    )
     
     if select_all:
+        # Show disabled multiselect with all decisions
         selected_decisions = st.multiselect(
             "Selected Decisions",
             ALL_DECISIONS,
@@ -56,26 +69,23 @@ def render_page2():
             help="All decisions are selected",
             disabled=True
         )
+        # Set all decisions as selected
+        selected_decisions = ALL_DECISIONS
     else:
-        # Use widget key with session state initialization for proper state management
-        # Initialize the widget key if it doesn't exist
-        if "page2_decision_selection" not in st.session_state:
-            # Check if we have stored selections in decision_params, otherwise default to empty
-            initial_selections = []
-            if hasattr(st.session_state.decision_params, 'selected_decisions') and st.session_state.decision_params.selected_decisions:
-                initial_selections = st.session_state.decision_params.selected_decisions
-            st.session_state.page2_decision_selection = initial_selections
-        
+        # Manual selection mode
         selected_decisions = st.multiselect(
             "Select Decisions to Run",
             ALL_DECISIONS,
-            key="page2_decision_selection",
+            default=st.session_state.page2_manual_selections,
+            key="page2_manual_multiselect",
             help="Select one or more decisions to run",
             placeholder="Choose decisions..."
         )
+        # Update manual selections for persistence
+        st.session_state.page2_manual_selections = selected_decisions
     
-    # Store selected decisions (sync from widget state)
-    st.session_state.decision_params.selected_decisions = st.session_state.page2_decision_selection
+    # Store the final selected decisions
+    st.session_state.decision_params.selected_decisions = selected_decisions
     
     if not selected_decisions:
         st.warning("Please select at least one decision to configure parameters")
@@ -191,7 +201,7 @@ def render_selected_donation_config_display():
             st.caption("This configuration will be used for the donation decision in complete simulations")
         
         with action_col2:
-            if st.button("🗑️ Clear", help="Clear the selected configuration"):
+            if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_donation_config"):
                 from app.pages.decision_execution import clear_selected_configuration
                 clear_selected_configuration()
                 st.rerun()
