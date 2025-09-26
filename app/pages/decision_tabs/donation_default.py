@@ -32,16 +32,16 @@ def get_coefficient(name, mode_suffix=None):
     return st.session_state[key]
 
 
-def get_coefficient_for_current_mode(name):
-    """Get coefficient for current income mode (for input field defaults)"""
+def get_coefficient_for_input(name):
+    """Get coefficient value for input field based on current income mode"""
     ensure_coefficients_loaded()
     income_mode = st.session_state.get('income_spec_mode', 'categorical only')
     
-    # For input fields, use categorical coefficients as default unless specifically continuous
-    if income_mode == 'continuous only':
+    # For input fields, show the appropriate coefficient set based on current mode
+    if 'continuous' in income_mode.lower() and 'compare' not in income_mode.lower():
         return get_coefficient(name, 'cont')
     else:
-        return get_coefficient(name, 'cat')
+        return get_coefficient(name, 'cat')  # Default to categorical for "compare both" and "categorical only"
 
 
 def render_donation_default_tab():
@@ -77,7 +77,8 @@ def render_donation_default_tab():
                 key="page2_tab_income_spec_mode",
                 on_change=lambda: [
                     setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode),
-                    reload_coefficients_for_income_mode()
+                    reload_coefficients_for_income_mode(),
+                    clear_input_field_cache()
                 ]
             )
         else:
@@ -254,10 +255,10 @@ def render_donation_default_tab():
         with col1:
             intercept = st.number_input(
                 "Model Intercept",
-                value=get_coefficient_for_current_mode('intercept'),
+                value=get_coefficient_for_input('intercept'),
                 step=0.001,
                 format="%.6f",
-                help="Baseline prediction level",
+                help="Baseline prediction level (loaded from YAML based on current income mode)",
                 key="donation_coeff_intercept_input"
             )
             st.session_state.donation_coeff_intercept = intercept
@@ -265,10 +266,10 @@ def render_donation_default_tab():
         with col2:
             hh_coeff = st.number_input(
                 "Honesty-Humility Coefficient",
-                value=get_coefficient('hh'),
+                value=get_coefficient_for_input('hh'),
                 step=0.001,
                 format="%.6f",
-                help="Effect of Honesty-Humility z-score on predicted prosocial behavior",
+                help="Effect of Honesty-Humility z-score on predicted prosocial behavior (loaded from YAML based on current income mode)",
                 key="donation_coeff_hh_input"
             )
             st.session_state.donation_coeff_hh = hh_coeff
@@ -278,7 +279,7 @@ def render_donation_default_tab():
         with col1:
             midsub_coeff = st.number_input(
                 "MidSub Effect",
-                value=st.session_state.get('donation_coeff_midsub', 0.856140306694656),
+                value=get_coefficient_for_input('midsub'),
                 step=0.001,
                 format="%.6f",
                 help="MidSub vs FullSub difference",
@@ -289,7 +290,7 @@ def render_donation_default_tab():
         with col2:
             nosub_coeff = st.number_input(
                 "NoSub Effect", 
-                value=st.session_state.get('donation_coeff_nosub', -0.926633374153906),
+                value=get_coefficient_for_input('nosub'),
                 step=0.001,
                 format="%.6f",
                 help="NoSub vs FullSub difference",
@@ -300,7 +301,7 @@ def render_donation_default_tab():
         with col3:
             fullsub_coeff = st.number_input(
                 "FullSub Effect",
-                value=st.session_state.get('donation_coeff_fullsub', 0.0),
+                value=get_coefficient_for_input('fullsub'),
                 step=0.001,
                 format="%.6f",
                 help="Reference category effect (should remain 0)",
@@ -308,52 +309,70 @@ def render_donation_default_tab():
             )
             st.session_state.donation_coeff_fullsub = fullsub_coeff
     
-    with st.expander("💰 Categorical Income Effects (Reference: Q4_Q5 = 0)", expanded=False):
+    with st.expander("💰 Categorical Income Effects (Reference: Q1 = 0)", expanded=False):
         st.caption("Used when Income Mode = 'categorical only' or in categorical part of 'Compare both'")
-        col1, col2, col3, col4 = st.columns(4)
+        st.caption("Income levels: Q1(€16, ref), Q2(€32), Q3(€72), Q4(€128), Q5(€200)")
+        
+        # Split into two rows for 5 quintiles
+        col1, col2, col3 = st.columns(3)
         with col1:
             q1_coeff = st.number_input(
-                "Q1 Effect",
-                value=st.session_state.get('donation_coeff_q1', -0.520290427509808),
+                "Q1 Effect (€16)",
+                value=get_coefficient_for_input('q1'),
                 step=0.001,
                 format="%.6f",
-                help="Q1 vs Q4_Q5 difference",
+                help="Q1 coefficient - reference category (should be 0.0)",
                 key="donation_coeff_q1_input"
             )
             st.session_state.donation_coeff_q1 = q1_coeff
             
         with col2:
             q2_coeff = st.number_input(
-                "Q2 Effect",
-                value=st.session_state.get('donation_coeff_q2', 3.754612744416796),
+                "Q2 Effect (€32)",
+                value=get_coefficient_for_input('q2'),
                 step=0.001,
                 format="%.6f",
-                help="Q2 vs Q4_Q5 difference",
+                help="Q2 coefficient (loaded from YAML based on current income mode)",
                 key="donation_coeff_q2_input"
             )
             st.session_state.donation_coeff_q2 = q2_coeff
             
         with col3:
             q3_coeff = st.number_input(
-                "Q3 Effect",
-                value=st.session_state.get('donation_coeff_q3', 4.001714810873598),
+                "Q3 Effect (€72)",
+                value=get_coefficient_for_input('q3'),
                 step=0.001,
                 format="%.6f",
-                help="Q3 vs Q4_Q5 difference",
+                help="Q3 coefficient (loaded from YAML based on current income mode)",
                 key="donation_coeff_q3_input"
             )
             st.session_state.donation_coeff_q3 = q3_coeff
-            
+        
+        # Second row for Q4 and Q5
+        col4, col5, col_empty = st.columns(3)
         with col4:
-            q45_coeff = st.number_input(
-                "Q4_Q5 Effect",
-                value=st.session_state.get('donation_coeff_q45', 0.0),
+            q4_coeff = st.number_input(
+                "Q4 Effect (€128)",
+                value=get_coefficient_for_input('q4'),
                 step=0.001,
                 format="%.6f",
-                help="Reference category effect (should remain 0)",
-                key="donation_coeff_q45_input"
+                help="Q4 coefficient (loaded from YAML based on current income mode)",
+                key="donation_coeff_q4_input"
             )
-            st.session_state.donation_coeff_q45 = q45_coeff
+            st.session_state.donation_coeff_q4 = q4_coeff
+            
+        with col5:
+            q5_coeff = st.number_input(
+                "Q5 Effect (€200)",
+                value=get_coefficient_for_input('q5'),
+                step=0.001,
+                format="%.6f",
+                help="Q5 coefficient (loaded from YAML based on current income mode)",
+                key="donation_coeff_q5_input"
+            )
+            st.session_state.donation_coeff_q5 = q5_coeff
+            # Also update legacy Q4_Q5 for backward compatibility
+            st.session_state.donation_coeff_q45 = q5_coeff
             
     with st.expander("📈 Continuous Income Effect", expanded=False):
         st.caption("Used when Income Mode = 'continuous only' or in continuous part of 'Compare both'")
@@ -361,10 +380,10 @@ def render_donation_default_tab():
         with col1:
             linear_coeff = st.number_input(
                 "Linear Income Coefficient",
-                value=get_coefficient('linear'),
+                value=get_coefficient_for_input('linear'),
                 step=0.0001,
                 format="%.6f",
-                help="Linear effect of actual allowance amount on predicted prosocial behavior",
+                help="Linear effect of actual allowance amount on predicted prosocial behavior (loaded from YAML)",
                 key="donation_coeff_linear_input"
             )
             st.session_state.donation_coeff_linear = linear_coeff
@@ -377,10 +396,10 @@ def render_donation_default_tab():
         with col1:
             incoming_coeff = st.number_input(
                 "Incoming Effect",
-                value=st.session_state.get('donation_coeff_incoming', -6.920193024391676),
+                value=get_coefficient_for_input('incoming'),
                 step=0.001,
                 format="%.6f",
-                help="Incoming/Exchange vs Grad2yr difference",
+                help="Incoming/Exchange coefficient (loaded from YAML based on current income mode)",
                 key="donation_coeff_incoming_input"
             )
             st.session_state.donation_coeff_incoming = incoming_coeff
@@ -388,10 +407,10 @@ def render_donation_default_tab():
         with col2:
             law_coeff = st.number_input(
                 "Law5yr Effect",
-                value=st.session_state.get('donation_coeff_law', -2.081331674770856),
+                value=get_coefficient_for_input('law'),
                 step=0.001,
                 format="%.6f",
-                help="Law5yr vs Grad2yr difference",
+                help="Law5yr coefficient (loaded from YAML based on current income mode)",
                 key="donation_coeff_law_input"
             )
             st.session_state.donation_coeff_law = law_coeff
@@ -399,10 +418,10 @@ def render_donation_default_tab():
         with col3:
             ug_coeff = st.number_input(
                 "UG3yr Effect",
-                value=st.session_state.get('donation_coeff_ug', -2.139093511519692),
+                value=get_coefficient_for_input('ug'),
                 step=0.001,
                 format="%.6f",
-                help="UG3yr vs Grad2yr difference",
+                help="UG3yr coefficient (loaded from YAML based on current income mode)",
                 key="donation_coeff_ug_input"
             )
             st.session_state.donation_coeff_ug = ug_coeff
@@ -410,10 +429,10 @@ def render_donation_default_tab():
         with col4:
             grad_coeff = st.number_input(
                 "Grad2yr Effect",
-                value=st.session_state.get('donation_coeff_grad', 0.0),
+                value=get_coefficient_for_input('grad'),
                 step=0.001,
                 format="%.6f",
-                help="Reference category effect (should remain 0)",
+                help="Reference category (should remain 0)",
                 key="donation_coeff_grad_input"
             )
             st.session_state.donation_coeff_grad = grad_coeff
@@ -438,10 +457,49 @@ def render_donation_default_tab():
         st.success("✅ All coefficients reset to default values")
         st.rerun()
     
-    # Individual run button
+    # Coefficient refresh button
     st.markdown("---")
-    if st.button("🚀 Run Donation Default Only", type="secondary", width="stretch", key="run_donation_default"):
-        run_individual_decision("donation_default")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Reload Coefficients from YAML", type="secondary", help="Force reload all coefficients from the YAML file"):
+            load_donation_coefficients_from_yaml()
+            st.success("✅ Coefficients reloaded from YAML!")
+            st.rerun()
+    
+    # Debug: Show current session state values
+    with st.expander("🔍 Debug: Current Session State Values", expanded=False):
+        st.write("**Current intercept values in session state:**")
+        st.write(f"- Main intercept: {st.session_state.get('donation_coeff_intercept', 'NOT SET')}")
+        st.write(f"- Categorical intercept: {st.session_state.get('donation_coeff_intercept_cat', 'NOT SET')}")
+        st.write(f"- Continuous intercept: {st.session_state.get('donation_coeff_intercept_cont', 'NOT SET')}")
+        
+        # Load current YAML values for comparison
+        try:
+            import yaml
+            from pathlib import Path
+            config_path = Path(__file__).parent.parent.parent / "config" / "decisions.yaml"
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            yaml_cat = config['donation_default']['regression_coefficients']['categorical']['intercept']
+            yaml_cont = config['donation_default']['regression_coefficients']['continuous']['intercept']
+            
+            st.write("**Current YAML values:**")
+            st.write(f"- YAML categorical: {yaml_cat}")
+            st.write(f"- YAML continuous: {yaml_cont}")
+            
+            # Check if they match
+            if st.session_state.get('donation_coeff_intercept_cat') != yaml_cat:
+                st.error("❌ Session state doesn't match YAML! Click 'Reload Coefficients' button.")
+            else:
+                st.success("✅ Session state matches YAML values")
+                
+        except Exception as e:
+            st.error(f"Error reading YAML: {e}")
+    
+    with col2:
+        if st.button("🚀 Run Donation Default Only", type="primary", key="run_donation_default"):
+            run_individual_decision("donation_default")
 
 
 def render_formula_display():
@@ -473,9 +531,9 @@ def render_formula_display():
 def render_categorical_formula():
     """Render categorical income specification formula"""
     
-    # Get current coefficient values (use categorical-specific values if available)
-    intercept = st.session_state.get('donation_coeff_intercept_cat', st.session_state.get('donation_coeff_intercept', 1.22985660120368))
-    hh_coeff = st.session_state.get('donation_coeff_hh_cat', st.session_state.get('donation_coeff_hh', 0.634001208840808))
+    # Get current coefficient values FROM YAML ONLY
+    intercept = get_coefficient('intercept', 'cat')
+    hh_coeff = get_coefficient('hh', 'cat')
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -539,10 +597,10 @@ def render_categorical_formula():
 def render_continuous_formula():
     """Render continuous income specification formula"""
     
-    # Get current coefficient values
-    intercept = st.session_state.get('donation_coeff_intercept', 1.22985660120368)
-    hh_coeff = st.session_state.get('donation_coeff_hh', 0.634001208840808)
-    linear_coeff = st.session_state.get('donation_coeff_linear', 0.0256)
+    # Get current coefficient values FROM YAML ONLY
+    intercept = get_coefficient('intercept', 'cont')
+    hh_coeff = get_coefficient('hh', 'cont')
+    linear_coeff = get_coefficient('linear', 'cont')
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -659,35 +717,36 @@ def render_interactive_example():
 def calculate_categorical_example(group, income_level, study, hh_score):
     """Calculate and display categorical mode example"""
     
-    # Get coefficients
-    intercept = st.session_state.get('donation_coeff_intercept', 1.22985660120368)
-    hh_coeff = st.session_state.get('donation_coeff_hh', 0.634001208840808)
+    # Get coefficients FROM YAML ONLY - no hardcoded fallbacks
+    intercept = get_coefficient('intercept', 'cat')
+    hh_coeff = get_coefficient('hh', 'cat')
     
     # Group coefficient
     group_coeffs = {
-        'MidSub': st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-        'NoSub': st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-        'FullSub': st.session_state.get('donation_coeff_fullsub', 0.0)
+        'MidSub': get_coefficient('midsub', 'cat'),
+        'NoSub': get_coefficient('nosub', 'cat'),
+        'FullSub': get_coefficient('fullsub', 'cat')
     }
     group_coeff = group_coeffs[group]
     
     # Income quintile coefficient
-    income_mapping = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
+    income_mapping = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4', 5: 'Q5'}
     income_quintile = income_mapping[income_level]
     income_coeffs = {
-        'Q1': st.session_state.get('donation_coeff_q1', -0.520290427509808),
-        'Q2': st.session_state.get('donation_coeff_q2', 3.754612744416796),
-        'Q3': st.session_state.get('donation_coeff_q3', 4.001714810873598),
-        'Q4_Q5': st.session_state.get('donation_coeff_q45', 0.0)
+        'Q1': get_coefficient('q1', 'cat'),
+        'Q2': get_coefficient('q2', 'cat'),
+        'Q3': get_coefficient('q3', 'cat'),
+        'Q4': get_coefficient('q4', 'cat'),
+        'Q5': get_coefficient('q5', 'cat')
     }
     income_coeff = income_coeffs[income_quintile]
     
     # Study coefficient
     study_coeffs = {
-        'Incoming': st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-        'Law5yr': st.session_state.get('donation_coeff_law', -2.081331674770856),
-        'UG3yr': st.session_state.get('donation_coeff_ug', -2.139093511519692),
-        'Grad2yr': st.session_state.get('donation_coeff_grad', 0.0)
+        'Incoming': get_coefficient('incoming', 'cat'),
+        'Law5yr': get_coefficient('law', 'cat'),
+        'UG3yr': get_coefficient('ug', 'cat'),
+        'Grad2yr': get_coefficient('grad', 'cat')
     }
     study_coeff = study_coeffs[study]
     
@@ -733,28 +792,30 @@ def calculate_categorical_example(group, income_level, study, hh_score):
 def calculate_continuous_example(group, income_level, study, hh_score):
     """Calculate and display continuous mode example"""
     
-    # Get coefficients
-    intercept = st.session_state.get('donation_coeff_intercept', 1.22985660120368)
-    hh_coeff = st.session_state.get('donation_coeff_hh', 0.634001208840808)
-    linear_coeff = st.session_state.get('donation_coeff_linear', 0.0256)
+    # Get coefficients FROM YAML ONLY - no hardcoded fallbacks
+    intercept = get_coefficient('intercept', 'cont')
+    hh_coeff = get_coefficient('hh', 'cont')
+    linear_coeff = get_coefficient('linear', 'cont')
     
     # Group coefficient
     group_coeffs = {
-        'MidSub': st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-        'NoSub': st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-        'FullSub': st.session_state.get('donation_coeff_fullsub', 0.0)
+        'MidSub': get_coefficient('midsub', 'cont'),
+        'NoSub': get_coefficient('nosub', 'cont'),
+        'FullSub': get_coefficient('fullsub', 'cont')
     }
     group_coeff = group_coeffs[group]
     
-    # Linear income term
-    income_term = linear_coeff * income_level
+    # Linear income term - use actual allowance amount
+    allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
+    actual_allowance = allowance_mapping[income_level]
+    income_term = linear_coeff * actual_allowance
     
     # Study coefficient
     study_coeffs = {
-        'Incoming': st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-        'Law5yr': st.session_state.get('donation_coeff_law', -2.081331674770856),
-        'UG3yr': st.session_state.get('donation_coeff_ug', -2.139093511519692),
-        'Grad2yr': st.session_state.get('donation_coeff_grad', 0.0)
+        'Incoming': get_coefficient('incoming', 'cont'),
+        'Law5yr': get_coefficient('law', 'cont'),
+        'UG3yr': get_coefficient('ug', 'cont'),
+        'Grad2yr': get_coefficient('grad', 'cont')
     }
     study_coeff = study_coeffs[study]
     
@@ -870,6 +931,34 @@ def render_variable_definitions():
 def reload_coefficients_for_income_mode():
     """Reload coefficients from YAML when income mode changes"""
     load_donation_coefficients_from_yaml()
+
+
+def clear_input_field_cache():
+    """Clear Streamlit input field cache to force refresh with new values"""
+    # Force refresh of input fields by clearing their keys from session state
+    # This makes Streamlit re-evaluate the default values
+    input_keys = [
+        'donation_coeff_intercept_input',
+        'donation_coeff_hh_input',
+        'donation_coeff_midsub_input',
+        'donation_coeff_nosub_input',
+        'donation_coeff_fullsub_input',
+        'donation_coeff_q1_input',
+        'donation_coeff_q2_input',
+        'donation_coeff_q3_input',
+        'donation_coeff_q4_input',
+        'donation_coeff_q5_input',
+        'donation_coeff_q45_input',  # Legacy
+        'donation_coeff_linear_input',
+        'donation_coeff_incoming_input',
+        'donation_coeff_law_input',
+        'donation_coeff_ug_input',
+        'donation_coeff_grad_input'
+    ]
+    
+    for key in input_keys:
+        if key in st.session_state:
+            del st.session_state[key]
 
 
 def render_categorical_formula_specific():

@@ -389,6 +389,11 @@ def load_donation_coefficients_from_yaml():
     st.session_state.donation_coeff_hh = coeffs['beta_hh']
     st.session_state.donation_coeff_linear = coeffs.get('beta_income_linear', 0.0)  # Only linear can default to 0
     
+    # Debug: Print what we're loading
+    print(f"[DEBUG] Loading coefficients for mode: {st.session_state.get('income_spec_mode', 'unknown')}")
+    print(f"[DEBUG] Selected coeffs intercept: {coeffs['intercept']}")
+    print(f"[DEBUG] Selected coeffs linear: {coeffs.get('beta_income_linear', 'NOT FOUND')}")
+    
     # Group coefficients
     beta_group = coeffs['beta_group']
     st.session_state.donation_coeff_midsub = beta_group['MidSub']
