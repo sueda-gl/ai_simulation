@@ -65,12 +65,18 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     
     # ---------------- Income effect ----------------
     if normalized_mode == 'continuous':
+        # For continuous mode, use actual allowance amount, not income level (1-5)
+        # Map income levels to actual totalallowance values from the research
+        allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
+        actual_allowance = allowance_mapping.get(int(income_level), 200)
+        
         beta_lin = coeffs.get('beta_income_linear', 0.0256)
-        predicted += beta_lin * income_level
+        predicted += beta_lin * actual_allowance
     else:
         # Categorical (default)
-        income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
-        income_q = income_quintiles.get(int(income_level), 'Q4_Q5')
+        # Map income levels to quintiles (level 1/16 is reference, levels 2-5 are 32,72,128,200)
+        income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4', 5: 'Q5'}
+        income_q = income_quintiles.get(int(income_level), 'Q5')
         beta_income_q = coeffs.get('beta_income_q', {})
         if income_q in beta_income_q:
             predicted += beta_income_q[income_q]

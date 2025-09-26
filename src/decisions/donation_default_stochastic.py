@@ -22,31 +22,61 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     group = agent_state['Group_experiment']
     observed_prosocial = agent_state['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
     
-    # Step 1: Compute predicted prosocial behavior using regression
-    regression = params['regression']
+    # Step 1: Compute predicted prosocial behavior using configurable regression
+    # Use same logic as regular donation_default module for consistency
+    regression_coeffs = params.get('regression_coefficients', {})
+    
+    # Determine income mode (can be overridden at runtime)
+    # Check both new and legacy locations for income_mode parameter
+    income_mode = regression_coeffs.get('income_mode', params.get('regression', {}).get('income_mode', 'categorical'))
+    
+    # Normalize UI format to internal format
+    if 'continuous' in str(income_mode).lower():
+        normalized_mode = 'continuous'
+    else:
+        normalized_mode = 'categorical'  # default
+    
+    # Select appropriate coefficient set based on income mode
+    if 'categorical' in regression_coeffs and 'continuous' in regression_coeffs:
+        # New structured format - select based on normalized income mode
+        if normalized_mode == 'continuous':
+            coeffs = regression_coeffs['continuous']
+        else:
+            coeffs = regression_coeffs['categorical']  # default to categorical
+    else:
+        # Fall back to legacy format or old regression block
+        coeffs = regression_coeffs if regression_coeffs else params.get('regression', {})
     
     # Start with intercept
-    predicted = regression['intercept']
+    predicted = coeffs.get('intercept', 1.22985660120368)
     
     # Add group effect (map HighSub to FullSub for coefficient lookup)
     group_mapped = 'FullSub' if group == 'HighSub' else group
-    if group_mapped in regression['beta_group']:
-        predicted += regression['beta_group'][group_mapped]
+    beta_group = coeffs.get('beta_group', {})
+    if group_mapped in beta_group:
+        predicted += beta_group[group_mapped]
     
     # Add income effect
-    income_mode = regression.get('income_mode', 'categorical')
-    if income_mode == 'continuous':
+    if normalized_mode == 'continuous':
+        # For continuous mode, use actual allowance amount, not income level (1-5)
+        # Map income levels to actual totalallowance values from the research
+        allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
+        actual_allowance = allowance_mapping.get(int(income_level), 200)
+        
         # Linear income effect
-        beta_lin = regression.get('beta_income_linear', 0.0)
-        predicted += beta_lin * income_level
+        beta_lin = coeffs.get('beta_income_linear', 0.0)
+        predicted += beta_lin * actual_allowance
     else:
         # Categorical income effect
-        income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4_Q5', 5: 'Q4_Q5'}
-        income_q = income_quintiles.get(int(income_level), 'Q4_Q5')
-        if income_q in regression['beta_income_q']:
-            predicted += regression['beta_income_q'][income_q]
+        # Map income levels to quintiles (level 1/16 is reference, levels 2-5 are 32,72,128,200)
+        income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4', 5: 'Q5'}
+        income_q = income_quintiles.get(int(income_level), 'Q5')
+        beta_income_q = coeffs.get('beta_income_q', {})
+        if income_q in beta_income_q:
+            predicted += beta_income_q[income_q]
     
-    # Add study program effect
+    # Add study program effect (reference: Graduate 2-yr)
+    # Map study programs to categories based on documentation patterns
     study_category = 'Grad2yr'  # default to reference
     
     # More comprehensive mapping based on typical program names
@@ -58,15 +88,17 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
         study_category = 'UG3yr'
     # Graduate programs (CLEF, CLEAM, BIEF, etc.) remain as reference
     
-    if study_category in regression['beta_study']:
-        predicted += regression['beta_study'][study_category]
+    beta_study = coeffs.get('beta_study', {})
+    if study_category in beta_study:
+        predicted += beta_study[study_category]
     
     # Add honesty-humility effect
     # Z-score the HH score based on empirical mean/std from analysis
     hh_mean = 3.3922  # from data analysis
     hh_std = 0.5587   # from data analysis
     hh_zscore = (hh_score - hh_mean) / hh_std
-    predicted += regression['beta_hh'] * hh_zscore
+    beta_hh = coeffs.get('beta_hh', 0.634001208840808)
+    predicted += beta_hh * hh_zscore
     
     # Step 2: Standardize both values to 0-100 scale
     # Use empirical min/max from the original 280 participants

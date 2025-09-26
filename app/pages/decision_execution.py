@@ -209,30 +209,9 @@ def run_individual_decision(decision_name):
             
             # If this is donation_default, collect and apply coefficient parameters
             if decision_name == "donation_default":
-                # Collect regression coefficients from session state
-                coeffs = {
-                    'intercept': st.session_state.get('donation_coeff_intercept', 1.22985660120368),
-                    'beta_group': {
-                        'MidSub': st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-                        'NoSub': st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-                        'FullSub': st.session_state.get('donation_coeff_fullsub', 0.0)
-                    },
-                    'beta_income_q': {
-                        'Q1': st.session_state.get('donation_coeff_q1', -0.520290427509808),
-                        'Q2': st.session_state.get('donation_coeff_q2', 3.754612744416796),
-                        'Q3': st.session_state.get('donation_coeff_q3', 4.001714810873598),
-                        'Q4_Q5': st.session_state.get('donation_coeff_q45', 0.0)
-                    },
-                    'beta_income_linear': st.session_state.get('donation_coeff_linear', 0.0256),
-                    'beta_study': {
-                        'Incoming': st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-                        'Law5yr': st.session_state.get('donation_coeff_law', -2.081331674770856),
-                        'UG3yr': st.session_state.get('donation_coeff_ug', -2.139093511519692),
-                        'Grad2yr': st.session_state.get('donation_coeff_grad', 0.0)
-                    },
-                    'beta_hh': st.session_state.get('donation_coeff_hh', 0.634001208840808),
-                    'income_mode': st.session_state.get('income_spec_mode', 'categorical')
-                }
+                # Collect regression coefficients from YAML-loaded session state
+                coeffs = get_current_coefficients()
+                coeffs['income_mode'] = st.session_state.get('income_spec_mode', 'categorical')
                 
                 # Store the coefficients in decision_params for the simulation
                 if not hasattr(st.session_state, 'custom_coefficients'):
@@ -385,28 +364,39 @@ def extract_configuration_details(result_key):
 
 
 def get_current_coefficients():
-    """Collect all current coefficient values from session state"""
+    """Collect all current coefficient values from session state
+    
+    IMPORTANT: Ensures coefficients are loaded from YAML first.
+    YAML is the SINGLE source of truth - no fallback values.
+    """
+    # Ensure coefficients are loaded from YAML
+    from app.models import load_donation_coefficients_from_yaml
+    if 'donation_coeff_intercept' not in st.session_state:
+        load_donation_coefficients_from_yaml()
+    
+    # Return coefficients from session state - NO FALLBACK VALUES
     return {
-        'intercept': st.session_state.get('donation_coeff_intercept', 1.22985660120368),
+        'intercept': st.session_state.donation_coeff_intercept,
         'beta_group': {
-            'MidSub': st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-            'NoSub': st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-            'FullSub': st.session_state.get('donation_coeff_fullsub', 0.0)
+            'MidSub': st.session_state.donation_coeff_midsub,
+            'NoSub': st.session_state.donation_coeff_nosub,
+            'FullSub': st.session_state.donation_coeff_fullsub
         },
         'beta_income_q': {
-            'Q1': st.session_state.get('donation_coeff_q1', -0.520290427509808),
-            'Q2': st.session_state.get('donation_coeff_q2', 3.754612744416796),
-            'Q3': st.session_state.get('donation_coeff_q3', 4.001714810873598),
-            'Q4_Q5': st.session_state.get('donation_coeff_q45', 0.0)
+            'Q1': st.session_state.donation_coeff_q1,
+            'Q2': st.session_state.donation_coeff_q2,
+            'Q3': st.session_state.donation_coeff_q3,
+            'Q4': st.session_state.get('donation_coeff_q4', 0.0),
+            'Q5': st.session_state.get('donation_coeff_q5', st.session_state.get('donation_coeff_q45', 0.0))  # Support both Q5 and legacy Q4_Q5
         },
-        'beta_income_linear': st.session_state.get('donation_coeff_linear', 0.0256),
+        'beta_income_linear': st.session_state.donation_coeff_linear,
         'beta_study': {
-            'Incoming': st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-            'Law5yr': st.session_state.get('donation_coeff_law', -2.081331674770856),
-            'UG3yr': st.session_state.get('donation_coeff_ug', -2.139093511519692),
-            'Grad2yr': st.session_state.get('donation_coeff_grad', 0.0)
+            'Incoming': st.session_state.donation_coeff_incoming,
+            'Law5yr': st.session_state.donation_coeff_law,
+            'UG3yr': st.session_state.donation_coeff_ug,
+            'Grad2yr': st.session_state.donation_coeff_grad
         },
-        'beta_hh': st.session_state.get('donation_coeff_hh', 0.634001208840808)
+        'beta_hh': st.session_state.donation_coeff_hh
     }
 
 

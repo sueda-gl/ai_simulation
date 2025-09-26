@@ -21,10 +21,13 @@ donation_default:
         NoSub: -0.913715
         FullSub: 0.0  # reference category (maps from HighSub in data)
       beta_income_q:
-        Q1: -0.4214298
-        Q2: -0.7364032
-        Q3: 3.539434
-        Q4_Q5: 0.0  # reference category
+        # Note: Income level 16 is the reference category (coefficient = 0)
+        # These map totalallowance levels to quintiles:
+        Q1: 0.0         # Level 16 (reference category, omitted in regression)
+        Q2: -0.4214298  # Level 32
+        Q3: -0.7364032  # Level 72
+        Q4: 3.539434    # Level 128
+        Q5: 3.784071    # Level 200
       beta_study:
         Incoming: -6.882558
         Law5yr: -2.003814
@@ -58,10 +61,13 @@ donation_default:
       NoSub: -0.913715
       FullSub: 0.0
     beta_income_q:
-      Q1: -0.4214298
-      Q2: -0.7364032
-      Q3: 3.539434
-      Q4_Q5: 0.0
+      # Note: Income level 16 is the reference category (coefficient = 0)
+      Q1: 0.0         # Level 16 (reference)
+      Q2: -0.4214298  # Level 32
+      Q3: -0.7364032  # Level 72
+      Q4: 3.539434    # Level 128
+      Q5: 3.784071    # Level 200
+      Q4_Q5: 3.784071  # Legacy support: combined Q4/Q5 uses Q5 value
     beta_income_linear: 0.0255512  # continuous coefficient for legacy compatibility
     beta_study:
       Incoming: -6.882558

@@ -8,8 +8,47 @@ from app.pages.decision_execution import run_individual_decision
 from app.models import load_donation_coefficients_from_yaml
 
 
+def ensure_coefficients_loaded():
+    """Ensure donation coefficients are loaded from YAML before any access"""
+    if 'donation_coeff_intercept' not in st.session_state:
+        load_donation_coefficients_from_yaml()
+
+
+def get_coefficient(name, mode_suffix=None):
+    """Get a coefficient value from session state. YAML is the single source of truth."""
+    ensure_coefficients_loaded()
+    if mode_suffix:
+        key = f'donation_coeff_{name}_{mode_suffix}'
+    else:
+        key = f'donation_coeff_{name}'
+    
+    if key not in st.session_state:
+        # Try to reload from YAML
+        load_donation_coefficients_from_yaml()
+        if key not in st.session_state:
+            st.error(f"Coefficient '{name}' not found in YAML configuration!")
+            return 0.0
+    
+    return st.session_state[key]
+
+
+def get_coefficient_for_current_mode(name):
+    """Get coefficient for current income mode (for input field defaults)"""
+    ensure_coefficients_loaded()
+    income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    
+    # For input fields, use categorical coefficients as default unless specifically continuous
+    if income_mode == 'continuous only':
+        return get_coefficient(name, 'cont')
+    else:
+        return get_coefficient(name, 'cat')
+
+
 def render_donation_default_tab():
     """Render donation_default specific configuration"""
+    # Ensure coefficients are loaded from YAML
+    ensure_coefficients_loaded()
+    
     st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
@@ -215,7 +254,7 @@ def render_donation_default_tab():
         with col1:
             intercept = st.number_input(
                 "Model Intercept",
-                value=st.session_state.get('donation_coeff_intercept', 1.22985660120368),
+                value=get_coefficient_for_current_mode('intercept'),
                 step=0.001,
                 format="%.6f",
                 help="Baseline prediction level",
@@ -226,7 +265,7 @@ def render_donation_default_tab():
         with col2:
             hh_coeff = st.number_input(
                 "Honesty-Humility Coefficient",
-                value=st.session_state.get('donation_coeff_hh', 0.634001208840808),
+                value=get_coefficient('hh'),
                 step=0.001,
                 format="%.6f",
                 help="Effect of Honesty-Humility z-score on predicted prosocial behavior",
@@ -322,10 +361,10 @@ def render_donation_default_tab():
         with col1:
             linear_coeff = st.number_input(
                 "Linear Income Coefficient",
-                value=st.session_state.get('donation_coeff_linear', 0.0256),
+                value=get_coefficient('linear'),
                 step=0.0001,
                 format="%.6f",
-                help="Linear effect of income level (1-5) on predicted prosocial behavior",
+                help="Linear effect of actual allowance amount on predicted prosocial behavior",
                 key="donation_coeff_linear_input"
             )
             st.session_state.donation_coeff_linear = linear_coeff
@@ -550,19 +589,21 @@ def render_continuous_formula():
     
     with col2:
         st.markdown("**📈 Linear Income Effect (β_linear):**")
+        st.caption("Effect = β_linear × actual_allowance_amount")
         
-        # Show linear effect for each income level
+        # Show linear effect for actual allowance amounts (not level numbers)
+        allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
         linear_data = {
-            'Income Level': [1, 2, 3, 4, 5],
-            'Linear Term': [linear_coeff * i for i in range(1, 6)]
+            'Income Level': ['1 (€16)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
+            'Effect': [linear_coeff * allowance_mapping[i] for i in range(1, 6)]
         }
         linear_df = pd.DataFrame(linear_data)
-        linear_df['Linear Term'] = linear_df['Linear Term'].map('{:.6f}'.format)
+        linear_df['Effect'] = linear_df['Effect'].map('{:.6f}'.format)
         st.dataframe(linear_df, hide_index=True, use_container_width=True)
         
-        # Show total range effect
-        total_range = linear_coeff * 4  # from level 1 to 5
-        st.metric("Total Range Effect (Level 1→5)", f"{total_range:.6f}")
+        # Show total range effect using actual allowances
+        total_range = linear_coeff * (200 - 16)  # from €16 to €200
+        st.metric("Total Range Effect (€16→€200)", f"{total_range:.6f}")
 
 
 def render_interactive_example():
@@ -834,9 +875,9 @@ def reload_coefficients_for_income_mode():
 def render_categorical_formula_specific():
     """Render categorical income specification formula with categorical-specific coefficients"""
     
-    # Get categorical-specific coefficient values
-    intercept = st.session_state.get('donation_coeff_intercept_cat', 1.519818)
-    hh_coeff = st.session_state.get('donation_coeff_hh_cat', 0.6042141)
+    # Get categorical-specific coefficient values FROM YAML ONLY
+    intercept = get_coefficient('intercept', 'cat')
+    hh_coeff = get_coefficient('hh', 'cat')
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -858,9 +899,9 @@ def render_categorical_formula_specific():
         group_data = {
             'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
             'Coefficient': [
-                st.session_state.get('donation_coeff_midsub_cat', 0.8773149),
-                st.session_state.get('donation_coeff_nosub_cat', -0.913715),
-                st.session_state.get('donation_coeff_fullsub_cat', 0.0)
+                get_coefficient('midsub', 'cat'),
+                get_coefficient('nosub', 'cat'),
+                get_coefficient('fullsub', 'cat')
             ]
         }
         group_df = pd.DataFrame(group_data)
@@ -871,10 +912,10 @@ def render_categorical_formula_specific():
         study_data = {
             'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
             'Coefficient': [
-                st.session_state.get('donation_coeff_incoming_cat', -6.882558),
-                st.session_state.get('donation_coeff_law_cat', -2.003814),
-                st.session_state.get('donation_coeff_ug_cat', -2.11522),
-                st.session_state.get('donation_coeff_grad_cat', 0.0)
+                get_coefficient('incoming', 'cat'),
+                get_coefficient('law', 'cat'),
+                get_coefficient('ug', 'cat'),
+                get_coefficient('grad', 'cat')
             ]
         }
         study_df = pd.DataFrame(study_data)
@@ -884,12 +925,13 @@ def render_categorical_formula_specific():
     with col2:
         st.markdown("**💰 Income Quintile Effects (β_income_q):**")
         income_data = {
-            'Quintile': ['Q1 (Level 1)', 'Q2 (Level 2)', 'Q3 (Level 3)', 'Q4_Q5 (Levels 4-5, ref)'],
+            'Quintile': ['Q1 (Level 16, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
             'Coefficient': [
-                st.session_state.get('donation_coeff_q1_cat', -0.4214298),
-                st.session_state.get('donation_coeff_q2_cat', -0.7364032),
-                st.session_state.get('donation_coeff_q3_cat', 3.539434),
-                st.session_state.get('donation_coeff_q45_cat', 0.0)
+                get_coefficient('q1', 'cat'),
+                get_coefficient('q2', 'cat'),
+                get_coefficient('q3', 'cat'),
+                get_coefficient('q4', 'cat'),
+                get_coefficient('q5', 'cat')
             ]
         }
         income_df = pd.DataFrame(income_data)
@@ -900,10 +942,10 @@ def render_categorical_formula_specific():
 def render_continuous_formula_specific():
     """Render continuous income specification formula with continuous-specific coefficients"""
     
-    # Get continuous-specific coefficient values
-    intercept = st.session_state.get('donation_coeff_intercept_cont', -0.1395969)
-    hh_coeff = st.session_state.get('donation_coeff_hh_cont', 0.7840063)
-    linear_coeff = st.session_state.get('donation_coeff_linear_cont', 0.0255512)
+    # Get continuous-specific coefficient values FROM YAML ONLY
+    intercept = get_coefficient('intercept', 'cont')
+    hh_coeff = get_coefficient('hh', 'cont')
+    linear_coeff = get_coefficient('linear', 'cont')
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -925,9 +967,9 @@ def render_continuous_formula_specific():
         group_data = {
             'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
             'Coefficient': [
-                st.session_state.get('donation_coeff_midsub_cont', 0.7952602),
-                st.session_state.get('donation_coeff_nosub_cont', -0.8990889),
-                st.session_state.get('donation_coeff_fullsub_cont', 0.0)
+                get_coefficient('midsub', 'cont'),
+                get_coefficient('nosub', 'cont'),
+                get_coefficient('fullsub', 'cont')
             ]
         }
         group_df = pd.DataFrame(group_data)
@@ -938,10 +980,10 @@ def render_continuous_formula_specific():
         study_data = {
             'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
             'Coefficient': [
-                st.session_state.get('donation_coeff_incoming_cont', -7.303586),
-                st.session_state.get('donation_coeff_law_cont', -2.048199),
-                st.session_state.get('donation_coeff_ug_cont', -2.016326),
-                st.session_state.get('donation_coeff_grad_cont', 0.0)
+                get_coefficient('incoming', 'cont'),
+                get_coefficient('law', 'cont'),
+                get_coefficient('ug', 'cont'),
+                get_coefficient('grad', 'cont')
             ]
         }
         study_df = pd.DataFrame(study_data)
@@ -950,19 +992,23 @@ def render_continuous_formula_specific():
     
     with col2:
         st.markdown("**📈 Linear Income Effect (β_linear):**")
+        st.caption("Effect = β_linear × actual_allowance_amount")
+        
+        # Show linear effect for actual allowance amounts (not level numbers)
+        allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
         linear_data = {
-            'Income Level': ['1', '2', '3', '4', '5'],
+            'Income Level': ['1 (€16)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
             'Effect': [
-                f"{linear_coeff * 1:.6f}",
-                f"{linear_coeff * 2:.6f}",
-                f"{linear_coeff * 3:.6f}",
-                f"{linear_coeff * 4:.6f}",
-                f"{linear_coeff * 5:.6f}"
+                f"{linear_coeff * allowance_mapping[1]:.6f}",
+                f"{linear_coeff * allowance_mapping[2]:.6f}",
+                f"{linear_coeff * allowance_mapping[3]:.6f}",
+                f"{linear_coeff * allowance_mapping[4]:.6f}",
+                f"{linear_coeff * allowance_mapping[5]:.6f}"
             ]
         }
         linear_df = pd.DataFrame(linear_data)
         st.dataframe(linear_df, hide_index=True, use_container_width=True)
         
-        # Show total range effect
-        total_range = linear_coeff * 4  # from level 1 to 5
-        st.metric("Total Range Effect (Level 1→5)", f"{total_range:.6f}")
+        # Show total range effect using actual allowances
+        total_range = linear_coeff * (200 - 16)  # from €16 to €200
+        st.metric("Total Range Effect (€16→€200)", f"{total_range:.6f}")

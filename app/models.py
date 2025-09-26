@@ -348,94 +348,99 @@ def initialize_session_state():
 
 
 def load_donation_coefficients_from_yaml():
-    """Load donation_default coefficients from YAML config into session state variables"""
-    try:
-        config_path = Path(__file__).parent.parent / "config" / "decisions.yaml"
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+    """Load donation_default coefficients from YAML config into session state variables
+    
+    IMPORTANT: YAML is the SINGLE source of truth. No fallback values are used.
+    If coefficients are missing from YAML, an error will be raised.
+    """
+    config_path = Path(__file__).parent.parent / "config" / "decisions.yaml"
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    # Get donation config - MUST exist
+    donation_config = config['donation_default']
+    regression_coeffs = donation_config['regression_coefficients']
+    
+    # Load both categorical and continuous coefficient sets for Compare both mode
+    if 'categorical' in regression_coeffs and 'continuous' in regression_coeffs:
+        # Load categorical coefficients
+        cat_coeffs = regression_coeffs['categorical']
+        load_coefficient_set(cat_coeffs, 'cat')
         
-        donation_config = config.get('donation_default', {})
-        regression_coeffs = donation_config.get('regression_coefficients', {})
+        # Load continuous coefficients  
+        cont_coeffs = regression_coeffs['continuous']
+        load_coefficient_set(cont_coeffs, 'cont')
         
-        # Load both categorical and continuous coefficient sets for Compare both mode
-        if 'categorical' in regression_coeffs and 'continuous' in regression_coeffs:
-            # Load categorical coefficients
-            cat_coeffs = regression_coeffs['categorical']
-            load_coefficient_set(cat_coeffs, 'cat')
-            
-            # Load continuous coefficients  
-            cont_coeffs = regression_coeffs['continuous']
-            load_coefficient_set(cont_coeffs, 'cont')
-            
-            # Determine which to use for main session state variables based on mode
-            income_mode = st.session_state.get('income_spec_mode', 'categorical only')
-            if 'continuous' in income_mode.lower() and 'compare' not in income_mode.lower():
-                coeffs = cont_coeffs
-            else:
-                coeffs = cat_coeffs  # default for categorical only and compare both
+        # Determine which to use for main session state variables based on mode
+        income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+        if 'continuous' in income_mode.lower() and 'compare' not in income_mode.lower():
+            coeffs = cont_coeffs
         else:
-            # Fall back to legacy format
-            coeffs = regression_coeffs if regression_coeffs else donation_config.get('regression', {})
-            load_coefficient_set(coeffs, 'cat')  # Store as categorical
-            load_coefficient_set(coeffs, 'cont')  # Store as continuous (same values)
-        
-        # Load main session state variables (used by individual decision execution)
-        st.session_state.donation_coeff_intercept = coeffs.get('intercept', 1.22985660120368)
-        st.session_state.donation_coeff_hh = coeffs.get('beta_hh', 0.634001208840808)
-        st.session_state.donation_coeff_linear = coeffs.get('beta_income_linear', 0.0256)
-        
-        # Group coefficients
-        beta_group = coeffs.get('beta_group', {})
-        st.session_state.donation_coeff_midsub = beta_group.get('MidSub', 0.856140306694656)
-        st.session_state.donation_coeff_nosub = beta_group.get('NoSub', -0.926633374153906)
-        st.session_state.donation_coeff_fullsub = beta_group.get('FullSub', 0.0)
-        
-        # Income quintile coefficients (for categorical mode)
-        beta_income_q = coeffs.get('beta_income_q', {})
-        st.session_state.donation_coeff_q1 = beta_income_q.get('Q1', -0.520290427509808)
-        st.session_state.donation_coeff_q2 = beta_income_q.get('Q2', 3.754612744416796)
-        st.session_state.donation_coeff_q3 = beta_income_q.get('Q3', 4.001714810873598)
-        st.session_state.donation_coeff_q45 = beta_income_q.get('Q4_Q5', 0.0)
-        
-        # Study programme coefficients
-        beta_study = coeffs.get('beta_study', {})
-        st.session_state.donation_coeff_incoming = beta_study.get('Incoming', -6.920193024391676)
-        st.session_state.donation_coeff_law = beta_study.get('Law5yr', -2.081331674770856)
-        st.session_state.donation_coeff_ug = beta_study.get('UG3yr', -2.139093511519692)
-        st.session_state.donation_coeff_grad = beta_study.get('Grad2yr', 0.0)
-        
-    except Exception as e:
-        # If loading fails, use fallback values (old coefficients)
-        st.warning(f"Could not load coefficients from YAML: {e}. Using fallback values.")
-        # The session state variables will use their .get() fallback values
-
-
-def load_coefficient_set(coeffs, mode_suffix):
-    """Load a coefficient set into session state with mode-specific suffix (cat/cont)"""
-    # Load coefficients with suffix
-    st.session_state[f'donation_coeff_intercept_{mode_suffix}'] = coeffs.get('intercept', 1.22985660120368)
-    st.session_state[f'donation_coeff_hh_{mode_suffix}'] = coeffs.get('beta_hh', 0.634001208840808)
-    st.session_state[f'donation_coeff_linear_{mode_suffix}'] = coeffs.get('beta_income_linear', 0.0256)
+            coeffs = cat_coeffs  # default for categorical only and compare both
+    else:
+        # Fall back to legacy format
+        coeffs = regression_coeffs if regression_coeffs else donation_config.get('regression', {})
+        load_coefficient_set(coeffs, 'cat')  # Store as categorical
+        load_coefficient_set(coeffs, 'cont')  # Store as continuous (same values)
+    
+    # Load main session state variables (used by individual decision execution)
+    # NO FALLBACK VALUES - coefficients MUST exist in YAML
+    st.session_state.donation_coeff_intercept = coeffs['intercept']
+    st.session_state.donation_coeff_hh = coeffs['beta_hh']
+    st.session_state.donation_coeff_linear = coeffs.get('beta_income_linear', 0.0)  # Only linear can default to 0
     
     # Group coefficients
-    beta_group = coeffs.get('beta_group', {})
-    st.session_state[f'donation_coeff_midsub_{mode_suffix}'] = beta_group.get('MidSub', 0.856140306694656)
-    st.session_state[f'donation_coeff_nosub_{mode_suffix}'] = beta_group.get('NoSub', -0.926633374153906)
-    st.session_state[f'donation_coeff_fullsub_{mode_suffix}'] = beta_group.get('FullSub', 0.0)
+    beta_group = coeffs['beta_group']
+    st.session_state.donation_coeff_midsub = beta_group['MidSub']
+    st.session_state.donation_coeff_nosub = beta_group['NoSub']
+    st.session_state.donation_coeff_fullsub = beta_group['FullSub']
     
     # Income quintile coefficients (for categorical mode)
     beta_income_q = coeffs.get('beta_income_q', {})
-    st.session_state[f'donation_coeff_q1_{mode_suffix}'] = beta_income_q.get('Q1', -0.520290427509808)
-    st.session_state[f'donation_coeff_q2_{mode_suffix}'] = beta_income_q.get('Q2', 3.754612744416796)
-    st.session_state[f'donation_coeff_q3_{mode_suffix}'] = beta_income_q.get('Q3', 4.001714810873598)
-    st.session_state[f'donation_coeff_q45_{mode_suffix}'] = beta_income_q.get('Q4_Q5', 0.0)
+    st.session_state.donation_coeff_q1 = beta_income_q.get('Q1', 0.0)
+    st.session_state.donation_coeff_q2 = beta_income_q.get('Q2', 0.0)
+    st.session_state.donation_coeff_q3 = beta_income_q.get('Q3', 0.0)
+    st.session_state.donation_coeff_q4 = beta_income_q.get('Q4', 0.0)
+    st.session_state.donation_coeff_q5 = beta_income_q.get('Q5', beta_income_q.get('Q4_Q5', 0.0))  # Support both Q5 and legacy Q4_Q5
     
     # Study programme coefficients
-    beta_study = coeffs.get('beta_study', {})
-    st.session_state[f'donation_coeff_incoming_{mode_suffix}'] = beta_study.get('Incoming', -6.920193024391676)
-    st.session_state[f'donation_coeff_law_{mode_suffix}'] = beta_study.get('Law5yr', -2.081331674770856)
-    st.session_state[f'donation_coeff_ug_{mode_suffix}'] = beta_study.get('UG3yr', -2.139093511519692)
-    st.session_state[f'donation_coeff_grad_{mode_suffix}'] = beta_study.get('Grad2yr', 0.0)
+    beta_study = coeffs['beta_study']
+    st.session_state.donation_coeff_incoming = beta_study['Incoming']
+    st.session_state.donation_coeff_law = beta_study['Law5yr']
+    st.session_state.donation_coeff_ug = beta_study['UG3yr']
+    st.session_state.donation_coeff_grad = beta_study['Grad2yr']
+
+
+def load_coefficient_set(coeffs, mode_suffix):
+    """Load a coefficient set into session state with mode-specific suffix (cat/cont)
+    
+    IMPORTANT: YAML is the SINGLE source of truth. No fallback values are used.
+    """
+    # Load coefficients with suffix - NO FALLBACK VALUES
+    st.session_state[f'donation_coeff_intercept_{mode_suffix}'] = coeffs['intercept']
+    st.session_state[f'donation_coeff_hh_{mode_suffix}'] = coeffs['beta_hh']
+    st.session_state[f'donation_coeff_linear_{mode_suffix}'] = coeffs.get('beta_income_linear', 0.0)  # Only linear can default to 0
+    
+    # Group coefficients
+    beta_group = coeffs['beta_group']
+    st.session_state[f'donation_coeff_midsub_{mode_suffix}'] = beta_group['MidSub']
+    st.session_state[f'donation_coeff_nosub_{mode_suffix}'] = beta_group['NoSub']
+    st.session_state[f'donation_coeff_fullsub_{mode_suffix}'] = beta_group['FullSub']
+    
+    # Income quintile coefficients (for categorical mode)
+    beta_income_q = coeffs.get('beta_income_q', {})
+    st.session_state[f'donation_coeff_q1_{mode_suffix}'] = beta_income_q.get('Q1', 0.0)
+    st.session_state[f'donation_coeff_q2_{mode_suffix}'] = beta_income_q.get('Q2', 0.0)
+    st.session_state[f'donation_coeff_q3_{mode_suffix}'] = beta_income_q.get('Q3', 0.0)
+    st.session_state[f'donation_coeff_q4_{mode_suffix}'] = beta_income_q.get('Q4', 0.0)
+    st.session_state[f'donation_coeff_q5_{mode_suffix}'] = beta_income_q.get('Q5', beta_income_q.get('Q4_Q5', 0.0))  # Support both Q5 and legacy Q4_Q5
+    
+    # Study programme coefficients
+    beta_study = coeffs['beta_study']
+    st.session_state[f'donation_coeff_incoming_{mode_suffix}'] = beta_study['Incoming']
+    st.session_state[f'donation_coeff_law_{mode_suffix}'] = beta_study['Law5yr']
+    st.session_state[f'donation_coeff_ug_{mode_suffix}'] = beta_study['UG3yr']
+    st.session_state[f'donation_coeff_grad_{mode_suffix}'] = beta_study['Grad2yr']
 
 
 # Helper functions for parameter analysis
