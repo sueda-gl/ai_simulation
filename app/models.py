@@ -414,6 +414,10 @@ def load_donation_coefficients_from_yaml():
     st.session_state.donation_coeff_law = beta_study['Law5yr']
     st.session_state.donation_coeff_ug = beta_study['UG3yr']
     st.session_state.donation_coeff_grad = beta_study['Grad2yr']
+    
+    # Load adjustment parameter
+    adjustment_params = donation_config.get('adjustment', {})
+    st.session_state.donation_adjustment_shift = adjustment_params.get('shift_value', 0.0)
 
 
 def load_coefficient_set(coeffs, mode_suffix):

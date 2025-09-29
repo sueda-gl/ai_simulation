@@ -1,191 +1,134 @@
-# Decision parameters for all 13 decision modules
-# Each decision has its own parameter block with regression coefficients,
-# stochastic parameters, and any decision-specific configuration
-
 donation_default:
-  # Decision 3: Set up default donation rate
-  # Uses anchor formula: 0.75 * observed_prosocial + 0.25 * predicted_prosocial
-  # Predicted prosocial comes from regression with these exact coefficients:
-
-  # Global parameters this decision uses (currently none - purely trait-based)
   uses_global_parameters: []
-
-  # Configurable regression coefficients for both categorical and continuous income modes
-  # Now supports separate coefficient sets for each income specification
   regression_coefficients:
-    # CATEGORICAL INCOME SPECIFICATION
     categorical:
-      intercept: 1.319818
+      intercept: 1.519818
       beta_group:
         MidSub: 0.8773149
         NoSub: -0.913715
-        FullSub: 0.0 # reference category (maps from HighSub in data)
+        FullSub: 0.0
       beta_income_q:
-        # Note: Income level 16 is the reference category (coefficient = 0)
-        # These map totalallowance levels to quintiles:
-        Q1: 0.0 # Level 16 (reference category, omitted in regression)
-        Q2: -0.4214298 # Level 32
-        Q3: -0.7364032 # Level 72
-        Q4: 3.539434 # Level 128
-        Q5: 3.784071 # Level 200
+        Q1: 0.0
+        Q2: -0.4214298
+        Q3: -0.7364032
+        Q4: 3.539434
+        Q5: 3.784071
       beta_study:
         Incoming: -6.882558
         Law5yr: -2.003814
         UG3yr: -2.11522
-        Grad2yr: 0.0 # reference category (CLEF/CLEAM/BIEF)
+        Grad2yr: 0.0
       beta_hh: 0.6042141
-
-    # CONTINUOUS INCOME SPECIFICATION  
     continuous:
-      intercept: -0.339596
+      intercept: -0.139596
       beta_group:
         MidSub: 0.7952602
         NoSub: -0.8990889
-        FullSub: 0.0 # reference category (maps from HighSub in data)
-      beta_income_linear: 0.0255512 # continuous income coefficient
+        FullSub: 0.0
+      beta_income_linear: 0.0255512
       beta_study:
         Incoming: -7.303586
         Law5yr: -2.048199
         UG3yr: -2.016326
-        Grad2yr: 0.0 # reference category (CLEF/CLEAM/BIEF)
+        Grad2yr: 0.0
       beta_hh: 0.7840063
-
-    # Income specification mode control (runtime override by UI)
-    income_mode: categorical # categorical, continuous, or both (for Compare mode)
-
-  # Legacy regression block (for backward compatibility) - uses categorical coefficients
+    income_mode: categorical
   regression:
-    intercept: 1.469818
+    intercept: 1.519818
     beta_group:
       MidSub: 0.8773149
       NoSub: -0.913715
       FullSub: 0.0
     beta_income_q:
-      # Note: Income level 16 is the reference category (coefficient = 0)
-      Q1: 0.0 # Level 16 (reference)
-      Q2: -0.4214298 # Level 32
-      Q3: -0.7364032 # Level 72
-      Q4: 3.539434 # Level 128
-      Q5: 3.784071 # Level 200
-      Q4_Q5: 3.784071 # Legacy support: combined Q4/Q5 uses Q5 value
-    beta_income_linear: 0.0255512 # continuous coefficient for legacy compatibility
+      Q1: 0.0
+      Q2: -0.4214298
+      Q3: -0.7364032
+      Q4: 3.539434
+      Q5: 3.784071
+      Q4_Q5: 3.784071
+    beta_income_linear: 0.0255512
     beta_study:
       Incoming: -6.882558
       Law5yr: -2.003814
       UG3yr: -2.11522
       Grad2yr: 0.0
     beta_hh: 0.6042141
-    income_mode: categorical # can be overridden at runtime
-
-  # Anchor mixing weights
-  anchor_weights:
-    observed: 0.75 # weight on observed prosocial score
-    predicted: 0.25 # weight on predicted prosocial score
-
-  # Stochastic parameters
-  stochastic:
-    sigma_strategy: overall_sd_twt_sospeso # use empirical SD from 280-person data
-    sigma_value: 0 # standard deviation of TWT+Sospeso from original data (0-112 scale)
-    # Alternative: quintile_specific_sd for income-dependent variance
-    in_copula: false # Add Normal(anchor, σ) draw even in Copula mode (default: false)
-    raw_output: false # Return raw Normal(anchor, σ) draw as donation_default_raw, can be negative (default: false)
-
-  # Truncation and rescaling rules
-  truncation:
-    lower_bound: 0 # floor negative values at 0
-    percentile_max: 0.99 # use 99th percentile as personal maximum
-    final_range:
-      - 0
-      - 1
-      # final output range after rescaling
-
-    # Income specification mode: 'categorical' (default) or 'continuous'.
     income_mode: categorical
-
-    # Continuous-income coefficient (used only when income_mode == 'continuous')
-    beta_income_linear: 0.0256 # from linear model specification
-
-# Placeholder blocks for remaining 12 decisions
+  anchor_weights:
+    observed: 0.75
+    predicted: 0.25
+  stochastic:
+    sigma_strategy: overall_sd_twt_sospeso
+    sigma_value: 0
+    in_copula: false
+    raw_output: false
+  truncation:
+    lower_bound: 0
+    percentile_max: 0.99
+    final_range:
+    - 0
+    - 1
+    income_mode: categorical
+    beta_income_linear: 0.0256
+  adjustment:
+    shift_value: -4.0
 disclose_income:
-  # Decision 1: Disclose income for Fixed status
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: disclose_income
   default_value: NA
-
 disclose_documents:
-  # Decision 2: Disclose documents for Discount status
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: disclose_documents
   default_value: NA
-
 rejected_transaction_defaults:
-  # Decision 4: Select prioritized defaults for handling rejected transactions
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: rejected_transaction_defaults
   default_value: NA
-
 vendor_choice_weights:
-  # Decision 5: Select default weights for vendor/product choice
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: vendor_choice_weights
   default_value: NA
-
 consumption_quantity:
-  # Decision 6: Decide consumption quantity per calendar period
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: consumption_quantity
   default_value: NA
-
 consumption_frequency:
-  # Decision 7: Decide consumption frequency per day
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: consumption_frequency
   default_value: NA
-
 vendor_selection:
-  # Decision 8: Select vendor/product from sorted list
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: vendor_selection
   default_value: NA
-
 purchase_vs_bid:
-  # Decision 9: Decide between Purchase Now and Bid
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: purchase_vs_bid
   default_value: NA
-
 bid_value:
-  # Decision 10: Select bid value if Bid chosen
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: bid_value
   default_value: NA
-
 rejected_transaction_option:
-  # Decision 11: Select option after rejected transaction
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: rejected_transaction_option
   default_value: NA
-
 rejected_bid_value:
-  # Decision 12: Select bid value after rejected transaction
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: rejected_bid_value
   default_value: NA
-
 final_donation_rate:
-  # Decision 13: Select donation rate after transaction accepted
-  uses_global_parameters: [] # To be determined when implemented
+  uses_global_parameters: []
   placeholder: true
   output_field: final_donation_rate
   default_value: NA

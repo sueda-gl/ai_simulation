@@ -246,7 +246,12 @@ def render_donation_default_tab():
     render_formula_display()
     
     # NEW: Regression Coefficients Section
-
+    st.markdown('<h4 class="subsection-header">🔢 Intercept Override</h4>', unsafe_allow_html=True)
+    render_intercept_override_section()
+    
+    # NEW: Distribution Adjustment Section
+    st.markdown('<h4 class="subsection-header">📊 Distribution Adjustment</h4>', unsafe_allow_html=True)
+    render_adjustment_override_section()
     
     # Coefficient refresh button
     st.markdown("---")
@@ -268,7 +273,7 @@ def render_donation_default_tab():
         try:
             import yaml
             from pathlib import Path
-            config_path = Path(__file__).parent.parent.parent / "config" / "decisions.yaml"
+            config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
             with open(config_path, 'r') as f:
                 config = yaml.safe_load(f)
             
@@ -892,3 +897,340 @@ def render_continuous_formula_specific():
         # Show total range effect using actual allowances
         total_range = linear_coeff * (200 - 16)  # from €16 to €200
         st.metric("Total Range Effect (€16→€200)", f"{total_range:.6f}")
+
+
+def render_intercept_override_section():
+    """Render the intercept override section with ability to modify YAML values"""
+    
+    # Initialize override values if not present
+    if 'intercept_override_values' not in st.session_state:
+        st.session_state.intercept_override_values = {}
+    
+    # Get current income mode to determine which intercepts to show
+    income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    
+    # Show current YAML values for reference
+    try:
+        current_yaml_values = get_current_yaml_intercepts()
+        
+        st.markdown("**📋 Current YAML Values:**")
+        yaml_col1, yaml_col2 = st.columns(2)
+        
+        with yaml_col1:
+            st.metric("Categorical Intercept", f"{current_yaml_values['categorical']:.6f}")
+        
+        with yaml_col2:
+            st.metric("Continuous Intercept", f"{current_yaml_values['continuous']:.6f}")
+        
+        st.markdown("---")
+        st.markdown("**✏️ Override Values:**")
+        
+        # Override input fields based on income mode
+        if income_mode == "Compare both":
+            # Show both categorical and continuous
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                new_cat_intercept = st.number_input(
+                    "New Categorical Intercept",
+                    value=st.session_state.intercept_override_values.get('categorical', current_yaml_values['categorical']),
+                    step=0.001,
+                    format="%.6f",
+                    help="Override value for categorical income specification",
+                    key="override_categorical_intercept",
+                    on_change=lambda: auto_save_intercept('categorical', st.session_state.override_categorical_intercept)
+                )
+                st.session_state.intercept_override_values['categorical'] = new_cat_intercept
+            
+            with col2:
+                new_cont_intercept = st.number_input(
+                    "New Continuous Intercept", 
+                    value=st.session_state.intercept_override_values.get('continuous', current_yaml_values['continuous']),
+                    step=0.001,
+                    format="%.6f",
+                    help="Override value for continuous income specification",
+                    key="override_continuous_intercept",
+                    on_change=lambda: auto_save_intercept('continuous', st.session_state.override_continuous_intercept)
+                )
+                st.session_state.intercept_override_values['continuous'] = new_cont_intercept
+                
+        elif "continuous" in income_mode.lower():
+            # Show only continuous
+            new_cont_intercept = st.number_input(
+                "New Continuous Intercept",
+                value=st.session_state.intercept_override_values.get('continuous', current_yaml_values['continuous']),
+                step=0.001,
+                format="%.6f", 
+                help="Override value for continuous income specification",
+                key="override_continuous_intercept",
+                on_change=lambda: auto_save_intercept('continuous', st.session_state.override_continuous_intercept)
+            )
+            st.session_state.intercept_override_values['continuous'] = new_cont_intercept
+            
+        else:
+            # Show only categorical (default)
+            new_cat_intercept = st.number_input(
+                "New Categorical Intercept",
+                value=st.session_state.intercept_override_values.get('categorical', current_yaml_values['categorical']),
+                step=0.001,
+                format="%.6f",
+                help="Override value for categorical income specification", 
+                key="override_categorical_intercept",
+                on_change=lambda: auto_save_intercept('categorical', st.session_state.override_categorical_intercept)
+            )
+            st.session_state.intercept_override_values['categorical'] = new_cat_intercept
+        
+        # Action buttons
+        st.markdown("---")
+        if st.button("🔄 Reset to Default Values", help="Reset intercept values to research defaults and update YAML"):
+            # Reset to research default values
+            default_values = {
+                'categorical': 1.519818,  # Research default for categorical
+                'continuous': -0.139596   # Research default for continuous
+            }
+            success = update_yaml_intercepts(default_values)
+            if success:
+                st.session_state.intercept_override_values = {}
+                load_donation_coefficients_from_yaml()
+                st.toast("✅ Intercepts reset to research defaults", icon="🔄")
+                st.rerun()
+            else:
+                st.toast("❌ Failed to reset intercepts", icon="⚠️")
+        
+        # Show impact preview
+        if st.session_state.intercept_override_values:
+            st.markdown("**📊 Impact Preview:**")
+            
+            impact_data = []
+            for spec_type, new_value in st.session_state.intercept_override_values.items():
+                current_value = current_yaml_values[spec_type]
+                change = new_value - current_value
+                impact_data.append({
+                    'Specification': spec_type.title(),
+                    'Current': f"{current_value:.6f}",
+                    'New': f"{new_value:.6f}", 
+                    'Change': f"{change:+.6f}",
+                    'Impact': "Higher baseline" if change > 0 else "Lower baseline" if change < 0 else "No change"
+                })
+            
+            if impact_data:
+                impact_df = pd.DataFrame(impact_data)
+                st.dataframe(impact_df, hide_index=True, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error loading YAML values: {e}")
+
+
+def get_current_yaml_intercepts():
+    """Get current intercept values from YAML file"""
+    import yaml
+    from pathlib import Path
+    
+    config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    regression_coeffs = config['donation_default']['regression_coefficients']
+    
+    return {
+        'categorical': regression_coeffs['categorical']['intercept'],
+        'continuous': regression_coeffs['continuous']['intercept']
+    }
+
+
+def update_yaml_intercepts(override_values):
+    """Update YAML file with new intercept values"""
+    import yaml
+    from pathlib import Path
+    
+    try:
+        config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+        
+        # Load current YAML
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Update intercept values
+        regression_coeffs = config['donation_default']['regression_coefficients']
+        
+        if 'categorical' in override_values:
+            regression_coeffs['categorical']['intercept'] = float(override_values['categorical'])
+            # Also update legacy regression block for backward compatibility
+            config['donation_default']['regression']['intercept'] = float(override_values['categorical'])
+        
+        if 'continuous' in override_values:
+            regression_coeffs['continuous']['intercept'] = float(override_values['continuous'])
+        
+        # Write back to YAML
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"Error updating YAML: {e}")
+        return False
+
+
+def auto_save_intercept(intercept_type, new_value):
+    """Auto-save intercept changes to YAML file"""
+    try:
+        # Update the override values
+        if 'intercept_override_values' not in st.session_state:
+            st.session_state.intercept_override_values = {}
+        
+        st.session_state.intercept_override_values[intercept_type] = new_value
+        
+        # Save to YAML immediately
+        success = update_yaml_intercepts({intercept_type: new_value})
+        
+        if success:
+            # Reload coefficients to reflect changes
+            load_donation_coefficients_from_yaml()
+            # Show a brief success message
+            st.toast(f"✅ {intercept_type.title()} intercept auto-saved: {new_value:.6f}", icon="💾")
+        else:
+            st.toast(f"❌ Failed to save {intercept_type} intercept", icon="⚠️")
+            
+    except Exception as e:
+        st.toast(f"❌ Auto-save error: {str(e)}", icon="⚠️")
+
+
+def render_adjustment_override_section():
+    """Render the distribution adjustment override section"""
+    
+    # Initialize adjustment values if not present
+    if 'adjustment_override_values' not in st.session_state:
+        st.session_state.adjustment_override_values = {}
+    
+    # Show current YAML values for reference
+    try:
+        current_yaml_values = get_current_yaml_adjustment()
+        
+        st.markdown("**📋 Current YAML Values:**")
+        st.metric("Adjustment Shift", f"{current_yaml_values['shift_value']:.3f}")
+        
+        st.markdown("---")
+        st.markdown("**✏️ Override Values:**")
+        
+        # Adjustment input field
+        new_adjustment = st.number_input(
+            "Distribution Shift Value",
+            value=st.session_state.adjustment_override_values.get('shift_value', current_yaml_values['shift_value']),
+            step=0.1,
+            format="%.3f",
+            help="Shift the distribution up (positive) or down (negative) on 0-100 scale before stochastic component",
+            key="override_adjustment_shift",
+            on_change=lambda: auto_save_adjustment('shift_value', st.session_state.override_adjustment_shift)
+        )
+        st.session_state.adjustment_override_values['shift_value'] = new_adjustment
+        
+        st.caption("💡 **How it works**: Positive values shift the distribution higher (more donation), negative values shift it lower (less donation)")
+        
+        # Action button
+        st.markdown("---")
+        if st.button("🔄 Reset Adjustment to Default (0.0)", help="Reset adjustment value to default 0.0 and update YAML"):
+            # Reset to default value of 0.0
+            success = update_yaml_adjustment({'shift_value': 0.0})
+            if success:
+                st.session_state.adjustment_override_values = {}
+                load_donation_coefficients_from_yaml()
+                st.toast("✅ Adjustment reset to default (0.0)", icon="🔄")
+                st.rerun()
+            else:
+                st.toast("❌ Failed to reset adjustment", icon="⚠️")
+        
+        # Show impact preview
+        if st.session_state.adjustment_override_values:
+            current_value = current_yaml_values['shift_value']
+            new_value = new_adjustment
+            change = new_value - current_value
+            
+            if abs(change) > 0.001:  # Only show if there's a meaningful change
+                st.markdown("**📊 Impact Preview:**")
+                
+                impact_data = [{
+                    'Parameter': 'Distribution Shift',
+                    'Current': f"{current_value:.3f}",
+                    'New': f"{new_value:.3f}", 
+                    'Change': f"{change:+.3f}",
+                    'Impact': "Higher donations" if change > 0 else "Lower donations" if change < 0 else "No change"
+                }]
+                
+                impact_df = pd.DataFrame(impact_data)
+                st.dataframe(impact_df, hide_index=True, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Error loading adjustment values: {e}")
+
+
+def get_current_yaml_adjustment():
+    """Get current adjustment values from YAML file"""
+    import yaml
+    from pathlib import Path
+    
+    config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    adjustment_params = config['donation_default'].get('adjustment', {})
+    
+    return {
+        'shift_value': adjustment_params.get('shift_value', 0.0)
+    }
+
+
+def update_yaml_adjustment(override_values):
+    """Update YAML file with new adjustment values"""
+    import yaml
+    from pathlib import Path
+    
+    try:
+        config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+        
+        # Load current YAML
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        
+        # Update adjustment values
+        if 'adjustment' not in config['donation_default']:
+            config['donation_default']['adjustment'] = {}
+        
+        if 'shift_value' in override_values:
+            config['donation_default']['adjustment']['shift_value'] = float(override_values['shift_value'])
+        
+        # Write back to YAML
+        with open(config_path, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"Error updating YAML: {e}")
+        return False
+
+
+def auto_save_adjustment(adjustment_type, new_value):
+    """Auto-save adjustment changes to YAML file"""
+    try:
+        # Update the override values
+        if 'adjustment_override_values' not in st.session_state:
+            st.session_state.adjustment_override_values = {}
+        
+        st.session_state.adjustment_override_values[adjustment_type] = new_value
+        
+        # Save to YAML immediately
+        success = update_yaml_adjustment({adjustment_type: new_value})
+        
+        if success:
+            # Reload coefficients to reflect changes
+            load_donation_coefficients_from_yaml()
+            # Show a brief success message
+            st.toast(f"✅ {adjustment_type.replace('_', ' ').title()} auto-saved: {new_value:.3f}", icon="📊")
+        else:
+            st.toast(f"❌ Failed to save {adjustment_type}", icon="⚠️")
+            
+    except Exception as e:
+        st.toast(f"❌ Auto-save error: {str(e)}", icon="⚠️")

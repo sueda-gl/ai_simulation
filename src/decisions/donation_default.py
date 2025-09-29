@@ -129,6 +129,11 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     weights = params['anchor_weights']
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
     
+    # Step 3b: Apply adjustment parameter to shift the distribution
+    adjustment_params = params.get('adjustment', {})
+    shift_value = adjustment_params.get('shift_value', 0.0)
+    s100_anchor_adjusted = s100_anchor + shift_value
+    
     # Note: donation_default currently doesn't use any global parameters
     # The anchor is computed purely from research-based regression and agent traits
     
@@ -149,8 +154,8 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         # Convert to 0-100 scale
         sigma_0_100_scaled = sigma_0_100 * (100.0 / 112.0)
         
-        # Step 4a: Draw from Normal(anchor, σ)
-        draw_0_100 = rng.normal(s100_anchor, sigma_0_100_scaled)
+        # Step 4a: Draw from Normal(adjusted_anchor, σ)
+        draw_0_100 = rng.normal(s100_anchor_adjusted, sigma_0_100_scaled)
         
         if raw_flag:
             out = {"donation_default_raw": draw_0_100 / 100.0}
@@ -161,9 +166,9 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         out["donation_default"] = np.clip(donation_rate, 0.0, 1.0)
         return out
     else:
-        # Use anchor directly (no additional stochastic component)
+        # Use adjusted anchor directly (no additional stochastic component)
         # The copula sampling already provides natural variability
-        draw_0_100 = s100_anchor
+        draw_0_100 = s100_anchor_adjusted
         
         # Step 6: Rescale to [0,1] range using simple scaling
         donation_rate = draw_0_100 / 100.0

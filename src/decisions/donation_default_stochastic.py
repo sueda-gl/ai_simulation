@@ -121,6 +121,11 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     weights = params['anchor_weights']
     s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
     
+    # Step 3b: Apply adjustment parameter to shift the distribution
+    adjustment_params = params.get('adjustment', {})
+    shift_value = adjustment_params.get('shift_value', 0.0)
+    s100_anchor_adjusted = s100_anchor + shift_value
+    
     # Step 4: Add stochastic component (if enabled)
     # Check if stochastic component should be applied
     sd_params = params['stochastic']
@@ -136,11 +141,11 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
         else:
             sigma_0_100 = 8.84  # fallback based on calculation above
         
-        # Draw from Normal(anchor, sigma) (0-100 scale)
-        draw_raw = rng.normal(s100_anchor, sigma_0_100)
+        # Draw from Normal(adjusted_anchor, sigma) (0-100 scale)
+        draw_raw = rng.normal(s100_anchor_adjusted, sigma_0_100)
     else:
-        # No stochastic component - use anchor directly
-        draw_raw = s100_anchor
+        # No stochastic component - use adjusted anchor directly
+        draw_raw = s100_anchor_adjusted
 
     # Store raw draw (can be negative)
     raw_flag = params.get('stochastic', {}).get('raw_output', False)
