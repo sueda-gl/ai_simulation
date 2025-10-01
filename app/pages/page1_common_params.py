@@ -1103,6 +1103,7 @@ BUDGET_SHOP,5.25,50,0""")
         
         # Income Categories Section
         st.markdown('<h3 class="section-header">📊 Income Categories</h3>', unsafe_allow_html=True)
+        st.caption("Categories determine customer status (discount/fixed) and consumption limits")
         
         col_cat1, col_cat2 = st.columns(2)
         with col_cat1:
@@ -1111,7 +1112,7 @@ BUDGET_SHOP,5.25,50,0""")
                 min_value=1,
                 max_value=10,
                 value=st.session_state.sim_params.num_discount_categories,
-                help="Number of customer discount income categories",
+                help="Number of customer discount income categories (lowest income levels)",
                 key="num_discount_categories_input",
                 on_change=lambda: setattr(st.session_state.sim_params, 'num_discount_categories', st.session_state.num_discount_categories_input)
             )
@@ -1139,7 +1140,7 @@ BUDGET_SHOP,5.25,50,0""")
                 min_value=1,
                 max_value=50,
                 value=st.session_state.sim_params.num_fixed_categories,
-                help=f"Number of customer fixed income categories (Default: Price Grid - 1 = {default_nfic})",
+                help=f"Number of customer fixed income categories (higher income levels). Used for consumption limits. Default: Price Grid - 1 = {default_nfic}",
                 key="num_fixed_categories_input",
                 on_change=update_nfic
             )
@@ -1150,6 +1151,7 @@ BUDGET_SHOP,5.25,50,0""")
     with col_limits:
         # Consumption Limits Configuration
         st.markdown('<h3 class="section-header">🛒 Consumption Limits</h3>', unsafe_allow_html=True)
+        st.caption("📊 Limits by **Fixed Income Categories** (Cat 1 = lowest income, applies to discount customers)")
 
         # Initialize the widget key if it doesn't exist
         if "page1_apply_limits" not in st.session_state:
@@ -1168,104 +1170,53 @@ BUDGET_SHOP,5.25,50,0""")
         st.session_state.sim_params.apply_consumption_limits = (st.session_state.page1_apply_limits == "Yes")
 
         if st.session_state.sim_params.apply_consumption_limits:
-            st.caption("Set consumption limits per product for each income category per period")
+            # Calculate term duration for display
+            term_periods = st.session_state.sim_params.periods
+            term_hours = st.session_state.sim_params.periods * st.session_state.sim_params.duration_hours
+            
+            st.caption(f"Set consumption limits per product for each **fixed income category** **per term**")
+            st.info(f"📅 **Term Definition**: Number of Periods × Length of Period = {term_periods} period(s) × {int(st.session_state.sim_params.duration_hours)}h = {term_hours}h total")
+            st.caption("💡 **Income Order**: Category 1 = Lowest Income (discount customers) → Higher Categories = Higher Income")
 
-            # Configuration source
-            # Initialize the widget key if it doesn't exist
-            if "page1_limits_source" not in st.session_state:
-                # Use the existing consumption_limits_source value
-                st.session_state.page1_limits_source = "Manual Entry" if st.session_state.sim_params.consumption_limits_source == "manual" else "Upload CSV"
+            # Create a simple interface for setting consumption limits
+            total_categories = st.session_state.sim_params.num_fixed_categories
+            
+            st.markdown("**Fixed Income Categories** (ordered from lowest to highest income)")
 
-            limits_source = st.radio(
-                "Limits Configuration Source",
-                ["Manual Entry", "Upload CSV"],
-                horizontal=True,
-                key="page1_limits_source"
-            )
+            # Initialize consumption limits in session state if not exists
+            if "consumption_limits_temp" not in st.session_state:
+                st.session_state.consumption_limits_temp = st.session_state.sim_params.consumption_limits.copy()
 
-            # Sync the widget's state to the sim_params
-            st.session_state.sim_params.consumption_limits_source = "manual" if st.session_state.page1_limits_source == "Manual Entry" else "upload"
+            consumption_limits = {}
+            cols = st.columns(min(5, total_categories))
+            for i in range(total_categories):
+                col_idx = i % len(cols)
+                with cols[col_idx]:
+                    key = f"consumption_limit_{i}"
+                    cat_key = f"cat_{i+1}"
+                    
+                    # Label for first category (discount customers)
+                    if i == 0:
+                        label = f"Cat 1 (Lowest/Discount)"
+                    else:
+                        label = f"Cat {i+1}"
 
-            if st.session_state.page1_limits_source == "Manual Entry":
+                    # Initialize widget key if it doesn't exist
+                    if key not in st.session_state:
+                        st.session_state[key] = st.session_state.sim_params.consumption_limits.get(cat_key, 10)
 
-                # Create a simple interface for setting consumption limits
-                total_categories = st.session_state.sim_params.num_fixed_categories
+                    limit = st.number_input(
+                        label,
+                        min_value=0,
+                        max_value=100,
+                        value=st.session_state[key],
+                        key=key,
+                        help=f"Max consumption for fixed income category {i+1} over entire term ({term_hours}h total). Cat 1 = lowest income (discount customers).",
+                        on_change=lambda k=key, c=cat_key: st.session_state.consumption_limits_temp.update({c: st.session_state[k]})
+                    )
+                    consumption_limits[cat_key] = st.session_state[key]
 
-                # Initialize consumption limits in session state if not exists
-                if "consumption_limits_temp" not in st.session_state:
-                    st.session_state.consumption_limits_temp = st.session_state.sim_params.consumption_limits.copy()
-
-                consumption_limits = {}
-                cols = st.columns(min(5, total_categories))
-                for i in range(total_categories):
-                    col_idx = i % len(cols)
-                    with cols[col_idx]:
-                        key = f"consumption_limit_{i}"
-                        cat_key = f"cat_{i+1}"
-
-                        # Initialize widget key if it doesn't exist
-                        if key not in st.session_state:
-                            st.session_state[key] = st.session_state.sim_params.consumption_limits.get(cat_key, 10)
-
-                        limit = st.number_input(
-                            f"Category {i+1} Limit",
-                            min_value=0,
-                            max_value=100,
-                            value=st.session_state[key],
-                            key=key,
-                            on_change=lambda k=key, c=cat_key: st.session_state.consumption_limits_temp.update({c: st.session_state[k]})
-                        )
-                        consumption_limits[cat_key] = st.session_state[key]
-
-                st.session_state.sim_params.consumption_limits = consumption_limits
-
-            else:
-
-                st.info("Upload a CSV file with consumption limits. Required columns: `category_id`, `limit`")
-
-                # Show expected format
-                with st.expander("📋 Expected CSV Format", expanded=False):
-                    st.code("""category_id,limit
-1,10
-2,12
-3,9
-4,15
-5,8""")
-
-                limits_file = st.file_uploader(
-                    "Upload Consumption Limits CSV",
-                    type=['csv'],
-                    help="CSV file with consumption limits per category"
-                )
-
-                if limits_file is not None:
-                    try:
-                        limits_df = pd.read_csv(limits_file)
-
-                        # Validate required columns
-                        required_columns = ['category_id', 'limit']
-                        missing_columns = [col for col in required_columns if col not in limits_df.columns]
-
-                        if missing_columns:
-                            st.error(f"❌ Missing required columns: {', '.join(missing_columns)}")
-                        else:
-                            # Convert to dictionary format
-                            consumption_limits = {}
-                            for _, row in limits_df.iterrows():
-                                consumption_limits[f"cat_{int(row['category_id'])}"] = float(row['limit'])
-
-                            st.session_state.sim_params.consumption_limits = consumption_limits
-
-                            # Show summary
-                            st.success(f"✅ Loaded limits for {len(limits_df)} categories")
-
-                            # Show preview
-                            with st.expander("👀 Preview Loaded Limits", expanded=False):
-                                st.dataframe(limits_df, use_container_width=True)
-
-                    except Exception as e:
-                        st.error(f"❌ Error loading consumption limits: {e}")
-                        st.caption("Please check your CSV format and try again.")
+            st.session_state.sim_params.consumption_limits = consumption_limits
 
         else:
             st.info("ℹ️ Consumption limits are disabled. Agents will have no consumption restrictions.")

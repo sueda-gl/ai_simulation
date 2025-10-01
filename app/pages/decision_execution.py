@@ -8,6 +8,88 @@ from datetime import datetime
 from app.simulation import run_simulation_from_sidebar
 from app.models import ALL_DECISIONS
 
+
+def render_simulation_buttons(decision_name, selected_decisions):
+    """
+    Render both individual and complete simulation buttons for a decision tab.
+    
+    This provides a consistent interface across all decision tabs, allowing users to:
+    1. Run only the current decision (for testing/validation)
+    2. Run the complete simulation with all 13 decisions
+    
+    Args:
+        decision_name: Name of the current decision (e.g., "donation_default")
+        selected_decisions: List of all selected decisions from session state
+    """
+    st.markdown("---")
+    st.markdown('<h3 class="section-header">🚀 Simulation Options</h3>', unsafe_allow_html=True)
+    
+    # Calculate unselected decisions for informational purposes
+    unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
+    
+    # Display context in two columns
+    col_info1, col_info2 = st.columns(2)
+    with col_info1:
+        st.info(f"**🔬 Individual Run**\n\nTest only {decision_name.replace('_', ' ').title()} with current parameters")
+        st.caption("Quick validation of this decision's configuration")
+    with col_info2:
+        st.info(f"**🎯 Complete Simulation**\n\nRun all {len(ALL_DECISIONS)} decisions end-to-end")
+        if len(unselected_decisions) > 0:
+            st.caption(f"{len(selected_decisions)} custom + {len(unselected_decisions)} defaults")
+        else:
+            st.caption("All decisions use custom parameters")
+    
+    # Show detailed breakdown in expander
+    with st.expander("📊 View Complete Simulation Configuration", expanded=False):
+        st.markdown("**What will run in Complete Simulation:**")
+        
+        if len(selected_decisions) > 0:
+            st.markdown(f"**✅ Custom Parameters ({len(selected_decisions)} decisions):**")
+            for i, dec in enumerate(selected_decisions, 1):
+                icon = "🎯" if dec == decision_name else "✓"
+                label = " **(current tab)**" if dec == decision_name else ""
+                st.caption(f"{i}. {icon} {dec.replace('_', ' ').title()}{label}")
+        
+        if len(unselected_decisions) > 0:
+            st.markdown(f"\n**🔧 Default Values ({len(unselected_decisions)} decisions):**")
+            for i, dec in enumerate(unselected_decisions, 1):
+                st.caption(f"{i}. {dec.replace('_', ' ').title()}")
+    
+    # Render action buttons in two columns
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button(
+            f"🔬 Run {decision_name.replace('_', ' ').title()} Only", 
+            type="secondary", 
+            use_container_width=True,
+            key=f"run_{decision_name}_only_btn",
+            help=f"Execute only {decision_name.replace('_', ' ')} to test and validate your parameters"
+        ):
+            run_individual_decision(decision_name)
+    
+    with col2:
+        if st.button(
+            "🎯 Run Complete Simulation", 
+            type="primary",
+            use_container_width=True,
+            key=f"run_complete_from_{decision_name}_btn",
+            help=f"Run all {len(ALL_DECISIONS)} decisions with current configuration"
+        ):
+            # Show confirmation info before running
+            with st.spinner("🔄 Preparing complete simulation..."):
+                st.info(f"""
+                **🚀 Starting complete end-to-end simulation**
+                
+                - Running all {len(ALL_DECISIONS)} decisions in sequence
+                - Current decision ({decision_name.replace('_', ' ').title()}) will use your configured parameters above
+                - {len(selected_decisions)} decisions total with custom parameters
+                - {len(unselected_decisions)} decisions using default values
+                """)
+                
+                # Execute the combined simulation
+                run_combined_simulation(selected_decisions)
+
 # Default values for unselected decisions
 DEFAULT_DECISION_VALUES = {
     "donation_default": 0.10,  # 10%
@@ -91,6 +173,11 @@ def get_actual_default_value(decision_name, sim_params=None):
     """
     Get the actual default value for a decision, handling random generation where needed.
     This function returns values that can be used directly by the simulation.
+    
+    Priority order:
+    1. Pre-configured default from Page 2 Overview tab ({decision_name}_default_*)
+    2. Post-simulation adjustment from Results page ({decision_name}_*)
+    3. Hard-coded default from DEFAULT_DECISION_VALUES
     """
     import random
     import streamlit as st
@@ -99,9 +186,19 @@ def get_actual_default_value(decision_name, sim_params=None):
     
     # NEW: Handle parametric random decisions with configurable probabilities
     if isinstance(base_value, dict) and base_value.get("type") == "random_probability":
-        # Get probability from session state or use default
-        prob_key = f"{decision_name}_probability_y"
-        probability_y = st.session_state.get(prob_key, base_value.get("probability_y", 0.5))
+        # Priority 1: Check for pre-configured default from Overview tab
+        pre_config_key = f"{decision_name}_default_probability_y"
+        # Priority 2: Check for post-simulation adjustment from Results page
+        post_sim_key = f"{decision_name}_probability_y"
+        # Priority 3: Use hard-coded default
+        
+        probability_y = st.session_state.get(
+            pre_config_key, 
+            st.session_state.get(
+                post_sim_key, 
+                base_value.get("probability_y", 0.5)
+            )
+        )
         
         options = base_value.get("options", ["Y", "N"])
         
@@ -113,22 +210,41 @@ def get_actual_default_value(decision_name, sim_params=None):
     
     # Handle radio selection decisions (rejected transaction options)
     elif isinstance(base_value, dict) and base_value.get("type") == "radio_selection":
-        # Get selection from session state or use default
-        if decision_name == "rejected_transaction_defaults":
-            selection_key = "rejected_transaction_defaults_option"
-        elif decision_name == "rejected_transaction_option":
-            selection_key = "rejected_transaction_option_selection"
-        else:
-            selection_key = f"{decision_name}_selection"
+        # Priority 1: Check for pre-configured default from Overview tab
+        pre_config_key = f"{decision_name}_default_selection"
         
-        selected_value = st.session_state.get(selection_key, base_value.get("default_option", "forgo_transaction"))
+        # Priority 2: Check for post-simulation adjustments (legacy keys)
+        if decision_name == "rejected_transaction_defaults":
+            post_sim_key = "rejected_transaction_defaults_option"
+        elif decision_name == "rejected_transaction_option":
+            post_sim_key = "rejected_transaction_option_selection"
+        else:
+            post_sim_key = f"{decision_name}_selection"
+        
+        # Priority 3: Use hard-coded default
+        selected_value = st.session_state.get(
+            pre_config_key,
+            st.session_state.get(
+                post_sim_key,
+                base_value.get("default_option", "forgo_transaction")
+            )
+        )
         return selected_value
     
     # Handle checkbox selection decisions (vendor choice weights)
     elif isinstance(base_value, dict) and base_value.get("type") == "checkbox_selection":
-        # Get selection from session state or use default
-        selection_key = "vendor_choice_weights_selection"
-        selected_params = st.session_state.get(selection_key, base_value.get("default_selection", []))
+        # Priority 1: Check for pre-configured default from Overview tab
+        pre_config_key = f"{decision_name}_default_params"
+        # Priority 2: Check for post-simulation adjustment
+        post_sim_key = "vendor_choice_weights_selection"
+        
+        selected_params = st.session_state.get(
+            pre_config_key,
+            st.session_state.get(
+                post_sim_key,
+                base_value.get("default_selection", [])
+            )
+        )
         
         # Calculate equal weights for selected parameters
         if len(selected_params) > 0:
@@ -151,6 +267,22 @@ def get_actual_default_value(decision_name, sim_params=None):
                 return {param: weight_per_param for param in params}
             else:
                 return {"price": 0.25, "quality": 0.25, "proximity": 0.25, "sustainability": 0.25}
+    
+    # Handle numeric defaults (donation_default, final_donation_rate, etc.)
+    elif isinstance(base_value, (int, float)):
+        # Priority 1: Check for pre-configured default from Overview tab
+        pre_config_key = f"{decision_name}_default_value"
+        # Priority 2: Check for post-simulation adjustment (specific keys)
+        post_sim_key = f"{decision_name}_config"
+        
+        # Priority 3: Use hard-coded default
+        return st.session_state.get(
+            pre_config_key,
+            st.session_state.get(
+                post_sim_key,
+                base_value
+            )
+        )
     
     # Handle random within consumption limit
     elif base_value == "RANDOM_WITHIN_LIMIT":
@@ -418,12 +550,10 @@ def get_current_stochastic_params():
 
 
 def calculate_result_metrics(result_df):
-    """Calculate key metrics from result DataFrame"""
+    """Calculate key metrics from result DataFrame - always uses truncated donation_default"""
     
-    # Determine which donation column to use
+    # Always use truncated donation_default for consistency
     donation_col = 'donation_default'
-    if 'donation_default_raw' in result_df.columns and st.session_state.get('raw_draw_mode', False):
-        donation_col = 'donation_default_raw'
     
     metrics = {
         'mean_donation': result_df[donation_col].mean(),

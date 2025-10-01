@@ -253,49 +253,55 @@ def render_donation_default_tab():
     st.markdown('<h4 class="subsection-header">📊 Distribution Adjustment</h4>', unsafe_allow_html=True)
     render_adjustment_override_section()
     
-    # Coefficient refresh button
+    # Coefficient refresh and debug section
     st.markdown("---")
-    col1, col2 = st.columns(2)
+    st.markdown('<h4 class="subsection-header">🔧 Coefficient Management</h4>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("🔄 Reload Coefficients from YAML", type="secondary", help="Force reload all coefficients from the YAML file"):
+        # Debug: Show current session state values
+        with st.expander("🔍 Debug: Current Session State Values", expanded=False):
+            st.write("**Current intercept values in session state:**")
+            st.write(f"- Main intercept: {st.session_state.get('donation_coeff_intercept', 'NOT SET')}")
+            st.write(f"- Categorical intercept: {st.session_state.get('donation_coeff_intercept_cat', 'NOT SET')}")
+            st.write(f"- Continuous intercept: {st.session_state.get('donation_coeff_intercept_cont', 'NOT SET')}")
+            
+            # Load current YAML values for comparison
+            try:
+                import yaml
+                from pathlib import Path
+                config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+                with open(config_path, 'r') as f:
+                    config = yaml.safe_load(f)
+                
+                yaml_cat = config['donation_default']['regression_coefficients']['categorical']['intercept']
+                yaml_cont = config['donation_default']['regression_coefficients']['continuous']['intercept']
+                
+                st.write("**Current YAML values:**")
+                st.write(f"- YAML categorical: {yaml_cat}")
+                st.write(f"- YAML continuous: {yaml_cont}")
+                
+                # Check if they match
+                if st.session_state.get('donation_coeff_intercept_cat') != yaml_cat:
+                    st.error("❌ Session state doesn't match YAML! Click 'Reload Coefficients' button.")
+                else:
+                    st.success("✅ Session state matches YAML values")
+                    
+            except Exception as e:
+                st.error(f"Error reading YAML: {e}")
+    
+    with col2:
+        if st.button("🔄 Reload Coefficients from YAML", type="secondary", use_container_width=True, help="Force reload all coefficients from the YAML file"):
             load_donation_coefficients_from_yaml()
             st.success("✅ Coefficients reloaded from YAML!")
             st.rerun()
     
-    # Debug: Show current session state values
-    with st.expander("🔍 Debug: Current Session State Values", expanded=False):
-        st.write("**Current intercept values in session state:**")
-        st.write(f"- Main intercept: {st.session_state.get('donation_coeff_intercept', 'NOT SET')}")
-        st.write(f"- Categorical intercept: {st.session_state.get('donation_coeff_intercept_cat', 'NOT SET')}")
-        st.write(f"- Continuous intercept: {st.session_state.get('donation_coeff_intercept_cont', 'NOT SET')}")
-        
-        # Load current YAML values for comparison
-        try:
-            import yaml
-            from pathlib import Path
-            config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-            
-            yaml_cat = config['donation_default']['regression_coefficients']['categorical']['intercept']
-            yaml_cont = config['donation_default']['regression_coefficients']['continuous']['intercept']
-            
-            st.write("**Current YAML values:**")
-            st.write(f"- YAML categorical: {yaml_cat}")
-            st.write(f"- YAML continuous: {yaml_cont}")
-            
-            # Check if they match
-            if st.session_state.get('donation_coeff_intercept_cat') != yaml_cat:
-                st.error("❌ Session state doesn't match YAML! Click 'Reload Coefficients' button.")
-            else:
-                st.success("✅ Session state matches YAML values")
-                
-        except Exception as e:
-            st.error(f"Error reading YAML: {e}")
-    
-    with col2:
-        if st.button("🚀 Run Donation Default Only", type="primary", key="run_donation_default"):
-            run_individual_decision("donation_default")
+    # Render both individual and complete simulation buttons
+    from app.pages.decision_execution import render_simulation_buttons
+    render_simulation_buttons(
+        decision_name="donation_default",
+        selected_decisions=st.session_state.decision_params.selected_decisions
+    )
 
 
 def render_formula_display():

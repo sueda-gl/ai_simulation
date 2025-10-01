@@ -3,7 +3,7 @@
 Generic decision tab configuration for decisions without specific implementation.
 """
 import streamlit as st
-from app.pages.decision_execution import run_individual_decision
+from app.pages.decision_execution import render_simulation_buttons
 
 
 def render_generic_decision_tab(decision_name):
@@ -13,7 +13,8 @@ def render_generic_decision_tab(decision_name):
     st.info(f"Configuration for {decision_name} will be implemented here.")
     st.caption("This decision currently uses default values.")
     
-    # Individual run button
-    st.markdown("---")
-    if st.button(f"🚀 Run {decision_name.replace('_', ' ').title()} Only", type="secondary", width="stretch", key=f"run_{decision_name}"):
-        run_individual_decision(decision_name)
+    # Render both individual and complete simulation buttons
+    render_simulation_buttons(
+        decision_name=decision_name,
+        selected_decisions=st.session_state.decision_params.selected_decisions
+    )

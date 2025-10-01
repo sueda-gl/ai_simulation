@@ -56,17 +56,15 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             st.metric("Method", "Bootstrap")
     
     with col4:
-        # Determine which column to use for display
-        donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
+        # Always use truncated donation_default for consistency
+        donation_col = 'donation_default'
         if donation_col in df.columns:
-            avg_label = "Avg Donation Rate" + (" (raw)" if donation_col == 'donation_default_raw' else "")
-            st.metric(avg_label, f"{df[donation_col].mean():.1%}")
+            st.metric("Avg Donation Rate", f"{df[donation_col].mean():.1%}")
     
-    # Donation rate analysis (if available)
-    donation_col = 'donation_default_raw' if 'donation_default_raw' in df.columns else 'donation_default'
+    # Donation rate analysis (if available) - always use truncated
+    donation_col = 'donation_default'
     if donation_col in df.columns:
-        raw_suffix = " (raw pre-truncation)" if donation_col == 'donation_default_raw' else ""
-        st.subheader(f" Donation Rate Analysis{title_suffix}{raw_suffix}")
+        st.subheader(f" Donation Rate Analysis{title_suffix}")
         
         # Distribution plot
         col1, col2 = st.columns([2, 1])
@@ -76,7 +74,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
                 df, 
                 x=donation_col,
                 nbins=30,
-                title=f"Distribution of Donation Rates{title_suffix}{raw_suffix}",
+                title=f"Distribution of Donation Rates{title_suffix}",
                 labels={donation_col: 'Donation Rate', 'count': 'Number of Agents'},
                 marginal="box"
             )
@@ -124,10 +122,8 @@ def render_inline_selection_button(result_key, result_df):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Show key metric for quick reference
+        # Show key metric for quick reference - always use truncated
         donation_col = 'donation_default'
-        if 'donation_default_raw' in result_df.columns:
-            donation_col = 'donation_default_raw'
         mean_donation = result_df[donation_col].mean()
         st.caption(f"📊 Quick Summary: {len(result_df):,} agents, avg {mean_donation:.1%}")
     

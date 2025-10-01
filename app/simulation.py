@@ -236,16 +236,6 @@ def run_simulation_from_sidebar():
                         else:
                             orchestrator.config['donation_default']['stochastic']['raw_output'] = False
                         
-                        # Apply selected donation configuration if it exists
-                        # Ensure all orchestrators have probability settings available
-                        if prob_settings:
-                            # For orchestrators with simulation_config
-                            if hasattr(orchestrator, 'simulation_config'):
-                                orchestrator.simulation_config['random_decisions'] = prob_settings
-                            else:
-                                # For orchestrators without simulation_config, create minimal config
-                                orchestrator.simulation_config = {'random_decisions': prob_settings}
-                        
                         if hasattr(st.session_state, 'selected_donation_config'):
                             apply_selected_donation_config(orchestrator, pop_mode, inc_mode)
                         # Fallback: Apply custom regression coefficients if they exist
@@ -274,7 +264,29 @@ def run_simulation_from_sidebar():
                             if 'regression_coefficients' not in orchestrator.config['donation_default']:
                                 orchestrator.config['donation_default']['regression_coefficients'] = {}
                             orchestrator.config['donation_default']['regression_coefficients'].update(current_coeffs)
-
+                
+                # Ensure all orchestrators have decision settings available
+                if prob_settings:
+                    # For orchestrators with simulation_config
+                    if hasattr(orchestrator, 'simulation_config'):
+                        # Store both as 'random_decisions' (for backward compatibility) 
+                        # and 'default_decisions' (for all decision types)
+                        orchestrator.simulation_config['random_decisions'] = prob_settings
+                        orchestrator.simulation_config['default_decisions'] = prob_settings
+                    else:
+                        # For orchestrators without simulation_config, create minimal config
+                        orchestrator.simulation_config = {
+                            'random_decisions': prob_settings,
+                            'default_decisions': prob_settings
+                        }
+                
+                # Also pass information about which decisions are custom vs default
+                # This helps decision modules know whether to use custom parameters or configured defaults
+                if hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
+                    if not hasattr(orchestrator, 'simulation_config'):
+                        orchestrator.simulation_config = {}
+                    orchestrator.simulation_config['custom_decisions'] = st.session_state.custom_decisions
+                    orchestrator.simulation_config['default_decisions_list'] = st.session_state.default_decisions
                 
                 # Handle multiple decisions
                 decision_param = None if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS) else st.session_state.decision_params.selected_decisions
@@ -301,21 +313,45 @@ def run_simulation_from_sidebar():
                 st.session_state.population_mode = config['population_mode']
                 st.session_state.income_spec_mode = config['income_spec_mode']
             
-            # Collect current probability settings for random decisions
-            random_decision_probabilities = collect_probability_settings()
+            # Collect current decision settings for all default decisions
+            random_decision_probabilities = collect_decision_settings()
             
-            # Debug: Show probability settings being applied
+            # Debug: Show decision settings being applied
             if random_decision_probabilities:
-                prob_info = []
+                setting_info = []
                 for decision, settings in random_decision_probabilities.items():
-                    prob_y = settings['probability_y']
-                    options = settings['options']
-                    prob_info.append(f"{decision}: {prob_y:.0%} {options[0]} / {1-prob_y:.0%} {options[1]}")
+                    decision_type = settings.get('type')
+                    if decision_type == 'random_probability':
+                        prob_y = settings['probability_y']
+                        options = settings['options']
+                        setting_info.append(f"{decision}: {prob_y:.0%} {options[0]} / {1-prob_y:.0%} {options[1]}")
+                    elif decision_type == 'checkbox_selection':
+                        selected = settings.get('selected_params', [])
+                        setting_info.append(f"{decision}: {len(selected)} params selected ({', '.join(selected)})")
+                    elif decision_type == 'radio_selection':
+                        selected = settings.get('selected_option', 'unknown')
+                        setting_info.append(f"{decision}: {selected}")
+                    elif decision_type == 'numeric':
+                        value = settings.get('value', 0)
+                        # Format as percentage if it's between 0 and 1
+                        try:
+                            float_value = float(value)
+                            if 0 <= float_value <= 1:
+                                setting_info.append(f"{decision}: {float_value:.1%}")
+                            else:
+                                setting_info.append(f"{decision}: {float_value}")
+                        except (ValueError, TypeError):
+                            # If value can't be converted to float, just display as is
+                            setting_info.append(f"{decision}: {value}")
+                    elif decision_type == 'placeholder':
+                        value = settings.get('value', 'default')
+                        # These are placeholder strings like "RANDOM_WITHIN_LIMIT", "NA", etc.
+                        setting_info.append(f"{decision}: {value}")
                 
-                if prob_info:
-                    st.success(f"🎲 Using probability settings: {', '.join(prob_info)}")
+                if setting_info:
+                    st.success(f"🎲 Using configured defaults: {', '.join(setting_info)}")
                     # Also print to console for debugging
-                    print(f"[DEBUG] Probability settings: {random_decision_probabilities}")
+                    print(f"[DEBUG] Decision settings: {random_decision_probabilities}")
             
             # Run based on population and income specification modes
             results = {}
@@ -395,30 +431,150 @@ def run_simulation_from_sidebar():
             delattr(st.session_state, '_original_income_spec_mode')
 
 
-def collect_probability_settings():
-    """Collect current probability settings for random decisions from session state"""
+def collect_decision_settings():
+    """Collect current default decision settings from session state (probabilities, selections, etc.)"""
     
     from app.pages.decision_execution import DEFAULT_DECISION_VALUES
     
-    probability_settings = {}
+    decision_settings = {}
     
-    # Check each decision for probability settings
+    # Check each decision for configured settings
     for decision_name, default_value in DEFAULT_DECISION_VALUES.items():
-        if isinstance(default_value, dict) and default_value.get("type") == "random_probability":
-            # Get current probability from session state or use default
-            prob_key = f"{decision_name}_probability_y"
-            current_prob = st.session_state.get(prob_key, default_value.get("probability_y", 0.5))
+        if isinstance(default_value, dict):
+            decision_type = default_value.get("type")
             
-            # Debug print
-            print(f"[DEBUG] collect_probability_settings: {decision_name} = {current_prob}")
+            # Handle random probability decisions (disclose_income, disclose_documents, purchase_vs_bid)
+            if decision_type == "random_probability":
+                # Priority order for probability values:
+                # 1. Post-simulation adjustment from Results page ({decision_name}_probability_y)
+                # 2. Pre-configured default from Overview tab ({decision_name}_default_probability_y)
+                # 3. Hard-coded default from DEFAULT_DECISION_VALUES
+                
+                post_sim_key = f"{decision_name}_probability_y"
+                pre_config_key = f"{decision_name}_default_probability_y"
+                hardcoded_default = default_value.get("probability_y", 0.5)
+                
+                # Check post-simulation first, then pre-config, then hardcoded
+                current_prob = st.session_state.get(
+                    post_sim_key,
+                    st.session_state.get(pre_config_key, hardcoded_default)
+                )
+                
+                # Debug print
+                print(f"[DEBUG] collect_settings: {decision_name} (probability) = {current_prob}")
+                print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
+                print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                
+                decision_settings[decision_name] = {
+                    "probability_y": current_prob,
+                    "options": default_value.get("options", ["Y", "N"]),
+                    "type": "random_probability"
+                }
             
-            probability_settings[decision_name] = {
-                "probability_y": current_prob,
-                "options": default_value.get("options", ["Y", "N"]),
-                "type": "random_probability"
-            }
+            # Handle checkbox selection decisions (vendor_choice_weights)
+            elif decision_type == "checkbox_selection":
+                # Priority order:
+                # 1. Post-simulation adjustment from Results page (vendor_choice_weights_selection)
+                # 2. Pre-configured default from Overview tab (vendor_choice_weights_default_params)
+                # 3. Hard-coded default from DEFAULT_DECISION_VALUES
+                
+                post_sim_key = f"{decision_name}_selection"  # e.g., "vendor_choice_weights_selection"
+                pre_config_key = f"{decision_name}_default_params"  # e.g., "vendor_choice_weights_default_params"
+                hardcoded_default = default_value.get("default_selection", [])
+                
+                # Check post-simulation first, then pre-config, then hardcoded
+                selected_params = st.session_state.get(
+                    post_sim_key,
+                    st.session_state.get(pre_config_key, hardcoded_default)
+                )
+                
+                # Calculate equal weights for selected parameters
+                if len(selected_params) > 0:
+                    weight_per_param = 1.0 / len(selected_params)
+                    weights = {}
+                    
+                    # Set weights for all parameters
+                    for param_key in default_value.get("parameters", {}).keys():
+                        if param_key in selected_params:
+                            weights[param_key] = weight_per_param
+                        else:
+                            weights[param_key] = 0.0
+                else:
+                    # Fallback to equal weights if nothing selected
+                    params = list(default_value.get("parameters", {}).keys())
+                    weight_per_param = 1.0 / len(params) if params else 0.25
+                    weights = {param: weight_per_param for param in params}
+                
+                print(f"[DEBUG] collect_settings: {decision_name} (checkbox) = {selected_params}")
+                print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
+                print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                print(f"[DEBUG]   - weights: {weights}")
+                
+                decision_settings[decision_name] = {
+                    "selected_params": selected_params,
+                    "weights": weights,
+                    "type": "checkbox_selection"
+                }
+            
+            # Handle radio selection decisions (rejected_transaction_defaults, rejected_transaction_option)
+            elif decision_type == "radio_selection":
+                # Priority order:
+                # 1. Post-simulation adjustment from Results page (specific to each decision)
+                # 2. Pre-configured default from Overview tab ({decision_name}_default_selection)
+                # 3. Hard-coded default from DEFAULT_DECISION_VALUES
+                
+                # Map decision names to their post-simulation keys
+                post_sim_keys = {
+                    "rejected_transaction_defaults": "rejected_transaction_defaults_option",
+                    "rejected_transaction_option": "rejected_transaction_option_selection"
+                }
+                
+                post_sim_key = post_sim_keys.get(decision_name)
+                pre_config_key = f"{decision_name}_default_selection"
+                hardcoded_default = default_value.get("default_option", "")
+                
+                # Check post-simulation first, then pre-config, then hardcoded
+                if post_sim_key and post_sim_key in st.session_state:
+                    selected_option = st.session_state[post_sim_key]
+                else:
+                    selected_option = st.session_state.get(pre_config_key, hardcoded_default)
+                
+                print(f"[DEBUG] collect_settings: {decision_name} (radio) = {selected_option}")
+                if post_sim_key:
+                    print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
+                print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                
+                decision_settings[decision_name] = {
+                    "selected_option": selected_option,
+                    "type": "radio_selection"
+                }
+        
+        else:
+            # Handle simple values (numeric or string placeholders)
+            pre_config_key = f"{decision_name}_default_value"
+            
+            # Check if there's a configured value in session state
+            if pre_config_key in st.session_state:
+                configured_value = st.session_state[pre_config_key]
+            else:
+                configured_value = default_value
+            
+            # Determine if it's numeric or a placeholder string
+            if isinstance(configured_value, (int, float)):
+                print(f"[DEBUG] collect_settings: {decision_name} (numeric) = {configured_value}")
+                decision_settings[decision_name] = {
+                    "value": configured_value,
+                    "type": "numeric"
+                }
+            else:
+                # It's a placeholder string like "RANDOM_WITHIN_LIMIT", "NA", etc.
+                print(f"[DEBUG] collect_settings: {decision_name} (placeholder) = {configured_value}")
+                decision_settings[decision_name] = {
+                    "value": configured_value,
+                    "type": "placeholder"
+                }
     
-    return probability_settings
+    return decision_settings
 
 
 def run_simulation():

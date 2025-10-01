@@ -15,6 +15,19 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     6. Compute personal 99th percentile maximum and rescale to [0,1]
     """
     
+    # Check if this decision is using a simple default value (when unselected)
+    if simulation_config and 'default_decisions_list' in simulation_config:
+        if 'donation_default' in simulation_config.get('default_decisions_list', []):
+            # This decision is unselected - use configured default value
+            default_config = simulation_config.get('default_decisions', {}).get('donation_default')
+            if default_config:
+                if isinstance(default_config, dict) and default_config.get('type') == 'numeric':
+                    # Wrapped numeric value
+                    return {"donation_default": float(default_config.get('value', 0.1))}
+                elif isinstance(default_config, (int, float)):
+                    # Direct numeric value (backward compatibility)
+                    return {"donation_default": float(default_config)}
+    
     # Extract required traits
     hh_score = agent_state['Honesty_Humility']
     income_level = agent_state['Assigned Allowance Level']

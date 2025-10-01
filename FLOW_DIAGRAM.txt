@@ -1,0 +1,133 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                    DONATION CONFIGURATION FLOW                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+PHASE 1: INDIVIDUAL DONATION RUN
+════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────┐
+│  Page 1 Sidebar     │
+│  population_mode:   │
+│  "Compare all"      │  ← SOURCE OF TRUTH #1
+│  income_spec_mode:  │
+│  "Compare both"     │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────────────────────────────────────┐
+│  Run Individual Donation Decision                   │
+│  simulation.py generates 6 results:                 │
+│  ┌───────────────────────────────────────────────┐ │
+│  │ copula_categorical          DataFrame         │ │
+│  │ copula_continuous           DataFrame         │ │
+│  │ research_spec_categorical   DataFrame         │ │
+│  │ research_spec_continuous    DataFrame  ← YOU  │ │
+│  │ research_baseline_categorical DataFrame       │ │
+│  │ research_baseline_continuous  DataFrame       │ │
+│  └───────────────────────────────────────────────┘ │
+└───────────────────────┬─────────────────────────────┘
+                        │
+                        │ You click "Use This Config"
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│  st.session_state.selected_donation_config              │
+│  ┌────────────────────────────────────────────────────┐│
+│  │ result_key: 'research_spec_continuous'             ││  ← SOURCE OF TRUTH #2
+│  │ population_mode: 'Research Specification'          ││
+│  │ income_spec_mode: 'continuous only'                ││
+│  │ donation_values: [0.15, 0.08, 0.22, ...]  ← OLD!  ││
+│  │ coefficients: {...}                                ││
+│  │ stochastic_params: {...}                           ││
+│  └────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────┘
+
+
+PHASE 2: COMPLETE SIMULATION RUN
+════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────┐
+│  Page 1 Sidebar     │
+│  population_mode:   │
+│  "Compare all"      │  ← STILL SET TO THIS
+│  income_spec_mode:  │
+│  "Compare both"     │
+└──────────┬──────────┘
+           │
+           │ You click "Run Complete Simulation"
+           ▼
+┌─────────────────────────────────────────────────────────┐
+│  simulation.py line 301-314                             │
+│  Detects: selected_donation_config exists               │
+│  ┌────────────────────────────────────────────────────┐│
+│  │ ⚠️  OVERRIDE MODES:                                ││
+│  │ population_mode = 'Research Specification'         ││
+│  │ income_spec_mode = 'continuous only'               ││
+│  └────────────────────────────────────────────────────┘│
+└───────────────────────┬─────────────────────────────────┘
+                        │
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│  simulation.py line 372-387                             │
+│  Since population_mode is now SINGLE MODE:              │
+│  Since income_spec_mode is now SINGLE MODE:             │
+│  ┌────────────────────────────────────────────────────┐│
+│  │ ✅ ONLY generates 1 result:                        ││
+│  │                                                     ││
+│  │ results_dict = {                                   ││
+│  │   'continuous': DataFrame  ← NEW DATA!             ││  ← SOURCE OF TRUTH #3
+│  │ }                                                   ││
+│  │                                                     ││
+│  │ ❌ NOT 'research_spec_continuous'!                 ││
+│  └────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────┘
+
+
+PHASE 3: RESULTS DISPLAY (THE CONFLICT)
+════════════════════════════════════════════════════════════════════════════
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  main_results.py line 134                                            │
+│  result_key = config['result_key']                                   │
+│  = 'research_spec_continuous'  ← FROM SOURCE #2                      │
+└───────────────────────┬──────────────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  main_results.py line 144                                            │
+│  df = results_dict.get('research_spec_continuous', None)             │
+│                                                                       │
+│  results_dict = {                                                    │
+│    'continuous': DataFrame  ← FROM SOURCE #3                         │
+│  }                                                                    │
+│                                                                       │
+│  ❌ KEY NOT FOUND!                                                   │
+└───────────────────────┬──────────────────────────────────────────────┘
+                        │
+                        ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  main_results.py line 183 (Fallback)                                 │
+│  Try possible_keys = ['research_spec_continuous',                    │
+│                       'continuous',  ← THIS MATCHES!                 │
+│                       'research_spec']                                │
+│                                                                       │
+│  ✅ df = results_dict['continuous']                                  │
+└───────────────────────┬──────────────────────────────────────────────┘
+                        │
+                        ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│  RESULTS DISPLAY                                                           │
+│  ┌──────────────────────────────────┬──────────────────────────────────┐  │
+│  │  Donation Default Section        │  Final Donation Rate Section     │  │
+│  │  ────────────────────────────    │  ─────────────────────────────   │  │
+│  │  Uses: df['donation_default']    │  Uses: df['donation_default']    │  │
+│  │  From: results_dict['continuous']│  From: results_dict['continuous']│  │
+│  │  Data: NEW simulation data       │  Data: NEW simulation data       │  │
+│  │  ✅ SHOULD BE IDENTICAL          │  ✅ SHOULD BE IDENTICAL          │  │
+│  └──────────────────────────────────┴──────────────────────────────────┘  │
+│                                                                            │
+│  IF THEY'RE DIFFERENT:                                                     │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │ 🔥 One of them is using WRONG dataframe from results_dict            │ │
+│  │ 🔥 OR fallback didn't work and one uses config['donation_values']    │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────┘

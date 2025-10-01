@@ -2,12 +2,14 @@
 
 def rejected_transaction_defaults(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
     """Decision 4: Select prioritized defaults for handling rejected transactions"""
-    # Try to import our default values function
-    try:
-        from app.pages.decision_execution import get_actual_default_value
-        default_value = get_actual_default_value("rejected_transaction_defaults")
-    except ImportError:
-        # Fallback to old behavior if import fails
-        default_value = params.get("default_value", "NA")
     
-    return {"rejected_transaction_defaults": default_value}
+    # Check if configuration is available from simulation_config
+    if simulation_config and 'default_decisions' in simulation_config:
+        config = simulation_config['default_decisions'].get('rejected_transaction_defaults')
+        if config and config.get("type") == "radio_selection":
+            # Use the selected option from the configuration
+            selected_option = config.get("selected_option", "forgo_transaction")
+            return {"rejected_transaction_defaults": selected_option}
+    
+    # Fallback to default
+    return {"rejected_transaction_defaults": "forgo_transaction"}

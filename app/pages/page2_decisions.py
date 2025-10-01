@@ -7,6 +7,7 @@ from app.models import ALL_DECISIONS
 from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
+from app.pages.decision_tabs.default_config import render_default_decisions_config
 from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES
 
 
@@ -20,18 +21,24 @@ def render_overview_tab(selected_decisions):
     if 'donation_default' in selected_decisions:
         render_selected_donation_config_display()
     
+    # NEW: Show default decisions configuration for unselected decisions
+    st.markdown("---")
+    render_default_decisions_config(selected_decisions, ALL_DECISIONS)
+    
     # Add combined run button
+    st.markdown("---")
     st.markdown('<h3 class="section-header">🚀 Complete Simulation</h3>', unsafe_allow_html=True)
     
-    # Import ALL_DECISIONS for calculation
-    from app.models import ALL_DECISIONS
+    # Calculate unselected decisions (ALL_DECISIONS is already imported at module level)
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
     col1, col2 = st.columns([3, 1])
     with col1:
         st.info(f"🎯 **Complete end-to-end simulation**: {len(selected_decisions)} decisions with custom parameters + {len(unselected_decisions)} decisions with default values")
         if len(unselected_decisions) > 0:
-            st.caption(f"💡 Unselected decisions will use default values to provide complete simulation experience")
+            st.caption(f"💡 Unselected decisions will use configured default values shown above")
+        else:
+            st.caption(f"✅ All decisions use custom parameters")
     with col2:
         if st.button("🚀 Run Complete Simulation", type="primary", width="stretch", key="run_complete_simulation"):
             run_combined_simulation(selected_decisions)
