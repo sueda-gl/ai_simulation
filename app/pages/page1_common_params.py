@@ -843,6 +843,14 @@ BUDGET_SHOP,5.25,50,0""")
                   - k=1, c=1: Exponential distribution
                   - c→∞: Approaches Weibull distribution
                   - k=c: Approaches lognormal as both increase
+                
+                ---
+                
+                **📚 Key References:**
+                
+                - **McDonald, J. B., & Xu, Y. J. (1995).** A generalization of the beta distribution with applications. *Journal of Econometrics*, 66(1–2), 133–152.
+                
+                - **Bourguignon, F., Fournier, M., & Gurgand, M. (2007).** Selection bias corrections based on the multinomial logit model: Monte Carlo comparisons. *Journal of Economic Surveys*, 21(1), 174–205.
                 """)
             
             # k, c, and lambda parameters
@@ -958,6 +966,14 @@ BUDGET_SHOP,5.25,50,0""")
                   - Lower a → higher inequality (heavier tail)
                   - Higher p → lower inequality (more concentrated)
                   - Dagum often fits income data better than Pareto
+                
+                ---
+                
+                **📚 Key References:**
+                
+                - **Pérez, C. G. (2011).** Using the Dagum model to explain changes in personal income distribution in Spain, 1995–2005. *Applied Economics*, 43(17), 2149–2157.
+                
+                - **Kleiber, C., & Kotz, S. (2003).** *Statistical Size Distributions in Economics and Actuarial Sciences.* Wiley Series in Probability and Statistics.
                 """)
             
             # a, p, and b parameters

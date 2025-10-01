@@ -298,11 +298,20 @@ def render_donation_default_tab():
             st.rerun()
     
     # Render both individual and complete simulation buttons
-    from app.pages.decision_execution import render_simulation_buttons
-    render_simulation_buttons(
-        decision_name="donation_default",
-        selected_decisions=st.session_state.decision_params.selected_decisions
-    )
+    try:
+        from app.pages.decision_execution import render_simulation_buttons
+        
+        # Safety: Get selected_decisions with a default
+        selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])
+        
+        render_simulation_buttons(
+            decision_name="donation_default",
+            selected_decisions=selected_decs
+        )
+    except Exception as e:
+        st.error(f"Error rendering simulation buttons: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def render_formula_display():

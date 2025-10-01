@@ -24,6 +24,10 @@ def render_simulation_buttons(decision_name, selected_decisions):
     st.markdown("---")
     st.markdown('<h3 class="section-header">🚀 Simulation Options</h3>', unsafe_allow_html=True)
     
+    # Safety check: ensure selected_decisions is a list
+    if selected_decisions is None or not isinstance(selected_decisions, list):
+        selected_decisions = []
+    
     # Calculate unselected decisions for informational purposes
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
