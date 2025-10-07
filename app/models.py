@@ -224,9 +224,7 @@ class SimulationParameters:
             # Fallback to uniform distribution
             samples = rng.uniform(self.income_min, self.income_max, n_samples)
         
-        # Clip to specified bounds
-        samples = np.clip(samples, self.income_min, self.income_max)
-        
+
         return samples
     
     def get_discount_qualification_rate(self, n_samples: int = 1000) -> float:

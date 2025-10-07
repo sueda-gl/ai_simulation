@@ -91,11 +91,11 @@ Default decisions are grouped by category in expandable sections:
 - **UI**: Radio buttons with selected option display
 - **Example**:
   ```
-  ○ Option 1: Reduce Bid Amount
-  ○ Option 2: Switch to Different Vendor
-  ○ Option 3: Choose Different Product
-  ○ Option 4: Wait and Retry Later
-  ● Option 5: Forgo Transaction
+  ○ Option 1: Purchase from another (higher) price category of the same vendor
+  ○ Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor
+  ○ Option 3: Purchase from the current vendor at PN price
+  ○ Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)
+  ● Option 5: Forgo the purchase request
   
   Selected: Option 5
   ✓ Default

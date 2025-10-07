@@ -21,9 +21,9 @@ def bid_value(agent_state: dict, params: dict, rng, simulation_config: dict = No
         dict: {"bid_value": float or np.nan}
     """
     # Check if agent chose to bid (if not, return NaN)
-    purchase_vs_bid_choice = agent_state.get('purchase_vs_bid', 'purchase')
+    purchase_vs_bid_choice = agent_state.get('purchase_vs_bid', 'Purchase Now')
     if purchase_vs_bid_choice != 'bid':
-        # Agent chose to purchase immediately, so no bid value needed
+        # Agent chose Purchase Now, so no bid value needed
         return {"bid_value": np.nan}
     
     # Get pricing parameters from simulation_config

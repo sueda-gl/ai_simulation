@@ -9,6 +9,13 @@ from app.simulation import run_simulation_from_sidebar
 from app.models import ALL_DECISIONS
 
 
+def format_decision_title(decision_name):
+    """Format decision name for display, with special handling for specific decisions"""
+    if decision_name == "purchase_vs_bid":
+        return "Purchase Now Vs Bid"
+    return decision_name.replace('_', ' ').title()
+
+
 def render_simulation_buttons(decision_name, selected_decisions):
     """
     Render both individual and complete simulation buttons for a decision tab.
@@ -34,7 +41,7 @@ def render_simulation_buttons(decision_name, selected_decisions):
     # Display context in two columns
     col_info1, col_info2 = st.columns(2)
     with col_info1:
-        st.info(f"**🔬 Individual Run**\n\nTest only {decision_name.replace('_', ' ').title()} with current parameters")
+        st.info(f"**🔬 Individual Run**\n\nTest only {format_decision_title(decision_name)} with current parameters")
         st.caption("Quick validation of this decision's configuration")
     with col_info2:
         st.info(f"**🎯 Complete Simulation**\n\nRun all {len(ALL_DECISIONS)} decisions end-to-end")
@@ -52,23 +59,23 @@ def render_simulation_buttons(decision_name, selected_decisions):
             for i, dec in enumerate(selected_decisions, 1):
                 icon = "🎯" if dec == decision_name else "✓"
                 label = " **(current tab)**" if dec == decision_name else ""
-                st.caption(f"{i}. {icon} {dec.replace('_', ' ').title()}{label}")
+                st.caption(f"{i}. {icon} {format_decision_title(dec)}{label}")
         
         if len(unselected_decisions) > 0:
             st.markdown(f"\n**🔧 Default Values ({len(unselected_decisions)} decisions):**")
             for i, dec in enumerate(unselected_decisions, 1):
-                st.caption(f"{i}. {dec.replace('_', ' ').title()}")
+                st.caption(f"{i}. {format_decision_title(dec)}")
     
     # Render action buttons in two columns
     col1, col2 = st.columns(2)
     
     with col1:
         if st.button(
-            f"🔬 Run {decision_name.replace('_', ' ').title()} Only", 
+            f"🔬 Run {format_decision_title(decision_name)} Only", 
             type="secondary", 
             use_container_width=True,
             key=f"run_{decision_name}_only_btn",
-            help=f"Execute only {decision_name.replace('_', ' ')} to test and validate your parameters"
+            help=f"Execute only {format_decision_title(decision_name)} to test and validate your parameters"
         ):
             run_individual_decision(decision_name)
     
@@ -86,7 +93,7 @@ def render_simulation_buttons(decision_name, selected_decisions):
                 **🚀 Starting complete end-to-end simulation**
                 
                 - Running all {len(ALL_DECISIONS)} decisions in sequence
-                - Current decision ({decision_name.replace('_', ' ').title()}) will use your configured parameters above
+                - Current decision ({format_decision_title(decision_name)}) will use your configured parameters above
                 - {len(selected_decisions)} decisions total with custom parameters
                 - {len(unselected_decisions)} decisions using default values
                 """)
@@ -104,20 +111,20 @@ DEFAULT_DECISION_VALUES = {
         "description": "Probability of disclosing income for Fixed status"
     },
     "disclose_documents": {
-        "type": "random_probability", 
+        "type": "random_probability",
         "probability_y": 0.5,  # 50% chance of Y (disclosing)
         "options": ["Y", "N"],
-        "description": "Probability of disclosing documents for Discount status"
+        "description": "Probability of disclosing documents (applies only to agents qualified for discount: income < threshold)"
     },
     "rejected_transaction_defaults": {
         "type": "radio_selection",
         "default_option": "forgo_transaction",
         "options": [
-            ("reduce_bid", "Option 1: Reduce Bid Amount"),
-            ("switch_vendor", "Option 2: Switch to Different Vendor"), 
-            ("switch_product", "Option 3: Choose Different Product"),
-            ("retry_later", "Option 4: Wait and Retry Later"),
-            ("forgo_transaction", "Option 5: Forgo Transaction")
+            ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
+            ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"), 
+            ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"),
+            ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
+            ("forgo_transaction", "Option 5: Forgo the purchase request")
         ]
     },
     "vendor_choice_weights": {
@@ -132,23 +139,23 @@ DEFAULT_DECISION_VALUES = {
     },
     "consumption_quantity": "RANDOM_WITHIN_LIMIT",  # Random within consumption limit
     "consumption_frequency": "CALCULATED",  # Consumption quantity / Period duration
-    "vendor_selection": "deterministic",  # Deterministic based on weights
+    "vendor_selection": "deterministic",  # Deterministic based on highest weighted vendor-product score
     "purchase_vs_bid": {
         "type": "random_probability",
-        "probability_y": 0.5,  # 50% chance of purchase (vs bid)
-        "options": ["purchase", "bid"],
-        "description": "Probability of purchasing immediately vs bidding"
+        "probability_y": 0.5,  # 50% chance of Purchase Now (vs bid)
+        "options": ["Purchase Now", "bid"],
+        "description": "Probability of Purchase Now vs bidding"
     },
     "bid_value": "RANDOM_WITHIN_RANGE",  # Random within bidding price range
     "rejected_transaction_option": {
         "type": "radio_selection",
         "default_option": "forgo_transaction", 
         "options": [
-            ("reduce_bid", "Option 1: Reduce Bid Amount"),
-            ("switch_vendor", "Option 2: Switch to Different Vendor"),
-            ("switch_product", "Option 3: Choose Different Product"), 
-            ("retry_later", "Option 4: Wait and Retry Later"),
-            ("forgo_transaction", "Option 5: Forgo Transaction")
+            ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
+            ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"),
+            ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"), 
+            ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
+            ("forgo_transaction", "Option 5: Forgo the purchase request")
         ]
     },
     "rejected_bid_value": "NA",  # Not relevant given Option 5
@@ -159,13 +166,13 @@ DEFAULT_DECISION_VALUES = {
 DEFAULT_DECISION_DESCRIPTIONS = {
     "donation_default": "10%",
     "disclose_income": "configurable probability Y/N (default 50% each)", 
-    "disclose_documents": "configurable probability Y/N for qualified users (default 50% each)",
+    "disclose_documents": "configurable probability Y/N (applies only to agents with income < discount threshold, default 50% each)",
     "rejected_transaction_defaults": "Selected option for handling rejected transactions will be applied to all agents",
     "vendor_choice_weights": "equal weight distribution among selected parameters (Price, Quality, Proximity, Sustainability)",
     "consumption_quantity": "random within consumption limit",
     "consumption_frequency": "Consumption quantity divided by Period duration",
-    "vendor_selection": "deterministic based on vendor choice weights",
-    "purchase_vs_bid": "configurable probability purchase/bid (default 50% each)",
+    "vendor_selection": "deterministic based on highest weighted vendor-product score",
+    "purchase_vs_bid": "configurable probability Purchase Now/bid (default 50% each)",
     "bid_value": "random within bidding price range",
     "rejected_transaction_option": "Selected specific option for transaction rejection handling will be used",
     "rejected_bid_value": "Default handling for rejected bid values will be applied",
@@ -399,7 +406,15 @@ def run_combined_simulation(selected_decisions):
     # Store information about selected vs default decisions
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
-    with st.spinner(f"Running complete simulation: {len(selected_decisions)} custom + {len(unselected_decisions)} default decisions..."):
+    # Create appropriate spinner message
+    if len(selected_decisions) == 0:
+        spinner_msg = f"Running complete simulation: All {len(ALL_DECISIONS)} decisions with default values..."
+    elif len(unselected_decisions) == 0:
+        spinner_msg = f"Running complete simulation: All {len(selected_decisions)} decisions with custom parameters..."
+    else:
+        spinner_msg = f"Running complete simulation: {len(selected_decisions)} custom + {len(unselected_decisions)} default decisions..."
+    
+    with st.spinner(spinner_msg):
         try:
             # Store original selected decisions
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
@@ -420,8 +435,15 @@ def run_combined_simulation(selected_decisions):
             # Show completion message
             if st.session_state.simulation_results:
                 st.success(f"✅ Complete simulation finished!")
-                st.info(f"📊 **{len(selected_decisions)} decisions** used your custom parameters")
-                st.info(f"🔧 **{len(unselected_decisions)} decisions** used default values")
+                
+                # Provide clear messaging based on configuration
+                if len(selected_decisions) == 0:
+                    st.info(f"🔧 **All {len(ALL_DECISIONS)} decisions** used default values")
+                elif len(unselected_decisions) == 0:
+                    st.info(f"📊 **All {len(selected_decisions)} decisions** used your custom parameters")
+                else:
+                    st.info(f"📊 **{len(selected_decisions)} decisions** used your custom parameters")
+                    st.info(f"🔧 **{len(unselected_decisions)} decisions** used default values")
                 
                 # Show preview
                 results = next(iter(st.session_state.simulation_results.values()))

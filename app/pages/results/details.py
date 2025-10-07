@@ -141,9 +141,30 @@ def render_individual_agent_details(df):
         st.caption("Individual agent details not available in dependent variable resampling mode (no trait information)")
 
 
-def render_export_section(df):
-    """Render the export/download section"""
+def render_export_section(df, results_dict=None, using_selected_config=False):
+    """Render the export/download section
+    
+    Args:
+        df: Primary DataFrame for display and single CSV export
+        results_dict: Full results dictionary (for multi-sheet Excel export)
+        using_selected_config: Whether a configuration was selected
+    """
     st.subheader("💾 Export Results")
+    
+    # Show banner if a specific config is selected
+    if using_selected_config and results_dict and len(results_dict) == 1:
+        config_name = list(results_dict.keys())[0]
+        
+        col_msg, col_btn = st.columns([3, 1])
+        with col_msg:
+            st.success(f"🎯 **Exporting selected configuration:** {config_name.replace('_', ' ').title()}")
+            st.caption("To export all configurations, clear the selection first.")
+        
+        with col_btn:
+            from app.pages.decision_execution import clear_selected_configuration
+            if st.button("🗑️ Clear Selection", key="export_clear_selection"):
+                clear_selected_configuration()
+                st.rerun()
     
     # Show a quick verification metric from the SAME DataFrame used for export
     # This helps detect any mismatch between charts and the exported numbers
@@ -184,32 +205,156 @@ def render_export_section(df):
             if 'final_donation_rate' in donation_cols:
                 st.caption("⚠️ `final_donation_rate` is a separate decision (slider/default value), not the computed rate")
     
+    # Determine export mode
+    export_all_configs = (
+        results_dict is not None and 
+        len(results_dict) > 1 and 
+        not using_selected_config
+    )
+    
+    export_single_selected = (
+        results_dict is not None and
+        len(results_dict) == 1 and
+        using_selected_config
+    )
+    
+    if export_all_configs:
+        st.info(f"📋 **Multi-Configuration Export Available:** {len(results_dict)} configurations will be exported as separate sheets")
+        with st.expander("📊 View Configurations to be Exported", expanded=False):
+            for idx, (config_key, config_df) in enumerate(results_dict.items(), 1):
+                col_name, col_metrics = st.columns([2, 2])
+                with col_name:
+                    st.write(f"**{idx}. {config_key.replace('_', ' ').title()}**")
+                with col_metrics:
+                    if 'donation_default' in config_df.columns:
+                        mean_val = pd.to_numeric(config_df['donation_default'], errors='coerce').mean()
+                        st.caption(f"Agents: {len(config_df):,} | Mean donation: {mean_val:.1%}")
+                    else:
+                        st.caption(f"Agents: {len(config_df):,}")
+    
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        csv_data = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download CSV",
-            data=csv_data,
-            file_name=f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
+        # CSV export - multi-file ZIP if multiple configs, single CSV otherwise
+        if export_all_configs:
+            # Create ZIP with multiple CSV files (multiple configs)
+            try:
+                from io import BytesIO
+                import zipfile
+                
+                zip_buffer = BytesIO()
+                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                    for config_key, config_df in results_dict.items():
+                        if not config_df.empty:
+                            # Add Agent Number as first column
+                            config_df_export = config_df.copy()
+                            config_df_export.insert(0, 'Agent_Number', range(1, len(config_df_export) + 1))
+                            
+                            # Create CSV for this config
+                            csv_data = config_df_export.to_csv(index=False)
+                            # Clean filename (replace spaces and special chars)
+                            csv_filename = f"{config_key}.csv"
+                            zip_file.writestr(csv_filename, csv_data)
+                
+                st.download_button(
+                    label=f"📥 Download CSV (All {len(results_dict)} Configs)",
+                    data=zip_buffer.getvalue(),
+                    file_name=f"enhanced_simulation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
+                    mime="application/zip",
+                    help=f"Downloads all {len(results_dict)} configurations as separate CSV files in a ZIP archive"
+                )
+            except Exception as e:
+                st.error(f"Error creating ZIP file: {e}")
+                # Fallback to single CSV
+                # Add Agent Number as first column
+                df_export = df.copy()
+                df_export.insert(0, 'Agent_Number', range(1, len(df_export) + 1))
+                csv_data = df_export.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download CSV (First Config)",
+                    data=csv_data,
+                    file_name=f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    help="ZIP creation failed. Downloads only the first configuration."
+                )
+        else:
+            # Single CSV export (single config or selected config)
+            # Add Agent Number as first column
+            df_export = df.copy()
+            df_export.insert(0, 'Agent_Number', range(1, len(df_export) + 1))
+            csv_data = df_export.to_csv(index=False)
+            
+            # Adjust filename for selected config
+            if export_single_selected:
+                csv_filename = f"enhanced_simulation_selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            else:
+                csv_filename = f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv_data,
+                file_name=csv_filename,
+                mime="text/csv"
+            )
     
     with col2:
-        # Excel export
+        # Excel export - multi-sheet if results_dict provided and no config selected
         try:
             from io import BytesIO
             buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False, sheet_name='Results')
             
-            excel_data = buffer.getvalue()
-            st.download_button(
-                label="📊 Download Excel",
-                data=excel_data,
-                file_name=f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            # Determine if we should export all configurations
+            export_all_configs = (
+                results_dict is not None and 
+                len(results_dict) > 1 and 
+                not using_selected_config
             )
+            
+            if export_all_configs:
+                # Multi-sheet Excel: one sheet per configuration
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    for config_key, config_df in results_dict.items():
+                        if not config_df.empty:
+                            # Add Agent Number as first column
+                            config_df_export = config_df.copy()
+                            config_df_export.insert(0, 'Agent_Number', range(1, len(config_df_export) + 1))
+                            
+                            # Clean sheet name (max 31 chars, no special chars)
+                            sheet_name = config_key.replace('_', ' ')[:31]
+                            config_df_export.to_excel(writer, index=False, sheet_name=sheet_name)
+                
+                # Adjust label based on whether it's all configs or selected config
+                if export_single_selected:
+                    excel_label = "📊 Download Excel"
+                    excel_filename = f"enhanced_simulation_selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                    excel_help = "Downloads the selected configuration"
+                else:
+                    excel_label = f"📊 Download Excel (All {len(results_dict)} Configs)"
+                    excel_filename = f"enhanced_simulation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                    excel_help = f"Downloads all {len(results_dict)} configurations as separate sheets"
+                
+                st.download_button(
+                    label=excel_label,
+                    data=buffer.getvalue(),
+                    file_name=excel_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help=excel_help
+                )
+            else:
+                # Single sheet Excel
+                # Add Agent Number as first column
+                df_export = df.copy()
+                df_export.insert(0, 'Agent_Number', range(1, len(df_export) + 1))
+                
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_export.to_excel(writer, index=False, sheet_name='Results')
+                
+                st.download_button(
+                    label="📊 Download Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
             st.caption("Install with: pip install openpyxl")

@@ -565,7 +565,7 @@ elif st.session_state.page == 'page2':
         "consumption_quantity",
         "consumption_frequency", 
         "vendor_selection",
-        "purchase_vs_bid",
+        "Purchase_Now_vs_bid",
         "bid_value",
         "rejected_transaction_option",
         "rejected_bid_value",

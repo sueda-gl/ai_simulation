@@ -265,6 +265,54 @@ def run_simulation_from_sidebar():
                                 orchestrator.config['donation_default']['regression_coefficients'] = {}
                             orchestrator.config['donation_default']['regression_coefficients'].update(current_coeffs)
                 
+                # CRITICAL: Override YAML defaults with Page 1 UI parameters
+                # This ensures user-configured values from Page 1 take precedence over config/simulation.yaml
+                if hasattr(orchestrator, 'simulation_config'):
+                    if 'simulation' not in orchestrator.simulation_config:
+                        orchestrator.simulation_config['simulation'] = {}
+                    
+                    # Copy ALL Page 1 parameters from session state to override YAML defaults
+                    sim_params = st.session_state.sim_params
+                    
+                    # Income distribution parameters - CRITICAL for disclose_documents eligibility
+                    orchestrator.simulation_config['simulation']['income_distribution'] = sim_params.income_distribution
+                    orchestrator.simulation_config['simulation']['discount_income_threshold'] = sim_params.discount_income_threshold
+                    
+                    # Lognormal parameters
+                    orchestrator.simulation_config['simulation']['lognormal_mu'] = sim_params.lognormal_mu
+                    orchestrator.simulation_config['simulation']['lognormal_sigma'] = sim_params.lognormal_sigma
+                    orchestrator.simulation_config['simulation']['lognormal_min'] = sim_params.lognormal_min
+                    orchestrator.simulation_config['simulation']['lognormal_max'] = sim_params.lognormal_max
+                    
+                    # Generalised Gamma parameters
+                    orchestrator.simulation_config['simulation']['gg_k'] = sim_params.gg_k
+                    orchestrator.simulation_config['simulation']['gg_c'] = sim_params.gg_c
+                    orchestrator.simulation_config['simulation']['gg_lambda'] = sim_params.gg_lambda
+                    orchestrator.simulation_config['simulation']['gg_min'] = sim_params.gg_min
+                    orchestrator.simulation_config['simulation']['gg_max'] = sim_params.gg_max
+                    
+                    # Dagum parameters
+                    orchestrator.simulation_config['simulation']['dagum_a'] = sim_params.dagum_a
+                    orchestrator.simulation_config['simulation']['dagum_p'] = sim_params.dagum_p
+                    orchestrator.simulation_config['simulation']['dagum_b'] = sim_params.dagum_b
+                    orchestrator.simulation_config['simulation']['dagum_min'] = sim_params.dagum_min
+                    orchestrator.simulation_config['simulation']['dagum_max'] = sim_params.dagum_max
+                    
+                    # Market parameters - used by bid_value and other decisions
+                    orchestrator.simulation_config['simulation']['market_price'] = sim_params.market_price
+                    orchestrator.simulation_config['simulation']['platform_markup'] = sim_params.platform_markup
+                    orchestrator.simulation_config['simulation']['price_range'] = sim_params.price_range
+                    orchestrator.simulation_config['simulation']['bidding_percentage'] = sim_params.bidding_percentage
+                    orchestrator.simulation_config['simulation']['num_vendors'] = sim_params.num_vendors
+                    
+                    # Time parameters
+                    orchestrator.simulation_config['simulation']['periods'] = sim_params.periods
+                    orchestrator.simulation_config['simulation']['duration_hours'] = sim_params.duration_hours
+                    
+                    # Income categories
+                    orchestrator.simulation_config['simulation']['num_discount_categories'] = sim_params.num_discount_categories
+                    orchestrator.simulation_config['simulation']['num_fixed_categories'] = sim_params.num_fixed_categories
+                
                 # Ensure all orchestrators have decision settings available
                 if prob_settings:
                     # For orchestrators with simulation_config

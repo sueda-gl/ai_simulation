@@ -11,6 +11,13 @@ from app.pages.decision_tabs.default_config import render_default_decisions_conf
 from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES
 
 
+def format_decision_title(decision_name):
+    """Format decision name for display, with special handling for specific decisions"""
+    if decision_name == "purchase_vs_bid":
+        return "Purchase Now Vs Bid"
+    return decision_name.replace('_', ' ').title()
+
+
 def render_overview_tab(selected_decisions):
     """Render the overview tab with combined execution option"""
     
@@ -34,13 +41,20 @@ def render_overview_tab(selected_decisions):
     
     col1, col2 = st.columns([3, 1])
     with col1:
-        st.info(f"🎯 **Complete end-to-end simulation**: {len(selected_decisions)} decisions with custom parameters + {len(unselected_decisions)} decisions with default values")
-        if len(unselected_decisions) > 0:
-            st.caption(f"💡 Unselected decisions will use configured default values shown above")
-        else:
+        if len(selected_decisions) == 0:
+            # All decisions use defaults
+            st.info(f"🎯 **Complete end-to-end simulation**: All {len(ALL_DECISIONS)} decisions will use default values")
+            st.caption(f"💡 All decisions will use configured default values shown above")
+        elif len(unselected_decisions) == 0:
+            # All decisions use custom parameters
+            st.info(f"🎯 **Complete end-to-end simulation**: All {len(selected_decisions)} decisions with custom parameters")
             st.caption(f"✅ All decisions use custom parameters")
+        else:
+            # Mixed: some custom, some defaults
+            st.info(f"🎯 **Complete end-to-end simulation**: {len(selected_decisions)} decisions with custom parameters + {len(unselected_decisions)} decisions with default values")
+            st.caption(f"💡 Unselected decisions will use configured default values shown above")
     with col2:
-        if st.button("🚀 Run Complete Simulation", type="primary", width="stretch", key="run_complete_simulation"):
+        if st.button("🚀 Run Complete Simulation", type="primary", use_container_width=True, key="run_complete_simulation"):
             run_combined_simulation(selected_decisions)
     
 
@@ -94,24 +108,31 @@ def render_page2():
     # Store the final selected decisions
     st.session_state.decision_params.selected_decisions = selected_decisions
     
+    # Show informational message based on selection state
     if not selected_decisions:
-        st.warning("Please select at least one decision to configure parameters")
-        # Navigation
-        render_navigation('page2')
-        return
+        st.info("ℹ️ No decisions selected for custom configuration. You can run the complete simulation using default values for all decisions, or select specific decisions to customize their parameters.")
     
-    # Create tabs
-    tab_names = ["📊 Overview"] + [f"🎯 {d.replace('_', ' ').title()}" for d in selected_decisions]
-    tabs = st.tabs(tab_names)
-    
-    # Overview Tab
-    with tabs[0]:
-        render_overview_tab(selected_decisions)
-    
-    # Decision-specific tabs
-    for i, decision in enumerate(selected_decisions):
-        with tabs[i + 1]:
-            render_decision_tab(decision)
+    # Create tabs - Overview tab is always present
+    if selected_decisions:
+        # Overview + decision-specific tabs
+        tab_names = ["📊 Overview"] + [f"🎯 {format_decision_title(d)}" for d in selected_decisions]
+        tabs = st.tabs(tab_names)
+        
+        # Overview Tab
+        with tabs[0]:
+            render_overview_tab(selected_decisions)
+        
+        # Decision-specific tabs
+        for i, decision in enumerate(selected_decisions):
+            with tabs[i + 1]:
+                render_decision_tab(decision)
+    else:
+        # Only Overview tab when no decisions are selected
+        tabs = st.tabs(["📊 Overview"])
+        
+        # Overview Tab
+        with tabs[0]:
+            render_overview_tab(selected_decisions)
     
     # Navigation
     render_navigation('page2')

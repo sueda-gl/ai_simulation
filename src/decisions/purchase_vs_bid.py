@@ -13,11 +13,11 @@ def purchase_vs_bid(agent_state: dict, params: dict, rng, simulation_config: dic
             
             # Use provided RNG for reproducibility
             if rng.random() < probability_y:
-                choice = options[0]  # purchase
+                choice = options[0]  # Purchase Now
             else:
                 choice = options[1]  # bid
             return {"purchase_vs_bid": choice}
     
     # Fallback to simple 50/50 random choice
-    choice = rng.choice(["purchase", "bid"])
+    choice = rng.choice(["Purchase Now", "bid"])
     return {"purchase_vs_bid": choice}

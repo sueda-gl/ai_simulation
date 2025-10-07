@@ -430,7 +430,7 @@ def render_page1():
                         min_value=0.0,
                         max_value=1.0,
                         value=st.session_state.sim_params.vendor_carryover_probability,
-                        step=0.05,
+                        step=0.01,
                         help="Probability that any given vendor will have carryover enabled (Bernoulli per vendor)",
                         key="vendor_carryover_probability_slider",
                         on_change=lambda: setattr(st.session_state.sim_params, 'vendor_carryover_probability', st.session_state.vendor_carryover_probability_slider)
@@ -654,7 +654,7 @@ BUDGET_SHOP,5.25,50,0""")
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 for simulation flexibility
             value=st.session_state.sim_params.price_range,
-            step=0.05,
+            step=0.01,
             help="Price range for Purchase Now and Minimum Bid prices. Extended to 1.0 for simulation flexibility.",
             key="price_range_slider",
             on_change=lambda: setattr(st.session_state.sim_params, 'price_range', st.session_state.price_range_slider)
@@ -665,7 +665,7 @@ BUDGET_SHOP,5.25,50,0""")
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 as requested
             value=st.session_state.sim_params.bidding_percentage,
-            step=0.05,
+            step=0.01,
             help="Proportion of products available for bidding (NA = bp × NV). Now supports up to 100%!",
             key="bidding_percentage_slider",
             on_change=lambda: setattr(st.session_state.sim_params, 'bidding_percentage', st.session_state.bidding_percentage_slider)
@@ -1213,7 +1213,7 @@ BUDGET_SHOP,5.25,50,0""")
                     
                     # Label for first category (discount customers)
                     if i == 0:
-                        label = f"Cat 1 (Lowest/Discount)"
+                        label = f"Cat 1 "
                     else:
                         label = f"Cat {i+1}"
 

@@ -107,7 +107,7 @@ def render_donation_default_tab():
                 min_value=0.0,
                 max_value=2.0,
                 value=st.session_state.sigma_coefficient,
-                step=0.1,
+                step=0.01,
                 help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
                 key="tab_sigma_coefficient"
             )
@@ -136,7 +136,7 @@ def render_donation_default_tab():
                     min_value=0.0,
                     max_value=2.0,
                     value=st.session_state.sigma_coefficient,
-                    step=0.1,
+                    step=0.01,
                     help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
                     key="tab_sigma_coefficient_research"
                 )
@@ -192,7 +192,7 @@ def render_donation_default_tab():
                     min_value=0.0,
                     max_value=2.0,
                     value=st.session_state.sigma_coefficient,
-                    step=0.1,
+                    step=0.01,
                     help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
                     key="tab_sigma_coefficient_compare"
                 )
@@ -214,7 +214,7 @@ def render_donation_default_tab():
                 min_value=0.0,
                 max_value=1.0,
                 value=st.session_state.anchor_observed_weight,
-                step=0.05,
+                step=0.01,
                 help="Anchor = w × Observed + (1-w) × Predicted",
                 key="tab_anchor_weight"
             )
@@ -254,48 +254,10 @@ def render_donation_default_tab():
     st.markdown('<h4 class="subsection-header">📊 Distribution Adjustment</h4>', unsafe_allow_html=True)
     render_adjustment_override_section()
     
-    # Coefficient refresh and debug section
+    # Actions and Coefficient Management section - combined
     st.markdown("---")
-    st.markdown('<h4 class="subsection-header">🔧 Coefficient Management</h4>', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        # Debug: Show current session state values
-        with st.expander("🔍 Debug: Current Session State Values", expanded=False):
-            st.write("**Current intercept values in session state:**")
-            st.write(f"- Main intercept: {st.session_state.get('donation_coeff_intercept', 'NOT SET')}")
-            st.write(f"- Categorical intercept: {st.session_state.get('donation_coeff_intercept_cat', 'NOT SET')}")
-            st.write(f"- Continuous intercept: {st.session_state.get('donation_coeff_intercept_cont', 'NOT SET')}")
-            
-            # Load current YAML values for comparison
-            try:
-                import yaml
-                from pathlib import Path
-                config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
-                with open(config_path, 'r') as f:
-                    config = yaml.safe_load(f)
-                
-                yaml_cat = config['donation_default']['regression_coefficients']['categorical']['intercept']
-                yaml_cont = config['donation_default']['regression_coefficients']['continuous']['intercept']
-                
-                st.write("**Current YAML values:**")
-                st.write(f"- YAML categorical: {yaml_cat}")
-                st.write(f"- YAML continuous: {yaml_cont}")
-                
-                # Check if they match
-                if st.session_state.get('donation_coeff_intercept_cat') != yaml_cat:
-                    st.error("❌ Session state doesn't match YAML! Click 'Reload Coefficients' button.")
-                else:
-                    st.success("✅ Session state matches YAML values")
-                    
-            except Exception as e:
-                st.error(f"Error reading YAML: {e}")
-    
-    with col2:
-        if st.button("🔄 Reload Coefficients from YAML", type="secondary", use_container_width=True, help="Force reload all coefficients from the YAML file"):
-            load_donation_coefficients_from_yaml()
-            st.success("✅ Coefficients reloaded from YAML!")
-            st.rerun()
+    st.markdown('<h4 class="subsection-header">⚙️ Actions & Management</h4>', unsafe_allow_html=True)
+    render_actions_and_management_section()
     
     # Render both individual and complete simulation buttons
     try:
@@ -332,9 +294,6 @@ def render_formula_display():
             st.markdown("---")
             st.markdown("**Continuous Income Specification:**")
             render_continuous_formula_specific()
-    
-    with st.expander("🧮 Live Example Calculation", expanded=False):
-        render_interactive_example()
     
     with st.expander("📚 Variable Definitions", expanded=False):
         render_variable_definitions()
@@ -474,200 +433,6 @@ def render_continuous_formula():
         # Show total range effect using actual allowances
         total_range = linear_coeff * (200 - 16)  # from €16 to €200
         st.metric("Total Range Effect (€16→€200)", f"{total_range:.6f}")
-
-
-def render_interactive_example():
-    """Render interactive example calculation"""
-    
-    st.markdown("**🎛️ Interactive Example Calculation**")
-    st.caption("Select agent characteristics to see step-by-step prediction calculation")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        example_group = st.selectbox(
-            "Group", 
-            ["MidSub", "NoSub", "FullSub"],
-            help="Experimental group assignment"
-        )
-    
-    with col2:
-        example_income = st.slider(
-            "Income Level", 
-            1, 5, 3,
-            help="Income level from 1 (lowest) to 5 (highest)"
-        )
-    
-    with col3:
-        example_study = st.selectbox(
-            "Study Programme", 
-            ["Incoming", "Law5yr", "UG3yr", "Grad2yr"],
-            help="Academic programme category"
-        )
-    
-    with col4:
-        example_hh = st.slider(
-            "Honesty-Humility", 
-            1.0, 5.0, 3.4, 0.1,
-            help="Honesty-Humility score (1-5 scale)"
-        )
-    
-    # Calculate step-by-step
-    income_mode = st.session_state.get('income_spec_mode', 'categorical')
-    
-    if income_mode in ["categorical only", "Compare both"]:
-        st.markdown("**📊 Categorical Mode Calculation:**")
-        calculate_categorical_example(example_group, example_income, example_study, example_hh)
-    
-    if income_mode in ["continuous only", "Compare both"]:
-        if income_mode == "Compare both":
-            st.markdown("---")
-        st.markdown("**📈 Continuous Mode Calculation:**")
-        calculate_continuous_example(example_group, example_income, example_study, example_hh)
-
-
-def calculate_categorical_example(group, income_level, study, hh_score):
-    """Calculate and display categorical mode example"""
-    
-    # Get coefficients FROM YAML ONLY - no hardcoded fallbacks
-    intercept = get_coefficient('intercept', 'cat')
-    hh_coeff = get_coefficient('hh', 'cat')
-    
-    # Group coefficient
-    group_coeffs = {
-        'MidSub': get_coefficient('midsub', 'cat'),
-        'NoSub': get_coefficient('nosub', 'cat'),
-        'FullSub': get_coefficient('fullsub', 'cat')
-    }
-    group_coeff = group_coeffs[group]
-    
-    # Income quintile coefficient
-    income_mapping = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4', 5: 'Q5'}
-    income_quintile = income_mapping[income_level]
-    income_coeffs = {
-        'Q1': get_coefficient('q1', 'cat'),
-        'Q2': get_coefficient('q2', 'cat'),
-        'Q3': get_coefficient('q3', 'cat'),
-        'Q4': get_coefficient('q4', 'cat'),
-        'Q5': get_coefficient('q5', 'cat')
-    }
-    income_coeff = income_coeffs[income_quintile]
-    
-    # Study coefficient
-    study_coeffs = {
-        'Incoming': get_coefficient('incoming', 'cat'),
-        'Law5yr': get_coefficient('law', 'cat'),
-        'UG3yr': get_coefficient('ug', 'cat'),
-        'Grad2yr': get_coefficient('grad', 'cat')
-    }
-    study_coeff = study_coeffs[study]
-    
-    # HH z-score calculation
-    hh_mean = 3.3922
-    hh_std = 0.5587
-    hh_zscore = (hh_score - hh_mean) / hh_std
-    hh_term = hh_coeff * hh_zscore
-    
-    # Step-by-step calculation
-    steps_data = {
-        'Component': [
-            'Intercept (β₀)',
-            f'Group Effect: {group}',
-            f'Income Effect: {income_quintile} (Level {income_level})',
-            f'Study Effect: {study}',
-            f'HH Effect: {hh_score:.1f} → z-score = {hh_zscore:.3f}'
-        ],
-        'Coefficient': [
-            f'{intercept:.6f}',
-            f'{group_coeff:.6f}',
-            f'{income_coeff:.6f}',
-            f'{study_coeff:.6f}',
-            f'{hh_coeff:.6f} × {hh_zscore:.3f} = {hh_term:.6f}'
-        ],
-        'Value': [
-            intercept,
-            group_coeff,
-            income_coeff,
-            study_coeff,
-            hh_term
-        ]
-    }
-    
-    steps_df = pd.DataFrame(steps_data)
-    st.dataframe(steps_df, hide_index=True, use_container_width=True)
-    
-    # Final prediction
-    predicted = intercept + group_coeff + income_coeff + study_coeff + hh_term
-    st.success(f"**🎯 Predicted Prosocial Behavior: {predicted:.6f}**")
-
-
-def calculate_continuous_example(group, income_level, study, hh_score):
-    """Calculate and display continuous mode example"""
-    
-    # Get coefficients FROM YAML ONLY - no hardcoded fallbacks
-    intercept = get_coefficient('intercept', 'cont')
-    hh_coeff = get_coefficient('hh', 'cont')
-    linear_coeff = get_coefficient('linear', 'cont')
-    
-    # Group coefficient
-    group_coeffs = {
-        'MidSub': get_coefficient('midsub', 'cont'),
-        'NoSub': get_coefficient('nosub', 'cont'),
-        'FullSub': get_coefficient('fullsub', 'cont')
-    }
-    group_coeff = group_coeffs[group]
-    
-    # Linear income term - use actual allowance amount
-    allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
-    actual_allowance = allowance_mapping[income_level]
-    income_term = linear_coeff * actual_allowance
-    
-    # Study coefficient
-    study_coeffs = {
-        'Incoming': get_coefficient('incoming', 'cont'),
-        'Law5yr': get_coefficient('law', 'cont'),
-        'UG3yr': get_coefficient('ug', 'cont'),
-        'Grad2yr': get_coefficient('grad', 'cont')
-    }
-    study_coeff = study_coeffs[study]
-    
-    # HH z-score calculation
-    hh_mean = 3.3922
-    hh_std = 0.5587
-    hh_zscore = (hh_score - hh_mean) / hh_std
-    hh_term = hh_coeff * hh_zscore
-    
-    # Step-by-step calculation
-    steps_data = {
-        'Component': [
-            'Intercept (β₀)',
-            f'Group Effect: {group}',
-            f'Income Effect: Linear (Level {income_level})',
-            f'Study Effect: {study}',
-            f'HH Effect: {hh_score:.1f} → z-score = {hh_zscore:.3f}'
-        ],
-        'Coefficient': [
-            f'{intercept:.6f}',
-            f'{group_coeff:.6f}',
-            f'{linear_coeff:.6f} × {income_level} = {income_term:.6f}',
-            f'{study_coeff:.6f}',
-            f'{hh_coeff:.6f} × {hh_zscore:.3f} = {hh_term:.6f}'
-        ],
-        'Value': [
-            intercept,
-            group_coeff,
-            income_term,
-            study_coeff,
-            hh_term
-        ]
-    }
-    
-    steps_df = pd.DataFrame(steps_data)
-    st.dataframe(steps_df, hide_index=True, use_container_width=True)
-    
-    # Final prediction
-    predicted = intercept + group_coeff + income_term + study_coeff + hh_term
-    st.success(f"**🎯 Predicted Prosocial Behavior: {predicted:.6f}**")
 
 
 def render_variable_definitions():
@@ -929,26 +694,25 @@ def render_intercept_override_section():
     try:
         current_yaml_values = get_current_yaml_intercepts()
         
-        st.markdown("**📋 Current YAML Values:**")
-        yaml_col1, yaml_col2 = st.columns(2)
+        # Use 3 columns: Categorical Current, Continuous Current, Override Values
+        col1, col2, col3 = st.columns(3)
         
-        with yaml_col1:
-            st.metric("Categorical Intercept", f"{current_yaml_values['categorical']:.6f}")
+        with col1:
+            st.markdown("**📋 Categorical**")
+            st.metric("Current Value", f"{current_yaml_values['categorical']:.6f}")
         
-        with yaml_col2:
-            st.metric("Continuous Intercept", f"{current_yaml_values['continuous']:.6f}")
+        with col2:
+            st.markdown("**📋 Continuous**")
+            st.metric("Current Value", f"{current_yaml_values['continuous']:.6f}")
         
-        st.markdown("---")
-        st.markdown("**✏️ Override Values:**")
-        
-        # Override input fields based on income mode
-        if income_mode == "Compare both":
-            # Show both categorical and continuous
-            col1, col2 = st.columns(2)
+        with col3:
+            st.markdown("**✏️ Override Values**")
             
-            with col1:
+            # Override input fields based on income mode
+            if income_mode == "Compare both":
+                # Show both categorical and continuous
                 new_cat_intercept = st.number_input(
-                    "New Categorical Intercept",
+                    "Categorical",
                     value=st.session_state.intercept_override_values.get('categorical', current_yaml_values['categorical']),
                     step=0.001,
                     format="%.6f",
@@ -957,10 +721,9 @@ def render_intercept_override_section():
                     on_change=lambda: auto_save_intercept('categorical', st.session_state.override_categorical_intercept)
                 )
                 st.session_state.intercept_override_values['categorical'] = new_cat_intercept
-            
-            with col2:
+                
                 new_cont_intercept = st.number_input(
-                    "New Continuous Intercept", 
+                    "Continuous", 
                     value=st.session_state.intercept_override_values.get('continuous', current_yaml_values['continuous']),
                     step=0.001,
                     format="%.6f",
@@ -969,51 +732,35 @@ def render_intercept_override_section():
                     on_change=lambda: auto_save_intercept('continuous', st.session_state.override_continuous_intercept)
                 )
                 st.session_state.intercept_override_values['continuous'] = new_cont_intercept
+                    
+            elif "continuous" in income_mode.lower():
+                # Show only continuous
+                new_cont_intercept = st.number_input(
+                    "Continuous",
+                    value=st.session_state.intercept_override_values.get('continuous', current_yaml_values['continuous']),
+                    step=0.001,
+                    format="%.6f", 
+                    help="Override value for continuous income specification",
+                    key="override_continuous_intercept",
+                    on_change=lambda: auto_save_intercept('continuous', st.session_state.override_continuous_intercept)
+                )
+                st.session_state.intercept_override_values['continuous'] = new_cont_intercept
                 
-        elif "continuous" in income_mode.lower():
-            # Show only continuous
-            new_cont_intercept = st.number_input(
-                "New Continuous Intercept",
-                value=st.session_state.intercept_override_values.get('continuous', current_yaml_values['continuous']),
-                step=0.001,
-                format="%.6f", 
-                help="Override value for continuous income specification",
-                key="override_continuous_intercept",
-                on_change=lambda: auto_save_intercept('continuous', st.session_state.override_continuous_intercept)
-            )
-            st.session_state.intercept_override_values['continuous'] = new_cont_intercept
-            
-        else:
-            # Show only categorical (default)
-            new_cat_intercept = st.number_input(
-                "New Categorical Intercept",
-                value=st.session_state.intercept_override_values.get('categorical', current_yaml_values['categorical']),
-                step=0.001,
-                format="%.6f",
-                help="Override value for categorical income specification", 
-                key="override_categorical_intercept",
-                on_change=lambda: auto_save_intercept('categorical', st.session_state.override_categorical_intercept)
-            )
-            st.session_state.intercept_override_values['categorical'] = new_cat_intercept
-        
-        # Action buttons
-        st.markdown("---")
-        if st.button("🔄 Reset to Default Values", help="Reset intercept values to research defaults and update YAML"):
-            # Reset to research default values
-            default_values = {
-                'categorical': 1.519818,  # Research default for categorical
-                'continuous': -0.139596   # Research default for continuous
-            }
-            success = update_yaml_intercepts(default_values)
-            if success:
-                st.session_state.intercept_override_values = {}
-                load_donation_coefficients_from_yaml()
-                st.toast("✅ Intercepts reset to research defaults", icon="🔄")
-                st.rerun()
             else:
-                st.toast("❌ Failed to reset intercepts", icon="⚠️")
+                # Show only categorical (default)
+                new_cat_intercept = st.number_input(
+                    "Categorical",
+                    value=st.session_state.intercept_override_values.get('categorical', current_yaml_values['categorical']),
+                    step=0.001,
+                    format="%.6f",
+                    help="Override value for categorical income specification", 
+                    key="override_categorical_intercept",
+                    on_change=lambda: auto_save_intercept('categorical', st.session_state.override_categorical_intercept)
+                )
+                st.session_state.intercept_override_values['categorical'] = new_cat_intercept
         
         # Show impact preview
+        st.markdown("---")
         if st.session_state.intercept_override_values:
             st.markdown("**📊 Impact Preview:**")
             
@@ -1124,40 +871,31 @@ def render_adjustment_override_section():
     try:
         current_yaml_values = get_current_yaml_adjustment()
         
-        st.markdown("**📋 Current YAML Values:**")
-        st.metric("Adjustment Shift", f"{current_yaml_values['shift_value']:.3f}")
+        # Use 2 columns: Current Value and Override Value
+        col1, col2 = st.columns(2)
         
-        st.markdown("---")
-        st.markdown("**✏️ Override Values:**")
+        with col1:
+            st.markdown("**📋 Current Value**")
+            st.metric("Adjustment Shift", f"{current_yaml_values['shift_value']:.3f}")
         
-        # Adjustment input field
-        new_adjustment = st.number_input(
-            "Distribution Shift Value",
-            value=st.session_state.adjustment_override_values.get('shift_value', current_yaml_values['shift_value']),
-            step=0.1,
-            format="%.3f",
-            help="Shift the distribution up (positive) or down (negative) on 0-100 scale before stochastic component",
-            key="override_adjustment_shift",
-            on_change=lambda: auto_save_adjustment('shift_value', st.session_state.override_adjustment_shift)
-        )
-        st.session_state.adjustment_override_values['shift_value'] = new_adjustment
+        with col2:
+            st.markdown("**✏️ Override Value**")
+            # Adjustment input field
+            new_adjustment = st.number_input(
+                "Distribution Shift Value",
+                value=st.session_state.adjustment_override_values.get('shift_value', current_yaml_values['shift_value']),
+                step=0.1,
+                format="%.3f",
+                help="Shift the distribution up (positive) or down (negative) on 0-100 scale before stochastic component",
+                key="override_adjustment_shift",
+                on_change=lambda: auto_save_adjustment('shift_value', st.session_state.override_adjustment_shift)
+            )
+            st.session_state.adjustment_override_values['shift_value'] = new_adjustment
         
-        st.caption("💡 **How it works**: Positive values shift the distribution higher (more donation), negative values shift it lower (less donation)")
-        
-        # Action button
-        st.markdown("---")
-        if st.button("🔄 Reset Adjustment to Default (0.0)", help="Reset adjustment value to default 0.0 and update YAML"):
-            # Reset to default value of 0.0
-            success = update_yaml_adjustment({'shift_value': 0.0})
-            if success:
-                st.session_state.adjustment_override_values = {}
-                load_donation_coefficients_from_yaml()
-                st.toast("✅ Adjustment reset to default (0.0)", icon="🔄")
-                st.rerun()
-            else:
-                st.toast("❌ Failed to reset adjustment", icon="⚠️")
+        st.caption("💡 How it works: Positive values shift the distribution up (greater donation), negative values shift it down (smaller donation)")
         
         # Show impact preview
+        st.markdown("---")
         if st.session_state.adjustment_override_values:
             current_value = current_yaml_values['shift_value']
             new_value = new_adjustment
@@ -1179,6 +917,80 @@ def render_adjustment_override_section():
         
     except Exception as e:
         st.error(f"Error loading adjustment values: {e}")
+
+
+def render_actions_and_management_section():
+    """Render the combined actions and management section with three columns"""
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**🔄 Reset Intercept**")
+        if st.button("Reset to Default Values", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update YAML", key="reset_intercept_btn"):
+            # Reset to research default values
+            default_values = {
+                'categorical': 1.519818,  # Research default for categorical
+                'continuous': -0.139596   # Research default for continuous
+            }
+            success = update_yaml_intercepts(default_values)
+            if success:
+                st.session_state.intercept_override_values = {}
+                load_donation_coefficients_from_yaml()
+                st.toast("✅ Intercepts reset to research defaults", icon="🔄")
+                st.rerun()
+            else:
+                st.toast("❌ Failed to reset intercepts", icon="⚠️")
+    
+    with col2:
+        st.markdown("**🔄 Reset Adjustment**")
+        if st.button("Reset to Default (0.0)", type="secondary", use_container_width=True, help="Reset adjustment value to default 0.0 and update YAML", key="reset_adjustment_btn"):
+            # Reset to default value of 0.0
+            success = update_yaml_adjustment({'shift_value': 0.0})
+            if success:
+                st.session_state.adjustment_override_values = {}
+                load_donation_coefficients_from_yaml()
+                st.toast("✅ Adjustment reset to default (0.0)", icon="🔄")
+                st.rerun()
+            else:
+                st.toast("❌ Failed to reset adjustment", icon="⚠️")
+    
+    with col3:
+        st.markdown("**🔧 Coefficient Management**")
+        if st.button("Reload from YAML", type="secondary", use_container_width=True, help="Force reload all coefficients from the YAML file", key="reload_coeff_btn"):
+            load_donation_coefficients_from_yaml()
+            st.toast("✅ Coefficients reloaded from YAML!", icon="🔄")
+            st.rerun()
+    
+    # Debug expander below the buttons
+    with st.expander("🔍 Debug: Current Session State Values", expanded=False):
+        st.write("**Current intercept values in session state:**")
+        st.write(f"- Main intercept: {st.session_state.get('donation_coeff_intercept', 'NOT SET')}")
+        st.write(f"- Categorical intercept: {st.session_state.get('donation_coeff_intercept_cat', 'NOT SET')}")
+        st.write(f"- Continuous intercept: {st.session_state.get('donation_coeff_intercept_cont', 'NOT SET')}")
+        
+        # Load current YAML values for comparison
+        try:
+            import yaml
+            from pathlib import Path
+            config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            yaml_cat = config['donation_default']['regression_coefficients']['categorical']['intercept']
+            yaml_cont = config['donation_default']['regression_coefficients']['continuous']['intercept']
+            
+            st.write("**Current YAML values:**")
+            st.write(f"- YAML categorical: {yaml_cat}")
+            st.write(f"- YAML continuous: {yaml_cont}")
+            
+            # Check if they match
+            if st.session_state.get('donation_coeff_intercept_cat') != yaml_cat:
+                st.error("❌ Session state doesn't match YAML! Click 'Reload from YAML' button.")
+            else:
+                st.success("✅ Session state matches YAML values")
+                
+        except Exception as e:
+            st.error(f"Error reading YAML: {e}")
 
 
 def get_current_yaml_adjustment():

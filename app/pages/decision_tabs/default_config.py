@@ -47,7 +47,12 @@ def render_default_decisions_config(selected_decisions, all_decisions):
 def render_decision_default_config(decision_name):
     """Render configuration UI for a specific default decision"""
     
-    decision_title = decision_name.replace('_', ' ').title()
+    # Special handling for purchase_vs_bid to show "Purchase Now" instead of "Purchase"
+    if decision_name == "purchase_vs_bid":
+        decision_title = "Purchase Now Vs Bid"
+    else:
+        decision_title = decision_name.replace('_', ' ').title()
+    
     default_value = DEFAULT_DECISION_VALUES.get(decision_name)
     
     st.markdown(f"**🎯 {decision_title}**")
@@ -73,7 +78,7 @@ def render_decision_default_config(decision_name):
 
 
 def render_probability_default_config(decision_name, default_value):
-    """Render UI for probability-based default decisions (Y/N, purchase/bid)"""
+    """Render UI for probability-based default decisions (Y/N, Purchase Now/bid)"""
     
     options = default_value.get("options", ["Y", "N"])
     description = default_value.get("description", "Probability configuration")
@@ -92,11 +97,11 @@ def render_probability_default_config(decision_name, default_value):
     
     with col1:
         probability = st.slider(
-            f"P({options[0]}) - Probability of {options[0]}",
+            f"P({options[0]}) - Probability of {options[0]} vs bidding",
             min_value=0.0,
             max_value=1.0,
             value=st.session_state[prob_key],
-            step=0.05,
+            step=0.01,
             help=f"Probability that agents will choose {options[0]} vs {options[1]}",
             key=prob_key
         )
@@ -257,7 +262,7 @@ def render_placeholder_default_config(decision_name, default_value):
         "RANDOM_WITHIN_LIMIT": "Random value within consumption limit (computed per agent based on income category)",
         "CALCULATED": "Calculated as: Consumption quantity ÷ Period duration",
         "RANDOM_WITHIN_RANGE": "Random bid amount within bidding price range (computed based on market parameters)",
-        "deterministic": "Deterministic selection based on vendor choice weights",
+        "deterministic": "Deterministic selection based on highest weighted vendor-product score",
         "NA": "Not applicable - this decision is not relevant given other parameter choices"
     }
     
@@ -265,7 +270,7 @@ def render_placeholder_default_config(decision_name, default_value):
     
     st.info(f"ℹ️ **Computed During Simulation**")
     st.caption(description)
-    st.caption("💡 No pre-configuration needed - this value is automatically calculated")
+    st.caption("💡 No pre-configuration needed - this value is automatically calculated only for agents who ended up placing a bid")
 
 
 def reset_all_default_parameters(unselected_decisions):

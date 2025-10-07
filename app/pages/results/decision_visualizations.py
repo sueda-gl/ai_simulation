@@ -36,11 +36,11 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
             with col1:
                 st.metric("Total Agents", f"{len(decision_data):,}")
             with col2:
-                st.metric("Mean", f"{numeric_data.mean():.2f}")
+                st.metric("Mean", f"{numeric_data.mean():.1%}")
             with col3:
-                st.metric("Std Dev", f"{numeric_data.std():.3f}")
+                st.metric("Std Dev", f"{numeric_data.std():.2%}")
             with col4:
-                st.metric("Range", f"{numeric_data.min():.2f} - {numeric_data.max():.2f}")
+                st.metric("Range", f"{numeric_data.min():.1%} - {numeric_data.max():.1%}")
             col_plot, col_stats = st.columns([2, 1])
             with col_plot:
                 fig = px.histogram(
@@ -50,14 +50,17 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
                     title=f"Distribution of {decision_title}",
                     labels={decision_name: decision_title, 'count': 'Number of Agents'}
                 )
-                fig.update_layout(showlegend=False)
+                fig.update_layout(
+                    showlegend=False,
+                    xaxis_tickformat='.0%'
+                )
                 st.plotly_chart(fig, use_container_width=True)
             with col_stats:
                 st.markdown("**📈 Statistics**")
                 stats = numeric_data.describe()
                 stats_df = pd.DataFrame({
                     'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                    'Value': [f"{stats[key]:.2f}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
+                    'Value': [f"{stats[key]:.1%}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
                 })
                 st.dataframe(stats_df, use_container_width=True, hide_index=True)
         else:
@@ -96,10 +99,10 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         # Show the actual donation distribution - distinguish between cases
         if has_selected_config:
             st.success("📊 **Using Distribution from Selected Donation Configuration**")
-            st.caption("The final donation rate is based on the donation configuration you selected")
+            st.caption("✅ The final_donation_rate values in your export match the donation_default distribution shown below")
         elif has_only_one_config:
             st.success("📊 **Using Distribution from Only Available Donation Configuration**")
-            st.caption("Only one donation configuration was generated, using it automatically")
+            st.caption("✅ Only one donation configuration was generated - final_donation_rate values match donation_default")
         
         donation_data = df['donation_default']
         
@@ -266,15 +269,93 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
 
 
 def render_disclose_documents(df, decision_name, decision_title, decision_data):
-    """Visualization for disclose_documents - binary Y/N choice"""
-    # Same as disclose_income - reuse the implementation
-    render_disclose_income(df, decision_name, decision_title, decision_data)
+    """Visualization for disclose_documents - binary Y/N choice with NA handling
+    
+    This decision only applies to agents qualified for discount (income < threshold).
+    Agents not qualified will have "NA" value.
+    """
+    
+    # Separate NA (not applicable) from Y/N choices
+    value_counts = decision_data.value_counts()
+    total_agents = len(decision_data)
+    
+    na_count = value_counts.get('NA', 0)
+    qualified_agents = total_agents - na_count
+    
+    # Show overall metrics
+    st.markdown("### Eligibility & Application")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Total Agents", f"{total_agents:,}")
+    with col2:
+        st.metric("Qualified for Discount", f"{qualified_agents:,}", 
+                  help="Agents with income < discount threshold")
+    with col3:
+        st.metric("Not Qualified (NA)", f"{na_count:,}", 
+                  help="Agents with income ≥ discount threshold (decision does not apply)")
+    
+    # If there are qualified agents, show their Y/N choices
+    if qualified_agents > 0:
+        st.markdown("### Qualified Agents' Choices")
+        st.caption(f"📊 Among the {qualified_agents:,} agents qualified for discount (income < threshold)")
+        
+        # Binary choice metrics for qualified agents only
+        col1, col2, col3, col4 = st.columns(4)
+        
+        yes_count = value_counts.get('Y', 0)
+        no_count = value_counts.get('N', 0)
+        
+        with col1:
+            st.metric("Qualified Agents", f"{qualified_agents:,}")
+        with col2:
+            st.metric("Disclosed (Y)", f"{yes_count:,} ({yes_count/qualified_agents:.1%})")
+        with col3:
+            st.metric("Not Disclosed (N)", f"{no_count:,} ({no_count/qualified_agents:.1%})")
+        with col4:
+            st.metric("Disclosure Rate", f"{yes_count/qualified_agents:.1%}",
+                      help="Percentage of qualified agents who disclosed documents")
+        
+        # Binary choice visualization - pie chart (only Y/N, excluding NA)
+        col_plot, col_stats = st.columns([2, 1])
+        
+        with col_plot:
+            # Filter out NA for the pie chart
+            qualified_counts = {k: v for k, v in value_counts.items() if k != 'NA'}
+            if len(qualified_counts) > 0:
+                fig = px.pie(
+                    values=list(qualified_counts.values()),
+                    names=list(qualified_counts.keys()),
+                    title=f"{decision_title} - Qualified Agents Only",
+                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        
+        with col_stats:
+            st.markdown("**📊 Choice Breakdown (Qualified)**")
+            qualified_breakdown = pd.DataFrame({
+                'Choice': list(qualified_counts.keys()),
+                'Count': list(qualified_counts.values()),
+                'Percentage': [f"{(count/qualified_agents)*100:.1f}%" for count in qualified_counts.values()]
+            })
+            st.dataframe(qualified_breakdown, use_container_width=True, hide_index=True)
+    else:
+        st.warning("⚠️ No agents qualified for discount (all agents have income ≥ threshold)")
+    
+    # Show full breakdown including NA
+    st.markdown("### Complete Breakdown (All Agents)")
+    full_breakdown = pd.DataFrame({
+        'Status': value_counts.index,
+        'Count': value_counts.values,
+        'Percentage': [f"{(count/total_agents)*100:.1f}%" for count in value_counts.values]
+    })
+    st.dataframe(full_breakdown, use_container_width=True, hide_index=True)
 
 
 def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
-    """Visualization for purchase_vs_bid - binary purchase/bid choice"""
+    """Visualization for purchase_vs_bid - binary Purchase Now/bid choice"""
     
-    # Purchase vs Bid metrics
+    # Purchase Now vs Bid metrics
     col1, col2, col3, col4 = st.columns(4)
     
     value_counts = decision_data.value_counts()
@@ -283,15 +364,15 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
     with col1:
         st.metric("Total Agents", f"{total:,}")
     with col2:
-        purchase_count = value_counts.get('purchase', 0)
-        st.metric("Purchase", f"{purchase_count:,} ({purchase_count/total:.1%})")
+        purchase_count = value_counts.get('Purchase Now', 0)
+        st.metric("Purchase Now", f"{purchase_count:,} ({purchase_count/total:.1%})")
     with col3:
         bid_count = value_counts.get('bid', 0)
         st.metric("Bid", f"{bid_count:,} ({bid_count/total:.1%})")
     with col4:
-        st.metric("Purchase Rate", f"{purchase_count/total:.1%}")
+        st.metric("Purchase Now Rate", f"{purchase_count/total:.1%}")
     
-    # Purchase vs Bid visualization - donut chart
+    # Purchase Now vs Bid visualization - donut chart
     col_plot, col_stats = st.columns([2, 1])
     
     with col_plot:
@@ -301,7 +382,7 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 names=value_counts.index,
                 title=f"{decision_title} Distribution",
                 hole=0.4,  # Donut chart
-                color_discrete_map={'purchase': '#4CAF50', 'bid': '#FF9800'}  # Green for purchase, Orange for bid
+                color_discrete_map={'Purchase Now': '#4CAF50', 'bid': '#FF9800'}  # Green for Purchase Now, Orange for bid
             )
             st.plotly_chart(fig, use_container_width=True)
     
@@ -320,11 +401,11 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
     
     # Define the 5 options
     options = [
-        ("reduce_bid", "Option 1: Reduce Bid Amount"),
-        ("switch_vendor", "Option 2: Switch to Different Vendor"),
-        ("switch_product", "Option 3: Choose Different Product"), 
-        ("retry_later", "Option 4: Wait and Retry Later"),
-        ("forgo_transaction", "Option 5: Forgo Transaction")
+        ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
+        ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"),
+        ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"), 
+        ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
+        ("forgo_transaction", "Option 5: Forgo the purchase request")
     ]
     
     option_names = dict(options)
@@ -733,11 +814,11 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
     
     # Define the 5 options
     options = [
-        ("reduce_bid", "Option 1: Reduce Bid Amount"),
-        ("switch_vendor", "Option 2: Switch to Different Vendor"),
-        ("switch_product", "Option 3: Choose Different Product"), 
-        ("retry_later", "Option 4: Wait and Retry Later"),
-        ("forgo_transaction", "Option 5: Forgo Transaction")
+        ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
+        ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"),
+        ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"), 
+        ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
+        ("forgo_transaction", "Option 5: Forgo the purchase request")
     ]
     
     option_names = dict(options)
@@ -856,7 +937,7 @@ def render_probability_controls(decision_name, df):
             # Use the actual probability key directly for the slider
             new_prob = st.slider(
                 f"P({options[0]}) - {description}",
-                min_value=0.0, max_value=1.0, value=current_prob, step=0.05,
+                min_value=0.0, max_value=1.0, value=current_prob, step=0.01,
                 help=f"Probability of {options[0]} vs {options[1]}",
                 key=f"{decision_name}_probability_y"
             )

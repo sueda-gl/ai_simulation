@@ -128,7 +128,7 @@ def render_bid_value_tab():
         
         **Key Features:**
         - ✅ Only generates bid if agent chose "bid" option
-        - ✅ Returns NaN (empty/missing value) if agent chose "purchase" option
+        - ✅ Returns NaN (empty/missing value) if agent chose "Purchase Now" option
         - ✅ Uses agent-specific RNG for reproducibility
         - ✅ Rounds to 2 decimal places (currency standard)
         """)
@@ -140,7 +140,7 @@ def render_bid_value_tab():
         
         st.markdown("**Dependencies**")
         st.info("Requires `purchase_vs_bid` decision result")
-        st.caption("If agent chose 'purchase', bid_value = NaN (empty)")
+        st.caption("If agent chose 'Purchase Now', bid_value = NaN (empty)")
     
     # Global parameters info
     st.markdown("---")
@@ -175,7 +175,7 @@ def render_bid_value_tab():
         st.markdown("**Logic Flow:**")
         st.code("""
 1. Check if agent chose 'bid' (from purchase_vs_bid decision)
-   → If 'purchase', return {"bid_value": np.nan}
+   → If 'Purchase Now', return {"bid_value": np.nan}
    
 2. Extract pricing parameters from simulation_config:
    - vendor_price (market_price)

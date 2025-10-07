@@ -92,7 +92,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
                 'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
                 'Value': [
                     f"{donation_stats['mean']:.1%}",
-                    f"{donation_stats['std']:.3f}",
+                    f"{donation_stats['std']:.2%}",
                     f"{donation_stats['min']:.1%}",
                     f"{donation_stats['max']:.1%}",
                     f"{donation_stats['50%']:.1%}",
@@ -235,7 +235,7 @@ def show_monte_carlo_results(mc_data):
                 st.metric("Mean Donation Rate", f"{donation_row['mean']:.1%}")
             
             with col2:
-                st.metric("Standard Deviation", f"{donation_row['std']:.4f}")
+                st.metric("Standard Deviation", f"{donation_row['std']:.2%}")
             
             with col3:
                 st.metric("95% CI Lower", f"{donation_row['p2.5']:.1%}")
@@ -404,7 +404,7 @@ def show_dependent_variable_comparison(df):
                 st.metric("Mean", f"{df[donation_col].mean():.1%}")
                 st.metric("Min", f"{df[donation_col].min():.1%}")
             with col2:
-                st.metric("Std Dev", f"{df[donation_col].std():.4f}")
+                st.metric("Std Dev", f"{df[donation_col].std():.2%}")
                 st.metric("Max", f"{df[donation_col].max():.1%}")
             
             # Histogram
@@ -480,9 +480,18 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
         # Generate sample data
         income_samples = sim_params.sample_income_distribution(n_samples)
         
-        # Create histogram
+        # Use a robust x-range so heavy tails (when max=None) don't collapse detail near the body
+        # Show up to the 99th percentile; outliers beyond are counted and mentioned below
+        p99_value = float(np.percentile(income_samples, 99))
+        x_lower = float(max(0.0, np.min(income_samples)))
+        
+        # Filter samples to display range so histogram binning works correctly
+        mask = income_samples <= p99_value
+        samples_for_display = income_samples[mask]
+        
+        # Create histogram of the filtered data
         fig = px.histogram(
-            x=income_samples,
+            x=samples_for_display,
             nbins=50,
             title=f"Income Distribution Preview ({sim_params.income_distribution.title()})",
             labels={'x': 'Income ($)', 'count': 'Number of Agents'},
@@ -527,6 +536,11 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
             st.metric("Discount Qualification", f"{discount_rate:.1%}")
         with col_stat4:
             st.metric("Sample Size", f"{n_samples:,}")
+        
+        # Mention hidden outliers to avoid confusion when tails are very long
+        num_outliers = int(np.sum(income_samples > p99_value))
+        if num_outliers > 0:
+            st.caption(f"Note: {num_outliers} samples (>p99) are beyond ${p99_value:,.0f} and hidden from the histogram for clarity.")
         
         # Distribution is based on user-specified parameters - no target comparison needed
         

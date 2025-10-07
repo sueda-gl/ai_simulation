@@ -283,7 +283,7 @@ def render_global_parameters_tab(selected_decisions):
                     min_value=0.0,
                     max_value=1.0,
                     value=st.session_state.sim_params.price_range,
-                    step=0.05,
+                    step=0.01,
                     key="tab_price_range"
                 )
                 st.session_state.sim_params.price_range = price_range
@@ -295,7 +295,7 @@ def render_global_parameters_tab(selected_decisions):
                     min_value=0.0,
                     max_value=1.0,
                     value=st.session_state.sim_params.bidding_percentage,
-                    step=0.05,
+                    step=0.01,
                     key="tab_bidding_percentage"
                 )
                 st.session_state.sim_params.bidding_percentage = bidding_percentage

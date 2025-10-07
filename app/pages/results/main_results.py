@@ -136,7 +136,11 @@ def render_single_run_results():
         use_dropdown = False
         
         for decision in executed_decisions:
-            decision_title = decision.replace('_', ' ').title()
+            # Special handling for purchase_vs_bid
+            if decision == "purchase_vs_bid":
+                decision_title = "Purchase Now Vs Bid"
+            else:
+                decision_title = decision.replace('_', ' ').title()
             
             # Determine if this decision was customized or uses defaults
             if decision in st.session_state.custom_decisions:
@@ -335,7 +339,32 @@ def render_single_run_results():
     
     # Raw data download
     if not df.empty:
-        render_export_section(df)
+        # Check if we're using a selected configuration (from new simulation)
+        using_selected_config_from_sim = (
+            hasattr(st.session_state, '_using_selected_config') and 
+            st.session_state._using_selected_config
+        )
+        
+        # ALSO check if user just selected a config from current results (without re-running)
+        # In this case, filter results_dict to only show the selected config
+        has_selected_config = hasattr(st.session_state, 'selected_donation_config')
+        
+        # Determine which results to export
+        if has_selected_config and not using_selected_config_from_sim:
+            # User selected a config from current results - export only that config
+            selected_key = st.session_state.selected_donation_config.get('result_key')
+            
+            # Filter results_dict to only include selected config AND update df to match
+            if selected_key and selected_key in results_dict:
+                filtered_results = {selected_key: results_dict[selected_key]}
+                selected_df = results_dict[selected_key]  # Use the selected config's DataFrame
+                render_export_section(selected_df, results_dict=filtered_results, using_selected_config=True)
+            else:
+                # Selected key not found, export all
+                render_export_section(df, results_dict=results_dict, using_selected_config=False)
+        else:
+            # Pass full results_dict for multi-config export (if not using selected config)
+            render_export_section(df, results_dict=results_dict, using_selected_config=using_selected_config_from_sim)
     
     # Clear the selected config flag at the very end
     if hasattr(st.session_state, '_using_selected_config'):
