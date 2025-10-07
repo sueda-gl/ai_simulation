@@ -1235,9 +1235,26 @@ BUDGET_SHOP,5.25,50,0""")
             st.session_state.sim_params.consumption_limits = consumption_limits
 
         else:
-            st.info("ℹ️ Consumption limits are disabled. Agents will have no consumption restrictions.")
+            st.info("ℹ️ Consumption limits are disabled. All agents will use a single maximum purchase amount.")
             # Clear consumption limits when disabled
             st.session_state.sim_params.consumption_limits = {}
+            
+            # Calculate term duration for display
+            term_periods = st.session_state.sim_params.periods
+            term_hours = st.session_state.sim_params.periods * st.session_state.sim_params.duration_hours
+            
+            # Show fallback maximum input (professor's requirement)
+            st.caption(f"🛒 Set the **maximum purchase amount** for the entire term ({term_periods} period(s) × {int(st.session_state.sim_params.duration_hours)}h = {term_hours}h total)")
+            
+            max_purchases_per_term = st.number_input(
+                "Maximum Purchases per Term",
+                min_value=0,
+                max_value=1000,
+                value=st.session_state.sim_params.max_purchases_per_term,
+                help=f"Maximum number of items any agent can purchase during the entire term ({term_hours}h total). This applies to ALL agents when category-specific limits are disabled.",
+                key="max_purchases_per_term_input"
+            )
+            st.session_state.sim_params.max_purchases_per_term = max_purchases_per_term
     
     with col_population:
         # Population Mode Selection (Global Parameter)

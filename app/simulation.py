@@ -312,6 +312,9 @@ def run_simulation_from_sidebar():
                     # Income categories
                     orchestrator.simulation_config['simulation']['num_discount_categories'] = sim_params.num_discount_categories
                     orchestrator.simulation_config['simulation']['num_fixed_categories'] = sim_params.num_fixed_categories
+                    
+                    # Consumption parameters
+                    orchestrator.simulation_config['simulation']['max_purchases_per_term'] = sim_params.max_purchases_per_term
                 
                 # Ensure all orchestrators have decision settings available
                 if prob_settings:

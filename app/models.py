@@ -94,6 +94,7 @@ class SimulationParameters:
     apply_consumption_limits: bool = False  # ✅ Changed from True to False (unchecked)
     consumption_limits: Dict[str, float] = field(default_factory=dict)
     consumption_limits_source: str = "manual"  # "manual" or "upload"
+    max_purchases_per_term: int = 50  # Fallback maximum when consumption limits disabled
     
     def get_duration_seconds(self) -> float:
         """Convert duration from hours to seconds"""

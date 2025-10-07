@@ -6,6 +6,7 @@ Contains all render_* functions for different decision types.
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 
 def render_decision_results(df, decision_name, decision_title):
@@ -678,13 +679,344 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
     
 
 def render_consumption_quantity(df, decision_name, decision_title, decision_data):
-    """Visualization for consumption_quantity - quantity analysis"""
-    st.markdown("**Random within consumption limit**")
+    """Visualization for consumption_quantity - quantity analysis with purchase requests"""
+    
+    # Overview metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Agents", f"{len(decision_data):,}")
+    
+    with col2:
+        mean_qty = decision_data.mean()
+        st.metric("Mean Quantity", f"{mean_qty:.1f}")
+    
+    with col3:
+        total_purchases = decision_data.sum()
+        st.metric("Total Purchases", f"{int(total_purchases):,}")
+    
+    with col4:
+        agents_with_purchases = (decision_data > 0).sum()
+        pct_with_purchases = agents_with_purchases / len(decision_data) * 100
+        st.metric("Agents w/ Purchases", f"{pct_with_purchases:.1f}%")
+    
+    # Distribution plot and statistics
+    col_plot, col_stats = st.columns([2, 1])
+    
+    with col_plot:
+        # Histogram of consumption quantities
+        fig = px.histogram(
+            df,
+            x=decision_name,
+            nbins=min(30, int(decision_data.max()) + 1),
+            title="Distribution of Consumption Quantities",
+            labels={decision_name: 'Items per Term', 'count': 'Number of Agents'}
+        )
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="Items Purchased per Term",
+            yaxis_title="Number of Agents"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col_stats:
+        st.markdown("**📈 Statistics**")
+        stats = decision_data.describe()
+        stats_df = pd.DataFrame({
+            'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
+            'Value': [
+                f"{stats['mean']:.2f}",
+                f"{stats['std']:.2f}",
+                f"{int(stats['min'])}",
+                f"{int(stats['max'])}",
+                f"{stats['50%']:.2f}",
+                f"{stats['25%']:.2f}",
+                f"{stats['75%']:.2f}"
+            ]
+        })
+        st.dataframe(stats_df, use_container_width=True, hide_index=True)
+    
+    # Income category analysis if available
+    if 'income_category' in df.columns:
+        st.markdown("---")
+        st.markdown("**📊 Quantity by Income Category**")
+        
+        category_stats = df.groupby('income_category')['consumption_quantity'].agg([
+            ('count', 'count'),
+            ('mean', 'mean'),
+            ('std', 'std'),
+            ('min', 'min'),
+            ('max', 'max')
+        ]).reset_index()
+        
+        category_stats.columns = ['Category', 'Agents', 'Mean Qty', 'Std Dev', 'Min', 'Max']
+        category_stats['Mean Qty'] = category_stats['Mean Qty'].round(2)
+        category_stats['Std Dev'] = category_stats['Std Dev'].round(2)
+        
+        col_table, col_chart = st.columns([1, 2])
+        
+        with col_table:
+            st.dataframe(category_stats, use_container_width=True, hide_index=True)
+        
+        with col_chart:
+            # Box plot by category (sorted properly)
+            # Sort DataFrame by income_category to ensure proper ordering
+            df_sorted = df.sort_values('income_category')
+            
+            fig_box = px.box(
+                df_sorted,
+                x='income_category',
+                y='consumption_quantity',
+                title="Quantity Distribution by Income Category",
+                labels={
+                    'income_category': 'Income Category',
+                    'consumption_quantity': 'Items per Term'
+                },
+                category_orders={"income_category": sorted(df['income_category'].unique())}
+            )
+            st.plotly_chart(fig_box, use_container_width=True)
+    
+    # Purchase request timing analysis if available
+    if 'purchase_requests' in df.columns:
+        st.markdown("---")
+        st.markdown("**⏱️ Purchase Request Timing Analysis**")
+        
+        # Extract all timestamps from purchase_requests
+        all_timestamps = []
+        for requests in df['purchase_requests']:
+            if isinstance(requests, list) and len(requests) > 0:
+                for req in requests:
+                    if isinstance(req, dict) and 'timestamp_hours' in req:
+                        all_timestamps.append(req['timestamp_hours'])
+        
+        if len(all_timestamps) > 0:
+            col_timing1, col_timing2 = st.columns(2)
+            
+            with col_timing1:
+                # Histogram of purchase timestamps
+                fig_timing = px.histogram(
+                    x=all_timestamps,
+                    nbins=20,
+                    title="Distribution of Purchase Request Times",
+                    labels={'x': 'Time (hours from start)', 'count': 'Number of Requests'}
+                )
+                fig_timing.update_layout(
+                    showlegend=False,
+                    xaxis_title="Time (hours from term start)",
+                    yaxis_title="Number of Purchase Requests"
+                )
+                st.plotly_chart(fig_timing, use_container_width=True)
+            
+            with col_timing2:
+                st.markdown("**📊 Timing Statistics**")
+                timing_stats = pd.Series(all_timestamps).describe()
+                timing_df = pd.DataFrame({
+                    'Metric': ['Total Requests', 'Mean Time', 'Median Time', 'Earliest', 'Latest', 'Spread (Std)'],
+                    'Value': [
+                        f"{len(all_timestamps):,}",
+                        f"{timing_stats['mean']:.2f}h",
+                        f"{timing_stats['50%']:.2f}h",
+                        f"{timing_stats['min']:.2f}h",
+                        f"{timing_stats['max']:.2f}h",
+                        f"{timing_stats['std']:.2f}h"
+                    ]
+                })
+                st.dataframe(timing_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No purchase requests found in the data")
+    
+    # Default behavior explanation
+    with st.expander("ℹ️ How This Decision Works (Default Behavior)", expanded=False):
+        st.markdown("""
+        **Consumption Quantity Default Logic:**
+        
+        1. **Income Category Assignment**: Each agent is assigned to an income category (1 to NFIC) based on:
+           - Category 1: Income ≤ discount threshold (lowest income, discount customers)
+           - Categories 2-NFIC: Income > threshold, distributed by percentile
+        
+        2. **Consumption Limit**: 
+           - If consumption limits enabled: Uses category-specific limit
+           - If disabled: Uses `max_purchases_per_term` fallback
+        
+        3. **Total Quantity**: Random integer uniformly distributed in [0, limit]
+        
+        4. **Purchase Requests**: 
+           - Number of requests = total quantity
+           - Each request = 1 item (for defaults)
+           - Timestamps randomly distributed across term duration
+        
+        **Professor's Specification**: 
+        "The total quantity of items purchased during the term will be a random number 
+        between 0 and the corresponding consumption limit. Each purchase order is for 
+        1 item by default, and purchase requests are randomly spread during the term."
+        """)
 
 
 def render_consumption_frequency(df, decision_name, decision_title, decision_data):
     """Visualization for consumption_frequency - frequency analysis"""
-    st.markdown("**Consumption quantity divided by period duration**")
+    
+    # Overview metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Agents", f"{len(decision_data):,}")
+    
+    with col2:
+        mean_freq = decision_data.mean()
+        st.metric("Mean Frequency", f"{mean_freq:.2f}/h")
+    
+    with col3:
+        median_freq = decision_data.median()
+        st.metric("Median Frequency", f"{median_freq:.2f}/h")
+    
+    with col4:
+        max_freq = decision_data.max()
+        st.metric("Max Frequency", f"{max_freq:.2f}/h")
+    
+    # Distribution plot and statistics
+    col_plot, col_stats = st.columns([2, 1])
+    
+    with col_plot:
+        # Histogram of frequencies
+        fig = px.histogram(
+            df,
+            x=decision_name,
+            nbins=30,
+            title="Distribution of Consumption Frequencies",
+            labels={decision_name: 'Items per Hour', 'count': 'Number of Agents'}
+        )
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="Consumption Frequency (items/hour)",
+            yaxis_title="Number of Agents"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    with col_stats:
+        st.markdown("**📈 Statistics**")
+        stats = decision_data.describe()
+        stats_df = pd.DataFrame({
+            'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
+            'Value': [
+                f"{stats['mean']:.3f}",
+                f"{stats['std']:.3f}",
+                f"{stats['min']:.3f}",
+                f"{stats['max']:.3f}",
+                f"{stats['50%']:.3f}",
+                f"{stats['25%']:.3f}",
+                f"{stats['75%']:.3f}"
+            ]
+        })
+        st.dataframe(stats_df, use_container_width=True, hide_index=True)
+    
+    # Relationship with consumption_quantity
+    if 'consumption_quantity' in df.columns:
+        st.markdown("---")
+        st.markdown("**📊 Relationship: Frequency vs Quantity**")
+        
+        col_scatter, col_info = st.columns([2, 1])
+        
+        with col_scatter:
+            # Scatter plot showing relationship
+            fig_scatter = px.scatter(
+                df,
+                x='consumption_quantity',
+                y='consumption_frequency',
+                opacity=0.6,
+                title="Consumption Frequency vs Quantity",
+                labels={
+                    'consumption_quantity': 'Total Quantity (items)',
+                    'consumption_frequency': 'Frequency (items/hour)'
+                }
+            )
+            
+            # Add theoretical line (frequency = quantity / term_duration)
+            # Get term duration from simulation params if available
+            if hasattr(st.session_state, 'sim_params'):
+                term_duration = (st.session_state.sim_params.periods * 
+                               st.session_state.sim_params.duration_hours)
+                
+                max_qty = df['consumption_quantity'].max()
+                theoretical_x = [0, max_qty]
+                theoretical_y = [0, max_qty / term_duration]
+                
+                fig_scatter.add_trace(
+                    go.Scatter(
+                        x=theoretical_x,
+                        y=theoretical_y,
+                        mode='lines',
+                        name=f'Theoretical (÷{term_duration}h)',
+                        line=dict(color='red', dash='dash', width=2)
+                    )
+                )
+            
+            st.plotly_chart(fig_scatter, use_container_width=True)
+        
+        with col_info:
+            st.markdown("**🔗 Correlation**")
+            correlation = df['consumption_quantity'].corr(df['consumption_frequency'])
+            st.metric("Pearson r", f"{correlation:.4f}")
+            
+            st.markdown("**📐 Formula**")
+            if hasattr(st.session_state, 'sim_params'):
+                periods = st.session_state.sim_params.periods
+                duration = st.session_state.sim_params.duration_hours
+                st.code(f"frequency = quantity / ({periods} × {duration})")
+            else:
+                st.code("frequency = quantity / term_duration")
+            
+            st.caption("Each point represents one agent. The red dashed line shows the theoretical relationship.")
+    
+    # Income category analysis if available
+    if 'income_category' in df.columns:
+        st.markdown("---")
+        st.markdown("**📊 Frequency by Income Category**")
+        
+        # Box plot by category (sorted properly)
+        df_sorted = df.sort_values('income_category')
+        
+        fig_box = px.box(
+            df_sorted,
+            x='income_category',
+            y='consumption_frequency',
+            title="Frequency Distribution by Income Category",
+            labels={
+                'income_category': 'Income Category',
+                'consumption_frequency': 'Frequency (items/hour)'
+            },
+            category_orders={"income_category": sorted(df['income_category'].unique())}
+        )
+        st.plotly_chart(fig_box, use_container_width=True)
+    
+    # Default behavior explanation
+    with st.expander("ℹ️ How This Decision Works (Default Behavior)", expanded=False):
+        st.markdown("""
+        **Consumption Frequency Default Logic:**
+        
+        1. **Computed from Quantity**: 
+           ```
+           consumption_frequency = consumption_quantity / term_duration
+           ```
+           where `term_duration = periods × duration_hours`
+        
+        2. **Units**: Items per hour
+        
+        3. **Interpretation**: 
+           - Frequency = 2.0 means agent purchases 2 items per hour on average
+           - Frequency = 0.5 means agent purchases 1 item every 2 hours
+           - Frequency = 0.0 means agent makes no purchases
+        
+        4. **Relationship**: 
+           - Directly proportional to consumption_quantity
+           - Inversely proportional to term_duration
+           - Perfect linear correlation (computed value, not random)
+        
+        **Example**:
+        - Agent wants 10 items total
+        - Term = 2 periods × 1 hour = 2 hours
+        - Frequency = 10 / 2 = 5.0 items/hour
+        """)
+
 
 
 def render_vendor_selection(df, decision_name, decision_title, decision_data):
