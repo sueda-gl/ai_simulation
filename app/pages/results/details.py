@@ -145,7 +145,46 @@ def render_export_section(df):
     """Render the export/download section"""
     st.subheader("💾 Export Results")
     
-    col1, col2 = st.columns(2)
+    # Show a quick verification metric from the SAME DataFrame used for export
+    # This helps detect any mismatch between charts and the exported numbers
+    if 'donation_default' in df.columns:
+        try:
+            export_mean = pd.to_numeric(df['donation_default'], errors='coerce').mean()
+            colm1, colm2, colm3 = st.columns(3)
+            with colm1:
+                st.metric("Export Mean (donation_default)", f"{export_mean:.1%}")
+            with colm2:
+                st.caption("Computed from the exact DataFrame below")
+            with colm3:
+                st.caption(f"Rows: {len(df):,}")
+        except Exception:
+            pass
+    
+    # CRITICAL: Show all donation-related columns in the export to help diagnose confusion
+    donation_cols = [col for col in df.columns if 'donation' in col.lower()]
+    if donation_cols:
+        with st.expander("📊 Donation Columns in Export", expanded=True):
+            st.markdown("**This CSV contains the following donation-related columns:**")
+            for col in donation_cols:
+                try:
+                    col_mean = pd.to_numeric(df[col], errors='coerce').mean()
+                    if pd.notna(col_mean):
+                        st.write(f"• **{col}**: mean = {col_mean:.4f} ({col_mean:.1%})")
+                    else:
+                        st.write(f"• **{col}**: (non-numeric)")
+                except Exception:
+                    st.write(f"• **{col}**: (error computing mean)")
+            
+            st.markdown("---")
+            st.info("✅ **Use `donation_default` for the final processed donation rate** (shown in charts above)")
+            if 'donation_default_raw' in donation_cols:
+                st.caption("⚠️ `donation_default_raw` is the pre-truncation draw (can be negative)")
+            if 'donation_default_raw_pos' in donation_cols:
+                st.caption("⚠️ `donation_default_raw_pos` is the floored (non-negative) draw on 0-100 scale")
+            if 'final_donation_rate' in donation_cols:
+                st.caption("⚠️ `final_donation_rate` is a separate decision (slider/default value), not the computed rate")
+    
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         csv_data = df.to_csv(index=False)
@@ -157,6 +196,25 @@ def render_export_section(df):
         )
     
     with col2:
+        # Excel export
+        try:
+            from io import BytesIO
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Results')
+            
+            excel_data = buffer.getvalue()
+            st.download_button(
+                label="📊 Download Excel",
+                data=excel_data,
+                file_name=f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        except ImportError:
+            st.caption("⚠️ Excel export requires openpyxl")
+            st.caption("Install with: pip install openpyxl")
+    
+    with col3:
         if st.button("🔄 Clear Results"):
             st.session_state.simulation_results = None
             st.rerun()
