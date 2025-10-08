@@ -870,17 +870,17 @@ elif st.session_state.mc_results is not None:
                 
                 fig = make_subplots(
                     rows=2, cols=1,
-                    subplot_titles=("Individual Run Results", "Running Average Convergence"),
+                    subplot_titles=("Test Run Results", "Running Average Convergence"),
                     vertical_spacing=0.1
                 )
                 
-                # Individual runs
+                # Test runs
                 fig.add_trace(
                     go.Scatter(
                         x=detailed_df['run'] + 1,
                         y=detailed_df['donation_default_mean'],
                         mode='markers+lines',
-                        name='Individual Runs',
+                        name='Test Runs',
                         line=dict(color='lightblue', width=1),
                         marker=dict(size=4)
                     ),

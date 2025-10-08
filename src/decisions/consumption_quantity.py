@@ -303,3 +303,4 @@ def consumption_quantity(agent_state: dict, params: dict, rng: np.random.Generat
         "income": float(income)  # Store/update income for consistency
     }
 
+

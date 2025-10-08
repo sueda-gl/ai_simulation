@@ -1707,19 +1707,19 @@ elif st.session_state.page == 'results':
                     # Calculate running average
                     detailed_df['running_mean'] = detailed_df['donation_default_mean'].expanding().mean()
                     
-                    fig = make_subplots(
-                        rows=2, cols=1,
-                        subplot_titles=("Individual Run Results", "Running Average Convergence"),
-                        vertical_spacing=0.1
-                    )
-                    
-                    # Individual runs
-                    fig.add_trace(
-                        go.Scatter(
-                            x=detailed_df['run'] + 1,
-                            y=detailed_df['donation_default_mean'],
-                            mode='markers+lines',
-                            name='Individual Runs',
+                fig = make_subplots(
+                    rows=2, cols=1,
+                    subplot_titles=("Test Run Results", "Running Average Convergence"),
+                    vertical_spacing=0.1
+                )
+                
+                # Test runs
+                fig.add_trace(
+                    go.Scatter(
+                        x=detailed_df['run'] + 1,
+                        y=detailed_df['donation_default_mean'],
+                        mode='markers+lines',
+                        name='Test Runs',
                             line=dict(color='lightblue', width=1),
                             marker=dict(size=4)
                         ),

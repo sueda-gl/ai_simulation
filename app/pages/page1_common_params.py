@@ -1121,7 +1121,8 @@ BUDGET_SHOP,5.25,50,0""")
         st.markdown('<h3 class="section-header">📊 Income Categories</h3>', unsafe_allow_html=True)
         st.caption("Categories determine customer status (discount/fixed) and consumption limits")
         
-        col_cat1, col_cat2 = st.columns(2)
+        # Use narrower columns with gaps to keep buttons close while maintaining same level
+        col_cat1, col_gap, col_cat2 = st.columns([1.2, 0.6, 1.2])
         with col_cat1:
             num_discount_categories = st.number_input(
                 "Discount Income Categories (NDIC)",

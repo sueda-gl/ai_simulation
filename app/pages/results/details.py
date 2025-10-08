@@ -219,8 +219,11 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     )
     
     if export_all_configs:
-        st.info(f"📋 **Multi-Configuration Export Available:** {len(results_dict)} configurations will be exported as separate sheets")
+        st.info(f"📋 **Multi-Configuration Export Available:** {len(results_dict)} configurations will be exported in a single sheet with separate columns for easy comparison")
         with st.expander("📊 View Configurations to be Exported", expanded=False):
+            st.caption("All configurations will be in one sheet with columns suffixed by configuration name")
+            st.markdown("**Example columns:** `donation_default_Copula_Categorical`, `donation_default_Research_Spec_Continuous`, etc.")
+            st.markdown("---")
             for idx, (config_key, config_df) in enumerate(results_dict.items(), 1):
                 col_name, col_metrics = st.columns([2, 2])
                 with col_name:
@@ -311,17 +314,34 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             )
             
             if export_all_configs:
-                # Multi-sheet Excel: one sheet per configuration
+                # Single sheet Excel with all configurations as separate columns
+                # This makes comparison easier than separate sheets
+                
+                # Get trait columns (same across all configs)
+                first_config_df = next(iter(results_dict.values()))
+                trait_columns = ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
+                                'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
+                
+                # Start with Agent_Number and traits from first config
+                combined_df = first_config_df[trait_columns].copy()
+                combined_df.insert(0, 'Agent_Number', range(1, len(combined_df) + 1))
+                
+                # Add decision columns from each configuration with config name as suffix
+                for config_key, config_df in results_dict.items():
+                    if not config_df.empty:
+                        # Get decision columns (non-trait columns)
+                        decision_cols = [col for col in config_df.columns if col not in trait_columns]
+                        
+                        # Add each decision column with config suffix
+                        for col in decision_cols:
+                            # Create readable config suffix
+                            config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
+                            new_col_name = f"{col}_{config_suffix}"
+                            combined_df[new_col_name] = config_df[col].values
+                
+                # Export as single sheet
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    for config_key, config_df in results_dict.items():
-                        if not config_df.empty:
-                            # Add Agent Number as first column
-                            config_df_export = config_df.copy()
-                            config_df_export.insert(0, 'Agent_Number', range(1, len(config_df_export) + 1))
-                            
-                            # Clean sheet name (max 31 chars, no special chars)
-                            sheet_name = config_key.replace('_', ' ')[:31]
-                            config_df_export.to_excel(writer, index=False, sheet_name=sheet_name)
+                    combined_df.to_excel(writer, index=False, sheet_name='All Configurations')
                 
                 # Adjust label based on whether it's all configs or selected config
                 if export_single_selected:
@@ -331,7 +351,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 else:
                     excel_label = f"📊 Download Excel (All {len(results_dict)} Configs)"
                     excel_filename = f"enhanced_simulation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    excel_help = f"Downloads all {len(results_dict)} configurations as separate sheets"
+                    excel_help = f"Downloads all {len(results_dict)} configurations in one sheet with separate columns for easy comparison"
                 
                 st.download_button(
                     label=excel_label,

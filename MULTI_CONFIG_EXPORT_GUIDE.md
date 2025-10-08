@@ -62,8 +62,8 @@ View Configurations to be Exported
 📥 **Download Buttons:**
 - **CSV Button:** "📥 Download CSV (All 6 Configs)" - Downloads all 6 as separate CSV files in a ZIP
   - Tooltip: "Downloads all 6 configurations as separate CSV files in a ZIP archive"
-- **Excel Button:** "📊 Download Excel (All 6 Configs)" - Downloads all 6 as separate sheets
-  - Tooltip: "Downloads all 6 configurations as separate sheets"
+- **Excel Button:** "📊 Download Excel (All 6 Configs)" - Downloads all 6 in ONE sheet with separate columns
+  - Tooltip: "Downloads all 6 configurations in one sheet with separate columns for easy comparison"
 
 📦 **CSV ZIP File Structure:**
 ```
@@ -79,15 +79,25 @@ enhanced_simulation_all_configs_20251007_142315.zip
 📊 **Excel File Structure:**
 ```
 enhanced_simulation_all_configs_20251007_142315.xlsx
-├── Sheet: "copula categorical"          (500 rows × N columns)
-├── Sheet: "copula continuous"           (500 rows × N columns)
-├── Sheet: "research spec categorical"   (500 rows × N columns)
-├── Sheet: "research spec continuous"    (500 rows × N columns)
-├── Sheet: "research baseline categori"  (500 rows × N columns)  ← 31 char limit
-└── Sheet: "research baseline continuo"  (500 rows × N columns)  ← 31 char limit
+└── Sheet: "All Configurations"  (500 rows × many columns)
+    
+    Columns structure:
+    - Agent_Number
+    - Honesty_Humility
+    - Assigned Allowance Level
+    - Study Program
+    - Group_experiment
+    - TWT+Sospeso [=AW2+AX2]{Periods 1+2}
+    - donation_default_Copula_Categorical
+    - donation_default_Copula_Continuous
+    - donation_default_Research_Spec_Categorical
+    - donation_default_Research_Spec_Continuous
+    - donation_default_Research_Baseline_Categorical
+    - donation_default_Research_Baseline_Continuous
+    ... (other decision columns with config suffixes)
 ```
 
-**Note:** Excel sheet names are limited to 31 characters, so longer names are truncated. CSV filenames in the ZIP keep the full configuration names.
+**Note:** All configurations are in a SINGLE sheet with separate columns for each config, making comparisons much easier. CSV files in the ZIP remain as separate files.
 
 ### **Scenario 2: Comparison Mode WITH Selected Config**
 

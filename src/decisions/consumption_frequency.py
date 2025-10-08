@@ -100,3 +100,4 @@ def consumption_frequency(agent_state: dict, params: dict, rng,
         "consumption_frequency": float(frequency)
     }
 
+

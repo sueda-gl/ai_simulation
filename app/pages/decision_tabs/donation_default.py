@@ -10,13 +10,13 @@ from app.models import load_donation_coefficients_from_yaml
 
 
 def ensure_coefficients_loaded():
-    """Ensure donation coefficients are loaded from YAML before any access"""
+    """Ensure donation coefficients are loaded from configuration file before any access"""
     if 'donation_coeff_intercept' not in st.session_state:
         load_donation_coefficients_from_yaml()
 
 
 def get_coefficient(name, mode_suffix=None):
-    """Get a coefficient value from session state. YAML is the single source of truth."""
+    """Get a coefficient value from session state. Configuration file is the single source of truth."""
     ensure_coefficients_loaded()
     if mode_suffix:
         key = f'donation_coeff_{name}_{mode_suffix}'
@@ -24,10 +24,10 @@ def get_coefficient(name, mode_suffix=None):
         key = f'donation_coeff_{name}'
     
     if key not in st.session_state:
-        # Try to reload from YAML
+        # Try to reload from configuration file
         load_donation_coefficients_from_yaml()
         if key not in st.session_state:
-            st.error(f"Coefficient '{name}' not found in YAML configuration!")
+            st.error(f"Coefficient '{name}' not found in default configuration!")
             return 0.0
     
     return st.session_state[key]
@@ -47,7 +47,7 @@ def get_coefficient_for_input(name):
 
 def render_donation_default_tab():
     """Render donation_default specific configuration"""
-    # Ensure coefficients are loaded from YAML
+    # Ensure coefficients are loaded from configuration file
     ensure_coefficients_loaded()
     
     st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
@@ -254,7 +254,7 @@ def render_donation_default_tab():
     st.markdown('<h4 class="subsection-header">📊 Distribution Adjustment</h4>', unsafe_allow_html=True)
     render_adjustment_override_section()
     
-    # Actions and Coefficient Management section - combined
+    # Actions and Default Coefficient Management section - combined
     st.markdown("---")
     st.markdown('<h4 class="subsection-header">⚙️ Actions & Management</h4>', unsafe_allow_html=True)
     render_actions_and_management_section()
@@ -506,7 +506,7 @@ def render_variable_definitions():
 
 
 def reload_coefficients_for_income_mode():
-    """Reload coefficients from YAML when income mode changes"""
+    """Reload coefficients from configuration file when income mode changes"""
     load_donation_coefficients_from_yaml()
 
 
@@ -681,7 +681,7 @@ def render_continuous_formula_specific():
 
 
 def render_intercept_override_section():
-    """Render the intercept override section with ability to modify YAML values"""
+    """Render the intercept override section with ability to modify default coefficient values"""
     
     # Initialize override values if not present
     if 'intercept_override_values' not in st.session_state:
@@ -690,7 +690,7 @@ def render_intercept_override_section():
     # Get current income mode to determine which intercepts to show
     income_mode = st.session_state.get('income_spec_mode', 'categorical only')
     
-    # Show current YAML values for reference
+    # Show current configuration values for reference
     try:
         current_yaml_values = get_current_yaml_intercepts()
         
@@ -781,11 +781,11 @@ def render_intercept_override_section():
                 st.dataframe(impact_df, hide_index=True, use_container_width=True)
         
     except Exception as e:
-        st.error(f"Error loading YAML values: {e}")
+        st.error(f"Error loading configuration values: {e}")
 
 
 def get_current_yaml_intercepts():
-    """Get current intercept values from YAML file"""
+    """Get current intercept values from configuration file"""
     import yaml
     from pathlib import Path
     
@@ -803,14 +803,14 @@ def get_current_yaml_intercepts():
 
 
 def update_yaml_intercepts(override_values):
-    """Update YAML file with new intercept values"""
+    """Update configuration file with new intercept values"""
     import yaml
     from pathlib import Path
     
     try:
         config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
         
-        # Load current YAML
+        # Load current configuration
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
@@ -825,19 +825,19 @@ def update_yaml_intercepts(override_values):
         if 'continuous' in override_values:
             regression_coeffs['continuous']['intercept'] = float(override_values['continuous'])
         
-        # Write back to YAML
+        # Write back to configuration file
         with open(config_path, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
         
         return True
         
     except Exception as e:
-        st.error(f"Error updating YAML: {e}")
+        st.error(f"Error updating configuration file: {e}")
         return False
 
 
 def auto_save_intercept(intercept_type, new_value):
-    """Auto-save intercept changes to YAML file"""
+    """Auto-save intercept changes to configuration file"""
     try:
         # Update the override values
         if 'intercept_override_values' not in st.session_state:
@@ -845,7 +845,7 @@ def auto_save_intercept(intercept_type, new_value):
         
         st.session_state.intercept_override_values[intercept_type] = new_value
         
-        # Save to YAML immediately
+        # Save to configuration file immediately
         success = update_yaml_intercepts({intercept_type: new_value})
         
         if success:
@@ -926,7 +926,7 @@ def render_actions_and_management_section():
     
     with col1:
         st.markdown("**🔄 Reset Intercept**")
-        if st.button("Reset to Default Values", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update YAML", key="reset_intercept_btn"):
+        if st.button("Reset to Default Values", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
             # Reset to research default values
             default_values = {
                 'categorical': 1.519818,  # Research default for categorical
@@ -943,7 +943,7 @@ def render_actions_and_management_section():
     
     with col2:
         st.markdown("**🔄 Reset Adjustment**")
-        if st.button("Reset to Default (0.0)", type="secondary", use_container_width=True, help="Reset adjustment value to default 0.0 and update YAML", key="reset_adjustment_btn"):
+        if st.button("Reset to Default (0.0)", type="secondary", use_container_width=True, help="Reset adjustment value to default 0.0 and update configuration", key="reset_adjustment_btn"):
             # Reset to default value of 0.0
             success = update_yaml_adjustment({'shift_value': 0.0})
             if success:
@@ -956,9 +956,9 @@ def render_actions_and_management_section():
     
     with col3:
         st.markdown("**🔧 Coefficient Management**")
-        if st.button("Reload from YAML", type="secondary", use_container_width=True, help="Force reload all coefficients from the YAML file", key="reload_coeff_btn"):
+        if st.button("Reload from Configuration", type="secondary", use_container_width=True, help="Force reload all coefficients from the default configuration file", key="reload_coeff_btn"):
             load_donation_coefficients_from_yaml()
-            st.toast("✅ Coefficients reloaded from YAML!", icon="🔄")
+            st.toast("✅ Coefficients reloaded from configuration!", icon="🔄")
             st.rerun()
     
     # Debug expander below the buttons
@@ -968,7 +968,7 @@ def render_actions_and_management_section():
         st.write(f"- Categorical intercept: {st.session_state.get('donation_coeff_intercept_cat', 'NOT SET')}")
         st.write(f"- Continuous intercept: {st.session_state.get('donation_coeff_intercept_cont', 'NOT SET')}")
         
-        # Load current YAML values for comparison
+        # Load current configuration values for comparison
         try:
             import yaml
             from pathlib import Path
@@ -979,22 +979,22 @@ def render_actions_and_management_section():
             yaml_cat = config['donation_default']['regression_coefficients']['categorical']['intercept']
             yaml_cont = config['donation_default']['regression_coefficients']['continuous']['intercept']
             
-            st.write("**Current YAML values:**")
-            st.write(f"- YAML categorical: {yaml_cat}")
-            st.write(f"- YAML continuous: {yaml_cont}")
+            st.write("**Current configuration file values:**")
+            st.write(f"- Configuration categorical: {yaml_cat}")
+            st.write(f"- Configuration continuous: {yaml_cont}")
             
             # Check if they match
             if st.session_state.get('donation_coeff_intercept_cat') != yaml_cat:
-                st.error("❌ Session state doesn't match YAML! Click 'Reload from YAML' button.")
+                st.error("❌ Session state doesn't match configuration! Click 'Reload from Configuration' button.")
             else:
-                st.success("✅ Session state matches YAML values")
+                st.success("✅ Session state matches configuration values")
                 
         except Exception as e:
-            st.error(f"Error reading YAML: {e}")
+            st.error(f"Error reading configuration: {e}")
 
 
 def get_current_yaml_adjustment():
-    """Get current adjustment values from YAML file"""
+    """Get current adjustment values from configuration file"""
     import yaml
     from pathlib import Path
     
@@ -1011,14 +1011,14 @@ def get_current_yaml_adjustment():
 
 
 def update_yaml_adjustment(override_values):
-    """Update YAML file with new adjustment values"""
+    """Update configuration file with new adjustment values"""
     import yaml
     from pathlib import Path
     
     try:
         config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
         
-        # Load current YAML
+        # Load current configuration
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
@@ -1029,19 +1029,19 @@ def update_yaml_adjustment(override_values):
         if 'shift_value' in override_values:
             config['donation_default']['adjustment']['shift_value'] = float(override_values['shift_value'])
         
-        # Write back to YAML
+        # Write back to configuration file
         with open(config_path, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
         
         return True
         
     except Exception as e:
-        st.error(f"Error updating YAML: {e}")
+        st.error(f"Error updating configuration file: {e}")
         return False
 
 
 def auto_save_adjustment(adjustment_type, new_value):
-    """Auto-save adjustment changes to YAML file"""
+    """Auto-save adjustment changes to configuration file"""
     try:
         # Update the override values
         if 'adjustment_override_values' not in st.session_state:
@@ -1049,7 +1049,7 @@ def auto_save_adjustment(adjustment_type, new_value):
         
         st.session_state.adjustment_override_values[adjustment_type] = new_value
         
-        # Save to YAML immediately
+        # Save to configuration file immediately
         success = update_yaml_adjustment({adjustment_type: new_value})
         
         if success:

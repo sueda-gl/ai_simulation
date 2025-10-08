@@ -41,7 +41,7 @@ def render_simulation_buttons(decision_name, selected_decisions):
     # Display context in two columns
     col_info1, col_info2 = st.columns(2)
     with col_info1:
-        st.info(f"**🔬 Individual Run**\n\nTest only {format_decision_title(decision_name)} with current parameters")
+        st.info(f"**🔬 Test Run**\n\nTest only {format_decision_title(decision_name)} with current parameters")
         st.caption("Quick validation of this decision's configuration")
     with col_info2:
         st.info(f"**🎯 Complete Simulation**\n\nRun all {len(ALL_DECISIONS)} decisions end-to-end")
