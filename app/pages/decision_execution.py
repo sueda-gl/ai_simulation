@@ -16,6 +16,49 @@ def format_decision_title(decision_name):
     return decision_name.replace('_', ' ').title()
 
 
+def can_run_complete_simulation():
+    """
+    Determine if complete simulation can run based on configuration state.
+    
+    This prevents running all decisions when multiple donation configurations would be generated,
+    unless the user has explicitly selected one configuration to use.
+    
+    Returns:
+        tuple: (can_run: bool, reason: str, config_count: int)
+            - can_run: Whether complete simulation is allowed
+            - reason: Human-readable explanation
+            - config_count: Number of configurations that would be generated
+    """
+    # Check if multiple configurations will be generated for donation_default
+    population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+    income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    
+    # Count how many configurations will be generated
+    # Population modes: "Compare all" generates 3, others generate 1
+    population_count = 3 if population_mode == "Compare all" else 1
+    
+    # Income modes: "Compare both" generates 2, others generate 1
+    income_count = 2 if income_spec_mode == "Compare both" else 1
+    
+    total_configs = population_count * income_count
+    
+    # Case 1: Only one configuration - always allow
+    if total_configs == 1:
+        return (True, "Single configuration", 1)
+    
+    # Case 2: Multiple configurations - check if one is selected
+    has_selected_config = hasattr(st.session_state, 'selected_donation_config')
+    
+    if has_selected_config:
+        # User has selected a specific configuration - allow with that config
+        config = st.session_state.selected_donation_config
+        config_name = f"{config['population_mode']} + {config['income_spec_mode']}"
+        return (True, f"Using selected configuration: {config_name}", total_configs)
+    else:
+        # Multiple configs but none selected - block complete simulation
+        return (False, f"Multiple donation configurations ({total_configs}) detected - please select one first", total_configs)
+
+
 def render_simulation_buttons(decision_name, selected_decisions):
     """
     Render both individual and complete simulation buttons for a decision tab.
@@ -50,29 +93,13 @@ def render_simulation_buttons(decision_name, selected_decisions):
         else:
             st.caption("All decisions use custom parameters")
     
-    # Show detailed breakdown in expander
-    with st.expander("📊 View Complete Simulation Configuration", expanded=False):
-        st.markdown("**What will run in Complete Simulation:**")
-        
-        if len(selected_decisions) > 0:
-            st.markdown(f"**✅ Custom Parameters ({len(selected_decisions)} decisions):**")
-            for i, dec in enumerate(selected_decisions, 1):
-                icon = "🎯" if dec == decision_name else "✓"
-                label = " **(current tab)**" if dec == decision_name else ""
-                st.caption(f"{i}. {icon} {format_decision_title(dec)}{label}")
-        
-        if len(unselected_decisions) > 0:
-            st.markdown(f"\n**🔧 Default Values ({len(unselected_decisions)} decisions):**")
-            for i, dec in enumerate(unselected_decisions, 1):
-                st.caption(f"{i}. {format_decision_title(dec)}")
-    
     # Render action buttons in two columns
     col1, col2 = st.columns(2)
     
     with col1:
         if st.button(
             f"🔬 Run {format_decision_title(decision_name)} Only", 
-            type="secondary", 
+            type="primary", 
             use_container_width=True,
             key=f"run_{decision_name}_only_btn",
             help=f"Execute only {format_decision_title(decision_name)} to test and validate your parameters"
@@ -80,26 +107,79 @@ def render_simulation_buttons(decision_name, selected_decisions):
             run_individual_decision(decision_name)
     
     with col2:
-        if st.button(
-            "🎯 Run Complete Simulation", 
-            type="primary",
-            use_container_width=True,
-            key=f"run_complete_from_{decision_name}_btn",
-            help=f"Run all {len(ALL_DECISIONS)} decisions with current configuration"
-        ):
-            # Show confirmation info before running
-            with st.spinner("🔄 Preparing complete simulation..."):
-                st.info(f"""
-                **🚀 Starting complete end-to-end simulation**
-                
-                - Running all {len(ALL_DECISIONS)} decisions in sequence
-                - Current decision ({format_decision_title(decision_name)}) will use your configured parameters above
-                - {len(selected_decisions)} decisions total with custom parameters
-                - {len(unselected_decisions)} decisions using default values
-                """)
-                
-                # Execute the combined simulation
-                run_combined_simulation(selected_decisions)
+        # Show detailed breakdown in expander
+        with st.expander("📊 View Complete Simulation Configuration", expanded=False):
+            st.markdown("**What will run in Complete Simulation:**")
+            
+            if len(selected_decisions) > 0:
+                st.markdown(f"**✅ Custom Parameters ({len(selected_decisions)} decisions):**")
+                for i, dec in enumerate(selected_decisions, 1):
+                    icon = "🎯" if dec == decision_name else "✓"
+                    label = " **(current tab)**" if dec == decision_name else ""
+                    st.caption(f"{i}. {icon} {format_decision_title(dec)}{label}")
+            
+            if len(unselected_decisions) > 0:
+                st.markdown(f"\n**🔧 Default Values ({len(unselected_decisions)} decisions):**")
+                for i, dec in enumerate(unselected_decisions, 1):
+                    st.caption(f"{i}. {format_decision_title(dec)}")
+        
+        # Check if complete simulation can run (validation for multiple configurations)
+        can_run, reason, config_count = can_run_complete_simulation()
+        
+        if not can_run:
+            # Disabled button with explanation
+            st.button(
+                "🎯 Run Complete Simulation", 
+                type="primary",
+                use_container_width=True,
+                disabled=True,
+                key=f"run_complete_from_{decision_name}_btn_disabled",
+                help="Multiple configurations detected - select one first"
+            )
+            
+            # Show helpful warning message
+            st.warning(f"""
+⚠️ **Complete Simulation Blocked**
+
+{reason}
+
+**To run all decisions:**
+
+1. Click **🔬 Run {format_decision_title(decision_name)} Only** above
+2. Review the {config_count} result configurations
+3. **Select one configuration** from the results
+4. Return here and click **Run Complete Simulation**
+
+This ensures all decisions use consistent settings.
+            """)
+            
+        else:
+            # Enabled button - can proceed
+            # Show info about selected config if applicable
+            if config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
+                config = st.session_state.selected_donation_config
+                st.success(f"✅ Using: {config['population_mode']} + {config['income_spec_mode']}")
+            
+            if st.button(
+                "🎯 Run Complete Simulation", 
+                type="primary",
+                use_container_width=True,
+                key=f"run_complete_from_{decision_name}_btn",
+                help=f"Run all {len(ALL_DECISIONS)} decisions with current configuration"
+            ):
+                # Show confirmation info before running
+                with st.spinner("🔄 Preparing complete simulation..."):
+                    st.info(f"""
+                    **🚀 Starting complete end-to-end simulation**
+                    
+                    - Running all {len(ALL_DECISIONS)} decisions in sequence
+                    - Current decision ({format_decision_title(decision_name)}) will use your configured parameters above
+                    - {len(selected_decisions)} decisions total with custom parameters
+                    - {len(unselected_decisions)} decisions using default values
+                    """)
+                    
+                    # Execute the combined simulation
+                    run_combined_simulation(selected_decisions)
 
 # Default values for unselected decisions
 DEFAULT_DECISION_VALUES = {
@@ -144,7 +224,7 @@ DEFAULT_DECISION_VALUES = {
         "type": "random_probability",
         "probability_y": 0.5,  # 50% chance of Purchase Now (vs bid)
         "options": ["Purchase Now", "bid"],
-        "description": "Probability of Purchase Now vs bidding"
+        "description": "Probability of Purchase Now vs bidding (applies only to REGULAR customers - those who did not disclose income)"
     },
     "bid_value": "RANDOM_WITHIN_RANGE",  # Random within bidding price range
     "rejected_transaction_option": {
@@ -172,8 +252,8 @@ DEFAULT_DECISION_DESCRIPTIONS = {
     "consumption_quantity": "random within consumption limit",
     "consumption_frequency": "Consumption quantity divided by Period duration",
     "vendor_selection": "deterministic based on highest weighted vendor-product score",
-    "purchase_vs_bid": "configurable probability Purchase Now/bid (default 50% each)",
-    "bid_value": "random within bidding price range",
+    "purchase_vs_bid": "configurable probability Purchase Now/bid for REGULAR customers only (default 50% each)",
+    "bid_value": "random within bidding price range (only for REGULAR customers who chose to bid)",
     "rejected_transaction_option": "Selected specific option for transaction rejection handling will be used",
     "rejected_bid_value": "Default handling for rejected bid values will be applied",
     "final_donation_rate": "Default donation rate will be maintained"
@@ -385,9 +465,8 @@ def run_individual_decision(decision_name):
                         st.metric("Agents Simulated", f"{len(results):,}")
                     with col2:
                         if decision_name == "donation_default":
-                            donation_col = 'donation_default_raw' if 'donation_default_raw' in results.columns else 'donation_default'
-                            if donation_col in results.columns:
-                                st.metric("Average Donation Rate", f"{results[donation_col].mean():.1%}")
+                            if 'donation_default' in results.columns:
+                                st.metric("Average Donation Rate", f"{results['donation_default'].mean():.2%}")
             
             # Restore all original state in one operation to minimize reruns
             st.session_state.decision_params.selected_decisions = original_decisions
@@ -405,6 +484,26 @@ def run_combined_simulation(selected_decisions):
     
     # Store information about selected vs default decisions
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
+    
+    # Check if using a selected configuration (for multiple config scenarios)
+    using_selected_config = hasattr(st.session_state, 'selected_donation_config')
+    original_population_mode = None
+    original_income_spec = None
+    
+    if using_selected_config:
+        # Store original values to restore later
+        original_population_mode = st.session_state.population_mode
+        original_income_spec = st.session_state.income_spec_mode
+        
+        # Apply selected configuration
+        config = st.session_state.selected_donation_config
+        st.session_state.population_mode = config['population_mode']
+        st.session_state.income_spec_mode = config['income_spec_mode']
+        
+        # Mark that we're using selected config (for results display)
+        st.session_state._using_selected_config = True
+        
+        st.info(f"🎯 **Using selected configuration**: {config['population_mode']} + {config['income_spec_mode']}")
     
     # Create appropriate spinner message
     if len(selected_decisions) == 0:
@@ -432,6 +531,11 @@ def run_combined_simulation(selected_decisions):
             # Restore original selected decisions
             st.session_state.decision_params.selected_decisions = original_decisions
             
+            # Restore original population/income modes if we changed them
+            if using_selected_config and original_population_mode is not None:
+                st.session_state.population_mode = original_population_mode
+                st.session_state.income_spec_mode = original_income_spec
+            
             # Show completion message
             if st.session_state.simulation_results:
                 st.success(f"✅ Complete simulation finished!")
@@ -454,6 +558,11 @@ def run_combined_simulation(selected_decisions):
             st.error(f"❌ Error running complete simulation: {str(e)}")
             import traceback
             st.text(traceback.format_exc())
+            
+            # Restore original modes even on error
+            if using_selected_config and original_population_mode is not None:
+                st.session_state.population_mode = original_population_mode
+                st.session_state.income_spec_mode = original_income_spec
 
 
 # ==================== CONFIGURATION SELECTION SYSTEM ====================
@@ -565,8 +674,7 @@ def get_current_stochastic_params():
             'sigma_value': st.session_state.get('sigma_value_ui', 9.8995),
             'sigma_coefficient': st.session_state.get('sigma_coefficient', 1.0),
             'sigma_in_copula': st.session_state.get('sigma_in_copula', False),
-            'sigma_in_research': st.session_state.get('sigma_in_research', True),
-            'raw_output': st.session_state.get('raw_draw_mode', False)
+            'sigma_in_research': st.session_state.get('sigma_in_research', True)
         },
         'anchor_weights': {
             'observed': st.session_state.get('anchor_observed_weight', 0.75),

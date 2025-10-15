@@ -223,24 +223,6 @@ def render_donation_default_tab():
         else:
             st.session_state.anchor_observed_weight = 0.75
     
-    # Raw output option - only show if stochastic component is enabled
-    stochastic_enabled = (
-        (population_mode == "Copula (synthetic)" and st.session_state.sigma_in_copula) or
-        (population_mode == "Research Specification" and st.session_state.sigma_in_research) or
-        (population_mode == "Compare both" and (st.session_state.sigma_in_copula or st.session_state.sigma_in_research))
-    )
-    
-    if stochastic_enabled:
-        st.markdown('<h4 class="subsection-header">Output Options</h4>', unsafe_allow_html=True)
-        raw_draw_mode = st.checkbox(
-            "Show pre-truncation (raw) donation rate",
-            value=st.session_state.raw_draw_mode,
-            help="Display the raw Normal(anchor, σ) draw before processing",
-            key="tab_raw_draw_mode"
-        )
-        st.session_state.raw_draw_mode = raw_draw_mode
-    else:
-        st.session_state.raw_draw_mode = False
     
     # NEW: Mathematical Formula Display Section
     st.markdown('<h4 class="subsection-header">📐 Mathematical Model Formula</h4>', unsafe_allow_html=True)
@@ -920,9 +902,9 @@ def render_adjustment_override_section():
 
 
 def render_actions_and_management_section():
-    """Render the combined actions and management section with three columns"""
+    """Render the combined actions and management section with two columns"""
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
         st.markdown("**🔄 Reset Intercept**")
@@ -953,13 +935,6 @@ def render_actions_and_management_section():
                 st.rerun()
             else:
                 st.toast("❌ Failed to reset adjustment", icon="⚠️")
-    
-    with col3:
-        st.markdown("**🔧 Coefficient Management**")
-        if st.button("Reload from Configuration", type="secondary", use_container_width=True, help="Force reload all coefficients from the default configuration file", key="reload_coeff_btn"):
-            load_donation_coefficients_from_yaml()
-            st.toast("✅ Coefficients reloaded from configuration!", icon="🔄")
-            st.rerun()
     
     # Debug expander below the buttons
     with st.expander("🔍 Debug: Current Session State Values", expanded=False):

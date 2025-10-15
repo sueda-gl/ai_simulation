@@ -278,7 +278,7 @@ def render_single_run_results():
                 mode_name = next(iter(results_dict.keys()))
                 
                 # Show high-level metrics only
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
                 
                 with col1:
                     st.metric("Total Agents", f"{len(df):,}")
@@ -296,7 +296,7 @@ def render_single_run_results():
                     # Show overall donation rate if available - always use truncated
                     donation_col = 'donation_default'
                     if donation_col in df.columns:
-                        st.metric("Avg Donation Rate", f"{df[donation_col].mean():.1%}")
+                        st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
                 
                 st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
                 

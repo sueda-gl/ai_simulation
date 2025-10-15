@@ -196,8 +196,6 @@ def run_simulation_from_sidebar():
                     orchestrator = OrchestratorDocMode()
                 elif pop_mode == "depvar":
                     orchestrator = OrchestratorDepVar()
-                    # Set raw output mode for dependent variable resampling
-                    orchestrator.set_raw_output(st.session_state.raw_draw_mode)
                 elif pop_mode == "baseline":
                     from src.orchestrator_baseline import OrchestratorBaseline
                     orchestrator = OrchestratorBaseline()
@@ -226,15 +224,6 @@ def run_simulation_from_sidebar():
                         # Apply chosen anchor weights
                         orchestrator.config['donation_default']['anchor_weights']['observed'] = st.session_state.anchor_observed_weight
                         orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - st.session_state.anchor_observed_weight
-                        # Set raw output flag if applicable (only when stochastic component is enabled)
-                        stochastic_enabled = (
-                            (pop_mode == "documentation" and st.session_state.sigma_in_research) or
-                            (pop_mode == "copula" and st.session_state.sigma_in_copula)
-                        )
-                        if stochastic_enabled:
-                            orchestrator.config['donation_default']['stochastic']['raw_output'] = st.session_state.raw_draw_mode
-                        else:
-                            orchestrator.config['donation_default']['stochastic']['raw_output'] = False
                         
                         if hasattr(st.session_state, 'selected_donation_config'):
                             apply_selected_donation_config(orchestrator, pop_mode, inc_mode)
@@ -462,7 +451,17 @@ def run_simulation_from_sidebar():
                 for mode, df in results.items():
                     filename = f"enhanced_simulation_{mode}_seed{st.session_state.seed if st.session_state.sim_params.simulation_mode == 'Single Run' else st.session_state.base_seed}_agents{st.session_state.n_agents}{decision_suffix}_{timestamp}.parquet"
                     filepath = output_dir / filename
-                    df.to_parquet(filepath, index=False)
+                    
+                    # Prepare DataFrame for parquet saving
+                    # Parquet can't handle complex nested structures, so convert purchase_requests to JSON
+                    df_to_save = df.copy()
+                    if 'purchase_requests' in df_to_save.columns:
+                        import json
+                        df_to_save['purchase_requests'] = df_to_save['purchase_requests'].apply(
+                            lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x)
+                        )
+                    
+                    df_to_save.to_parquet(filepath, index=False)
                 
                 st.sidebar.caption(f"✅ Results saved with timestamp {timestamp}")
             
@@ -667,8 +666,7 @@ def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
         'sigma_value': stoch_params['stochastic']['sigma_value'],
         'sigma_coefficient': stoch_params['stochastic']['sigma_coefficient'],
         'sigma_in_copula': stoch_params['stochastic']['sigma_in_copula'],
-        'sigma_in_research': stoch_params['stochastic']['sigma_in_research'],
-        'raw_output': stoch_params['stochastic']['raw_output']
+        'sigma_in_research': stoch_params['stochastic']['sigma_in_research']
     })
     
     # Update anchor weights
@@ -680,7 +678,6 @@ def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
     st.session_state.sigma_coefficient = stoch_params['stochastic']['sigma_coefficient']
     st.session_state.sigma_in_copula = stoch_params['stochastic']['sigma_in_copula']
     st.session_state.sigma_in_research = stoch_params['stochastic']['sigma_in_research']
-    st.session_state.raw_draw_mode = stoch_params['stochastic']['raw_output']
     st.session_state.anchor_observed_weight = stoch_params['anchor_weights']['observed']
     
     # Override coefficient session state variables

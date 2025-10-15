@@ -130,10 +130,7 @@ def render_individual_agent_details(df):
             decision_df = pd.DataFrame(list(decision_data.items()), columns=['Decision', 'Value'])
             if 'donation_default' in decision_data:
                 decision_df.loc[decision_df['Decision'] == 'donation_default', 'Value'] = \
-                    f"{decision_data['donation_default']:.1%}"
-            if 'donation_default_raw' in decision_data:
-                decision_df.loc[decision_df['Decision'] == 'donation_default_raw', 'Value'] = \
-                    f"{decision_data['donation_default_raw']:.1%}"
+                    f"{decision_data['donation_default']:.2%}"
             # Convert all values to strings to avoid PyArrow serialization issues
             decision_df['Value'] = decision_df['Value'].astype(str)
             st.dataframe(decision_df, hide_index=True)
@@ -150,6 +147,31 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         using_selected_config: Whether a configuration was selected
     """
     st.subheader("💾 Export Results")
+    
+    # Detect if this is an individual donation_default run
+    is_donation_only_run = (
+        hasattr(st.session_state, 'custom_decisions') and 
+        st.session_state.custom_decisions == ['donation_default'] and
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) == 0
+    )
+    
+    # Filter columns for donation-only runs
+    if is_donation_only_run:
+        # Keep only donation_default columns (no traits, no other decisions)
+        donation_cols = [col for col in df.columns if 'donation_default' in col or 'donation' in col.lower()]
+        df = df[donation_cols]
+        
+        # Also filter results_dict if provided
+        if results_dict:
+            filtered_results_dict = {}
+            for key, config_df in results_dict.items():
+                donation_cols_config = [col for col in config_df.columns if 'donation_default' in col or 'donation' in col.lower()]
+                filtered_results_dict[key] = config_df[donation_cols_config]
+            results_dict = filtered_results_dict
+        
+        # Show info message for donation-only exports
+        st.info("📊 **Donation Default Comparison Mode:** Excel export includes only Agent_Number and donation_default columns for easy comparison across configurations.")
     
     # Show banner if a specific config is selected
     if using_selected_config and results_dict and len(results_dict) == 1:
@@ -173,7 +195,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             export_mean = pd.to_numeric(df['donation_default'], errors='coerce').mean()
             colm1, colm2, colm3 = st.columns(3)
             with colm1:
-                st.metric("Export Mean (donation_default)", f"{export_mean:.1%}")
+                st.metric("Export Mean (donation_default)", f"{export_mean:.2%}")
             with colm2:
                 st.caption("Computed from the exact DataFrame below")
             with colm3:
@@ -198,10 +220,6 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             
             st.markdown("---")
             st.info("✅ **Use `donation_default` for the final processed donation rate** (shown in charts above)")
-            if 'donation_default_raw' in donation_cols:
-                st.caption("⚠️ `donation_default_raw` is the pre-truncation draw (can be negative)")
-            if 'donation_default_raw_pos' in donation_cols:
-                st.caption("⚠️ `donation_default_raw_pos` is the floored (non-negative) draw on 0-100 scale")
             if 'final_donation_rate' in donation_cols:
                 st.caption("⚠️ `final_donation_rate` is a separate decision (slider/default value), not the computed rate")
     
@@ -231,76 +249,13 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 with col_metrics:
                     if 'donation_default' in config_df.columns:
                         mean_val = pd.to_numeric(config_df['donation_default'], errors='coerce').mean()
-                        st.caption(f"Agents: {len(config_df):,} | Mean donation: {mean_val:.1%}")
+                        st.caption(f"Agents: {len(config_df):,} | Mean donation: {mean_val:.2%}")
                     else:
                         st.caption(f"Agents: {len(config_df):,}")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
-        # CSV export - multi-file ZIP if multiple configs, single CSV otherwise
-        if export_all_configs:
-            # Create ZIP with multiple CSV files (multiple configs)
-            try:
-                from io import BytesIO
-                import zipfile
-                
-                zip_buffer = BytesIO()
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                    for config_key, config_df in results_dict.items():
-                        if not config_df.empty:
-                            # Add Agent Number as first column
-                            config_df_export = config_df.copy()
-                            config_df_export.insert(0, 'Agent_Number', range(1, len(config_df_export) + 1))
-                            
-                            # Create CSV for this config
-                            csv_data = config_df_export.to_csv(index=False)
-                            # Clean filename (replace spaces and special chars)
-                            csv_filename = f"{config_key}.csv"
-                            zip_file.writestr(csv_filename, csv_data)
-                
-                st.download_button(
-                    label=f"📥 Download CSV (All {len(results_dict)} Configs)",
-                    data=zip_buffer.getvalue(),
-                    file_name=f"enhanced_simulation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip",
-                    mime="application/zip",
-                    help=f"Downloads all {len(results_dict)} configurations as separate CSV files in a ZIP archive"
-                )
-            except Exception as e:
-                st.error(f"Error creating ZIP file: {e}")
-                # Fallback to single CSV
-                # Add Agent Number as first column
-                df_export = df.copy()
-                df_export.insert(0, 'Agent_Number', range(1, len(df_export) + 1))
-                csv_data = df_export.to_csv(index=False)
-                st.download_button(
-                    label="📥 Download CSV (First Config)",
-                    data=csv_data,
-                    file_name=f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    help="ZIP creation failed. Downloads only the first configuration."
-                )
-        else:
-            # Single CSV export (single config or selected config)
-            # Add Agent Number as first column
-            df_export = df.copy()
-            df_export.insert(0, 'Agent_Number', range(1, len(df_export) + 1))
-            csv_data = df_export.to_csv(index=False)
-            
-            # Adjust filename for selected config
-            if export_single_selected:
-                csv_filename = f"enhanced_simulation_selected_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            else:
-                csv_filename = f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            
-            st.download_button(
-                label="📥 Download CSV",
-                data=csv_data,
-                file_name=csv_filename,
-                mime="text/csv"
-            )
-    
-    with col2:
         # Excel export - multi-sheet if results_dict provided and no config selected
         try:
             from io import BytesIO
@@ -322,26 +277,66 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 trait_columns = ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
                                 'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
                 
-                # Start with Agent_Number and traits from first config
-                combined_df = first_config_df[trait_columns].copy()
-                combined_df.insert(0, 'Agent_Number', range(1, len(combined_df) + 1))
+                # Start with Agent_Number and traits from first config (skip traits for donation-only runs)
+                if is_donation_only_run:
+                    # For donation-only runs, start with empty DataFrame
+                    combined_df = pd.DataFrame(index=range(len(first_config_df)))
+                    combined_df.insert(0, 'Agent_Number', range(1, len(combined_df) + 1))
+                else:
+                    # For complete simulation, include trait columns
+                    combined_df = first_config_df[trait_columns].copy()
+                    combined_df.insert(0, 'Agent_Number', range(1, len(combined_df) + 1))
                 
-                # Add decision columns from each configuration with config name as suffix
+                # Track which columns to color green (donation_default variants)
+                green_columns = []
+                
+                # First pass: Add default decision columns ONCE (they're the same across configs)
+                # These are non-donation_default decision columns
+                # Skip this for donation-only runs
+                default_decision_cols = []
+                if not is_donation_only_run:
+                    decision_cols_first = [col for col in first_config_df.columns if col not in trait_columns]
+                    for col in decision_cols_first:
+                        if 'donation_default' not in col:
+                            default_decision_cols.append(col)
+                            combined_df[col] = first_config_df[col].values
+                
+                # Second pass: Add donation_default columns from each configuration with config suffix
                 for config_key, config_df in results_dict.items():
                     if not config_df.empty:
-                        # Get decision columns (non-trait columns)
+                        # Get only donation_default related columns
                         decision_cols = [col for col in config_df.columns if col not in trait_columns]
                         
-                        # Add each decision column with config suffix
+                        # Add only donation_default columns with config suffix
                         for col in decision_cols:
-                            # Create readable config suffix
-                            config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
-                            new_col_name = f"{col}_{config_suffix}"
-                            combined_df[new_col_name] = config_df[col].values
+                            if 'donation_default' in col:
+                                # Create readable config suffix
+                                config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
+                                new_col_name = f"{col}_{config_suffix}"
+                                combined_df[new_col_name] = config_df[col].values
+                                green_columns.append(new_col_name)
                 
-                # Export as single sheet
+                # Export as single sheet with formatting
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     combined_df.to_excel(writer, index=False, sheet_name='All Configurations')
+                    
+                    # Apply green highlighting to donation_default columns
+                    from openpyxl.styles import PatternFill
+                    worksheet = writer.sheets['All Configurations']
+                    green_fill = PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
+                    
+                    # Find column indices for green_columns
+                    header_row = list(combined_df.columns)
+                    for col_name in green_columns:
+                        if col_name in header_row:
+                            col_idx = header_row.index(col_name) + 1  # Excel is 1-indexed
+                            # Color the header cell
+                            cell = worksheet.cell(row=1, column=col_idx)
+                            cell.fill = green_fill
+                            # Color all data cells in this column
+                            for row_idx in range(2, len(combined_df) + 2):
+                                cell = worksheet.cell(row=row_idx, column=col_idx)
+                                cell.fill = green_fill
                 
                 # Adjust label based on whether it's all configs or selected config
                 if export_single_selected:
@@ -379,7 +374,57 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             st.caption("⚠️ Excel export requires openpyxl")
             st.caption("Install with: pip install openpyxl")
     
-    with col3:
-        if st.button("🔄 Clear Results"):
-            st.session_state.simulation_results = None
-            st.rerun()
+    with col2:
+        # Transaction-level export (if purchase_requests exist)
+        if 'purchase_requests' in df.columns:
+            try:
+                from io import BytesIO
+                
+                # Flatten purchase_requests to transaction-level DataFrame
+                transactions = []
+                transaction_id = 1
+                
+                for idx, row in df.iterrows():
+                    purchase_requests = row.get('purchase_requests', [])
+                    if isinstance(purchase_requests, list):
+                        for req in purchase_requests:
+                            if isinstance(req, dict):
+                                transactions.append({
+                                    'transaction_id': transaction_id,
+                                    'customer_id': req.get('customer_id', idx + 1),
+                                    'vendorID': req.get('vendorID', 1),
+                                    'platformPrice': req.get('platformPrice', 'N/A'),
+                                    'purchase_bid_value': req.get('bid_value', 'N/A'),
+                                    'timestamp': req.get('timestamp_hours', 0.0)
+                                })
+                                transaction_id += 1
+                
+                if len(transactions) > 0:
+                    transactions_df = pd.DataFrame(transactions)
+                    
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        transactions_df.to_excel(writer, index=False, sheet_name='Transactions')
+                    
+                    st.download_button(
+                        label="📋 Download Transactions",
+                        data=buffer.getvalue(),
+                        file_name=f"transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Transaction-level data: one row per purchase request"
+                    )
+                    
+                    # Show preview
+                    with st.expander("📋 Transaction Preview", expanded=False):
+                        st.dataframe(transactions_df.head(50), use_container_width=True)
+                        st.caption(f"Showing first 50 of {len(transactions_df):,} total transactions")
+                else:
+                    st.caption("No transactions to export")
+            
+            except ImportError:
+                st.caption("⚠️ Transaction export requires openpyxl")
+    
+    # Add clear button in a new row
+    if st.button("🔄 Clear Results"):
+        st.session_state.simulation_results = None
+        st.rerun()

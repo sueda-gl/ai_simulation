@@ -8,7 +8,7 @@ from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES
+from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation
 
 
 def format_decision_title(decision_name):
@@ -39,23 +39,65 @@ def render_overview_tab(selected_decisions):
     # Calculate unselected decisions (ALL_DECISIONS is already imported at module level)
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
+    # Check if complete simulation can run (validation for multiple configurations)
+    can_run, reason, config_count = can_run_complete_simulation()
+    
     col1, col2 = st.columns([3, 1])
     with col1:
-        if len(selected_decisions) == 0:
-            # All decisions use defaults
-            st.info(f"🎯 **Complete end-to-end simulation**: All {len(ALL_DECISIONS)} decisions will use default values")
-            st.caption(f"💡 All decisions will use configured default values shown above")
-        elif len(unselected_decisions) == 0:
-            # All decisions use custom parameters
-            st.info(f"🎯 **Complete end-to-end simulation**: All {len(selected_decisions)} decisions with custom parameters")
-            st.caption(f"✅ All decisions use custom parameters")
+        if not can_run:
+            # Show warning about multiple configurations
+            st.warning(f"""
+⚠️ **Multiple Donation Configurations Detected**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Donation Default** tab
+2. Run **donation_default only**
+3. Select your preferred configuration from results
+4. Return here to run complete simulation
+            """)
+        elif config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
+            # Show selected configuration info
+            config = st.session_state.selected_donation_config
+            st.success(f"✅ **Using selected configuration**: {config['population_mode']} + {config['income_spec_mode']}")
+            
+            if len(selected_decisions) == 0:
+                st.info(f"🎯 All {len(ALL_DECISIONS)} decisions will use default values")
+            elif len(unselected_decisions) == 0:
+                st.info(f"🎯 All {len(selected_decisions)} decisions with custom parameters")
+            else:
+                st.info(f"🎯 {len(selected_decisions)} custom + {len(unselected_decisions)} default decisions")
         else:
-            # Mixed: some custom, some defaults
-            st.info(f"🎯 **Complete end-to-end simulation**: {len(selected_decisions)} decisions with custom parameters + {len(unselected_decisions)} decisions with default values")
-            st.caption(f"💡 Unselected decisions will use configured default values shown above")
+            # Single configuration mode - show normal info
+            if len(selected_decisions) == 0:
+                # All decisions use defaults
+                st.info(f"🎯 **Complete end-to-end simulation**: All {len(ALL_DECISIONS)} decisions will use default values")
+                st.caption(f"💡 All decisions will use configured default values shown above")
+            elif len(unselected_decisions) == 0:
+                # All decisions use custom parameters
+                st.info(f"🎯 **Complete end-to-end simulation**: All {len(selected_decisions)} decisions with custom parameters")
+                st.caption(f"✅ All decisions use custom parameters")
+            else:
+                # Mixed: some custom, some defaults
+                st.info(f"🎯 **Complete end-to-end simulation**: {len(selected_decisions)} decisions with custom parameters + {len(unselected_decisions)} decisions with default values")
+                st.caption(f"💡 Unselected decisions will use configured default values shown above")
+    
     with col2:
-        if st.button("🚀 Run Complete Simulation", type="primary", use_container_width=True, key="run_complete_simulation"):
-            run_combined_simulation(selected_decisions)
+        if not can_run:
+            # Disabled button
+            st.button(
+                "🚀 Run Complete Simulation", 
+                type="primary", 
+                use_container_width=True, 
+                disabled=True,
+                key="run_complete_simulation_disabled",
+                help="Select a donation configuration first"
+            )
+        else:
+            # Enabled button
+            if st.button("🚀 Run Complete Simulation", type="primary", use_container_width=True, key="run_complete_simulation"):
+                run_combined_simulation(selected_decisions)
     
 
 
@@ -166,7 +208,7 @@ def render_selected_donation_config_display():
             st.metric("Income Mode", config['income_spec_mode'])
         
         with col3:
-            st.metric("Avg Donation Rate", f"{config['metrics']['mean_donation']:.1%}")
+            st.metric("Avg Donation Rate", f"{config['metrics']['mean_donation']:.2%}")
         
         with col4:
             st.metric("Total Agents", f"{config['total_agents']:,}")

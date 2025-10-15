@@ -330,7 +330,6 @@ def initialize_session_state():
         'sigma_value_ui': 9.8995,  # Static empirical SD value
         'sigma_coefficient': 1.0,  # Coefficient to multiply the static SD (0-2)
         'anchor_observed_weight': 0.75,
-        'raw_draw_mode': False,
         'n_agents': 1000,
         'seed': 42,
         'n_runs': 10,

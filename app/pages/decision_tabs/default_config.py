@@ -91,18 +91,61 @@ def render_probability_default_config(decision_name, default_value):
     if prob_key not in st.session_state:
         st.session_state[prob_key] = default_probability
     
-    st.caption(description)
+    # Special handling for purchase_vs_bid - show it only applies to regular customers
+    if decision_name == "purchase_vs_bid":
+        st.caption("⚠️ **Note**: This decision only applies to **REGULAR customers** (those who did not disclose income)")
+        st.caption(description)
+        
+        # Show customer type distribution if simulation results exist
+        if 'simulation_results' in st.session_state and st.session_state.simulation_results:
+            results_dict = st.session_state.simulation_results
+            first_result = next(iter(results_dict.values()))
+            
+            if first_result is not None and not first_result.empty and 'customer_type' in first_result.columns:
+                # Analyze customer types
+                from src.decisions.income_utils import analyze_customer_types
+                stats = analyze_customer_types(first_result)
+                
+                # Show distribution
+                type_col1, type_col2, type_col3 = st.columns(3)
+                with type_col1:
+                    st.metric("Regular Customers", 
+                             f"{stats['regular']['count']:,}", 
+                             f"{stats['regular']['percentage']:.1f}%",
+                             help="Only these customers make Purchase Now vs Bid choice")
+                with type_col2:
+                    st.metric("Fixed Customers", 
+                             f"{stats['fixed']['count']:,}",
+                             f"{stats['fixed']['percentage']:.1f}%",
+                             help="Use fixed pricing only")
+                with type_col3:
+                    st.metric("Discount Customers", 
+                             f"{stats['discount']['count']:,}",
+                             f"{stats['discount']['percentage']:.1f}%",
+                             help="Use discount pricing")
+                
+                st.caption(f"💡 The probability below applies to {stats['regular']['count']:,} regular customers ({stats['regular']['percentage']:.1f}% of total)")
+    else:
+        st.caption(description)
     
     col1, col2, col3 = st.columns([2, 1, 1])
     
     with col1:
+        # Customize label for purchase_vs_bid
+        if decision_name == "purchase_vs_bid":
+            slider_label = f"P({options[0]}) - Probability for REGULAR customers only"
+            slider_help = f"Probability that REGULAR customers will choose {options[0]} vs {options[1]}"
+        else:
+            slider_label = f"P({options[0]}) - Probability of {options[0]}"
+            slider_help = f"Probability that agents will choose {options[0]} vs {options[1]}"
+        
         probability = st.slider(
-            f"P({options[0]}) - Probability of {options[0]} vs bidding",
+            slider_label,
             min_value=0.0,
             max_value=1.0,
             value=st.session_state[prob_key],
             step=0.01,
-            help=f"Probability that agents will choose {options[0]} vs {options[1]}",
+            help=slider_help,
             key=prob_key
         )
     

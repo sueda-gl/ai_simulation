@@ -235,12 +235,8 @@ def render_all_modes_comparison(results_dict):
 
 def render_dependent_variable_results(results_dict):
     """Render dependent variable resampling results"""
-    raw_suffix = " (Raw Pre-truncation)" if st.session_state.raw_draw_mode else ""
-    st.markdown(f"### 📊 Dependent Variable Resampling{raw_suffix}")
-    if st.session_state.raw_draw_mode:
-        st.caption("This mode resamples from the empirical distribution of RAW (pre-truncation) donation rates computed from the original 280 participants. These values represent the Normal(anchor, σ) draw before flooring at 0 and rescaling by personal maximum.")
-    else:
-        st.caption("This mode resamples from the empirical distribution of donation rates computed from the original 280 participants. No trait information is preserved.")
+    st.markdown("### 📊 Dependent Variable Resampling")
+    st.caption("This mode resamples from the empirical distribution of donation rates computed from the original 280 participants. No trait information is preserved.")
     
     df = results_dict["depvar"]
     show_dependent_variable_comparison(df)

@@ -159,8 +159,6 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     )
     
     if use_stochastic:
-        out = {}
-        raw_flag = params.get('stochastic', {}).get('raw_output', False)
         # Apply stochastic component with Normal(anchor, σ) draw
         # Use the same sigma logic as documentation mode
         sigma_0_100 = params['stochastic']['sigma_value']  # 9.8995 on 0-112 scale
@@ -170,14 +168,12 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         # Step 4a: Draw from Normal(adjusted_anchor, σ)
         draw_0_100 = rng.normal(s100_anchor_adjusted, sigma_0_100_scaled)
         
-        if raw_flag:
-            out = {"donation_default_raw": draw_0_100 / 100.0}
+        # Floor negative values at 0
         draw_0_100 = max(draw_0_100, 0.0)
-        out["donation_default_raw_pos"] = draw_0_100
+        
         # Step 6: Simple scaling to proportion (0-1) matching documentation-mode logic
         donation_rate = draw_0_100 / 100.0
-        out["donation_default"] = np.clip(donation_rate, 0.0, 1.0)
-        return out
+        return {"donation_default": np.clip(donation_rate, 0.0, 1.0)}
     else:
         # Use adjusted anchor directly (no additional stochastic component)
         # The copula sampling already provides natural variability

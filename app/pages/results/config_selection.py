@@ -53,7 +53,7 @@ def render_configuration_selection_ui(results_dict):
             st.success(f"✅ **Selected Configuration**: {format_result_name(config['result_key'])}")
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.caption(f"Selected at {config['selected_timestamp'].strftime('%H:%M:%S')} - Avg Donation: {config['metrics']['mean_donation']:.1%}")
+                st.caption(f"Selected at {config['selected_timestamp'].strftime('%H:%M:%S')} - Avg Donation: {config['metrics']['mean_donation']:.2%}")
             with col2:
                 if st.button("🗑️ Clear Selection", help="Clear the selected configuration"):
                     clear_selected_configuration()
@@ -99,11 +99,11 @@ def render_configuration_card(result_key, result_df):
         metric_col1, metric_col2 = st.columns(2)
         
         with metric_col1:
-            st.metric("Mean", f"{mean_donation:.1%}")
-            st.metric("Std Dev", f"{std_donation:.1%}")
+            st.metric("Mean", f"{mean_donation:.2%}")
+            st.metric("Std Dev", f"{std_donation:.2%}")
         
         with metric_col2:
-            st.metric("Median", f"{median_donation:.1%}")
+            st.metric("Median", f"{median_donation:.2%}")
             st.metric("Agents", f"{len(result_df):,}")
         
         # Configuration details in smaller text

@@ -17,24 +17,7 @@ When fully simulated (future):
 """
 from typing import Optional, Dict, Any
 
-
-def _get_simulation_param(simulation_config: Optional[Dict], key: str, default=None):
-    """
-    Helper to safely extract parameters from simulation_config.
-    
-    Args:
-        simulation_config: Config dict with 'simulation' sub-dict containing Page 1 parameters
-        key: Parameter name to retrieve
-        default: Fallback value if not found
-        
-    Returns:
-        Parameter value from simulation_config['simulation'][key] or default
-    """
-    if not simulation_config or not isinstance(simulation_config, dict):
-        return default
-    
-    sim = simulation_config.get('simulation', {})
-    return sim.get(key, default)
+from src.decisions.income_utils import get_simulation_param
 
 
 def consumption_frequency(agent_state: dict, params: dict, rng, 
@@ -81,8 +64,8 @@ def consumption_frequency(agent_state: dict, params: dict, rng,
         consumption_quantity = 0.0
     
     # STEP 2: Get term duration from Page 1 parameters
-    periods = _get_simulation_param(simulation_config, 'periods', 1)
-    duration_hours = _get_simulation_param(simulation_config, 'duration_hours', 1.0)
+    periods = get_simulation_param(simulation_config, 'periods', 1)
+    duration_hours = get_simulation_param(simulation_config, 'duration_hours', 1.0)
     
     # Calculate term duration
     term_duration = float(periods * duration_hours)

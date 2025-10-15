@@ -167,16 +167,6 @@ def configure_sidebar(selected_decisions):
                 (population_mode == "Research Specification" and sigma_in_research) or
                 (population_mode == "Compare both" and (sigma_in_copula or sigma_in_research))
             )
-            
-            if stochastic_enabled:
-                st.sidebar.subheader("Output Options")
-                raw_draw_mode = st.sidebar.checkbox(
-                    "Show pre-truncation (raw) donation rate",
-                    value=st.session_state.raw_draw_mode,
-                    help="Display the raw Normal(anchor, σ) draw before any processing. This shows negative values and the full range of the stochastic draw before flooring at 0 and rescaling by personal maximum."
-                )
-            else:
-                raw_draw_mode = False
         else:
             # If donation_default is not selected, set default values
             population_mode = "Copula (synthetic)"
@@ -184,7 +174,6 @@ def configure_sidebar(selected_decisions):
             sigma_in_copula = False
             sigma_value_ui = 9.0
             anchor_observed_weight = 0.75
-            raw_draw_mode = False
 
         # Show applicable global parameters dynamically
         all_applicable = get_decision_global_parameters(selected_decisions)
@@ -362,7 +351,6 @@ def configure_sidebar(selected_decisions):
         st.session_state.sigma_coefficient = sigma_coefficient
         st.session_state.sigma_value_ui = sigma_value_ui
         st.session_state.anchor_observed_weight = anchor_observed_weight
-        st.session_state.raw_draw_mode = raw_draw_mode
         st.session_state.n_agents = n_agents
         # Note: simulation_mode now comes from Page 1 (st.session_state.sim_params.simulation_mode)
         if simulation_mode == "Single Run":

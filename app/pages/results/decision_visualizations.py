@@ -5,6 +5,7 @@ Contains all render_* functions for different decision types.
 """
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -33,15 +34,15 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
     try:
         numeric_data = pd.to_numeric(decision_data, errors='coerce')
         if not numeric_data.isna().all():
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4 = st.columns([1, 1.1, 1.1, 1.2])
             with col1:
                 st.metric("Total Agents", f"{len(decision_data):,}")
             with col2:
-                st.metric("Mean", f"{numeric_data.mean():.1%}")
+                st.metric("Mean", f"{numeric_data.mean():.2%}")
             with col3:
                 st.metric("Std Dev", f"{numeric_data.std():.2%}")
             with col4:
-                st.metric("Range", f"{numeric_data.min():.1%} - {numeric_data.max():.1%}")
+                st.metric("Range", f"{numeric_data.min():.2%} - {numeric_data.max():.2%}")
             col_plot, col_stats = st.columns([2, 1])
             with col_plot:
                 fig = px.histogram(
@@ -108,19 +109,19 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         donation_data = df['donation_default']
         
         # Top section: Distribution statistics
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3, col4 = st.columns([1, 1.1, 1.1, 1])
         
         with col1:
             st.metric("Total Agents", f"{len(donation_data):,}")
         
         with col2:
-            st.metric("Mean Rate", f"{donation_data.mean():.1%}")
+            st.metric("Mean Rate", f"{donation_data.mean():.2%}")
         
         with col3:
-            st.metric("Median Rate", f"{donation_data.median():.1%}")
+            st.metric("Median Rate", f"{donation_data.median():.2%}")
         
         with col4:
-            st.metric("Std Dev", f"{donation_data.std():.1%}")
+            st.metric("Std Dev", f"{donation_data.std():.2%}")
         
         # Distribution visualization
         st.markdown("---")
@@ -354,47 +355,132 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
 
 
 def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
-    """Visualization for purchase_vs_bid - binary Purchase Now/bid choice"""
+    """Visualization for purchase_vs_bid - per-request Purchase Now/bid choices"""
     
-    # Purchase Now vs Bid metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Show that decisions are now made PER REQUEST
+    st.info("⚠️ **Note**: Decisions are made **per purchase request**, not per agent. A single agent can choose differently for each purchase.")
     
-    value_counts = decision_data.value_counts()
-    total = len(decision_data)
+    # Analyze customer type distribution at agent level
+    if 'customer_type' in df.columns:
+        from src.decisions.income_utils import analyze_customer_types
+        customer_stats = analyze_customer_types(df)
+        
+        # Show customer type breakdown
+        type_col1, type_col2, type_col3, type_col4 = st.columns(4)
+        
+        with type_col1:
+            st.metric("Total Agents", f"{customer_stats['total']:,}")
+        with type_col2:
+            st.metric("Regular Customers", 
+                     f"{customer_stats['regular']['count']:,}",
+                     f"{customer_stats['regular']['percentage']:.1f}%",
+                     help="Only these customers make Purchase Now vs Bid choice")
+        with type_col3:
+            st.metric("Fixed Customers", 
+                     f"{customer_stats['fixed']['count']:,}",
+                     f"{customer_stats['fixed']['percentage']:.1f}%",
+                     help="Use fixed pricing only (NA)")
+        with type_col4:
+            st.metric("Discount Customers", 
+                     f"{customer_stats['discount']['count']:,}",
+                     f"{customer_stats['discount']['percentage']:.1f}%",
+                     help="Use discount pricing (NA)")
     
-    with col1:
-        st.metric("Total Agents", f"{total:,}")
-    with col2:
-        purchase_count = value_counts.get('Purchase Now', 0)
-        st.metric("Purchase Now", f"{purchase_count:,} ({purchase_count/total:.1%})")
-    with col3:
-        bid_count = value_counts.get('bid', 0)
-        st.metric("Bid", f"{bid_count:,} ({bid_count/total:.1%})")
-    with col4:
-        st.metric("Purchase Now Rate", f"{purchase_count/total:.1%}")
+    # Extract REQUEST-LEVEL data from purchase_requests
+    st.markdown("---")
+    st.markdown("### 🛒 Purchase Decisions per Request")
     
-    # Purchase Now vs Bid visualization - donut chart
-    col_plot, col_stats = st.columns([2, 1])
-    
-    with col_plot:
-        if len(value_counts) > 0:
-            fig = px.pie(
-                values=value_counts.values,
-                names=value_counts.index,
-                title=f"{decision_title} Distribution",
-                hole=0.4,  # Donut chart
-                color_discrete_map={'Purchase Now': '#4CAF50', 'bid': '#FF9800'}  # Green for Purchase Now, Orange for bid
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with col_stats:
-        st.markdown("**🛒 Transaction Choices**")
-        breakdown_df = pd.DataFrame({
-            'Choice': value_counts.index,
-            'Count': value_counts.values,
-            'Percentage': [f"{(count/total)*100:.1f}%" for count in value_counts.values]
-        })
-        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+    if 'purchase_requests' in df.columns:
+        # Collect all purchase decisions from all requests
+        all_platform_prices = []
+        regular_requests = []
+        
+        for idx, row in df.iterrows():
+            requests = row.get('purchase_requests', [])
+            if isinstance(requests, list):
+                for req in requests:
+                    if isinstance(req, dict):
+                        platform_price = req.get('platformPrice')
+                        all_platform_prices.append(platform_price)
+                        
+                        # Count only PN and BID for regular customers
+                        if platform_price in ['PN', 'BID']:
+                            regular_requests.append(platform_price)
+        
+        # Count platform prices
+        from collections import Counter
+        all_counts = Counter(all_platform_prices)
+        regular_counts = Counter(regular_requests)
+        
+        total_requests = len(all_platform_prices)
+        total_regular_requests = len(regular_requests)
+        
+        # Overall metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Total Requests", f"{total_requests:,}", help="All purchase requests across all agents")
+        with col2:
+            discount_count = all_counts.get('DISCOUNT', 0)
+            st.metric("Discount Requests", f"{discount_count:,} ({discount_count/total_requests*100 if total_requests > 0 else 0:.1f}%)")
+        with col3:
+            fixed_count = all_counts.get('FIXED', 0)
+            st.metric("Fixed Requests", f"{fixed_count:,} ({fixed_count/total_requests*100 if total_requests > 0 else 0:.1f}%)")
+        with col4:
+            st.metric("Regular Requests", f"{total_regular_requests:,} ({total_regular_requests/total_requests*100 if total_requests > 0 else 0:.1f}%)")
+        
+        # Regular customer requests (PN vs BID)
+        st.markdown("---")
+        st.markdown("### 🎯 Regular Customer Requests: Purchase Now vs Bid")
+        
+        if total_regular_requests > 0:
+            pn_count = regular_counts.get('PN', 0)
+            bid_count = regular_counts.get('BID', 0)
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Regular Requests", f"{total_regular_requests:,}", 
+                         help="Purchase requests from regular customers only")
+            with col2:
+                st.metric("Purchase Now (PN)", f"{pn_count:,} ({pn_count/total_regular_requests*100:.1f}%)")
+            with col3:
+                st.metric("Bid (BID)", f"{bid_count:,} ({bid_count/total_regular_requests*100:.1f}%)")
+            with col4:
+                st.metric("Purchase Now Rate", f"{pn_count/total_regular_requests*100:.1f}%")
+            
+            # Purchase Now vs Bid visualization - donut chart
+            col_plot, col_stats = st.columns([2, 1])
+            
+            with col_plot:
+                fig = px.pie(
+                    values=[pn_count, bid_count],
+                    names=['Purchase Now (PN)', 'Bid (BID)'],
+                    title=f"Purchase Decisions Distribution ({total_regular_requests:,} requests)",
+                    hole=0.4,  # Donut chart
+                    color_discrete_map={
+                        'Purchase Now (PN)': '#4CAF50',  # Green
+                        'Bid (BID)': '#FF9800'  # Orange
+                    }
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col_stats:
+                st.markdown("**🛒 Request-Level Choices**")
+                st.caption("(Regular customers only)")
+                breakdown_df = pd.DataFrame({
+                    'Choice': ['Purchase Now (PN)', 'Bid (BID)'],
+                    'Requests': [pn_count, bid_count],
+                    'Percentage': [
+                        f"{pn_count/total_regular_requests*100:.1f}%",
+                        f"{bid_count/total_regular_requests*100:.1f}%"
+                    ]
+                })
+                st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No regular customer purchase requests found")
+    else:
+        st.warning("No purchase_requests data available")
 
 
 def render_rejected_transaction_defaults(df, decision_name, decision_title, decision_data):
@@ -779,49 +865,127 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
     # Purchase request timing analysis if available
     if 'purchase_requests' in df.columns:
         st.markdown("---")
-        st.markdown("**⏱️ Purchase Request Timing Analysis**")
+        st.markdown("**⏱️ Purchase Timing & Frequency Analysis**")
         
-        # Extract all timestamps from purchase_requests
+        # Extract all timestamps and prepare data
         all_timestamps = []
-        for requests in df['purchase_requests']:
+        agent_timelines = []
+        
+        for idx, requests in enumerate(df['purchase_requests']):
             if isinstance(requests, list) and len(requests) > 0:
+                agent_id = df.iloc[idx].get('agent_id', idx + 1)
                 for req in requests:
                     if isinstance(req, dict) and 'timestamp_hours' in req:
-                        all_timestamps.append(req['timestamp_hours'])
+                        timestamp = req['timestamp_hours']
+                        all_timestamps.append(timestamp)
+                        agent_timelines.append({
+                            'agent_id': agent_id,
+                            'timestamp': timestamp
+                        })
         
         if len(all_timestamps) > 0:
-            col_timing1, col_timing2 = st.columns(2)
+            # Get simulation parameters for period breakdown
+            if hasattr(st.session_state, 'sim_params'):
+                periods = st.session_state.sim_params.periods
+                duration_hours = st.session_state.sim_params.duration_hours
+                term_duration = periods * duration_hours
+            else:
+                term_duration = max(all_timestamps) if all_timestamps else 30
+                periods = 15  # default
+                duration_hours = term_duration / periods
             
-            with col_timing1:
-                # Histogram of purchase timestamps
-                fig_timing = px.histogram(
-                    x=all_timestamps,
-                    nbins=20,
-                    title="Distribution of Purchase Request Times",
-                    labels={'x': 'Time (hours from start)', 'count': 'Number of Requests'}
+            # 1. PURCHASES PER PERIOD (Most important visualization)
+            st.markdown("**📊 Purchase Volume by Period**")
+            st.caption("Shows how many purchases occur in each period - demonstrates random distribution")
+            
+            # Create period bins
+            period_bins = []
+            period_labels = []
+            for i in range(periods):
+                start = i * duration_hours
+                end = (i + 1) * duration_hours
+                period_labels.append(f"P{i+1}")
+                period_bins.append(start)
+            period_bins.append(term_duration)
+            
+            # Count purchases per period
+            period_counts = pd.cut(all_timestamps, bins=period_bins, labels=period_labels, include_lowest=True)
+            period_df = pd.DataFrame({
+                'Period': period_labels,
+                'Purchases': [sum(period_counts == label) for label in period_labels],
+                'Hours': [f"{i*duration_hours:.0f}-{(i+1)*duration_hours:.0f}" for i in range(periods)]
+            })
+            
+            col_period1, col_period2 = st.columns([3, 1])
+            
+            with col_period1:
+                # Bar chart by period
+                fig_periods = px.bar(
+                    period_df,
+                    x='Period',
+                    y='Purchases',
+                    title=f"Purchase Requests per Period (Total: {len(all_timestamps):,} requests)",
+                    labels={'Purchases': 'Number of Requests', 'Period': 'Period'},
+                    text='Purchases'
                 )
-                fig_timing.update_layout(
-                    showlegend=False,
+                fig_periods.update_traces(textposition='outside')
+                fig_periods.update_layout(
+                    xaxis_title="Period (Time Window)",
+                    yaxis_title="Number of Purchase Requests",
+                    showlegend=False
+                )
+                st.plotly_chart(fig_periods, use_container_width=True)
+            
+            with col_period2:
+                st.markdown("**Period Details**")
+                st.dataframe(
+                    period_df.rename(columns={'Hours': 'Time Range'}),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=400
+                )
+            
+            # 2. CUMULATIVE PURCHASES OVER TIME
+            st.markdown("---")
+            st.markdown("**📈 Cumulative Purchases Over Time**")
+            st.caption("Shows how total purchases accumulate throughout the term")
+            
+            # Sort timestamps and create cumulative count
+            sorted_times = sorted(all_timestamps)
+            cumulative_counts = list(range(1, len(sorted_times) + 1))
+            
+            cumulative_df = pd.DataFrame({
+                'Time (hours)': sorted_times,
+                'Cumulative Purchases': cumulative_counts
+            })
+            
+            fig_cumulative = px.line(
+                cumulative_df,
+                x='Time (hours)',
+                y='Cumulative Purchases',
+                title="Cumulative Purchase Requests Over Time"
+            )
+            
+            # Add period markers
+            for i in range(1, periods):
+                fig_cumulative.add_vline(
+                    x=i * duration_hours,
+                    line_dash="dot",
+                    line_color="gray",
+                    opacity=0.5,
+                    annotation_text=f"P{i+1}",
+                    annotation_position="top"
+                )
+            
+            fig_cumulative.update_layout(
                     xaxis_title="Time (hours from term start)",
-                    yaxis_title="Number of Purchase Requests"
-                )
-                st.plotly_chart(fig_timing, use_container_width=True)
+                yaxis_title="Total Purchases",
+                showlegend=False
+            )
+            st.plotly_chart(fig_cumulative, use_container_width=True)
             
-            with col_timing2:
-                st.markdown("**📊 Timing Statistics**")
-                timing_stats = pd.Series(all_timestamps).describe()
-                timing_df = pd.DataFrame({
-                    'Metric': ['Total Requests', 'Mean Time', 'Median Time', 'Earliest', 'Latest', 'Spread (Std)'],
-                    'Value': [
-                        f"{len(all_timestamps):,}",
-                        f"{timing_stats['mean']:.2f}h",
-                        f"{timing_stats['50%']:.2f}h",
-                        f"{timing_stats['min']:.2f}h",
-                        f"{timing_stats['max']:.2f}h",
-                        f"{timing_stats['std']:.2f}h"
-                    ]
-                })
-                st.dataframe(timing_df, use_container_width=True, hide_index=True)
+            st.info("💡 To see **individual agent purchase schedules** (frequency visualization), view the **Consumption Frequency** decision.")
+        
         else:
             st.info("No purchase requests found in the data")
     
@@ -850,172 +1014,158 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         between 0 and the corresponding consumption limit. Each purchase order is for 
         1 item by default, and purchase requests are randomly spread during the term."
         """)
+    
+    # Export section for consumption quantity / transactions
+    if 'purchase_requests' in df.columns:
+        st.markdown("---")
+        st.markdown("**📥 Export Transaction Data**")
+        
+        try:
+            from io import BytesIO
+            from datetime import datetime
+            
+            # Flatten purchase_requests to transaction-level DataFrame
+            transactions = []
+            transaction_id = 1
+            
+            for idx, row in df.iterrows():
+                purchase_requests = row.get('purchase_requests', [])
+                if isinstance(purchase_requests, list):
+                    for req in purchase_requests:
+                        if isinstance(req, dict):
+                            transactions.append({
+                                'transaction_id': transaction_id,
+                                'customer_id': req.get('customer_id', idx + 1),
+                                'vendorID': req.get('vendorID', 1),
+                                'platformPrice': req.get('platformPrice', 'N/A'),
+                                'purchase_bid_value': req.get('bid_value', 'N/A'),
+                                'timestamp': req.get('timestamp_hours', 0.0)
+                            })
+                            transaction_id += 1
+            
+            if len(transactions) > 0:
+                transactions_df = pd.DataFrame(transactions)
+                
+                col_export, col_preview = st.columns([1, 2])
+                
+                with col_export:
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        transactions_df.to_excel(writer, index=False, sheet_name='Transactions')
+                    
+                    st.download_button(
+                        label="📊 Download Transactions Excel",
+                        data=buffer.getvalue(),
+                        file_name=f"consumption_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Download transaction-level data with one row per purchase request"
+                    )
+                    
+                    st.caption(f"📋 {len(transactions_df):,} transactions from {len(df):,} agents")
+                
+                with col_preview:
+                    with st.expander("📋 Preview Transaction Data", expanded=False):
+                        st.dataframe(transactions_df.head(20), use_container_width=True)
+                        st.caption(f"Showing first 20 of {len(transactions_df):,} total transactions")
+            else:
+                st.info("No transactions to export")
+        
+        except ImportError:
+            st.caption("⚠️ Excel export requires openpyxl")
 
 
 def render_consumption_frequency(df, decision_name, decision_title, decision_data):
-    """Visualization for consumption_frequency - frequency analysis"""
+    """Visualization for consumption_frequency - shows WHEN purchases occur (timing/frequency)"""
     
-    # Overview metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Check if purchase_requests data is available
+    if 'purchase_requests' not in df.columns:
+        st.warning("No purchase_requests data available for frequency visualization")
+        return
     
-    with col1:
-        st.metric("Total Agents", f"{len(decision_data):,}")
+    # Get simulation parameters
+    if hasattr(st.session_state, 'sim_params'):
+        periods = st.session_state.sim_params.periods
+        duration_hours = st.session_state.sim_params.duration_hours
+        term_duration = periods * duration_hours
+    else:
+        term_duration = 30  # Default
+        periods = 15
+        duration_hours = 2.0
     
-    with col2:
-        mean_freq = decision_data.mean()
-        st.metric("Mean Frequency", f"{mean_freq:.2f}/h")
+    # Extract all timestamps from purchase_requests
+    all_timestamps = []
+    for idx, row in df.iterrows():
+        requests = row.get('purchase_requests', [])
+        if isinstance(requests, list):
+            for req in requests:
+                if isinstance(req, dict) and 'timestamp_hours' in req:
+                    all_timestamps.append(req['timestamp_hours'])
     
-    with col3:
-        median_freq = decision_data.median()
-        st.metric("Median Frequency", f"{median_freq:.2f}/h")
+    if len(all_timestamps) == 0:
+        st.info("No purchase requests found")
+        return
     
-    with col4:
-        max_freq = decision_data.max()
-        st.metric("Max Frequency", f"{max_freq:.2f}/h")
+    # MAIN VISUALIZATION: Sample Agent Purchase Schedules (Timeline)
+    st.markdown("---")
+    st.markdown("**👥 Sample Agent Purchase Schedules**")
+    st.caption("Individual agent timelines showing random distribution of their purchases")
     
-    # Distribution plot and statistics
-    col_plot, col_stats = st.columns([2, 1])
+    # Select up to 20 agents with most purchases for visualization
+    agent_purchase_counts = df.groupby(df.index)['consumption_quantity'].first().sort_values(ascending=False)
+    sample_agents = agent_purchase_counts.head(20).index.tolist()
     
-    with col_plot:
-        # Histogram of frequencies
-        fig = px.histogram(
-            df,
-            x=decision_name,
-            nbins=30,
-            title="Distribution of Consumption Frequencies",
-            labels={decision_name: 'Items per Hour', 'count': 'Number of Agents'}
-        )
-        fig.update_layout(
-            showlegend=False,
-            xaxis_title="Consumption Frequency (items/hour)",
-            yaxis_title="Number of Agents"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col_stats:
-        st.markdown("**📈 Statistics**")
-        stats = decision_data.describe()
-        stats_df = pd.DataFrame({
-            'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-            'Value': [
-                f"{stats['mean']:.3f}",
-                f"{stats['std']:.3f}",
-                f"{stats['min']:.3f}",
-                f"{stats['max']:.3f}",
-                f"{stats['50%']:.3f}",
-                f"{stats['25%']:.3f}",
-                f"{stats['75%']:.3f}"
-            ]
-        })
-        st.dataframe(stats_df, use_container_width=True, hide_index=True)
-    
-    # Relationship with consumption_quantity
-    if 'consumption_quantity' in df.columns:
-        st.markdown("---")
-        st.markdown("**📊 Relationship: Frequency vs Quantity**")
+    timeline_data = []
+    for idx in sample_agents:
+        requests = df.iloc[idx]['purchase_requests']
+        agent_id = df.iloc[idx].get('agent_id', idx + 1)
+        quantity = df.iloc[idx].get('consumption_quantity', 0)
         
-        col_scatter, col_info = st.columns([2, 1])
+        if isinstance(requests, list):
+            for req in requests:
+                if isinstance(req, dict) and 'timestamp_hours' in req:
+                    timeline_data.append({
+                        'Agent': f"Agent {agent_id} ({quantity} items)",
+                        'Time': req['timestamp_hours'],
+                        'Purchase': 1
+                    })
+    
+    if timeline_data:
+        timeline_df = pd.DataFrame(timeline_data)
         
-        with col_scatter:
-            # Scatter plot showing relationship
-            fig_scatter = px.scatter(
-                df,
-                x='consumption_quantity',
-                y='consumption_frequency',
-                opacity=0.6,
-                title="Consumption Frequency vs Quantity",
-                labels={
-                    'consumption_quantity': 'Total Quantity (items)',
-                    'consumption_frequency': 'Frequency (items/hour)'
-                }
+        fig_timeline = px.scatter(
+            timeline_df,
+            x='Time',
+            y='Agent',
+            title=f"Purchase Timing for Top {len(sample_agents)} Agents (by quantity)",
+            labels={'Time': 'Time (hours)', 'Agent': 'Agent ID'},
+            color_discrete_sequence=['#1f77b4']
+        )
+        
+        # Add period markers
+        for i in range(1, periods):
+            fig_timeline.add_vline(
+                x=i * duration_hours,
+                line_dash="dot",
+                line_color="gray",
+                opacity=0.3
             )
-            
-            # Add theoretical line (frequency = quantity / term_duration)
-            # Get term duration from simulation params if available
-            if hasattr(st.session_state, 'sim_params'):
-                term_duration = (st.session_state.sim_params.periods * 
-                               st.session_state.sim_params.duration_hours)
-                
-                max_qty = df['consumption_quantity'].max()
-                theoretical_x = [0, max_qty]
-                theoretical_y = [0, max_qty / term_duration]
-                
-                fig_scatter.add_trace(
-                    go.Scatter(
-                        x=theoretical_x,
-                        y=theoretical_y,
-                        mode='lines',
-                        name=f'Theoretical (÷{term_duration}h)',
-                        line=dict(color='red', dash='dash', width=2)
-                    )
-                )
-            
-            st.plotly_chart(fig_scatter, use_container_width=True)
         
-        with col_info:
-            st.markdown("**🔗 Correlation**")
-            correlation = df['consumption_quantity'].corr(df['consumption_frequency'])
-            st.metric("Pearson r", f"{correlation:.4f}")
-            
-            st.markdown("**📐 Formula**")
-            if hasattr(st.session_state, 'sim_params'):
-                periods = st.session_state.sim_params.periods
-                duration = st.session_state.sim_params.duration_hours
-                st.code(f"frequency = quantity / ({periods} × {duration})")
-            else:
-                st.code("frequency = quantity / term_duration")
-            
-            st.caption("Each point represents one agent. The red dashed line shows the theoretical relationship.")
-    
-    # Income category analysis if available
-    if 'income_category' in df.columns:
-        st.markdown("---")
-        st.markdown("**📊 Frequency by Income Category**")
-        
-        # Box plot by category (sorted properly)
-        df_sorted = df.sort_values('income_category')
-        
-        fig_box = px.box(
-            df_sorted,
-            x='income_category',
-            y='consumption_frequency',
-            title="Frequency Distribution by Income Category",
-            labels={
-                'income_category': 'Income Category',
-                'consumption_frequency': 'Frequency (items/hour)'
-            },
-            category_orders={"income_category": sorted(df['income_category'].unique())}
+        fig_timeline.update_traces(marker=dict(size=8, symbol='line-ns-open'))
+        fig_timeline.update_layout(
+            xaxis_title="Time (hours from term start)",
+            yaxis_title="",
+            height=max(400, len(sample_agents) * 25),
+            showlegend=False
         )
-        st.plotly_chart(fig_box, use_container_width=True)
+        st.plotly_chart(fig_timeline, use_container_width=True)
     
-    # Default behavior explanation
-    with st.expander("ℹ️ How This Decision Works (Default Behavior)", expanded=False):
-        st.markdown("""
-        **Consumption Frequency Default Logic:**
-        
-        1. **Computed from Quantity**: 
-           ```
-           consumption_frequency = consumption_quantity / term_duration
-           ```
-           where `term_duration = periods × duration_hours`
-        
-        2. **Units**: Items per hour
-        
-        3. **Interpretation**: 
-           - Frequency = 2.0 means agent purchases 2 items per hour on average
-           - Frequency = 0.5 means agent purchases 1 item every 2 hours
-           - Frequency = 0.0 means agent makes no purchases
-        
-        4. **Relationship**: 
-           - Directly proportional to consumption_quantity
-           - Inversely proportional to term_duration
-           - Perfect linear correlation (computed value, not random)
-        
-        **Example**:
-        - Agent wants 10 items total
-        - Term = 2 periods × 1 hour = 2 hours
-        - Frequency = 10 / 2 = 5.0 items/hour
-        """)
+    st.markdown("""
+    **What this shows:**
+    - Each horizontal line represents one agent
+    - Each vertical tick mark is a purchase request
+    - Purchases are randomly distributed across the term duration (not evenly spaced)
+    - Different agents have different frequencies based on their consumption quantity
+    """)
 
 
 
@@ -1115,29 +1265,89 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
         st.write(f"Sample bids: {', '.join(example_bids)}")
         st.caption(f"All values fall within [€{min_bid_price:.2f}, €{max_bid_price:.2f})")
     
-    # Current simulation results summary (if available)
-    if not decision_data.empty:
-        st.markdown("---")
-        st.markdown("**📊 Current Simulation Summary:**")
+    # Current simulation results summary - REQUEST LEVEL
+    st.markdown("---")
+    st.markdown("**📊 Actual Bid Values from Simulation (Request-Level)**")
+    st.caption("Each bid request gets a unique random bid value")
+    
+    if 'purchase_requests' in df.columns:
+        # Extract all bid values from all requests
+        all_bids = []
         
-        try:
-            # Try to get numeric data for analysis
-            numeric_data = pd.to_numeric(decision_data, errors='coerce')
-            if not numeric_data.isna().all():
-                col_stats1, col_stats2, col_stats3 = st.columns(3)
+        for idx, row in df.iterrows():
+            requests = row.get('purchase_requests', [])
+            if isinstance(requests, list):
+                for req in requests:
+                    if isinstance(req, dict):
+                        bid_val = req.get('bid_value')
+                        # Only include actual numeric bid values (not "N/A")
+                        if bid_val != 'N/A' and bid_val is not None:
+                            try:
+                                all_bids.append(float(bid_val))
+                            except (ValueError, TypeError):
+                                pass
+        
+        if len(all_bids) > 0:
+            col_stats1, col_stats2, col_stats3, col_stats4 = st.columns(4)
+            
+            with col_stats1:
+                st.metric("Total Bid Requests", f"{len(all_bids):,}", 
+                         help="Number of BID requests across all agents")
+            
+            with col_stats2:
+                st.metric("Mean Bid", f"€{np.mean(all_bids):.2f}")
+            
+            with col_stats3:
+                st.metric("Min Bid", f"€{min(all_bids):.2f}")
+            
+            with col_stats4:
+                st.metric("Max Bid", f"€{max(all_bids):.2f}")
+            
+            # Histogram of bid values
+            st.markdown("**📈 Distribution of Actual Bid Values:**")
+            
+            col_hist, col_info = st.columns([2, 1])
+            
+            with col_hist:
+                fig = px.histogram(
+                    x=all_bids,
+                    nbins=30,
+                    title=f"Distribution of {len(all_bids):,} Bid Values",
+                    labels={'x': 'Bid Amount (€)', 'count': 'Number of Bids'}
+                )
                 
-                with col_stats1:
-                    st.metric("Mean Bid", f"€{numeric_data.mean():.2f}")
+                # Add vertical lines for theoretical range
+                fig.add_vline(x=min_bid_price, line_dash="dash", line_color="red", 
+                             annotation_text=f"Min €{min_bid_price:.2f}")
+                fig.add_vline(x=max_bid_price, line_dash="dash", line_color="red",
+                             annotation_text=f"Max €{max_bid_price:.2f}")
                 
-                with col_stats2:
-                    st.metric("Min Bid", f"€{numeric_data.min():.2f}")
+                st.plotly_chart(fig, use_container_width=True)
+            
+            with col_info:
+                st.markdown("**📊 Statistics**")
+                stats_df = pd.DataFrame({
+                    'Metric': ['Count', 'Mean', 'Median', 'Std Dev', 'Min', 'Max'],
+                    'Value': [
+                        f"{len(all_bids):,}",
+                        f"€{np.mean(all_bids):.2f}",
+                        f"€{np.median(all_bids):.2f}",
+                        f"€{np.std(all_bids):.2f}",
+                        f"€{min(all_bids):.2f}",
+                        f"€{max(all_bids):.2f}"
+                    ]
+                })
+                st.dataframe(stats_df, use_container_width=True, hide_index=True)
                 
-                with col_stats3:
-                    st.metric("Max Bid", f"€{numeric_data.max():.2f}")
-            else:
-                st.caption("Current results show non-numeric bid data")
-        except:
-            st.caption("Current results show complex bid data structure")
+                # Show unique count
+                unique_bids = len(set(all_bids))
+                st.caption(f"✅ {unique_bids:,} unique bid values")
+                if unique_bids == len(all_bids):
+                    st.success("🎯 All bids are unique!")
+        else:
+            st.info("No bid requests found (no agents chose to bid)")
+    else:
+        st.caption("No purchase_requests data available")
 
 
 

@@ -35,7 +35,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     else:
         st.caption("📊 Resampling from empirical distribution of 280 original donation rates")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
     
     with col1:
         st.metric("Total Agents", f"{len(df):,}")
@@ -59,7 +59,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         # Always use truncated donation_default for consistency
         donation_col = 'donation_default'
         if donation_col in df.columns:
-            st.metric("Avg Donation Rate", f"{df[donation_col].mean():.1%}")
+            st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
     
     # Donation rate analysis (if available) - always use truncated
     donation_col = 'donation_default'
@@ -356,13 +356,11 @@ def show_dependent_variable_comparison(df):
     try:
         from src.orchestrator_depvar import OrchestratorDepVar
         temp_orch = OrchestratorDepVar()
-        # Set the same raw output mode as was used for simulation
-        temp_orch.set_raw_output(st.session_state.raw_draw_mode)
         emp_stats = temp_orch.get_empirical_stats()
         original_donations = temp_orch.get_empirical_distribution()
         
-        # Determine the column name based on raw mode
-        donation_col = 'donation_default_raw' if st.session_state.raw_draw_mode else 'donation_default'
+        # Use donation_default column
+        donation_col = 'donation_default'
         
         # Create two columns for side-by-side comparison
         col_orig, col_resamp = st.columns(2)
@@ -401,7 +399,7 @@ def show_dependent_variable_comparison(df):
             # Stats
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Mean", f"{df[donation_col].mean():.1%}")
+                st.metric("Mean", f"{df[donation_col].mean():.2%}")
                 st.metric("Min", f"{df[donation_col].min():.1%}")
             with col2:
                 st.metric("Std Dev", f"{df[donation_col].std():.2%}")
