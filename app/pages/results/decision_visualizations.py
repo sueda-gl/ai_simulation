@@ -62,7 +62,7 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
                 stats = numeric_data.describe()
                 stats_df = pd.DataFrame({
                     'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                    'Value': [f"{stats[key]:.1%}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
+                    'Value': [f"{stats[key]:.2%}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
                 })
                 st.dataframe(stats_df, use_container_width=True, hide_index=True)
         else:
@@ -148,12 +148,12 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         
         with col_stats:
             st.markdown("**📈 Distribution Stats:**")
-            st.write(f"• **Min**: {donation_data.min():.1%}")
-            st.write(f"• **25th %ile**: {donation_data.quantile(0.25):.1%}")
-            st.write(f"• **50th %ile**: {donation_data.quantile(0.50):.1%}")
-            st.write(f"• **75th %ile**: {donation_data.quantile(0.75):.1%}")
-            st.write(f"• **Max**: {donation_data.max():.1%}")
-            st.write(f"• **Range**: {donation_data.max() - donation_data.min():.1%}")
+            st.write(f"• **Min**: {donation_data.min():.2%}")
+            st.write(f"• **25th %ile**: {donation_data.quantile(0.25):.2%}")
+            st.write(f"• **50th %ile**: {donation_data.quantile(0.50):.2%}")
+            st.write(f"• **75th %ile**: {donation_data.quantile(0.75):.2%}")
+            st.write(f"• **Max**: {donation_data.max():.2%}")
+            st.write(f"• **Range**: {donation_data.max() - donation_data.min():.2%}")
             
             st.markdown("---")
             st.markdown("**ℹ️ Source:**")
@@ -180,7 +180,7 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         
         with col2:
             current_rate = st.session_state[slider_key]
-            st.metric("Current Rate", f"{current_rate:.1%}")
+            st.metric("Current Rate", f"{current_rate:.2%}")
         
         with col3:
             st.metric("Default", "10%")
@@ -204,27 +204,27 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
             )
             
             # Show the current percentage value
-            st.write(f"**Selected Rate: {donation_rate:.1%}**")
+            st.write(f"**Selected Rate: {donation_rate:.2%}**")
             
             # Apply button to update the rate
             if st.button("🔄 Apply New Rate", type="primary", help="Update final donation rate for future simulations"):
                 # Update session state for decision execution
                 st.session_state["final_donation_rate_config"] = donation_rate
-                st.success(f"✅ Final donation rate updated to: {donation_rate:.1%}")
+                st.success(f"✅ Final donation rate updated to: {donation_rate:.2%}")
                 st.info("💡 Run a new simulation to see the changes take effect")
         
         with col_info:
             st.markdown("**📋 Rate Information:**")
-            st.write(f"• **Selected**: {donation_rate:.1%}")
+            st.write(f"• **Selected**: {donation_rate:.2%}")
             st.write(f"• **Default**: 10%")
             st.write(f"• **Range**: 0% - 100%")
             
             if donation_rate == 0.10:
                 st.success("✅ Using default rate")
             elif donation_rate < 0.10:
-                st.info(f"📉 {abs(donation_rate - 0.10):.1%} below default")
+                st.info(f"📉 {abs(donation_rate - 0.10):.2%} below default")
             else:
-                st.info(f"📈 {donation_rate - 0.10:.1%} above default")
+                st.info(f"📈 {donation_rate - 0.10:.2%} above default")
 
 
 def render_disclose_income(df, decision_name, decision_title, decision_data):

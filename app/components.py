@@ -91,13 +91,13 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             stats_df = pd.DataFrame({
                 'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
                 'Value': [
-                    f"{donation_stats['mean']:.1%}",
+                    f"{donation_stats['mean']:.2%}",
                     f"{donation_stats['std']:.2%}",
-                    f"{donation_stats['min']:.1%}",
-                    f"{donation_stats['max']:.1%}",
-                    f"{donation_stats['50%']:.1%}",
-                    f"{donation_stats['25%']:.1%}",
-                    f"{donation_stats['75%']:.1%}"
+                    f"{donation_stats['min']:.2%}",
+                    f"{donation_stats['max']:.2%}",
+                    f"{donation_stats['50%']:.2%}",
+                    f"{donation_stats['25%']:.2%}",
+                    f"{donation_stats['75%']:.2%}"
                 ]
             })
             st.dataframe(stats_df, hide_index=True)
@@ -125,7 +125,7 @@ def render_inline_selection_button(result_key, result_df):
         # Show key metric for quick reference - always use truncated
         donation_col = 'donation_default'
         mean_donation = result_df[donation_col].mean()
-        st.caption(f"📊 Quick Summary: {len(result_df):,} agents, avg {mean_donation:.1%}")
+        st.caption(f"📊 Quick Summary: {len(result_df):,} agents, avg {mean_donation:.2%}")
     
     with col2:
         # Selection button
@@ -232,16 +232,16 @@ def show_monte_carlo_results(mc_data):
             donation_row = summary_df[summary_df['decision'] == 'donation_default'].iloc[0]
         
             with col1:
-                st.metric("Mean Donation Rate", f"{donation_row['mean']:.1%}")
+                st.metric("Mean Donation Rate", f"{donation_row['mean']:.2%}")
             
             with col2:
                 st.metric("Standard Deviation", f"{donation_row['std']:.2%}")
             
             with col3:
-                st.metric("95% CI Lower", f"{donation_row['p2.5']:.1%}")
+                st.metric("95% CI Lower", f"{donation_row['p2.5']:.2%}")
             
             with col4:
-                st.metric("95% CI Upper", f"{donation_row['p97.5']:.1%}")
+                st.metric("95% CI Upper", f"{donation_row['p97.5']:.2%}")
     
         # Monte-Carlo convergence plot
         if mc_data['detailed'] is not None:
@@ -299,7 +299,7 @@ def show_monte_carlo_results(mc_data):
                     title="Monte-Carlo Study Results",
                     showlegend=True
                 )
-                fig.update_yaxes(tickformat='.1%')
+                fig.update_yaxes(tickformat='.2%')
                 fig.update_xaxes(title="Run Number")
                 
                 st.plotly_chart(fig, width="stretch")
@@ -311,7 +311,7 @@ def show_monte_carlo_results(mc_data):
         display_summary = summary_df.copy()
         for col in ['mean', 'p2.5', 'p97.5']:
             if col in display_summary.columns:
-                display_summary[col] = display_summary[col].apply(lambda x: f"{x:.1%}")
+                display_summary[col] = display_summary[col].apply(lambda x: f"{x:.2%}")
         
         st.dataframe(display_summary, use_container_width=True)
     
@@ -371,11 +371,11 @@ def show_dependent_variable_comparison(df):
             # Stats
             col1, col2 = st.columns(2)
             with col1:
-                st.metric("Mean", f"{emp_stats['mean']:.1%}")
-                st.metric("Min", f"{emp_stats['min']:.1%}")
+                st.metric("Mean", f"{emp_stats['mean']:.2%}")
+                st.metric("Min", f"{emp_stats['min']:.2%}")
             with col2:
                 st.metric("Std Dev", f"{emp_stats['std']:.4f}")
-                st.metric("Max", f"{emp_stats['max']:.1%}")
+                st.metric("Max", f"{emp_stats['max']:.2%}")
             
             # Histogram
             fig_orig = px.histogram(
@@ -400,10 +400,10 @@ def show_dependent_variable_comparison(df):
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Mean", f"{df[donation_col].mean():.2%}")
-                st.metric("Min", f"{df[donation_col].min():.1%}")
+                st.metric("Min", f"{df[donation_col].min():.2%}")
             with col2:
                 st.metric("Std Dev", f"{df[donation_col].std():.2%}")
-                st.metric("Max", f"{df[donation_col].max():.1%}")
+                st.metric("Max", f"{df[donation_col].max():.2%}")
             
             # Histogram
             fig_resamp = px.histogram(

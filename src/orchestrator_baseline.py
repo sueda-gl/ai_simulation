@@ -11,6 +11,7 @@ from src.validate_traits import merged
 from src.build_master_traits import get_master_trait_list
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
+SIMULATION_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "simulation.yaml"
 
 # Import default decision values
 try:
@@ -35,6 +36,10 @@ class OrchestratorBaseline:
         # Load decision configuration
         with open(CONFIG_PATH, 'r') as f:
             self.config = yaml.safe_load(f)
+        
+        # Load global simulation configuration (Page 1 parameters)
+        with open(SIMULATION_CONFIG_PATH, 'r') as f:
+            self.simulation_config = yaml.safe_load(f)
         
         # Get required traits and load original data
         self.traits = get_master_trait_list()
@@ -135,13 +140,22 @@ class OrchestratorBaseline:
                     
                     try:
                         # Call decision function with baseline context
-                        decision_output = decision_func(
-                            agent_state, 
-                            decision_params, 
-                            agent_rng,
-                            simulation_config=getattr(self, 'simulation_config', None),
-                            pop_context=self.pop_context
-                        )
+                        # Only pass pop_context to donation_default (which expects it)
+                        if decision_name == 'donation_default':
+                            decision_output = decision_func(
+                                agent_state, 
+                                decision_params, 
+                                agent_rng,
+                                simulation_config=self.simulation_config,
+                                pop_context=self.pop_context
+                            )
+                        else:
+                            decision_output = decision_func(
+                                agent_state, 
+                                decision_params, 
+                                agent_rng,
+                                simulation_config=self.simulation_config
+                            )
                         
                         # Update agent state with decision outputs
                         if isinstance(decision_output, dict):

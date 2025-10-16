@@ -11,6 +11,7 @@ from src.validate_traits import merged
 from src.build_master_traits import get_master_trait_list
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
+SIMULATION_CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "simulation.yaml"
 
 class OrchestratorDocMode:
     """
@@ -27,6 +28,10 @@ class OrchestratorDocMode:
         # Load decision configuration
         with open(CONFIG_PATH, 'r') as f:
             self.config = yaml.safe_load(f)
+        
+        # Load global simulation configuration (Page 1 parameters)
+        with open(SIMULATION_CONFIG_PATH, 'r') as f:
+            self.simulation_config = yaml.safe_load(f)
         
         # Get required traits and load original data
         self.traits = get_master_trait_list()
@@ -127,12 +132,12 @@ class OrchestratorDocMode:
                         if decision_name == 'donation_default':
                             decision_output = self.decision_modules[decision_name](
                                 agent_state, params, agent_rng, pop_context=self.pop_context, 
-                                simulation_config=getattr(self, 'simulation_config', None)
+                                simulation_config=self.simulation_config
                             )
                         else:
                             decision_output = self.decision_modules[decision_name](
                                 agent_state, params, agent_rng, 
-                                simulation_config=getattr(self, 'simulation_config', None)
+                                simulation_config=self.simulation_config
                             )
                         agent_state.update(decision_output)
                 results.append(agent_state)

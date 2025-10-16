@@ -318,8 +318,8 @@ def render_single_run_results():
                 )
             # If using_selected_config is True, we skip the overview display entirely
     
-    # Configuration selection UI moved inline - no longer needed as separate section
-    # render_configuration_selection_ui(results_dict)  # DISABLED - now inline with charts
+    # Configuration selection UI - shows config cards and "Run Complete Simulation" button
+    render_configuration_selection_ui(results_dict)
     
     # Get DataFrame for individual agent analysis
     if st.session_state.population_mode == "Compare all":

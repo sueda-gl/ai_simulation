@@ -212,7 +212,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 try:
                     col_mean = pd.to_numeric(df[col], errors='coerce').mean()
                     if pd.notna(col_mean):
-                        st.write(f"• **{col}**: mean = {col_mean:.4f} ({col_mean:.1%})")
+                        st.write(f"• **{col}**: mean = {col_mean:.4f} ({col_mean:.2%})")
                     else:
                         st.write(f"• **{col}**: (non-numeric)")
                 except Exception:

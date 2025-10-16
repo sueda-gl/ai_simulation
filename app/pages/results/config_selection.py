@@ -8,8 +8,10 @@ from app.pages.decision_execution import (
     save_selected_configuration,
     format_result_name,
     is_configuration_selected,
-    clear_selected_configuration
+    clear_selected_configuration,
+    run_combined_simulation
 )
+from app.models import ALL_DECISIONS
 
 
 def render_configuration_selection_ui(results_dict):
@@ -41,13 +43,9 @@ def render_configuration_selection_ui(results_dict):
     if not is_individual_donation_run:
         return
     
-    # Show configuration selection interface
-    st.markdown("---")
-    st.markdown('<h3 class="section-header">🎯 Select Configuration for Combined Simulations</h3>', unsafe_allow_html=True)
-    st.caption(f"Choose your preferred configuration from {len(results_dict)} available result(s) to use in complete simulations")
-    
-    # Show current selection status if any
+    # Only show "Run Complete Simulation" section if a configuration is already selected
     if hasattr(st.session_state, 'selected_donation_config'):
+        st.markdown("---")
         config = st.session_state.selected_donation_config
         with st.container():
             st.success(f"✅ **Selected Configuration**: {format_result_name(config['result_key'])}")
@@ -55,18 +53,12 @@ def render_configuration_selection_ui(results_dict):
             with col1:
                 st.caption(f"Selected at {config['selected_timestamp'].strftime('%H:%M:%S')} - Avg Donation: {config['metrics']['mean_donation']:.2%}")
             with col2:
-                if st.button("🗑️ Clear Selection", help="Clear the selected configuration"):
+                if st.button("🗑️ Clear Selection", help="Clear the selected configuration", key="clear_selection_top"):
                     clear_selected_configuration()
                     st.rerun()
-    
-    # Configuration selection cards
-    cols = st.columns(min(len(results_dict), 3))  # Max 3 columns for better layout
-    
-    for idx, (result_key, result_df) in enumerate(results_dict.items()):
-        col_idx = idx % 3
         
-        with cols[col_idx]:
-            render_configuration_card(result_key, result_df)
+        # Add "Run Complete Simulation" button right here on Results page
+        render_complete_simulation_section()
 
 
 def render_configuration_card(result_key, result_df):
@@ -154,3 +146,35 @@ def extract_configuration_details_from_key(result_key):
         'population_short': population_short,
         'income_short': income_short
     }
+
+
+def render_complete_simulation_section():
+    """Render the complete simulation section with Run button after configuration selection"""
+    
+    st.markdown("---")
+    st.markdown('<h3 class="section-header">🚀 Run Complete Simulation</h3>', unsafe_allow_html=True)
+    
+    # Get selected decisions from session state
+    selected_decisions = getattr(st.session_state.decision_params, 'selected_decisions', [])
+    
+    # Calculate unselected decisions
+    unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
+    
+    # Get selected configuration details
+    config = st.session_state.selected_donation_config
+    
+    # Simple button without verbose info
+    if st.button(
+        "🚀 Run Complete Simulation",
+        type="primary",
+        use_container_width=True,
+        key="run_complete_from_results",
+        help=f"Execute all {len(ALL_DECISIONS)} decisions with the selected configuration"
+    ):
+        # Execute the combined simulation
+        with st.spinner("🔄 Running complete simulation..."):
+            run_combined_simulation(selected_decisions)
+            
+            # After simulation completes, show success message
+            if hasattr(st.session_state, 'simulation_results') and st.session_state.simulation_results:
+                st.success("✅ Complete simulation finished!")
