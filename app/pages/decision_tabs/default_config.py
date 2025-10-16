@@ -87,9 +87,8 @@ def render_probability_default_config(decision_name, default_value):
     # Session state key for this decision's probability
     prob_key = f"{decision_name}_default_probability_y"
     
-    # Initialize if not exists
-    if prob_key not in st.session_state:
-        st.session_state[prob_key] = default_probability
+    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
+    # This ensures values persist even when widgets are conditionally rendered
     
     # Special handling for purchase_vs_bid - show it only applies to regular customers
     if decision_name == "purchase_vs_bid":
@@ -139,14 +138,15 @@ def render_probability_default_config(decision_name, default_value):
             slider_label = f"P({options[0]}) - Probability of {options[0]}"
             slider_help = f"Probability that agents will choose {options[0]} vs {options[1]}"
         
+        # Widget uses ONLY key parameter - Streamlit automatically syncs with session_state[prob_key]
         probability = st.slider(
             slider_label,
             min_value=0.0,
             max_value=1.0,
-            value=st.session_state[prob_key],
+            value=st.session_state.get(prob_key, default_probability),
             step=0.01,
             help=slider_help,
-            key=prob_key
+            key=prob_key  # Streamlit manages value automatically via session state
         )
     
     with col2:
@@ -170,9 +170,8 @@ def render_radio_default_config(decision_name, default_value):
     # Session state key for this decision's selection
     selection_key = f"{decision_name}_default_selection"
     
-    # Initialize if not exists
-    if selection_key not in st.session_state:
-        st.session_state[selection_key] = default_option
+    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
+    # This ensures values persist even when widgets are conditionally rendered
     
     # Create option names mapping
     option_names = dict(options) if options else {}
@@ -180,13 +179,22 @@ def render_radio_default_config(decision_name, default_value):
     col1, col2 = st.columns([2, 1])
     
     with col1:
+        # Compute default index based on current session state or configured default option
+        option_codes = [opt[0] for opt in options]
+        default_selected = st.session_state.get(selection_key, default_option)
+        try:
+            default_index = option_codes.index(default_selected) if default_selected in option_codes else 0
+        except Exception:
+            default_index = 0
+        
+        # Widget uses BOTH an explicit index (first render) and key (subsequent sync)
         selected = st.radio(
             "Default Option",
-            options=[opt[0] for opt in options],
+            options=option_codes,
             format_func=lambda x: option_names.get(x, x),
-            index=[opt[0] for opt in options].index(st.session_state[selection_key]) if st.session_state[selection_key] in [opt[0] for opt in options] else 0,
+            index=default_index,
             help="Choose the default option for this decision",
-            key=selection_key
+            key=selection_key  # Streamlit manages value automatically via session state
         )
     
     with col2:
@@ -206,17 +214,8 @@ def render_checkbox_default_config(decision_name, default_value):
     # Session state key for this decision's selection
     selection_key = f"{decision_name}_default_params"
     
-    # Initialize main selection key if not exists
-    if selection_key not in st.session_state:
-        st.session_state[selection_key] = default_selection.copy()
-    
-    # Initialize all checkbox keys before any widgets are created
-    # This ensures checkboxes start with the correct state on first render
-    for param_key in parameters.keys():
-        checkbox_key = f"{decision_name}_default_param_{param_key}"
-        if checkbox_key not in st.session_state:
-            # Initialize based on current selection state
-            st.session_state[checkbox_key] = param_key in st.session_state[selection_key]
+    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
+    # This ensures values persist even when widgets are conditionally rendered
     
     st.caption("Select which parameters should be included (equal weight distribution)")
     
@@ -231,6 +230,7 @@ def render_checkbox_default_config(decision_name, default_value):
             # Create checkbox - it will use the value from session state automatically
             is_selected = st.checkbox(
                 f"{param_info['name']} - {param_info['description']}",
+                value=st.session_state.get(checkbox_key, param_key in default_selection),
                 key=checkbox_key
             )
             
@@ -260,34 +260,35 @@ def render_numeric_default_config(decision_name, default_value):
     # Session state key for this decision's value
     value_key = f"{decision_name}_default_value"
     
-    # Initialize if not exists
-    if value_key not in st.session_state:
-        st.session_state[value_key] = default_value
+    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
+    # This ensures values persist even when widgets are conditionally rendered
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
         # Determine if this is a percentage (between 0 and 1)
         if 0 <= default_value <= 1:
+            # Widget uses ONLY key parameter - Streamlit automatically manages the value
             value = st.slider(
                 "Default Value",
                 min_value=0.0,
                 max_value=1.0,
-                value=st.session_state[value_key],
+                value=st.session_state.get(value_key, default_value),
                 step=0.01,
                 format="%.2f",
                 help="Set the default value for this decision",
-                key=value_key
+                key=value_key  # Streamlit manages value automatically via session state
             )
             st.caption(f"Percentage: {value:.1%}")
         else:
+            # Widget uses ONLY key parameter - Streamlit automatically manages the value
             value = st.number_input(
                 "Default Value",
                 min_value=0.0,
-                value=float(st.session_state[value_key]),
+                value=float(st.session_state.get(value_key, default_value)),
                 step=0.1,
                 help="Set the default value for this decision",
-                key=value_key
+                key=value_key  # Streamlit manages value automatically via session state
             )
     
     with col2:

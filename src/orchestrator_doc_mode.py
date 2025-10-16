@@ -49,10 +49,11 @@ class OrchestratorDocMode:
             'rejected_transaction_defaults',  # 4
             'vendor_choice_weights',     # 5
             'consumption_quantity',      # 6
+            'enrich_purchase_requests',  # 6b (NEW!) - Enriches each purchase request with transaction decisions
             'consumption_frequency',     # 7
             'vendor_selection',          # 8
-            'purchase_vs_bid',           # 9
-            'bid_value',                 # 10
+            'purchase_vs_bid',           # 9 (now deprecated - kept for backward compatibility)
+            'bid_value',                 # 10 (now deprecated - kept for backward compatibility)
             'rejected_transaction_option',  # 11
             'rejected_bid_value',        # 12
             'final_donation_rate'        # 13
@@ -113,13 +114,23 @@ class OrchestratorDocMode:
         else:
             decisions_to_run = self.decision_order
         
+        # Initialize global RNG
+        rng_global = np.random.default_rng(seed)
+        
+        # Generate vendor attributes once per simulation (before processing agents)
+        self._initialize_vendors(rng_global)
+        
         # Process each agent
         results = []
-        rng_global = np.random.default_rng(seed)
         
         for idx, row in agents_df.iterrows():
             for rep in range(outcome_draws):  # repeat dependent-var draw
                 agent_state = row.to_dict()
+                
+                # Add agent ID and index to agent_state (CRITICAL for customer_id in purchase_requests)
+                agent_state['index'] = idx
+                agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
+                
                 if outcome_draws>1:
                     agent_state['draw_id']=rep+1
                 agent_rng = np.random.default_rng(rng_global.integers(1e9))
@@ -153,6 +164,42 @@ class OrchestratorDocMode:
             else:
                 df['donation_default'] = (df[donation_col] / global_max).clip(0,1)
         return df
+    
+    def _initialize_vendors(self, rng: np.random.Generator):
+        """
+        Generate vendor attributes once per simulation.
+        
+        Creates vendors with quality, sustainability attributes.
+        Shared implementation with main Orchestrator.
+        """
+        from src.vendor_attribute_generator import generate_vendor_attributes
+        
+        # Get vendor configuration from simulation_config
+        if 'simulation' not in self.simulation_config:
+            return
+        
+        sim_config = self.simulation_config['simulation']
+        num_vendors = sim_config.get('num_vendors', 1)
+        
+        # Get vendor prices
+        vendor_prices = []
+        if 'vendor_prices' in sim_config and sim_config['vendor_prices']:
+            vendor_prices = sim_config['vendor_prices']
+        else:
+            market_price = sim_config.get('market_price', 100.0)
+            vendor_prices = [market_price] * num_vendors
+        
+        # Ensure we have enough prices
+        while len(vendor_prices) < num_vendors:
+            vendor_prices.append(sim_config.get('market_price', 100.0))
+        
+        # Generate vendor attributes
+        vendors = generate_vendor_attributes(num_vendors, vendor_prices, rng)
+        
+        # Store in simulation_config
+        self.simulation_config['vendors'] = vendors
+        
+        print(f"[DocMode] Generated {len(vendors)} vendors with attributes")
     
     def get_available_decisions(self) -> List[str]:
         """Return list of available decision modules."""

@@ -343,6 +343,9 @@ def initialize_session_state():
     for key, default_value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default_value
+    
+    # Initialize all default decision parameters (CRITICAL: prevents state loss)
+    initialize_default_decision_parameters()
 
 
 def load_donation_coefficients_from_yaml():
@@ -499,5 +502,60 @@ ALL_DECISIONS = [
     "rejected_bid_value",
     "final_donation_rate"
 ]
+
+
+def initialize_default_decision_parameters():
+    """
+    Initialize all default decision parameters in session state at app startup.
+    
+    This ensures parameter values persist across reruns even when widgets are not rendered.
+    CRITICAL: This prevents state loss when decisions are selected/unselected.
+    """
+    # Only initialize once per session
+    if '_default_params_initialized' in st.session_state:
+        return
+    
+    # Import here to avoid circular dependency
+    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
+    
+    for decision_name, default_value in DEFAULT_DECISION_VALUES.items():
+        if isinstance(default_value, dict):
+            decision_type = default_value.get("type")
+            
+            # Handle random probability decisions (disclose_income, disclose_documents, purchase_vs_bid)
+            if decision_type == "random_probability":
+                key = f"{decision_name}_default_probability_y"
+                if key not in st.session_state:
+                    st.session_state[key] = default_value.get("probability_y", 0.5)
+            
+            # Handle checkbox selection decisions (vendor_choice_weights)
+            elif decision_type == "checkbox_selection":
+                key = f"{decision_name}_default_params"
+                if key not in st.session_state:
+                    st.session_state[key] = default_value.get("default_selection", []).copy()
+                
+                # Initialize individual checkbox keys
+                parameters = default_value.get("parameters", {})
+                default_selection = default_value.get("default_selection", [])
+                for param_key in parameters.keys():
+                    checkbox_key = f"{decision_name}_default_param_{param_key}"
+                    if checkbox_key not in st.session_state:
+                        st.session_state[checkbox_key] = param_key in default_selection
+            
+            # Handle radio selection decisions (rejected_transaction_defaults, rejected_transaction_option)
+            elif decision_type == "radio_selection":
+                key = f"{decision_name}_default_selection"
+                if key not in st.session_state:
+                    st.session_state[key] = default_value.get("default_option", "")
+        
+        else:
+            # Handle numeric or string placeholder values
+            key = f"{decision_name}_default_value"
+            if key not in st.session_state:
+                st.session_state[key] = default_value
+    
+    # Mark as initialized
+    st.session_state._default_params_initialized = True
+    print("[DEBUG] Default decision parameters initialized in session state")
 
 

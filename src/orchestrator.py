@@ -93,13 +93,22 @@ class Orchestrator:
         else:
             decisions_to_run = self.decision_order
         
+        # Initialize global RNG
+        rng_global = np.random.default_rng(seed)
+        
+        # Generate vendor attributes once per simulation (before processing agents)
+        self._initialize_vendors(rng_global)
+        
         # Process each agent
         results = []
-        rng_global = np.random.default_rng(seed)
         
         for idx, row in agents_df.iterrows():
             # Initialize agent state with traits
             agent_state = row.to_dict()
+            
+            # Add agent ID and index to agent_state (CRITICAL for customer_id in purchase_requests)
+            agent_state['index'] = idx
+            agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
             
             # Create child RNG for this agent
             agent_rng = np.random.default_rng(rng_global.integers(1e9))
@@ -130,6 +139,59 @@ class Orchestrator:
             results.append(agent_state)
         
         return pd.DataFrame(results)
+    
+    def _initialize_vendors(self, rng: np.random.Generator):
+        """
+        Generate vendor attributes once per simulation.
+        
+        Creates vendors with:
+        - vendor_id: Sequential ID (1, 2, 3, ...)
+        - price: From simulation_config (already set from Page 1)
+        - quality: Random integer in [1, 5]
+        - sustainability: Random integer in [1, 5]
+        
+        Proximity is NOT generated here - it's customer-vendor specific
+        and generated per agent in vendor_selection decision.
+        
+        Args:
+            rng: Random number generator for reproducibility
+        """
+        from src.vendor_attribute_generator import generate_vendor_attributes
+        
+        # Get vendor configuration from simulation_config
+        if 'simulation' not in self.simulation_config:
+            return  # No simulation config available
+        
+        sim_config = self.simulation_config['simulation']
+        num_vendors = sim_config.get('num_vendors', 1)
+        
+        # Get vendor prices (should already be set from Page 1)
+        # Prices might be in different locations depending on configuration mode
+        vendor_prices = []
+        
+        # Try to get prices from various sources
+        if 'vendor_prices' in sim_config and sim_config['vendor_prices']:
+            vendor_prices = sim_config['vendor_prices']
+        else:
+            # Generate default prices if not configured
+            # Use market_price as default for all vendors
+            market_price = sim_config.get('market_price', 100.0)
+            vendor_prices = [market_price] * num_vendors
+        
+        # Ensure we have enough prices
+        while len(vendor_prices) < num_vendors:
+            vendor_prices.append(sim_config.get('market_price', 100.0))
+        
+        # Generate vendor attributes (quality, sustainability)
+        vendors = generate_vendor_attributes(num_vendors, vendor_prices, rng)
+        
+        # Store in simulation_config for access by decision modules
+        self.simulation_config['vendors'] = vendors
+        
+        print(f"[DEBUG] Generated {len(vendors)} vendors with attributes:")
+        for vendor in vendors:
+            print(f"  Vendor {vendor['vendor_id']}: price=${vendor['price']:.2f}, "
+                  f"quality={vendor['quality']}, sustainability={vendor['sustainability']}")
     
     def get_available_decisions(self) -> List[str]:
         """Return list of available decision modules."""

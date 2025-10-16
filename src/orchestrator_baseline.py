@@ -57,10 +57,11 @@ class OrchestratorBaseline:
             'rejected_transaction_defaults',  # 4
             'vendor_choice_weights',     # 5
             'consumption_quantity',      # 6
+            'enrich_purchase_requests',  # 6b (NEW!) - Enriches each purchase request with transaction decisions
             'consumption_frequency',     # 7
             'vendor_selection',          # 8
-            'purchase_vs_bid',           # 9
-            'bid_value',                 # 10
+            'purchase_vs_bid',           # 9 (now deprecated - kept for backward compatibility)
+            'bid_value',                 # 10 (now deprecated - kept for backward compatibility)
             'rejected_transaction_option',  # 11
             'rejected_bid_value',        # 12
             'final_donation_rate'        # 13
@@ -111,11 +112,19 @@ class OrchestratorBaseline:
             agents_df = self.original_data.iloc[indices].copy()
             agents_df.index = range(len(agents_df))  # Reset index
         
+        # Generate vendor attributes once per simulation (before processing agents)
+        self._initialize_vendors(rng)
+        
         # Process each agent
         results = []
         
         for idx, row in agents_df.iterrows():
             agent_state = row.to_dict()
+            
+            # Add agent ID and index to agent_state (CRITICAL for customer_id in purchase_requests)
+            agent_state['index'] = idx
+            agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
+            
             agent_results = agent_state.copy()
             
             # Generate unique seed for this agent
@@ -180,3 +189,39 @@ class OrchestratorBaseline:
             results.append(agent_results)
         
         return pd.DataFrame(results)
+    
+    def _initialize_vendors(self, rng: np.random.Generator):
+        """
+        Generate vendor attributes once per simulation.
+        
+        Creates vendors with quality, sustainability attributes.
+        Shared implementation with main Orchestrator.
+        """
+        from src.vendor_attribute_generator import generate_vendor_attributes
+        
+        # Get vendor configuration from simulation_config
+        if 'simulation' not in self.simulation_config:
+            return
+        
+        sim_config = self.simulation_config['simulation']
+        num_vendors = sim_config.get('num_vendors', 1)
+        
+        # Get vendor prices
+        vendor_prices = []
+        if 'vendor_prices' in sim_config and sim_config['vendor_prices']:
+            vendor_prices = sim_config['vendor_prices']
+        else:
+            market_price = sim_config.get('market_price', 100.0)
+            vendor_prices = [market_price] * num_vendors
+        
+        # Ensure we have enough prices
+        while len(vendor_prices) < num_vendors:
+            vendor_prices.append(sim_config.get('market_price', 100.0))
+        
+        # Generate vendor attributes
+        vendors = generate_vendor_attributes(num_vendors, vendor_prices, rng)
+        
+        # Store in simulation_config
+        self.simulation_config['vendors'] = vendors
+        
+        print(f"[Baseline] Generated {len(vendors)} vendors with attributes")
