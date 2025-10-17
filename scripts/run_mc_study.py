@@ -26,6 +26,12 @@ def main():
                        help='Only save summary statistics, not individual runs')
     parser.add_argument('--anchor-observed', type=float, default=0.75,
                        help='Weight on observed prosocial score for anchor (default: 0.75)')
+    parser.add_argument('--population-mode', type=str, default='copula',
+                       choices=['copula', 'documentation', 'baseline', 'depvar'],
+                       help='Population generation mode (default: copula)')
+    parser.add_argument('--income-mode', type=str, default='categorical',
+                       choices=['categorical', 'continuous'],
+                       help='Income specification mode (default: categorical)')
     
     args = parser.parse_args()
     
@@ -40,6 +46,8 @@ def main():
     print(f"Starting Monte-Carlo study with {args.runs} repetitions")
     print(f"Population size: {args.agents} agents per run")
     print(f"Base seed: {args.base_seed}")
+    print(f"Population mode: {args.population_mode}")
+    print(f"Income specification: {args.income_mode}")
     print(f"Anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
     if args.decision:
         print(f"Decisions: {', '.join(args.decision)}")
@@ -57,7 +65,9 @@ def main():
             '--agents', str(args.agents),
             '--seed', str(current_seed),
             '--format', 'parquet',
-            '--anchor-observed', str(args.anchor_observed)
+            '--anchor-observed', str(args.anchor_observed),
+            '--population-mode', args.population_mode,
+            '--income-mode', args.income_mode
         ]
         
         if args.decision:

@@ -472,22 +472,25 @@ def show_dependent_variable_comparison(df):
         show_overview(df)
 
 
-def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
+def show_income_distribution_histogram(sim_params, n_samples: int = 1000, seed: int = None):
     """Display income distribution histogram with discount threshold overlay"""
     try:
-        # Generate sample data
-        income_samples = sim_params.sample_income_distribution(n_samples)
+        # Use provided seed or default to 42
+        preview_seed = seed if seed is not None else 42
         
-        # Use a robust x-range so heavy tails (when max=None) don't collapse detail near the body
-        # Show up to the 99th percentile; outliers beyond are counted and mentioned below
+        # Generate sample data
+        income_samples = sim_params.sample_income_distribution(n_samples, seed=preview_seed)
+        
+        # Calculate percentiles and range for display
         p99_value = float(np.percentile(income_samples, 99))
         x_lower = float(max(0.0, np.min(income_samples)))
+        x_upper = float(np.max(income_samples))
         
-        # Filter samples to display range so histogram binning works correctly
-        mask = income_samples <= p99_value
-        samples_for_display = income_samples[mask]
+        # Always show full range - users want to see the complete distribution
+        samples_for_display = income_samples
+        display_range = [x_lower, x_upper]
         
-        # Create histogram of the filtered data
+        # Create histogram with all data
         fig = px.histogram(
             x=samples_for_display,
             nbins=50,
@@ -495,6 +498,9 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
             labels={'x': 'Income ($)', 'count': 'Number of Agents'},
             marginal="box"
         )
+        
+        # Set explicit x-axis range to show full distribution
+        fig.update_xaxes(range=display_range)
         
         # Add discount threshold line
         fig.add_vline(
@@ -531,14 +537,31 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000):
         with col_stat2:
             st.metric("Median", f"${actual_median:,.0f}")
         with col_stat3:
-            st.metric("Discount Qualification", f"{discount_rate:.1%}")
+            st.metric("Discount Qualification", f"{discount_rate:.1%}",
+                     help="Estimated percentage - actual results may vary slightly due to random seed differences")
         with col_stat4:
             st.metric("Sample Size", f"{n_samples:,}")
         
-        # Mention hidden outliers to avoid confusion when tails are very long
+        # Show min/max and percentiles
+        col_range1, col_range2, col_range3, col_range4 = st.columns(4)
+        actual_min = np.min(income_samples)
+        actual_max = np.max(income_samples)
+        p95_value = np.percentile(income_samples, 95)
+        
+        with col_range1:
+            st.metric("Minimum", f"${actual_min:,.0f}")
+        with col_range2:
+            st.metric("95th Percentile", f"${p95_value:,.0f}")
+        with col_range3:
+            st.metric("99th Percentile", f"${p99_value:,.0f}")
+        with col_range4:
+            st.metric("Maximum", f"${actual_max:,.0f}")
+        
+        # Show info about tail if there are significant outliers beyond p99
         num_outliers = int(np.sum(income_samples > p99_value))
-        if num_outliers > 0:
-            st.caption(f"Note: {num_outliers} samples (>p99) are beyond ${p99_value:,.0f} and hidden from the histogram for clarity.")
+        if num_outliers > 10:  # Only mention if substantial tail exists
+            pct_outliers = (num_outliers / n_samples) * 100
+            st.caption(f"ℹ️ Note: {pct_outliers:.1f}% of samples are beyond the 99th percentile (${p99_value:,.0f}), extending to ${actual_max:,.0f}.")
         
         # Distribution is based on user-specified parameters - no target comparison needed
         

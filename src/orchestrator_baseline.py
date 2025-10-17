@@ -100,20 +100,24 @@ class OrchestratorBaseline:
         else:
             decisions_to_run = self.decision_order
         
-        # Sample agents from original data
-        rng = np.random.default_rng(seed)
+        # Create separate RNG for setup tasks (vendors, bootstrap sampling)
+        rng_setup = np.random.default_rng(seed)
+        
+        # Generate vendor attributes using setup RNG
+        self._initialize_vendors(rng_setup)
         
         if n_agents <= len(self.original_data):
             # Use first n_agents participants
             agents_df = self.original_data.iloc[:n_agents].copy()
         else:
-            # Bootstrap sample to reach n_agents
-            indices = rng.choice(len(self.original_data), size=n_agents, replace=True)
+            # Bootstrap sample to reach n_agents using setup RNG
+            indices = rng_setup.choice(len(self.original_data), size=n_agents, replace=True)
             agents_df = self.original_data.iloc[indices].copy()
             agents_df.index = range(len(agents_df))  # Reset index
         
-        # Generate vendor attributes once per simulation (before processing agents)
-        self._initialize_vendors(rng)
+        # Create dedicated RNG for agent processing (independent of setup)
+        # All modes use same seed here, ensuring identical agent RNG derivation
+        rng_global = np.random.default_rng(seed + 1000000)
         
         # Process each agent
         results = []
@@ -127,9 +131,8 @@ class OrchestratorBaseline:
             
             agent_results = agent_state.copy()
             
-            # Generate unique seed for this agent
-            agent_seed = seed + idx
-            agent_rng = np.random.default_rng(agent_seed)
+            # Create child RNG for this agent (consistent with other orchestrators)
+            agent_rng = np.random.default_rng(rng_global.integers(1e9))
             
             # Run each decision in order
             for decision_name in decisions_to_run:

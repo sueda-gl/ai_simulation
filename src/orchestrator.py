@@ -71,8 +71,16 @@ class Orchestrator:
         - If it's a list of strings, run those decisions in order
         Otherwise run all decisions in order.
         """
-        # Sample synthetic agents
+        # Sample synthetic agents FIRST (copula uses its own internal RNG)
         agents_df = self.trait_engine.sample(n_agents, seed)
+        
+        # Create separate RNG for setup tasks (vendors, etc.)
+        rng_setup = np.random.default_rng(seed)
+        self._initialize_vendors(rng_setup)
+        
+        # Create dedicated RNG for agent processing (independent of setup)
+        # All modes use same seed here, ensuring identical agent RNG derivation
+        rng_global = np.random.default_rng(seed + 1000000)
         
         # Determine which decisions to run
         if single_decision:
@@ -92,12 +100,6 @@ class Orchestrator:
                 raise ValueError("single_decision must be a string or list of strings")
         else:
             decisions_to_run = self.decision_order
-        
-        # Initialize global RNG
-        rng_global = np.random.default_rng(seed)
-        
-        # Generate vendor attributes once per simulation (before processing agents)
-        self._initialize_vendors(rng_global)
         
         # Process each agent
         results = []

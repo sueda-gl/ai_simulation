@@ -25,13 +25,69 @@ from app.models import ALL_DECISIONS
 def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[str]]:
     """Run Monte-Carlo study and return results."""
     try:
-        # Create a container for real-time updates
-        status_container = st.container()
+        # Check if we're in comparison mode
+        is_pop_comparison = st.session_state.population_mode == "Compare all"
+        is_income_comparison = st.session_state.get('income_spec_mode', 'categorical only') == "Compare both"
+        
+        # Map UI modes to script arguments
+        population_mode_map = {
+            'Copula (synthetic)': 'copula',
+            'Research Specification': 'documentation',
+            'Research Baseline': 'baseline',
+            'Dependent variable resampling': 'depvar'
+        }
+        
+        income_mode_map = {
+            'categorical only': 'categorical',
+            'continuous only': 'continuous'
+        }
+        
+        # Determine which mode combinations to run
+        if is_pop_comparison:
+            # Run all 3 population modes
+            pop_modes = [
+                ('copula', 'Copula'),
+                ('documentation', 'Research Spec'),
+                ('baseline', 'Baseline')
+            ]
+        else:
+            pop_key = st.session_state.population_mode
+            pop_label = pop_key.replace(' (synthetic)', '').replace(' ', '_')
+            pop_modes = [(population_mode_map.get(pop_key, 'copula'), pop_label)]
+        
+        if is_income_comparison:
+            # Run both income modes (only if not doing population comparison)
+            income_modes = [
+                ('categorical', 'Categorical'),
+                ('continuous', 'Continuous')
+            ]
+        else:
+            income_key = st.session_state.get('income_spec_mode', 'categorical only')
+            income_label = income_key.replace(' only', '').title()
+            income_modes = [(income_mode_map.get(income_key, 'categorical'), income_label)]
+        
+        # For comparison mode, use the first mode and show a message
+        pop_mode_arg, pop_label = pop_modes[0]
+        income_mode_arg, income_label = income_modes[0]
+        
+        if len(pop_modes) > 1 or len(income_modes) > 1:
+            st.warning(f"⚠️ **Comparison Mode Limitation**: Monte Carlo will run with **{pop_label} + {income_label}** mode only")
+            st.info("""
+            💡 **To compare multiple modes with Monte Carlo:**
+            1. Run Monte Carlo with current mode
+            2. Export/save results  
+            3. Change to different mode (e.g., Research Specification)
+            4. Run Monte Carlo again
+            5. Compare the exported results
+            
+            This approach gives you better control and avoids extremely long run times.
+            """)
         
         st.info(f"🔄 Starting Monte-Carlo study with {st.session_state.n_runs} runs of {st.session_state.n_agents} agents each...")
+        st.caption(f"📊 Mode: {pop_label} + {income_label}")
         
         # Show estimated time
-        estimated_time_per_run = 2  # seconds, rough estimate
+        estimated_time_per_run = 2
         total_estimated_time = st.session_state.n_runs * estimated_time_per_run
         st.caption(f"⏱️ Estimated time: ~{total_estimated_time} seconds ({total_estimated_time/60:.1f} minutes)")
         
@@ -41,7 +97,9 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             '--agents', str(st.session_state.n_agents),
             '--runs', str(st.session_state.n_runs),
             '--base-seed', str(st.session_state.base_seed),
-            '--anchor-observed', str(st.session_state.anchor_observed_weight)
+            '--anchor-observed', str(st.session_state.anchor_observed_weight),
+            '--population-mode', pop_mode_arg,
+            '--income-mode', income_mode_arg
         ]
         
         # Handle multiple decisions for Monte Carlo
@@ -50,17 +108,24 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             for decision in st.session_state.decision_params.selected_decisions:
                 cmd.extend(['--decision', decision])
         
-        # Debug: print command
-        with st.expander("🔧 Debug Information", expanded=False):
+        # Change to project directory to ensure scripts can be found
+        cwd = Path(__file__).resolve().parents[1]
+        
+        # Debug: print command and environment
+        with st.expander("🔧 Debug Information", expanded=True):
             st.code(' '.join(cmd))
+            st.caption(f"Working directory: {cwd}")
+            st.caption(f"Python executable: {sys.executable}")
+            st.caption(f"Population mode: {st.session_state.population_mode} → {pop_mode_arg}")
+            st.caption(f"Income mode: {st.session_state.get('income_spec_mode', 'categorical only')} → {income_mode_arg}")
+            st.caption(f"Selected decisions: {st.session_state.decision_params.selected_decisions}")
+            st.caption(f"Number of runs: {st.session_state.n_runs}")
+            st.caption(f"Agents per run: {st.session_state.n_agents}")
         
         # Create progress tracking elements
         progress_bar = st.progress(0)
         status_text = st.empty()
         output_container = st.container()
-        
-        # Change to project directory to ensure scripts can be found
-        cwd = Path(__file__).resolve().parents[1]
         
         # Run with real-time output capture using Popen instead of run
         status_text.text("🚀 Launching Monte-Carlo simulations...")
@@ -83,10 +148,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         
         # Monitor the process
         while True:
-            # Check if process is still running
-            poll = process.poll()
-            
-            # Read any available output
+            # Read any available output (blocking until we get a line or EOF)
             line = process.stdout.readline()
             if line:
                 stdout_lines.append(line.strip())
@@ -114,19 +176,25 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
                         st.code('\n'.join(stdout_lines[-5:]))
                     last_update_time = time.time()
             
-            # If process finished, break
-            if poll is not None:
+            # Check if process is done AND we've read all output
+            # Empty line from readline() means EOF when process is done
+            poll = process.poll()
+            if poll is not None and not line:
+                # Process finished and no more output
                 break
             
-            # Small delay to prevent CPU spinning
-            time.sleep(0.1)
+            # If we got an empty line but process still running, continue
+            if not line and poll is None:
+                time.sleep(0.1)
+                continue
         
-        # Get any remaining output
-        remaining_stdout, remaining_stderr = process.communicate()
-        if remaining_stdout:
-            stdout_lines.extend(remaining_stdout.strip().split('\n'))
+        # Get any remaining stderr
+        _, remaining_stderr = process.communicate()
         if remaining_stderr:
             stderr_lines.extend(remaining_stderr.strip().split('\n'))
+        
+        # Debug: Show total lines captured
+        st.info(f"🔍 Total lines captured from stdout: {len(stdout_lines)}")
         
         # Join all output
         stdout = '\n'.join(stdout_lines)
@@ -134,27 +202,40 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         
         # Show final output
         if stdout:
-            with st.expander("📋 Monte Carlo Output", expanded=False):
+            with st.expander("📋 Monte Carlo Output", expanded=True):
                 st.text(stdout)
+        else:
+            st.warning("⚠️ No stdout output captured!")
         
         if stderr:
             with st.expander("⚠️ Monte Carlo Errors", expanded=True):
                 st.text(stderr)
         
+        # Debug: Show return code
+        st.info(f"🔍 Process return code: {process.returncode}")
+        
         if process.returncode == 0:
             # Parse output to find result files
-            output_lines = stdout.strip().split('\n')
+            output_lines = stdout.strip().split('\n') if stdout else []
             summary_file = None
             detailed_file = None
             
-            for line in output_lines:
+            # Debug: Show what we're parsing
+            st.info(f"🔍 Parsing {len(output_lines)} lines of output...")
+            
+            for i, line in enumerate(output_lines):
                 if 'Summary saved to:' in line:
                     summary_file = line.split('Summary saved to:')[1].strip()
+                    st.success(f"✅ Found summary file in line {i+1}: {summary_file}")
                 elif 'Detailed results saved to:' in line:
                     detailed_file = line.split('Detailed results saved to:')[1].strip()
+                    st.success(f"✅ Found detailed file in line {i+1}: {detailed_file}")
             
             progress_bar.progress(1.0)
             status_text.success("✅ Monte-Carlo study completed!")
+            
+            # Debug: Show what files were detected
+            st.info(f"📁 Detected files - Summary: {summary_file}, Detailed: {detailed_file}")
             
             # Load results - handle relative paths
             if summary_file and not Path(summary_file).is_absolute():
@@ -162,15 +243,45 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             if detailed_file and not Path(detailed_file).is_absolute():
                 detailed_file = str(cwd / detailed_file)
             
+            # Debug: Show resolved paths
+            st.info(f"📍 Resolved paths - Summary: {summary_file}, Detailed: {detailed_file}")
+            
+            # Check if files exist before loading
+            summary_exists = Path(summary_file).exists() if summary_file else False
+            detailed_exists = Path(detailed_file).exists() if detailed_file else False
+            
+            st.info(f"✅ File existence - Summary: {summary_exists}, Detailed: {detailed_exists}")
+            
             # Load results
-            mc_summary = pd.read_csv(summary_file) if summary_file and Path(summary_file).exists() else None
-            mc_detailed = pd.read_csv(detailed_file) if detailed_file and Path(detailed_file).exists() else None
+            mc_summary = pd.read_csv(summary_file) if summary_file and summary_exists else None
+            mc_detailed = pd.read_csv(detailed_file) if detailed_file and detailed_exists else None
             
             # If files not found, show debug info
-            if mc_summary is None and summary_file:
-                st.warning(f"Summary file not found at: {summary_file}")
-            if mc_detailed is None and detailed_file:
-                st.warning(f"Detailed file not found at: {detailed_file}")
+            if mc_summary is None:
+                if not summary_file:
+                    st.error("❌ Summary file path not detected in output!")
+                elif not summary_exists:
+                    st.error(f"❌ Summary file not found at: {summary_file}")
+                    # List files in outputs directory
+                    outputs_dir = cwd / "outputs"
+                    if outputs_dir.exists():
+                        recent_files = sorted(outputs_dir.glob("mc_summary*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
+                        if recent_files:
+                            st.warning(f"📂 Recent MC summary files found:")
+                            for f in recent_files:
+                                st.caption(f"  - {f.name}")
+                    
+            if mc_detailed is None:
+                if not detailed_file:
+                    st.warning("⚠️ Detailed file path not detected in output (this is optional)")
+                elif not detailed_exists:
+                    st.warning(f"⚠️ Detailed file not found at: {detailed_file}")
+            
+            # Show loaded data shape
+            if mc_summary is not None:
+                st.success(f"✅ Loaded summary: {mc_summary.shape}")
+            if mc_detailed is not None:
+                st.success(f"✅ Loaded detailed: {mc_detailed.shape}")
             
             return mc_summary, mc_detailed, stdout
         else:

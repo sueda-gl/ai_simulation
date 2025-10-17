@@ -446,11 +446,43 @@ def run_individual_decision(decision_name):
             st.session_state.custom_decisions = [decision_name]  # Only this decision was run with custom parameters
             st.session_state.default_decisions = []  # No decisions used default values (since only one was run)
             
-            # Run simulation
-            run_simulation_from_sidebar()
+            # Run simulation - check if Monte Carlo or Single Run mode
+            if st.session_state.sim_params.simulation_mode == "Monte-Carlo Study":
+                # Run Monte Carlo study
+                from app.simulation import run_monte_carlo_study
+                mc_summary, mc_detailed, output_log = run_monte_carlo_study()
+                if mc_summary is not None:
+                    st.session_state.mc_results = {
+                        'summary': mc_summary,
+                        'detailed': mc_detailed,
+                        'log': output_log
+                    }
+                    st.session_state.simulation_results = None
+                    st.success(f"✅ Monte Carlo study for {decision_name} complete!")
+                    
+                    # Show Monte Carlo preview
+                    if 'donation_default' in mc_summary['decision'].values:
+                        donation_row = mc_summary[mc_summary['decision'] == 'donation_default'].iloc[0]
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Mean Donation Rate", f"{donation_row['mean']:.2%}")
+                        with col2:
+                            st.metric("Std Deviation", f"{donation_row['std']:.2%}")
+                        with col3:
+                            st.metric("Number of Runs", int(donation_row['runs']))
+                    
+                    # Navigate to results page
+                    st.session_state.page = 'results'
+                    st.info("🔄 Redirecting to Results page to view full Monte Carlo analysis...")
+                    st.rerun()
+                else:
+                    st.error("❌ Monte Carlo simulation returned no results")
+            else:
+                # Run single simulation
+                run_simulation_from_sidebar()
             
-            # Store in individual results
-            if st.session_state.simulation_results:
+            # Store in individual results (only for single run mode)
+            if st.session_state.sim_params.simulation_mode != "Monte-Carlo Study" and st.session_state.simulation_results:
                 if 'individual_results' not in st.session_state:
                     st.session_state.individual_results = {}
                 
@@ -525,8 +557,39 @@ def run_combined_simulation(selected_decisions):
             st.session_state.custom_decisions = selected_decisions
             st.session_state.default_decisions = unselected_decisions
             
-            # Run simulation with all decisions
-            run_simulation_from_sidebar()
+            # Run simulation with all decisions - check if Monte Carlo or Single Run mode
+            if st.session_state.sim_params.simulation_mode == "Monte-Carlo Study":
+                # Run Monte Carlo study
+                from app.simulation import run_monte_carlo_study
+                mc_summary, mc_detailed, output_log = run_monte_carlo_study()
+                if mc_summary is not None:
+                    st.session_state.mc_results = {
+                        'summary': mc_summary,
+                        'detailed': mc_detailed,
+                        'log': output_log
+                    }
+                    st.session_state.simulation_results = None
+                    st.success(f"✅ Monte Carlo complete simulation finished!")
+                    
+                    # Show Monte Carlo summary
+                    st.info(f"📊 Completed {st.session_state.n_runs} Monte Carlo runs with {len(ALL_DECISIONS)} decisions")
+                    
+                    # Navigate to results page
+                    st.session_state.page = 'results'
+                    st.info("🔄 Redirecting to Results page to view full Monte Carlo analysis...")
+                    
+                    # Restore state before rerun
+                    st.session_state.decision_params.selected_decisions = original_decisions
+                    if using_selected_config and original_population_mode is not None:
+                        st.session_state.population_mode = original_population_mode
+                        st.session_state.income_spec_mode = original_income_spec
+                    
+                    st.rerun()
+                else:
+                    st.error("❌ Monte Carlo simulation returned no results")
+            else:
+                # Run single simulation
+                run_simulation_from_sidebar()
             
             # Restore original selected decisions
             st.session_state.decision_params.selected_decisions = original_decisions

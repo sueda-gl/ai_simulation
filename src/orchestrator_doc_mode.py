@@ -83,17 +83,26 @@ class OrchestratorDocMode:
         If n_agents > original participants, bootstrap with replacement.
         If n_agents <= original participants, sample without replacement.
         """
-        # Sample agents from original data
-        rng = np.random.default_rng(seed)
+        # Create separate RNG for setup tasks (vendors, bootstrap sampling)
+        rng_setup = np.random.default_rng(seed)
+        
+        # Generate vendor attributes using setup RNG
+        self._initialize_vendors(rng_setup)
+        
+        # Sample agents from original data using setup RNG
         n_original = len(self.original_data)
         
         if n_agents > n_original:
             # Bootstrap with replacement on participants then repeat draws
-            indices = rng.choice(n_original, size=n_agents, replace=True)
+            indices = rng_setup.choice(n_original, size=n_agents, replace=True)
             agents_df = self.original_data.iloc[indices].reset_index(drop=True)
         else:
-            indices = rng.choice(n_original, size=n_agents, replace=False)
+            indices = rng_setup.choice(n_original, size=n_agents, replace=False)
             agents_df = self.original_data.iloc[indices].reset_index(drop=True)
+        
+        # Create dedicated RNG for agent processing (independent of setup)
+        # All modes use same seed here, ensuring identical agent RNG derivation
+        rng_global = np.random.default_rng(seed + 1000000)
         
         # Determine which decisions to run
         if single_decision:
@@ -113,12 +122,6 @@ class OrchestratorDocMode:
                 raise ValueError("single_decision must be a string or list of strings")
         else:
             decisions_to_run = self.decision_order
-        
-        # Initialize global RNG
-        rng_global = np.random.default_rng(seed)
-        
-        # Generate vendor attributes once per simulation (before processing agents)
-        self._initialize_vendors(rng_global)
         
         # Process each agent
         results = []

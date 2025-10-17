@@ -24,26 +24,57 @@ def main():
                        help='Output format (default: parquet)')
     parser.add_argument('--anchor-observed', type=float, default=0.75,
                        help='Weight on observed prosocial score for anchor (default: 0.75)')
+    parser.add_argument('--population-mode', type=str, default='copula',
+                       choices=['copula', 'documentation', 'baseline', 'depvar'],
+                       help='Population generation mode (default: copula)')
+    parser.add_argument('--income-mode', type=str, default='categorical',
+                       choices=['categorical', 'continuous'],
+                       help='Income specification mode (default: categorical)')
     
     args = parser.parse_args()
     
-    # Initialize orchestrator
+    # Initialize appropriate orchestrator based on population mode
     print("Initializing simulation...")
-    orchestrator = Orchestrator()
+    print(f"Population mode: {args.population_mode}")
+    print(f"Income specification: {args.income_mode}")
     
-    # Apply anchor weights if donation_default is in scope
-    if 'donation_default' in orchestrator.config:
+    if args.population_mode == 'documentation':
+        from src.orchestrator_doc_mode import OrchestratorDocMode
+        orchestrator = OrchestratorDocMode()
+    elif args.population_mode == 'baseline':
+        from src.orchestrator_baseline import OrchestratorBaseline
+        orchestrator = OrchestratorBaseline()
+    elif args.population_mode == 'depvar':
+        from src.orchestrator_depvar import OrchestratorDepVar
+        orchestrator = OrchestratorDepVar()
+    else:  # copula (default)
+        orchestrator = Orchestrator()
+    
+    # Apply anchor weights and income mode if donation_default is in scope
+    if hasattr(orchestrator, 'config') and 'donation_default' in orchestrator.config:
         orchestrator.config['donation_default']['anchor_weights']['observed'] = args.anchor_observed
         orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - args.anchor_observed
         print(f"Using anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
+        
+        # Set income mode
+        if 'regression' not in orchestrator.config['donation_default']:
+            orchestrator.config['donation_default']['regression'] = {}
+        orchestrator.config['donation_default']['regression']['income_mode'] = args.income_mode
+        
+        if 'regression_coefficients' not in orchestrator.config['donation_default']:
+            orchestrator.config['donation_default']['regression_coefficients'] = {}
+        orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = args.income_mode
+        print(f"Income specification mode: {args.income_mode}")
     
     if args.decision:
-        available = orchestrator.get_available_decisions()
-        for decision in args.decision:
-            if decision not in available:
-                print(f"Error: Decision '{decision}' not available.")
-                print(f"Available decisions: {', '.join(available)}")
-                return 1
+        # Check if orchestrator has method to get available decisions
+        if hasattr(orchestrator, 'get_available_decisions'):
+            available = orchestrator.get_available_decisions()
+            for decision in args.decision:
+                if decision not in available:
+                    print(f"Error: Decision '{decision}' not available.")
+                    print(f"Available decisions: {', '.join(available)}")
+                    return 1
         print(f"Running decisions: {', '.join(args.decision)}")
     else:
         print("Running all 13 decisions")
@@ -76,7 +107,17 @@ def main():
         # Save results
         if args.format == 'parquet':
             output_path = output_dir / f"{filename}.parquet"
-            results_df.to_parquet(output_path, index=False)
+            
+            # Prepare DataFrame for parquet saving
+            # Parquet can't handle complex nested structures, so convert purchase_requests to JSON
+            df_to_save = results_df.copy()
+            if 'purchase_requests' in df_to_save.columns:
+                import json
+                df_to_save['purchase_requests'] = df_to_save['purchase_requests'].apply(
+                    lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x)
+                )
+            
+            df_to_save.to_parquet(output_path, index=False)
         else:
             output_path = output_dir / f"{filename}.csv"
             results_df.to_csv(output_path, index=False)

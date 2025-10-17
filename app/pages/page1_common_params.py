@@ -1115,7 +1115,9 @@ BUDGET_SHOP,5.25,50,0""")
         
         # Always show distribution preview
         st.markdown("### 📊 Distribution Preview")
-        show_income_distribution_histogram(st.session_state.sim_params)
+        # Pass the simulation seed to make preview match actual results
+        preview_seed = st.session_state.get('seed', 42)
+        show_income_distribution_histogram(st.session_state.sim_params, seed=preview_seed)
         
         # Income Categories Section
         st.markdown('<h3 class="section-header">📊 Income Categories</h3>', unsafe_allow_html=True)
@@ -1267,16 +1269,21 @@ BUDGET_SHOP,5.25,50,0""")
             # Use the existing population_mode value or default to "Copula (synthetic)"
             st.session_state.page1_population_mode = getattr(st.session_state, "population_mode", "Copula (synthetic)")
 
+        def on_population_mode_change():
+            """Clear selected donation config when population mode changes"""
+            st.session_state.population_mode = st.session_state.page1_population_mode
+            # Clear selected config since mode change may invalidate it
+            if hasattr(st.session_state, 'selected_donation_config'):
+                delattr(st.session_state, 'selected_donation_config')
+        
         population_mode = st.radio(
             "Population Mode",
             ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
             horizontal=True,
             help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\nCompare all: Show all three modes side-by-side",
-            key="page1_population_mode"
+            key="page1_population_mode",
+            on_change=on_population_mode_change
         )
-
-        # Sync the widget's state to the main population_mode variable
-        st.session_state.population_mode = st.session_state.page1_population_mode
 
         # Show description of selected mode
         if st.session_state.population_mode == "Copula (synthetic)":

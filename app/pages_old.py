@@ -290,7 +290,8 @@ def render_page1():
         )
         
         if show_histogram:
-            show_income_distribution_histogram(st.session_state.sim_params)
+            preview_seed = st.session_state.get('seed', 42)
+            show_income_distribution_histogram(st.session_state.sim_params, seed=preview_seed)
         
         # Income Categories Section
         st.markdown('<h3 class="section-header">📊 Income Categories</h3>', unsafe_allow_html=True)

@@ -71,16 +71,21 @@ def render_donation_default_tab():
                 else:
                     st.session_state.page2_tab_income_spec_mode = "categorical only"
             
+            def on_income_spec_mode_change():
+                """Handle income spec mode changes"""
+                setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
+                reload_coefficients_for_income_mode()
+                clear_input_field_cache()
+                # Clear selected config since mode change may invalidate it
+                if hasattr(st.session_state, 'selected_donation_config'):
+                    delattr(st.session_state, 'selected_donation_config')
+            
             income_spec_mode = st.radio(
                 "Income Mode for Donation Model",
                 ["categorical only", "continuous only", "Compare both"],
                 help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
                 key="page2_tab_income_spec_mode",
-                on_change=lambda: [
-                    setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode),
-                    reload_coefficients_for_income_mode(),
-                    clear_input_field_cache()
-                ]
+                on_change=on_income_spec_mode_change
             )
         else:
             st.session_state.income_spec_mode = "categorical only"
