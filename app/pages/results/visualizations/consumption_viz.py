@@ -269,7 +269,6 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         try:
             # Flatten purchase_requests to transaction-level DataFrame
             transactions = []
-            transaction_id = 1
             # Base date for timestamp conversion (using 2025-01-15 as shown in screenshot)
             base_date = datetime(2025, 1, 15, 0, 0, 0)
             
@@ -284,18 +283,31 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                             timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
                             
                             transactions.append({
-                                'transaction_id': transaction_id,
                                 'customer_id': req.get('customer_id', idx + 1),
                                 'vendorID': req.get('vendorID', 1),
                                 'platformProductID': req.get('platformProductID', 1),
                                 'platformPrice': req.get('platformPrice', 'N/A'),
                                 'purchase_bid_value': req.get('bid_value', 'N/A'),
-                                'timestamp': timestamp_str
+                                'timestamp': timestamp_str,
+                                'timestamp_hours': timestamp_hours  # Keep for sorting
                             })
-                            transaction_id += 1
             
             if len(transactions) > 0:
                 transactions_df = pd.DataFrame(transactions)
+                
+                # CRITICAL: Sort by timestamp across ALL customers
+                transactions_df['timestamp_hours'] = pd.to_numeric(transactions_df['timestamp_hours'], errors='coerce')
+                transactions_df = transactions_df.sort_values(
+                    by='timestamp_hours', 
+                    ascending=True,
+                    na_position='last'
+                ).reset_index(drop=True).copy()
+                
+                # Add transaction_id AFTER sorting
+                transactions_df.insert(0, 'transaction_id', range(1, len(transactions_df) + 1))
+                
+                # Drop timestamp_hours column before display/export
+                transactions_df = transactions_df.drop(columns=['timestamp_hours'])
                 
                 col_export, col_preview = st.columns([1, 2])
                 

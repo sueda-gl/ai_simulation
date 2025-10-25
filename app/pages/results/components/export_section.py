@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from io import BytesIO
-from app.pages.decision_execution import clear_selected_configuration
 from app.models import initialize_session_state
 
 
@@ -40,123 +39,80 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 for key, config_df in results_dict.items()
             }
 
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        try:
-            buffer = BytesIO()
-            export_all_configs = results_dict is not None and len(results_dict) > 1 and not using_selected_config
+    try:
+        buffer = BytesIO()
+        export_all_configs = results_dict is not None and len(results_dict) > 1 and not using_selected_config
 
-            if export_all_configs:
-                first_config_df = next(iter(results_dict.values()))
-                available_traits = [col for col in trait_columns if col in first_config_df.columns]
-                combined_df = first_config_df[available_traits].copy()
-                
-                # Add agent_id if it exists
-                if 'agent_id' in first_config_df.columns:
-                    combined_df['Agent ID'] = first_config_df['agent_id'].values
-
-                green_columns = []
-                
-                if not is_donation_only_run:
-                    decision_cols_first = [col for col in first_config_df.columns if col not in trait_columns and col != 'agent_id']
-                    for col in decision_cols_first:
-                        if 'donation_default' not in col:
-                            combined_df[col] = first_config_df[col].values
-                
-                for config_key, config_df in results_dict.items():
-                    if not config_df.empty:
-                        decision_cols = [col for col in config_df.columns if col not in trait_columns and col != 'agent_id']
-                        for col in decision_cols:
-                            if 'donation_default' in col:
-                                config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
-                                new_col_name = f"{col}_{config_suffix}"
-                                combined_df[new_col_name] = config_df[col].values
-                                green_columns.append(new_col_name)
-                
-                # Reorder columns to put Agent ID first
-                if 'Agent ID' in combined_df.columns:
-                    cols = ['Agent ID'] + [col for col in combined_df.columns if col != 'Agent ID']
-                    combined_df = combined_df[cols]
-
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    combined_df.to_excel(writer, index=False, sheet_name='All Configurations')
-                    from openpyxl.styles import PatternFill
-                    worksheet = writer.sheets['All Configurations']
-                    green_fill = PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
-                    header_row = list(combined_df.columns)
-                    for col_name in green_columns:
-                        if col_name in header_row:
-                            col_idx = header_row.index(col_name) + 1
-                            for row_idx in range(1, len(combined_df) + 2):
-                                worksheet.cell(row=row_idx, column=col_idx).fill = green_fill
-                
-                excel_label = f"📊 Download Excel (All {len(results_dict)} Configs)"
-                excel_filename = f"enhanced_simulation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            else:
-                df_export = df.copy()
-                # Rename agent_id to 'Agent ID' for clarity
-                if 'agent_id' in df_export.columns:
-                    df_export = df_export.rename(columns={'agent_id': 'Agent ID'})
-                
-                # Reorder columns to put Agent ID first
-                if 'Agent ID' in df_export.columns:
-                    cols = ['Agent ID'] + [col for col in df_export.columns if col != 'Agent ID']
-                    df_export = df_export[cols]
-                
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df_export.to_excel(writer, index=False, sheet_name='Results')
-                excel_label = "📊 Download Excel"
-                excel_filename = f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        if export_all_configs:
+            first_config_df = next(iter(results_dict.values()))
+            available_traits = [col for col in trait_columns if col in first_config_df.columns]
+            combined_df = first_config_df[available_traits].copy()
             
-            st.download_button(
-                label=excel_label,
-                data=buffer.getvalue(),
-                file_name=excel_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        except ImportError:
-            st.caption("⚠️ Excel export requires openpyxl")
+            # Add agent_id if it exists
+            if 'agent_id' in first_config_df.columns:
+                combined_df['Agent ID'] = first_config_df['agent_id'].values
 
-    with col2:
-        if 'purchase_requests' in df.columns:
-            try:
-                transactions = []
-                # Base date for timestamp conversion (using 2025-01-15 as shown in screenshot)
-                base_date = datetime(2025, 1, 15, 0, 0, 0)
-                
-                for idx, row in df.iterrows():
-                    requests = row.get('purchase_requests', [])
-                    if isinstance(requests, list):
-                        for req in requests:
-                            if isinstance(req, dict):
-                                # Convert timestamp_hours to datetime format
-                                timestamp_hours = req.get('timestamp_hours', 0.0)
-                                timestamp_dt = base_date + timedelta(hours=float(timestamp_hours))
-                                timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
-                                
-                                transactions.append({
-                                    'customer_id': req.get('customer_id', idx + 1),
-                                    'vendorID': req.get('vendorID', 1),
-                                    'platformProductID': req.get('platformProductID', 1),
-                                    'platformPrice': req.get('platformPrice', 'N/A'),
-                                    'purchase_bid_value': req.get('bid_value', 'N/A'),
-                                    'timestamp': timestamp_str
-                                })
-                if transactions:
-                    transactions_df = pd.DataFrame(transactions)
-                    buffer = BytesIO()
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        transactions_df.to_excel(writer, index=False, sheet_name='Transactions')
-                    st.download_button(
-                        label="📋 Download Transactions",
-                        data=buffer.getvalue(),
-                        file_name=f"transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        help="Transaction-level data: one row per purchase request"
-                    )
-            except ImportError:
-                st.caption("⚠️ Transaction export requires openpyxl")
+            green_columns = []
+            
+            if not is_donation_only_run:
+                decision_cols_first = [col for col in first_config_df.columns if col not in trait_columns and col != 'agent_id']
+                for col in decision_cols_first:
+                    if 'donation_default' not in col:
+                        combined_df[col] = first_config_df[col].values
+            
+            for config_key, config_df in results_dict.items():
+                if not config_df.empty:
+                    decision_cols = [col for col in config_df.columns if col not in trait_columns and col != 'agent_id']
+                    for col in decision_cols:
+                        if 'donation_default' in col:
+                            config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
+                            new_col_name = f"{col}_{config_suffix}"
+                            combined_df[new_col_name] = config_df[col].values
+                            green_columns.append(new_col_name)
+            
+            # Reorder columns to put Agent ID first
+            if 'Agent ID' in combined_df.columns:
+                cols = ['Agent ID'] + [col for col in combined_df.columns if col != 'Agent ID']
+                combined_df = combined_df[cols]
+
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                combined_df.to_excel(writer, index=False, sheet_name='All Configurations')
+                from openpyxl.styles import PatternFill
+                worksheet = writer.sheets['All Configurations']
+                green_fill = PatternFill(start_color='90EE90', end_color='90EE90', fill_type='solid')
+                header_row = list(combined_df.columns)
+                for col_name in green_columns:
+                    if col_name in header_row:
+                        col_idx = header_row.index(col_name) + 1
+                        for row_idx in range(1, len(combined_df) + 2):
+                            worksheet.cell(row=row_idx, column=col_idx).fill = green_fill
+            
+            excel_label = f"📊 Download Excel (All {len(results_dict)} Configs)"
+            excel_filename = f"enhanced_simulation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        else:
+            df_export = df.copy()
+            # Rename agent_id to 'Agent ID' for clarity
+            if 'agent_id' in df_export.columns:
+                df_export = df_export.rename(columns={'agent_id': 'Agent ID'})
+            
+            # Reorder columns to put Agent ID first
+            if 'Agent ID' in df_export.columns:
+                cols = ['Agent ID'] + [col for col in df_export.columns if col != 'Agent ID']
+                df_export = df_export[cols]
+            
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_export.to_excel(writer, index=False, sheet_name='Results')
+            excel_label = "📊 Download Excel"
+            excel_filename = f"enhanced_simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        st.download_button(
+            label=excel_label,
+            data=buffer.getvalue(),
+            file_name=excel_filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except ImportError:
+        st.caption("⚠️ Excel export requires openpyxl")
 
     if st.button("🔄 Clear Results"):
         # Clear all session state to reset the entire application
