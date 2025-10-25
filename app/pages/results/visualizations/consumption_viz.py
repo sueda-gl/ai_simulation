@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def render_consumption_quantity(df, decision_name, decision_title, decision_data):
@@ -270,19 +270,27 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             # Flatten purchase_requests to transaction-level DataFrame
             transactions = []
             transaction_id = 1
+            # Base date for timestamp conversion (using 2025-01-15 as shown in screenshot)
+            base_date = datetime(2025, 1, 15, 0, 0, 0)
             
             for idx, row in df.iterrows():
                 purchase_requests = row.get('purchase_requests', [])
                 if isinstance(purchase_requests, list):
                     for req in purchase_requests:
                         if isinstance(req, dict):
+                            # Convert timestamp_hours to datetime format
+                            timestamp_hours = req.get('timestamp_hours', 0.0)
+                            timestamp_dt = base_date + timedelta(hours=float(timestamp_hours))
+                            timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
+                            
                             transactions.append({
                                 'transaction_id': transaction_id,
                                 'customer_id': req.get('customer_id', idx + 1),
                                 'vendorID': req.get('vendorID', 1),
+                                'platformProductID': req.get('platformProductID', 1),
                                 'platformPrice': req.get('platformPrice', 'N/A'),
                                 'purchase_bid_value': req.get('bid_value', 'N/A'),
-                                'timestamp': req.get('timestamp_hours', 0.0)
+                                'timestamp': timestamp_str
                             })
                             transaction_id += 1
             

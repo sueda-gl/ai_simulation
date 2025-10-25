@@ -140,7 +140,14 @@ class Orchestrator:
             
             results.append(agent_state)
         
-        return pd.DataFrame(results)
+        # Create DataFrame with results
+        results_df = pd.DataFrame(results)
+
+        # Attach vendor data to DataFrame attrs for access in results visualization
+        if 'vendors' in self.simulation_config:
+            results_df.attrs['vendors'] = self.simulation_config['vendors']
+
+        return results_df
     
     def _initialize_vendors(self, rng: np.random.Generator):
         """
@@ -190,10 +197,10 @@ class Orchestrator:
         # Store in simulation_config for access by decision modules
         self.simulation_config['vendors'] = vendors
         
-        print(f"[DEBUG] Generated {len(vendors)} vendors with attributes:")
-        for vendor in vendors:
-            print(f"  Vendor {vendor['vendor_id']}: price=${vendor['price']:.2f}, "
-                  f"quality={vendor['quality']}, sustainability={vendor['sustainability']}")
+        # print(f"[DEBUG] Generated {len(vendors)} vendors with attributes:")
+        # for vendor in vendors:
+        #     print(f"  Vendor {vendor['vendor_id']}: price=${vendor['price']:.2f}, "
+        #           f"quality={vendor['quality']}, sustainability={vendor['sustainability']}")
     
     def get_available_decisions(self) -> List[str]:
         """Return list of available decision modules."""

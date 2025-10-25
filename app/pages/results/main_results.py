@@ -44,44 +44,6 @@ def render_results_page():
     """Render the Results page"""
     st.markdown('<h2 class="page-header">Simulation Results</h2>', unsafe_allow_html=True)
     
-    # Debug info
-    with st.expander("🔧 Debug: Session State", expanded=False):
-        st.write(f"simulation_results: {'Yes' if st.session_state.simulation_results is not None else 'No'}")
-        st.write(f"mc_results: {'Yes' if st.session_state.mc_results is not None else 'No'}")
-        
-        # Debug decision state variables
-        st.write("**Decision State Variables:**")
-        if hasattr(st.session_state, 'custom_decisions'):
-            st.write(f"custom_decisions: {st.session_state.custom_decisions}")
-        else:
-            st.write("custom_decisions: NOT SET")
-            
-        if hasattr(st.session_state, 'default_decisions'):
-            st.write(f"default_decisions: {st.session_state.default_decisions}")
-        else:
-            st.write("default_decisions: NOT SET")
-            
-        # Show actual results columns
-        if st.session_state.simulation_results:
-            results_dict = st.session_state.simulation_results
-            df = next(iter(results_dict.values())) if results_dict else pd.DataFrame()
-            st.write(f"**Actual Result Columns:** {list(df.columns) if not df.empty else 'No data'}")
-            
-        if st.session_state.mc_results is not None:
-            st.write(f"mc_results keys: {list(st.session_state.mc_results.keys())}")
-            st.write(f"summary shape: {st.session_state.mc_results['summary'].shape if st.session_state.mc_results['summary'] is not None else 'None'}")
-            st.write(f"detailed shape: {st.session_state.mc_results['detailed'].shape if st.session_state.mc_results['detailed'] is not None else 'None'}")
-            
-        # Add clear session state button
-        if st.button("🗑️ Clear Session State (Fix Stale Data)"):
-            # Clear the problematic state variables
-            if hasattr(st.session_state, 'custom_decisions'):
-                delattr(st.session_state, 'custom_decisions')
-            if hasattr(st.session_state, 'default_decisions'):
-                delattr(st.session_state, 'default_decisions')
-            st.success("✅ Cleared decision state variables. Try running your simulation again.")
-            st.rerun()
-    
     # Display single run results
     if st.session_state.simulation_results is not None:
         render_single_run_results()

@@ -8,7 +8,6 @@ This file now imports from the modular structure for better maintainability.
 from app.pages.navigation import go_to_page1, go_to_page2, go_to_results, render_navigation
 from app.pages.page1_common_params import render_page1
 from app.pages.page2_decisions import render_page2
-from app.pages.sidebar import configure_sidebar
 from app.pages.results import render_results_page
 
 # Also expose some internal functions that might be used elsewhere

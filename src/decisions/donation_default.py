@@ -7,6 +7,9 @@ import sys
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+# Import income utilities for Category-First architecture
+from src.decisions.income_utils import get_actual_allowance
+
 def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
     Decision 3: Set up default donation rate
@@ -78,10 +81,9 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     
     # ---------------- Income effect ----------------
     if normalized_mode == 'continuous':
-        # For continuous mode, use actual allowance amount, not income level (1-5)
-        # Map income levels to actual totalallowance values from the research
-        allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
-        actual_allowance = allowance_mapping.get(int(income_level), 200)
+        # CATEGORY-FIRST: Get actual_allowance (12-200 scale) from income_utils
+        # This ensures consistent mapping across all decisions
+        actual_allowance = get_actual_allowance(agent_state, simulation_config, rng)
         
         beta_lin = coeffs.get('beta_income_linear', 0.0256)
         predicted += beta_lin * actual_allowance

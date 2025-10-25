@@ -191,7 +191,14 @@ class OrchestratorBaseline:
             
             results.append(agent_results)
         
-        return pd.DataFrame(results)
+        # Create DataFrame with results
+        results_df = pd.DataFrame(results)
+
+        # Attach vendor data to DataFrame attrs for access in results visualization
+        if 'vendors' in self.simulation_config:
+            results_df.attrs['vendors'] = self.simulation_config['vendors']
+
+        return results_df
     
     def _initialize_vendors(self, rng: np.random.Generator):
         """

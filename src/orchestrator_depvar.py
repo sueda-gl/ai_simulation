@@ -152,9 +152,14 @@ class OrchestratorDepVar:
         )
         
         # Return as DataFrame with appropriate column name
-        return pd.DataFrame({
+        results_df = pd.DataFrame({
             column_name: resampled_donations
         })
+        
+        # Note: depvar mode doesn't have vendor data since it only resamples donation rates
+        # But we keep this structure consistent with other orchestrators
+        
+        return results_df
     
     def get_available_decisions(self) -> List[str]:
         """Return list of available decision modules."""

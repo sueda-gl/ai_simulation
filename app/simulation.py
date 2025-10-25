@@ -511,7 +511,7 @@ def run_simulation_from_sidebar():
                 if setting_info:
                     st.success(f"🎲 Using configured defaults: {', '.join(setting_info)}")
                     # Also print to console for debugging
-                    print(f"[DEBUG] Decision settings: {random_decision_probabilities}")
+                    # print(f"[DEBUG] Decision settings: {random_decision_probabilities}")
             
             # Run based on population and income specification modes
             results = {}
@@ -578,6 +578,13 @@ def run_simulation_from_sidebar():
             
             st.session_state.simulation_results = results
             
+            # Extract and store vendor data from first DataFrame for easy access in results visualization
+            # (All DataFrames should have the same vendor data in their attrs)
+            for df in results.values():
+                if hasattr(df, 'attrs') and 'vendors' in df.attrs:
+                    st.session_state.vendors = df.attrs['vendors']
+                    break
+            
             # Add a flag to indicate we're using selected configuration
             if hasattr(st.session_state, 'selected_donation_config'):
                 st.session_state._using_selected_config = True
@@ -631,9 +638,9 @@ def collect_decision_settings():
                 )
                 
                 # Debug print
-                print(f"[DEBUG] collect_settings: {decision_name} (probability) = {current_prob}")
-                print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
-                print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                # print(f"[DEBUG] collect_settings: {decision_name} (probability) = {current_prob}")
+                # print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
+                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
                 
                 decision_settings[decision_name] = {
                     "probability_y": current_prob,
@@ -675,10 +682,10 @@ def collect_decision_settings():
                     weight_per_param = 1.0 / len(params) if params else 0.25
                     weights = {param: weight_per_param for param in params}
                 
-                print(f"[DEBUG] collect_settings: {decision_name} (checkbox) = {selected_params}")
-                print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
-                print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
-                print(f"[DEBUG]   - weights: {weights}")
+                # print(f"[DEBUG] collect_settings: {decision_name} (checkbox) = {selected_params}")
+                # print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
+                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                # print(f"[DEBUG]   - weights: {weights}")
                 
                 decision_settings[decision_name] = {
                     "selected_params": selected_params,
@@ -709,10 +716,10 @@ def collect_decision_settings():
                 else:
                     selected_option = st.session_state.get(pre_config_key, hardcoded_default)
                 
-                print(f"[DEBUG] collect_settings: {decision_name} (radio) = {selected_option}")
-                if post_sim_key:
-                    print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
-                print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                # print(f"[DEBUG] collect_settings: {decision_name} (radio) = {selected_option}")
+                # if post_sim_key:
+                #     print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
+                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
                 
                 decision_settings[decision_name] = {
                     "selected_option": selected_option,
@@ -731,14 +738,14 @@ def collect_decision_settings():
             
             # Determine if it's numeric or a placeholder string
             if isinstance(configured_value, (int, float)):
-                print(f"[DEBUG] collect_settings: {decision_name} (numeric) = {configured_value}")
+                # print(f"[DEBUG] collect_settings: {decision_name} (numeric) = {configured_value}")
                 decision_settings[decision_name] = {
                     "value": configured_value,
                     "type": "numeric"
                 }
             else:
                 # It's a placeholder string like "RANDOM_WITHIN_LIMIT", "NA", etc.
-                print(f"[DEBUG] collect_settings: {decision_name} (placeholder) = {configured_value}")
+                # print(f"[DEBUG] collect_settings: {decision_name} (placeholder) = {configured_value}")
                 decision_settings[decision_name] = {
                     "value": configured_value,
                     "type": "placeholder"

@@ -166,6 +166,11 @@ class OrchestratorDocMode:
                 df['donation_default'] = 0.0
             else:
                 df['donation_default'] = (df[donation_col] / global_max).clip(0,1)
+        
+        # Attach vendor data to DataFrame attrs for access in results visualization
+        if 'vendors' in self.simulation_config:
+            df.attrs['vendors'] = self.simulation_config['vendors']
+        
         return df
     
     def _initialize_vendors(self, rng: np.random.Generator):

@@ -227,6 +227,160 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     else:
         st.info("No vendor selections found (agents may have 0 purchases)")
     
+    # Vendor Data Section (only for multiple vendors)
+    if num_vendors_used > 1:
+        st.markdown("---")
+        st.markdown("**🏪 Vendor Data & Selection Analysis:**")
+        st.caption("Understanding why certain vendors were selected or not selected")
+        
+        # Try multiple ways to get vendor data
+        vendors_data = None
+        
+        # Method 1: Check session_state.vendors (generated during simulation)
+        if hasattr(st.session_state, 'vendors') and st.session_state.vendors:
+            vendors_data = st.session_state.vendors
+        
+        # Method 2: Check simulation_results
+        if not vendors_data and 'simulation_results' in st.session_state:
+            results = st.session_state.simulation_results
+            if isinstance(results, dict):
+                # Try different possible locations
+                vendors_data = results.get('vendors') or results.get('config', {}).get('vendors')
+        
+        # Method 3: Try to infer from DataFrame metadata if available
+        if not vendors_data and hasattr(df, 'attrs') and 'vendors' in df.attrs:
+            vendors_data = df.attrs['vendors']
+        
+        if vendors_data and isinstance(vendors_data, list) and len(vendors_data) > 0:
+            # Calculate average proximity scores from all agents' proximity data
+            avg_proximity_per_vendor = {}
+            
+            if 'vendor_proximity_scores' in df.columns:
+                # Extract all proximity scores
+                all_proximity_scores = df['vendor_proximity_scores'].dropna()
+                
+                if len(all_proximity_scores) > 0:
+                    # Initialize accumulators
+                    proximity_sums = {}
+                    proximity_counts = {}
+                    
+                    for proximity_dict in all_proximity_scores:
+                        if isinstance(proximity_dict, dict):
+                            for vendor_key, proximity_value in proximity_dict.items():
+                                # vendor_key is a string like "1", "2", etc.
+                                if vendor_key not in proximity_sums:
+                                    proximity_sums[vendor_key] = 0.0
+                                    proximity_counts[vendor_key] = 0
+                                proximity_sums[vendor_key] += float(proximity_value)
+                                proximity_counts[vendor_key] += 1
+                    
+                    # Calculate averages
+                    for vendor_key in proximity_sums:
+                        if proximity_counts[vendor_key] > 0:
+                            avg_proximity_per_vendor[int(vendor_key)] = proximity_sums[vendor_key] / proximity_counts[vendor_key]
+            
+            # Create vendor comparison table
+            vendor_table_data = []
+            
+            for idx, vendor in enumerate(vendors_data, 1):
+                vendor_id = vendor.get('vendor_id', idx)
+                
+                # Get selection count for this vendor
+                selection_count = 0
+                if vendor_id in vendor_counts.index:
+                    selection_count = int(vendor_counts[vendor_id])
+                
+                # Get average proximity for this vendor
+                avg_proximity = avg_proximity_per_vendor.get(vendor_id, None)
+                proximity_display = f"{avg_proximity:.1f}" if avg_proximity is not None else "N/A"
+                
+                vendor_table_data.append({
+                    'Vendor ID': f"Vendor {vendor_id}",
+                    'Price ($)': f"${vendor.get('price', 0):.2f}",
+                    'Quality': vendor.get('quality', 'N/A'),
+                    'Sustainability': vendor.get('sustainability', 'N/A'),
+                    'Avg Proximity': proximity_display,
+                    'Times Selected': selection_count,
+                    'Selection %': f"{(selection_count / agents_with_selection * 100) if agents_with_selection > 0 else 0:.1f}%",
+                    'Status': '✅ Selected' if selection_count > 0 else '❌ Not Selected'
+                })
+            
+            vendor_df = pd.DataFrame(vendor_table_data)
+            
+            st.markdown("**📋 Vendor Attributes & Selection Results:**")
+            st.dataframe(vendor_df, use_container_width=True, hide_index=True)
+            
+            # Score comparison visualization
+            st.markdown("**📊 Vendor Attribute Comparison:**")
+            
+            col_price, col_quality = st.columns(2)
+            col_sust, col_prox = st.columns(2)
+            
+            with col_price:
+                # Price comparison (inverted - lower is better)
+                price_fig = px.bar(
+                    vendor_df,
+                    x='Vendor ID',
+                    y=[100 - float(p.replace('$', '').replace(',', '')) for p in vendor_df['Price ($)']],
+                    title="Price Score (Higher = Lower Price)",
+                    labels={'y': 'Score (Inverted)', 'x': ''}
+                )
+                price_fig.update_layout(showlegend=False, height=250)
+                st.plotly_chart(price_fig, use_container_width=True)
+            
+            with col_quality:
+                # Quality comparison
+                quality_vals = [v if isinstance(v, int) else 0 for v in vendor_df['Quality']]
+                qual_fig = px.bar(
+                    vendor_df,
+                    x='Vendor ID',
+                    y=quality_vals,
+                    title="Quality Score (1-5)",
+                    labels={'y': 'Quality', 'x': ''}
+                )
+                qual_fig.update_layout(showlegend=False, height=250)
+                st.plotly_chart(qual_fig, use_container_width=True)
+            
+            with col_sust:
+                # Sustainability comparison
+                sust_vals = [v if isinstance(v, int) else 0 for v in vendor_df['Sustainability']]
+                sust_fig = px.bar(
+                    vendor_df,
+                    x='Vendor ID',
+                    y=sust_vals,
+                    title="Sustainability Score (1-5)",
+                    labels={'y': 'Sustainability', 'x': ''}
+                )
+                sust_fig.update_layout(showlegend=False, height=250)
+                st.plotly_chart(sust_fig, use_container_width=True)
+            
+            with col_prox:
+                # Proximity comparison (average across all agents)
+                proximity_vals = []
+                for row in vendor_table_data:
+                    prox_str = row['Avg Proximity']
+                    if prox_str != "N/A":
+                        proximity_vals.append(float(prox_str))
+                    else:
+                        proximity_vals.append(0.0)
+                
+                prox_fig = px.bar(
+                    vendor_df,
+                    x='Vendor ID',
+                    y=proximity_vals,
+                    title="Avg Proximity Score (0-100)",
+                    labels={'y': 'Proximity', 'x': ''}
+                )
+                prox_fig.update_layout(showlegend=False, height=250)
+                st.plotly_chart(prox_fig, use_container_width=True)
+            
+            st.caption("""
+            💡 **Note**: Proximity scores vary by agent (each agent has different proximity to each vendor). 
+            The chart above shows the **average proximity** across all agents.
+            """)
+        else:
+            st.info("ℹ️ Vendor attribute data not available. This section shows detailed vendor data in multi-vendor simulations.")
+    
     # Explanation of how vendor selection works
     with st.expander("ℹ️ How Vendor Selection Works (Default Behavior)", expanded=False):
         st.markdown("""
