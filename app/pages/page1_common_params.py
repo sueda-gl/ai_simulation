@@ -1200,7 +1200,35 @@ BUDGET_SHOP,5.25,50,0""")
             # Create a simple interface for setting consumption limits
             total_categories = st.session_state.sim_params.num_fixed_categories
             
+            # Initialize uniform limit in session state if not exists
+            if "uniform_consumption_limit" not in st.session_state:
+                st.session_state.uniform_consumption_limit = 10
+            
+            # Callback function to update all category limits when uniform limit changes
+            def update_uniform_limit():
+                """Update all category limits to the uniform value"""
+                uniform_value = st.session_state.uniform_consumption_limit_input
+                st.session_state.uniform_consumption_limit = uniform_value
+                # Update all category limit keys
+                for i in range(total_categories):
+                    key = f"consumption_limit_{i}"
+                    st.session_state[key] = uniform_value
+            
+            # Uniform limit input (shown first, above per-category inputs)
+            st.markdown("**Set Uniform Limit for All Categories**")
+            uniform_limit = st.number_input(
+                "Maximum number of Items Purchased per Term",
+                min_value=0,
+                max_value=1000,
+                value=st.session_state.uniform_consumption_limit,
+                help=f"Set a uniform consumption limit for all income categories. This will update the default values below, which you can then adjust individually per category. Term = {term_hours}h total.",
+                key="uniform_consumption_limit_input",
+                on_change=update_uniform_limit
+            )
+            
+            st.markdown("---")
             st.markdown("**Fixed Income Categories** (ordered from lowest to highest income)")
+            st.caption("Adjust individual category limits below (these values will be used in the simulation)")
 
             # Initialize consumption limits in session state if not exists
             if "consumption_limits_temp" not in st.session_state:
@@ -1222,12 +1250,12 @@ BUDGET_SHOP,5.25,50,0""")
 
                     # Initialize widget key if it doesn't exist
                     if key not in st.session_state:
-                        st.session_state[key] = st.session_state.sim_params.consumption_limits.get(cat_key, 10)
+                        st.session_state[key] = st.session_state.sim_params.consumption_limits.get(cat_key, st.session_state.uniform_consumption_limit)
 
                     limit = st.number_input(
                         label,
                         min_value=0,
-                        max_value=100,
+                        max_value=1000,
                         value=st.session_state[key],
                         key=key,
                         help=f"Max consumption for fixed income category {i+1} over entire term ({term_hours}h total). Cat 1 = lowest income (discount customers).",
@@ -1238,26 +1266,10 @@ BUDGET_SHOP,5.25,50,0""")
             st.session_state.sim_params.consumption_limits = consumption_limits
 
         else:
-            st.info("ℹ️ Consumption limits are disabled. All agents will use a single maximum purchase amount.")
+            # Consumption limits are disabled - don't show any input fields
+            st.info("ℹ️ Consumption limits are disabled. The simulation will not restrict the number of items agents can purchase.")
             # Clear consumption limits when disabled
             st.session_state.sim_params.consumption_limits = {}
-            
-            # Calculate term duration for display
-            term_periods = st.session_state.sim_params.periods
-            term_hours = st.session_state.sim_params.periods * st.session_state.sim_params.duration_hours
-            
-            # Show fallback maximum input (professor's requirement)
-            st.caption(f"🛒 Set the **maximum purchase amount** for the entire term ({term_periods} period(s) × {int(st.session_state.sim_params.duration_hours)}h = {term_hours}h total)")
-            
-            max_purchases_per_term = st.number_input(
-                "Maximum Purchases per Term",
-                min_value=0,
-                max_value=1000,
-                value=st.session_state.sim_params.max_purchases_per_term,
-                help=f"Maximum number of items any agent can purchase during the entire term ({term_hours}h total). This applies to ALL agents when category-specific limits are disabled.",
-                key="max_purchases_per_term_input"
-            )
-            st.session_state.sim_params.max_purchases_per_term = max_purchases_per_term
     
     with col_population:
         # Population Mode Selection (Global Parameter)
