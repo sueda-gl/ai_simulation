@@ -60,29 +60,38 @@ def _assign_income_category(income: float, simulation_config: Optional[Dict]) ->
     # we use a simple linear mapping
     
     # Get distribution bounds to normalize income
+    # Use the config max_income directly if available, otherwise use the income_max from Page 1
+    # This ensures consistency with the actual income generation range
     dist_type = get_simulation_param(simulation_config, 'income_distribution', 'lognormal')
     
-    if dist_type == 'lognormal':
-        max_income = get_simulation_param(simulation_config, 'lognormal_max', None)
-        # If no max specified, use a high percentile estimate
-        if max_income is None:
-            # For lognormal, use mean + 3*std as rough upper bound
-            mu = get_simulation_param(simulation_config, 'lognormal_mu', 10.0)
-            sigma = get_simulation_param(simulation_config, 'lognormal_sigma', 0.5)
-            min_val = get_simulation_param(simulation_config, 'lognormal_min', 0.0)
-            mean = min_val + np.exp(mu + 0.5 * sigma**2)
-            std = np.sqrt((np.exp(sigma**2) - 1) * np.exp(2*mu + sigma**2))
-            max_income = mean + 3 * std
-    elif dist_type == 'generalised_gamma':
-        max_income = get_simulation_param(simulation_config, 'gg_max', None)
-        if max_income is None:
-            max_income = get_simulation_param(simulation_config, 'gg_lambda', 20000.0) * 3
-    elif dist_type == 'dagum':
-        max_income = get_simulation_param(simulation_config, 'dagum_max', None)
-        if max_income is None:
-            max_income = get_simulation_param(simulation_config, 'dagum_b', 25000.0) * 3
-    else:
-        max_income = get_simulation_param(simulation_config, 'income_max', 100000.0)
+    # For all distributions, prefer the explicitly set income_max from Page 1
+    # This is the actual upper bound used for income generation
+    max_income = get_simulation_param(simulation_config, 'income_max', None)
+    
+    # If income_max is not set, fall back to distribution-specific estimates
+    if max_income is None:
+        if dist_type == 'lognormal':
+            max_income = get_simulation_param(simulation_config, 'lognormal_max', None)
+            if max_income is None:
+                # For lognormal, use more conservative estimate (mean + 2*std instead of 3*std)
+                # to better match actual population range
+                mu = get_simulation_param(simulation_config, 'lognormal_mu', 10.0)
+                sigma = get_simulation_param(simulation_config, 'lognormal_sigma', 0.5)
+                min_val = get_simulation_param(simulation_config, 'lognormal_min', 0.0)
+                mean = min_val + np.exp(mu + 0.5 * sigma**2)
+                std = np.sqrt((np.exp(sigma**2) - 1) * np.exp(2*mu + sigma**2))
+                max_income = mean + 2 * std
+        elif dist_type == 'generalised_gamma':
+            max_income = get_simulation_param(simulation_config, 'gg_max', None)
+            if max_income is None:
+                max_income = get_simulation_param(simulation_config, 'gg_lambda', 20000.0) * 2
+        elif dist_type == 'dagum':
+            max_income = get_simulation_param(simulation_config, 'dagum_max', None)
+            if max_income is None:
+                max_income = get_simulation_param(simulation_config, 'dagum_b', 25000.0) * 2
+        else:
+            # Default fallback
+            max_income = 100000.0
     
     # Normalize income position within [threshold, max_income] range
     if max_income <= threshold:
