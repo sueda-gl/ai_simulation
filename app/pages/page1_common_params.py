@@ -115,13 +115,15 @@ def render_page1():
             on_change=lambda: setattr(st.session_state, 'show_individual_agents', st.session_state.show_individual_agents_checkbox)
         )
         
-        save_results = st.checkbox(
-            "Save Results to File",
-            value=st.session_state.save_results,
-            help="Save simulation results to a file for later analysis",
-            key="save_results_checkbox",
-            on_change=lambda: setattr(st.session_state, 'save_results', st.session_state.save_results_checkbox)
-        )
+        # COMMENTED OUT: Auto-save to parquet file (redundant with Results page Excel export)
+        # Uncomment if needed for batch processing or programmatic access
+        # save_results = st.checkbox(
+        #     "Save Results to File",
+        #     value=st.session_state.save_results,
+        #     help="Save simulation results to a file for later analysis",
+        #     key="save_results_checkbox",
+        #     on_change=lambda: setattr(st.session_state, 'save_results', st.session_state.save_results_checkbox)
+        # )
         
         with col1_right:
             # Time Parameters Section
@@ -1266,8 +1268,30 @@ BUDGET_SHOP,5.25,50,0""")
             st.session_state.sim_params.consumption_limits = consumption_limits
 
         else:
-            # Consumption limits are disabled - don't show any input fields
-            st.info("ℹ️ Consumption limits are disabled. The simulation will not restrict the number of items agents can purchase.")
+            # Consumption limits are disabled - show artificial limit input
+            st.info("ℹ️ Consumption limits are disabled. For the practical purpose of running the simulation, an artificial consumption limit is specified here, indicating a maximum number of purchased items for all agents based on their assumed consumption preferences and budget limit.")
+            
+            # Calculate term duration for display
+            term_periods = st.session_state.sim_params.periods
+            term_hours = st.session_state.sim_params.periods * st.session_state.sim_params.duration_hours
+            
+            st.caption("💡 **Note**: This artificial limit represents a market-based constraint derived from customer budget preferences and needs, rather than a regulatory consumption restriction.")
+            
+            # Define callback to update the parameter
+            def update_artificial_limit():
+                st.session_state.sim_params.max_purchases_per_term = st.session_state.artificial_limit_input
+            
+            # Input field for artificial consumption limit
+            artificial_limit = st.number_input(
+                "Artificial Consumption Limit (Maximum Items per Term)",
+                min_value=1,
+                max_value=1000,
+                value=st.session_state.sim_params.max_purchases_per_term,
+                help=f"Maximum number of items any agent can purchase over the entire term ({term_hours}h total). This represents a practical constraint based on customer budget preferences and assumed consumption patterns.",
+                key="artificial_limit_input",
+                on_change=update_artificial_limit
+            )
+            
             # Clear consumption limits when disabled
             st.session_state.sim_params.consumption_limits = {}
     

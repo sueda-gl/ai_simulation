@@ -89,6 +89,10 @@ class OrchestratorDocMode:
         # Generate vendor attributes using setup RNG
         self._initialize_vendors(rng_setup)
         
+        # Reset vendor capacity tracking for this simulation run
+        if 'vendor_remaining_capacity' in self.simulation_config:
+            del self.simulation_config['vendor_remaining_capacity']
+        
         # Sample agents from original data using setup RNG
         n_original = len(self.original_data)
         
@@ -177,7 +181,7 @@ class OrchestratorDocMode:
         """
         Generate vendor attributes once per simulation.
         
-        Creates vendors with quality, sustainability attributes.
+        Creates vendors with quality, sustainability, price (randomized), and quantity attributes.
         Shared implementation with main Orchestrator.
         """
         from src.vendor_attribute_generator import generate_vendor_attributes
@@ -189,10 +193,21 @@ class OrchestratorDocMode:
         sim_config = self.simulation_config['simulation']
         num_vendors = sim_config.get('num_vendors', 1)
         
-        # Get vendor prices
+        # Get price range for randomization
+        price_min = sim_config.get('vendor_price_min', 50.0)
+        price_max = sim_config.get('vendor_price_max', 150.0)
+        
+        # Get quantity range for randomization
+        quantity_min = sim_config.get('vendor_products_min', 50)
+        quantity_max = sim_config.get('vendor_products_max', 150)
+        
+        # Get vendor prices (for backward compatibility if specified)
         vendor_prices = []
+        use_explicit_prices = False
+        
         if 'vendor_prices' in sim_config and sim_config['vendor_prices']:
             vendor_prices = sim_config['vendor_prices']
+            use_explicit_prices = True
         else:
             market_price = sim_config.get('market_price', 100.0)
             vendor_prices = [market_price] * num_vendors
@@ -201,13 +216,21 @@ class OrchestratorDocMode:
         while len(vendor_prices) < num_vendors:
             vendor_prices.append(sim_config.get('market_price', 100.0))
         
-        # Generate vendor attributes
-        vendors = generate_vendor_attributes(num_vendors, vendor_prices, rng)
+        # Generate vendor attributes with randomization
+        vendors = generate_vendor_attributes(
+            num_vendors=num_vendors,
+            vendor_prices=vendor_prices,
+            rng=rng,
+            price_min=None if use_explicit_prices else price_min,
+            price_max=None if use_explicit_prices else price_max,
+            quantity_min=quantity_min,
+            quantity_max=quantity_max
+        )
         
         # Store in simulation_config
         self.simulation_config['vendors'] = vendors
         
-        print(f"[DocMode] Generated {len(vendors)} vendors with attributes")
+        print(f"[DocMode] Generated {len(vendors)} vendors with randomized attributes")
     
     def get_available_decisions(self) -> List[str]:
         """Return list of available decision modules."""

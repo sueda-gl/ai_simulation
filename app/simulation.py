@@ -546,35 +546,36 @@ def run_simulation_from_sidebar():
                 else:  # categorical only
                     results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
             
-            # Save results if requested
-            if st.session_state.save_results:
-                output_dir = Path("outputs")
-                output_dir.mkdir(exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                # Create decision suffix for filename
-                if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS):
-                    decision_suffix = "_all"
-                elif len(st.session_state.decision_params.selected_decisions) == 1:
-                    decision_suffix = f"_{st.session_state.decision_params.selected_decisions[0]}"
-                else:
-                    decision_suffix = f"_{len(st.session_state.decision_params.selected_decisions)}decisions"
-                
-                for mode, df in results.items():
-                    filename = f"enhanced_simulation_{mode}_seed{st.session_state.seed if st.session_state.sim_params.simulation_mode == 'Single Run' else st.session_state.base_seed}_agents{st.session_state.n_agents}{decision_suffix}_{timestamp}.parquet"
-                    filepath = output_dir / filename
-                    
-                    # Prepare DataFrame for parquet saving
-                    # Parquet can't handle complex nested structures, so convert purchase_requests to JSON
-                    df_to_save = df.copy()
-                    if 'purchase_requests' in df_to_save.columns:
-                        import json
-                        df_to_save['purchase_requests'] = df_to_save['purchase_requests'].apply(
-                            lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x)
-                        )
-                    
-                    df_to_save.to_parquet(filepath, index=False)
-                
-                st.sidebar.caption(f"✅ Results saved with timestamp {timestamp}")
+            # COMMENTED OUT: Auto-save to parquet file (redundant with Results page Excel export)
+            # Uncomment if needed for batch processing or programmatic access
+            # if st.session_state.save_results:
+            #     output_dir = Path("outputs")
+            #     output_dir.mkdir(exist_ok=True)
+            #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            #     # Create decision suffix for filename
+            #     if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS):
+            #         decision_suffix = "_all"
+            #     elif len(st.session_state.decision_params.selected_decisions) == 1:
+            #         decision_suffix = f"_{st.session_state.decision_params.selected_decisions[0]}"
+            #     else:
+            #         decision_suffix = f"_{len(st.session_state.decision_params.selected_decisions)}decisions"
+            #     
+            #     for mode, df in results.items():
+            #         filename = f"enhanced_simulation_{mode}_seed{st.session_state.seed if st.session_state.sim_params.simulation_mode == 'Single Run' else st.session_state.base_seed}_agents{st.session_state.n_agents}{decision_suffix}_{timestamp}.parquet"
+            #         filepath = output_dir / filename
+            #         
+            #         # Prepare DataFrame for parquet saving
+            #         # Parquet can't handle complex nested structures, so convert purchase_requests to JSON
+            #         df_to_save = df.copy()
+            #         if 'purchase_requests' in df_to_save.columns:
+            #             import json
+            #             df_to_save['purchase_requests'] = df_to_save['purchase_requests'].apply(
+            #                 lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x)
+            #             )
+            #         
+            #         df_to_save.to_parquet(filepath, index=False)
+            #     
+            #     st.sidebar.caption(f"✅ Results saved with timestamp {timestamp}")
             
             st.session_state.simulation_results = results
             

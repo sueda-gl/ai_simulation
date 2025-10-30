@@ -269,8 +269,8 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         try:
             # Flatten purchase_requests to transaction-level DataFrame
             transactions = []
-            # Base date for timestamp conversion (using 2025-01-15 as shown in screenshot)
-            base_date = datetime(2025, 1, 15, 0, 0, 0)
+            # Base date for timestamp conversion (current date when simulation is run)
+            base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             
             for idx, row in df.iterrows():
                 purchase_requests = row.get('purchase_requests', [])

@@ -13,10 +13,10 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
     
     # Define the 4 vendor choice parameters
     parameters = [
-        ("price", "Price", "Cost of the product/service"),
-        ("quality", "Quality", "Quality rating and reviews"),
-        ("proximity", "Proximity", "Distance and convenience"),
-        ("sustainability", "Sustainability", "Environmental and social impact")
+        ("price", "Price", "the product price offered to the customer"),
+        ("quality", "Quality", "product quality based on customer ratings"),
+        ("proximity", "Proximity", "the proximity of vendor to customer"),
+        ("sustainability", "Sustainability", "vendor sustainability rating")
     ]
     
     param_names = {param[0]: param[1] for param in parameters}
@@ -252,8 +252,11 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             vendors_data = df.attrs['vendors']
         
         if vendors_data and isinstance(vendors_data, list) and len(vendors_data) > 0:
-            # Calculate average proximity scores from all agents' proximity data
+            # Calculate proximity statistics from all agents' proximity data
             avg_proximity_per_vendor = {}
+            min_proximity_per_vendor = {}
+            max_proximity_per_vendor = {}
+            std_proximity_per_vendor = {}
             
             if 'vendor_proximity_scores' in df.columns:
                 # Extract all proximity scores
@@ -261,23 +264,26 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 
                 if len(all_proximity_scores) > 0:
                     # Initialize accumulators
-                    proximity_sums = {}
-                    proximity_counts = {}
+                    proximity_lists = {}
                     
                     for proximity_dict in all_proximity_scores:
                         if isinstance(proximity_dict, dict):
                             for vendor_key, proximity_value in proximity_dict.items():
                                 # vendor_key is a string like "1", "2", etc.
-                                if vendor_key not in proximity_sums:
-                                    proximity_sums[vendor_key] = 0.0
-                                    proximity_counts[vendor_key] = 0
-                                proximity_sums[vendor_key] += float(proximity_value)
-                                proximity_counts[vendor_key] += 1
+                                if vendor_key not in proximity_lists:
+                                    proximity_lists[vendor_key] = []
+                                proximity_lists[vendor_key].append(float(proximity_value))
                     
-                    # Calculate averages
-                    for vendor_key in proximity_sums:
-                        if proximity_counts[vendor_key] > 0:
-                            avg_proximity_per_vendor[int(vendor_key)] = proximity_sums[vendor_key] / proximity_counts[vendor_key]
+                    # Calculate statistics
+                    import numpy as np
+                    for vendor_key in proximity_lists:
+                        scores = proximity_lists[vendor_key]
+                        if len(scores) > 0:
+                            vendor_id = int(vendor_key)
+                            avg_proximity_per_vendor[vendor_id] = np.mean(scores)
+                            min_proximity_per_vendor[vendor_id] = np.min(scores)
+                            max_proximity_per_vendor[vendor_id] = np.max(scores)
+                            std_proximity_per_vendor[vendor_id] = np.std(scores)
             
             # Create vendor comparison table
             vendor_table_data = []
@@ -290,16 +296,29 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 if vendor_id in vendor_counts.index:
                     selection_count = int(vendor_counts[vendor_id])
                 
-                # Get average proximity for this vendor
+                # Get proximity statistics for this vendor
                 avg_proximity = avg_proximity_per_vendor.get(vendor_id, None)
-                proximity_display = f"{avg_proximity:.1f}" if avg_proximity is not None else "N/A"
+                min_proximity = min_proximity_per_vendor.get(vendor_id, None)
+                max_proximity = max_proximity_per_vendor.get(vendor_id, None)
+                std_proximity = std_proximity_per_vendor.get(vendor_id, None)
+                
+                # Create proximity range display
+                if min_proximity is not None and max_proximity is not None:
+                    proximity_range = f"{min_proximity:.1f} - {max_proximity:.1f}"
+                else:
+                    proximity_range = "N/A"
+                
+                proximity_avg_display = f"{avg_proximity:.1f}" if avg_proximity is not None else "N/A"
+                proximity_std_display = f"{std_proximity:.1f}" if std_proximity is not None else "N/A"
                 
                 vendor_table_data.append({
                     'Vendor ID': f"Vendor {vendor_id}",
                     'Price ($)': f"${vendor.get('price', 0):.2f}",
+                    'Quantity Offered': vendor.get('quantity_offered', 100),
                     'Quality': vendor.get('quality', 'N/A'),
                     'Sustainability': vendor.get('sustainability', 'N/A'),
-                    'Avg Proximity': proximity_display,
+                    'Proximity Range': proximity_range,
+                    'Proximity Avg±Std': f"{proximity_avg_display}±{proximity_std_display}" if avg_proximity is not None else "N/A",
                     'Times Selected': selection_count,
                     'Selection %': f"{(selection_count / agents_with_selection * 100) if agents_with_selection > 0 else 0:.1f}%",
                     'Status': '✅ Selected' if selection_count > 0 else '❌ Not Selected'
@@ -355,29 +374,82 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 st.plotly_chart(sust_fig, use_container_width=True)
             
             with col_prox:
-                # Proximity comparison (average across all agents)
-                proximity_vals = []
-                for row in vendor_table_data:
-                    prox_str = row['Avg Proximity']
-                    if prox_str != "N/A":
-                        proximity_vals.append(float(prox_str))
-                    else:
-                        proximity_vals.append(0.0)
+                # Proximity range visualization (shows variation)
+                import plotly.graph_objects as go
                 
-                prox_fig = px.bar(
-                    vendor_df,
-                    x='Vendor ID',
-                    y=proximity_vals,
-                    title="Avg Proximity Score (0-100)",
-                    labels={'y': 'Proximity', 'x': ''}
+                # Extract min and max from proximity range
+                vendor_ids = []
+                min_vals = []
+                max_vals = []
+                avg_vals = []
+                
+                for row in vendor_table_data:
+                    vendor_ids.append(row['Vendor ID'])
+                    range_str = row['Proximity Range']
+                    if range_str != "N/A":
+                        min_val, max_val = map(float, range_str.split(' - '))
+                        min_vals.append(min_val)
+                        max_vals.append(max_val)
+                        # Extract average from "Avg±Std" format
+                        avg_str = row['Proximity Avg±Std'].split('±')[0]
+                        avg_vals.append(float(avg_str))
+                    else:
+                        min_vals.append(0.0)
+                        max_vals.append(0.0)
+                        avg_vals.append(0.0)
+                
+                # Create range plot
+                prox_fig = go.Figure()
+                
+                # Add range bars
+                for i in range(len(vendor_ids)):
+                    prox_fig.add_trace(go.Scatter(
+                        x=[vendor_ids[i], vendor_ids[i]],
+                        y=[min_vals[i], max_vals[i]],
+                        mode='lines',
+                        line=dict(color='lightblue', width=8),
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
+                
+                # Add average markers
+                prox_fig.add_trace(go.Scatter(
+                    x=vendor_ids,
+                    y=avg_vals,
+                    mode='markers',
+                    marker=dict(size=12, color='darkblue', symbol='diamond'),
+                    name='Average',
+                    hovertemplate='%{y:.1f}<extra></extra>'
+                ))
+                
+                prox_fig.update_layout(
+                    title="Proximity Range & Average (0-100)",
+                    xaxis_title="",
+                    yaxis_title="Proximity Score",
+                    showlegend=True,
+                    height=250,
+                    yaxis=dict(range=[0, 100])
                 )
-                prox_fig.update_layout(showlegend=False, height=250)
                 st.plotly_chart(prox_fig, use_container_width=True)
             
-            st.caption("""
-            💡 **Note**: Proximity scores vary by agent (each agent has different proximity to each vendor). 
-            The chart above shows the **average proximity** across all agents.
-            """)
+            # Show sample of individual agent-vendor proximities to prove randomization
+            st.markdown("---")
+            st.markdown("**🔍 Sample: Individual Agent-Vendor Proximity Scores (First 10 Agents)**")
+            st.caption("This table shows that each agent has DIFFERENT proximity to each vendor (proof of randomization):")
+            
+            if 'vendor_proximity_scores' in df.columns:
+                sample_data = []
+                for idx in range(min(10, len(df))):
+                    row_data = {'Agent': f"Agent {idx+1}"}
+                    scores = df.iloc[idx]['vendor_proximity_scores']
+                    if isinstance(scores, dict):
+                        for v_id in sorted(scores.keys(), key=lambda x: int(x)):
+                            row_data[f'Vendor {v_id}'] = f"{scores[v_id]:.1f}"
+                    sample_data.append(row_data)
+                
+                if sample_data:
+                    sample_df = pd.DataFrame(sample_data)
+                    st.dataframe(sample_df, use_container_width=True, hide_index=True)
         else:
             st.info("ℹ️ Vendor attribute data not available. This section shows detailed vendor data in multi-vendor simulations.")
     
@@ -388,10 +460,16 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         
         For each agent:
         1. **Get Vendor Pool**: Vendors have attributes:
-           - **Price**: From Page 1 configuration
+           - **Price**: Randomized within [vendor_price_min, vendor_price_max] from Page 1 configuration
+           - **Quantity Offered**: Random integer in [vendor_products_min, vendor_products_max] per period
            - **Quality**: Random integer in [1, 5] (generated once per vendor)
            - **Sustainability**: Random integer in [1, 5] (generated once per vendor)
-           - **Proximity**: Random value in [0, 100] (generated once per customer-vendor dyad)
+           - **Proximity**: Location-based score [0, 100] per customer-vendor dyad
+             - Each vendor has a distinct location (urban/suburban/rural)
+             - Urban vendors average ~75 (closer to most customers)
+             - Suburban vendors average ~50 (medium distance)
+             - Rural vendors average ~25 (farther from most customers)
+             - Individual customers have variation (±20) around vendor's location
         
         2. **Get Weights**: From vendor_choice_weights decision (configured on Page 2 Overview)
            - Example: {price: 0.5, quality: 0.5, proximity: 0.0, sustainability: 0.0}
@@ -413,6 +491,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         6. **Apply to All Requests**: All purchase requests from the same agent get the same vendorID
         
         **Result**: Deterministic selection based on weighted preferences
+        
+        **Note**: Quantity offered represents vendor capacity per period and can be used for supply constraints in future implementations.
         """)
     
     # Show configured weights (read-only)

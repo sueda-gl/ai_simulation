@@ -198,3 +198,29 @@ The `TraitEngine` is responsible for creating the population of synthetic agents
 ### 3.6. Decision Modules
 
 Each of the 13 decisions that an agent makes is encapsulated in its own Python module within the `src/decisions/` directory. This modular design is a key strength of the architecture, as it makes it easy to understand, modify, or add new decisions without affecting the rest of the system. Each decision function takes the current state of an agent as input and returns a dictionary with the outcomes of that decision, which are then used to update the agent's state for the subsequent decisions.
+
+### 3.7. Vendor Selection Logic
+
+Vendor selection is determined by a composite score calculated from four key attributes. For each agent, the simulation calculates a score for every available vendor and selects the one with the highest score. This process is deterministic, meaning an agent with a specific set of preferences will always choose the same vendor if the vendor attributes remain constant.
+
+The composite score is a weighted sum of the normalized values of the four attributes. Here is a breakdown of each attribute:
+
+#### 1. Price
+*   **Units**: Monetary units (e.g., dollars).
+*   **Scale**: A continuous numerical value defined by the "Vendor Price" settings on Page 1 of the simulation configuration.
+*   **Meaning**: This represents the cost of a product from a vendor. In the scoring calculation, **a lower price is better**. To achieve this, the price is normalized to a `[0, 1]` scale and then **inverted**. For example, in a market where prices range from $10 to $20, a vendor with a price of $10 would receive the highest score for this attribute (a score of 1.0), while a vendor with a price of $20 would receive the lowest score (0.0).
+
+#### 2. Quality
+*   **Units**: Points on a rating scale.
+*   **Scale**: An integer value between **1 and 5**.
+*   **Meaning**: This attribute represents the quality of the vendor's product. A score of **5 indicates the highest possible quality**, while a score of **1 indicates the lowest**. A higher quality score contributes positively to the vendor's overall composite score.
+
+#### 3. Sustainability
+*   **Units**: Points on a rating scale.
+*   **Scale**: An integer value between **1 and 5**.
+*   **Meaning**: This attribute reflects the vendor's commitment to sustainable practices. A score of **5 represents the highest level of sustainability**, while a score of **1 represents the lowest**. This attribute allows agents to favor vendors who are more environmentally or socially responsible.
+
+#### 4. Proximity
+*   **Units**: An abstract proximity score. This does not represent a physical distance (like meters or miles) but rather a measure of closeness or convenience.
+*   **Scale**: A numerical value between **0 and 100**.
+*   **Meaning**: This attribute represents how "close" a vendor is to a specific agent. Critically, **100 is the highest possible proximity (most proximate)**, and **0 is the lowest (most distant)**. A higher proximity score is always better and contributes positively to the composite score. Unlike price, this value is *not* inverted because a higher score already represents a better outcome from the agent's perspective.

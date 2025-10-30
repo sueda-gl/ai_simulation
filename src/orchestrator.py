@@ -78,6 +78,10 @@ class Orchestrator:
         rng_setup = np.random.default_rng(seed)
         self._initialize_vendors(rng_setup)
         
+        # Reset vendor capacity tracking for this simulation run
+        if 'vendor_remaining_capacity' in self.simulation_config:
+            del self.simulation_config['vendor_remaining_capacity']
+        
         # Create dedicated RNG for agent processing (independent of setup)
         # All modes use same seed here, ensuring identical agent RNG derivation
         rng_global = np.random.default_rng(seed + 1000000)
@@ -155,9 +159,10 @@ class Orchestrator:
         
         Creates vendors with:
         - vendor_id: Sequential ID (1, 2, 3, ...)
-        - price: From simulation_config (already set from Page 1)
+        - price: Randomized within [vendor_price_min, vendor_price_max]
         - quality: Random integer in [1, 5]
         - sustainability: Random integer in [1, 5]
+        - quantity_offered: Random integer in [vendor_products_min, vendor_products_max]
         
         Proximity is NOT generated here - it's customer-vendor specific
         and generated per agent in vendor_selection decision.
@@ -174,16 +179,24 @@ class Orchestrator:
         sim_config = self.simulation_config['simulation']
         num_vendors = sim_config.get('num_vendors', 1)
         
-        # Get vendor prices (should already be set from Page 1)
-        # Prices might be in different locations depending on configuration mode
-        vendor_prices = []
+        # Get price range for randomization
+        price_min = sim_config.get('vendor_price_min', 50.0)
+        price_max = sim_config.get('vendor_price_max', 150.0)
         
-        # Try to get prices from various sources
+        # Get quantity range for randomization
+        quantity_min = sim_config.get('vendor_products_min', 50)
+        quantity_max = sim_config.get('vendor_products_max', 150)
+        
+        # Get vendor prices (for backward compatibility if specified)
+        # If explicit vendor_prices are provided, use those instead of randomizing
+        vendor_prices = []
+        use_explicit_prices = False
+        
         if 'vendor_prices' in sim_config and sim_config['vendor_prices']:
             vendor_prices = sim_config['vendor_prices']
+            use_explicit_prices = True
         else:
-            # Generate default prices if not configured
-            # Use market_price as default for all vendors
+            # Will randomize prices, but need a list for function signature
             market_price = sim_config.get('market_price', 100.0)
             vendor_prices = [market_price] * num_vendors
         
@@ -191,8 +204,16 @@ class Orchestrator:
         while len(vendor_prices) < num_vendors:
             vendor_prices.append(sim_config.get('market_price', 100.0))
         
-        # Generate vendor attributes (quality, sustainability)
-        vendors = generate_vendor_attributes(num_vendors, vendor_prices, rng)
+        # Generate vendor attributes with randomization
+        vendors = generate_vendor_attributes(
+            num_vendors=num_vendors,
+            vendor_prices=vendor_prices,
+            rng=rng,
+            price_min=None if use_explicit_prices else price_min,  # Only randomize if not using explicit prices
+            price_max=None if use_explicit_prices else price_max,
+            quantity_min=quantity_min,
+            quantity_max=quantity_max
+        )
         
         # Store in simulation_config for access by decision modules
         self.simulation_config['vendors'] = vendors

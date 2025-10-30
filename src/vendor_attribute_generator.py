@@ -16,20 +16,29 @@ from typing import List, Dict, Optional
 
 
 def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float], 
-                               rng: np.random.Generator) -> List[Dict]:
+                               rng: np.random.Generator,
+                               price_min: float = None,
+                               price_max: float = None,
+                               quantity_min: int = None,
+                               quantity_max: int = None) -> List[Dict]:
     """
     Generate vendor attributes for vendor selection.
     
     According to professor's specification:
-    - Price: Already determined from Page 1 parameters (passed in)
+    - Price: Randomized within [price_min, price_max] if provided, otherwise use vendor_prices
     - Quality: Random integer in [1, 5] per vendor
     - Sustainability: Random integer in [1, 5] per vendor
+    - Quantity Offered: Random integer in [quantity_min, quantity_max] per vendor per period
     - Proximity: Generated per customer-vendor dyad (not here)
     
     Args:
         num_vendors: Number of vendors in the simulation
-        vendor_prices: List of vendor prices (from Page 1 configuration)
+        vendor_prices: List of vendor prices (from Page 1 configuration, used if price range not provided)
         rng: Random number generator for reproducibility
+        price_min: Minimum price for randomization (optional)
+        price_max: Maximum price for randomization (optional)
+        quantity_min: Minimum quantity offered per period (optional)
+        quantity_max: Maximum quantity offered per period (optional)
         
     Returns:
         List of vendor dictionaries with attributes
@@ -39,8 +48,13 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
     for i in range(num_vendors):
         vendor_id = i + 1  # Vendors numbered 1, 2, 3, ...
         
-        # Get price (from Page 1 parameters)
-        price = vendor_prices[i] if i < len(vendor_prices) else 100.0
+        # Generate price - randomize if range provided, otherwise use list
+        if price_min is not None and price_max is not None:
+            # Randomize price within range
+            price = float(rng.uniform(price_min, price_max))
+        else:
+            # Use provided price list
+            price = vendor_prices[i] if i < len(vendor_prices) else 100.0
         
         # Generate quality: random integer in [1, 5]
         quality = int(rng.integers(1, 6))  # 6 is exclusive, so generates 1-5
@@ -48,11 +62,18 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
         # Generate sustainability: random integer in [1, 5]  
         sustainability = int(rng.integers(1, 6))
         
+        # Generate quantity offered per period
+        if quantity_min is not None and quantity_max is not None:
+            quantity_offered = int(rng.integers(quantity_min, quantity_max + 1))  # +1 because upper is exclusive
+        else:
+            quantity_offered = 100  # Default quantity
+        
         vendor = {
             'vendor_id': vendor_id,
             'price': float(price),
             'quality': quality,
-            'sustainability': sustainability
+            'sustainability': sustainability,
+            'quantity_offered': quantity_offered
             # Note: proximity is NOT included here - it's customer-vendor specific
         }
         
@@ -66,10 +87,15 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
     """
     Generate proximity scores for a specific customer-vendor dyad.
     
-    According to professor's specification:
-    - Proximity: Random value in [0, 100]
-    - Fixed for each customer-vendor dyad (same agent always has same proximity to same vendor)
-    - Higher value means closer proximity
+    Vendors have different "location characteristics" (urban/suburban/rural):
+    - Urban vendors: Closer to most customers (higher average proximity ~75)
+    - Suburban vendors: Medium distance to customers (average proximity ~50)
+    - Rural vendors: Farther from most customers (lower average proximity ~25)
+    
+    Within each vendor's location distribution, there's customer-specific variation:
+    - Same agent always gets same proximity to same vendor (fixed dyad)
+    - Different agents get different proximities to same vendor
+    - But vendors maintain meaningfully different average proximity values
     
     Args:
         agent_id: Customer/agent ID
@@ -77,14 +103,45 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
         rng: Random number generator for this agent
         
     Returns:
-        Dictionary mapping vendor_id (as STRING) to proximity score
+        Dictionary mapping vendor_id (as STRING) to proximity score [0, 100]
         Note: Keys must be strings for Parquet serialization
     """
     proximity_scores = {}
     
+    # Assign each vendor a distinct "location characteristic"
+    # This ensures vendors have different average proximity values
+    # Distribute vendors across the proximity spectrum
+    
+    if num_vendors == 1:
+        # Single vendor: medium proximity
+        vendor_means = [50.0]
+    elif num_vendors == 2:
+        # Two vendors: one urban (close), one rural (far)
+        vendor_means = [70.0, 30.0]
+    elif num_vendors == 3:
+        # Three vendors: urban, suburban, rural
+        vendor_means = [75.0, 50.0, 25.0]
+    elif num_vendors == 4:
+        # Four vendors: distribute across spectrum
+        vendor_means = [80.0, 60.0, 40.0, 20.0]
+    elif num_vendors == 5:
+        # Five vendors: distribute evenly
+        vendor_means = [85.0, 65.0, 50.0, 35.0, 15.0]
+    else:
+        # Many vendors: distribute evenly across 15-85 range
+        vendor_means = [15 + (70 * i / (num_vendors - 1)) for i in range(num_vendors)]
+    
     for vendor_id in range(1, num_vendors + 1):
-        # Generate random proximity between 0 and 100
-        proximity = float(rng.uniform(0, 100))
+        vendor_idx = vendor_id - 1
+        mean_proximity = vendor_means[vendor_idx]
+        
+        # Generate proximity using normal distribution centered at vendor's location
+        # Standard deviation of 20 creates customer-specific variation
+        proximity = float(rng.normal(mean_proximity, 20))
+        
+        # Clip to [0, 100] range
+        proximity = np.clip(proximity, 0.0, 100.0)
+        
         # Use STRING key for Parquet compatibility
         proximity_scores[str(vendor_id)] = proximity
     

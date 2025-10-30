@@ -43,7 +43,8 @@ def render_global_parameters_readonly(decision_name=None):
             st.text(f"Base Seed: {st.session_state.base_seed}")
         
         st.text(f"Show Agent Details: {'Yes' if st.session_state.show_individual_agents else 'No'}")
-        st.text(f"Save Results: {'Yes' if st.session_state.save_results else 'No'}")
+        # COMMENTED OUT: Auto-save feature disabled
+        # st.text(f"Save Results: {'Yes' if st.session_state.save_results else 'No'}")
     
     with col2:
         # Market Parameters
@@ -65,6 +66,9 @@ def render_global_parameters_readonly(decision_name=None):
         if st.session_state.sim_params.apply_consumption_limits:
             limits_source = "Manual Entry" if st.session_state.sim_params.consumption_limits_source == "manual" else "Upload CSV"
             st.text(f"Configuration Source: {limits_source}")
+        else:
+            # Show artificial limit when consumption limits are disabled
+            st.text(f"Artificial Limit: {st.session_state.sim_params.max_purchases_per_term} items/term")
     
     with col3:
         # Income Distribution

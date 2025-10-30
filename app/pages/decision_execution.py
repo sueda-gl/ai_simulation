@@ -211,10 +211,10 @@ DEFAULT_DECISION_VALUES = {
         "type": "checkbox_selection",
         "default_selection": ["price", "quality", "proximity", "sustainability"],
         "parameters": {
-            "price": {"name": "Price", "description": "Cost of the product/service"},
-            "quality": {"name": "Quality", "description": "Quality rating and reviews"},
-            "proximity": {"name": "Proximity", "description": "Distance and convenience"},
-            "sustainability": {"name": "Sustainability", "description": "Environmental and social impact"}
+            "price": {"name": "Price", "description": "the product price offered to the customer"},
+            "quality": {"name": "Quality", "description": "product quality based on customer ratings"},
+            "proximity": {"name": "Proximity", "description": "the proximity of vendor to customer"},
+            "sustainability": {"name": "Sustainability", "description": "vendor sustainability rating"}
         }
     },
     "consumption_quantity": "RANDOM_WITHIN_LIMIT",  # Random within consumption limit

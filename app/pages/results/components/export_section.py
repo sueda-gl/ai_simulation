@@ -31,11 +31,11 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     )
     
     if is_donation_only_run:
-        columns_to_keep = [col for col in df.columns if 'donation' in col.lower() or col in trait_columns]
+        columns_to_keep = [col for col in df.columns if 'donation' in col.lower() or col in trait_columns or col == 'agent_id']
         df = df[columns_to_keep]
         if results_dict:
             results_dict = {
-                key: config_df[[col for col in config_df.columns if 'donation' in col.lower() or col in trait_columns]]
+                key: config_df[[col for col in config_df.columns if 'donation' in col.lower() or col in trait_columns or col == 'agent_id']]
                 for key, config_df in results_dict.items()
             }
 

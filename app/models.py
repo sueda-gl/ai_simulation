@@ -335,7 +335,7 @@ def initialize_session_state():
         'n_runs': 10,
         'base_seed': 42,
         'show_individual_agents': False,
-        'save_results': True,
+        'save_results': True,  # NOTE: Feature disabled in UI but kept for backward compatibility
         'simulation_running': False,
         'individual_results': {}  # New: store individual decision results
     }
