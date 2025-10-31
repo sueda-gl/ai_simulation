@@ -78,6 +78,14 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
         # Show the range notation
         st.success(f"**Bidding Range**: [€{min_bid_price:.2f}, €{max_bid_price:.2f})")
         st.caption("Range notation: [minimum, maximum)")
+        
+        # Show sample bids
+        import random
+        example_bids = []
+        for i in range(5):
+            random_bid = random.uniform(min_bid_price, max_bid_price)
+            example_bids.append(f"€{random_bid:.2f}")
+        st.write(f"Sample bids: {', '.join(example_bids)}")
     
     # Configuration section
     st.markdown("---")
@@ -85,20 +93,6 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
     
     st.info("**Default Behavior**: Random bid amount within the calculated range")
     st.caption("💡 Agents will select random bid values between the minimum and maximum bid prices")
-    
-    # Show example bids
-    if st.button("🎲 Show Example Bids", help="Generate sample bid values within the range"):
-        import random
-        st.markdown("**🎯 Example Bid Values:**")
-        
-        # Generate 5 random example bids
-        example_bids = []
-        for i in range(5):
-            random_bid = random.uniform(min_bid_price, max_bid_price)
-            example_bids.append(f"€{random_bid:.2f}")
-        
-        st.write(f"Sample bids: {', '.join(example_bids)}")
-        st.caption(f"All values fall within [€{min_bid_price:.2f}, €{max_bid_price:.2f})")
     
     # Current simulation results summary - REQUEST LEVEL
     st.markdown("---")

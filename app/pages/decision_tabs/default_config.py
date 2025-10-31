@@ -86,13 +86,15 @@ def render_probability_default_config(decision_name, default_value):
     
     # Session state key for this decision's probability
     prob_key = f"{decision_name}_default_probability_y"
+    # Guard: ensure key exists so the widget doesn't re-seed with stale value
+    if prob_key not in st.session_state:
+        st.session_state[prob_key] = default_probability
     
     # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
     # This ensures values persist even when widgets are conditionally rendered
     
     # Special handling for purchase_vs_bid - show it only applies to regular customers
     if decision_name == "purchase_vs_bid":
-        st.caption("⚠️ **Note**: This decision only applies to **REGULAR customers** (those who did not disclose income)")
         st.caption(description)
         
         # Show customer type distribution if simulation results exist
@@ -138,24 +140,27 @@ def render_probability_default_config(decision_name, default_value):
             slider_label = f"P({options[0]}) - Probability of {options[0]}"
             slider_help = f"Probability that agents will choose {options[0]} vs {options[1]}"
         
-        # Widget uses ONLY key parameter - Streamlit automatically syncs with session_state[prob_key]
+        # Key-only binding. Since defaults are initialized before rendering (see render_page2),
+        # the initial knob shows 50% and updates are immediate without one-rerun lag.
         probability = st.slider(
             slider_label,
             min_value=0.0,
             max_value=1.0,
-            value=st.session_state.get(prob_key, default_probability),
             step=0.01,
             help=slider_help,
-            key=prob_key  # Streamlit manages value automatically via session state
+            key=prob_key
         )
     
     with col2:
-        st.metric("Ratio", f"{probability:.0%} : {1-probability:.0%}")
+        # Read probability directly from session state for immediate updates
+        current_probability = st.session_state.get(prob_key, default_probability)
+        st.metric("Ratio", f"{current_probability:.0%} : {1-current_probability:.0%}")
         st.caption(f"{options[0]} : {options[1]}")
     
     with col3:
         st.metric("Default", f"{default_probability:.0%}")
-        if probability != default_probability:
+        # Use current probability from session state for comparison
+        if current_probability != default_probability:
             st.caption("⚙️ Modified")
         else:
             st.caption("✓ Default")
@@ -259,6 +264,9 @@ def render_numeric_default_config(decision_name, default_value):
     
     # Session state key for this decision's value
     value_key = f"{decision_name}_default_value"
+    # Guard: ensure key exists so widget binds to it directly
+    if value_key not in st.session_state:
+        st.session_state[value_key] = default_value
     
     # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
     # This ensures values persist even when widgets are conditionally rendered
@@ -268,32 +276,34 @@ def render_numeric_default_config(decision_name, default_value):
     with col1:
         # Determine if this is a percentage (between 0 and 1)
         if 0 <= default_value <= 1:
-            # Widget uses ONLY key parameter - Streamlit automatically manages the value
+            # Key-only binding; defaults were pre-seeded before widget creation
             value = st.slider(
                 "Default Value",
                 min_value=0.0,
                 max_value=1.0,
-                value=st.session_state.get(value_key, default_value),
                 step=0.01,
                 format="%.2f",
                 help="Set the default value for this decision",
-                key=value_key  # Streamlit manages value automatically via session state
+                key=value_key
             )
-            st.caption(f"Percentage: {value:.1%}")
+            # Read from session state for immediate updates
+            current_value = st.session_state.get(value_key, default_value)
+            st.caption(f"Percentage: {current_value:.1%}")
         else:
-            # Widget uses ONLY key parameter - Streamlit automatically manages the value
             value = st.number_input(
                 "Default Value",
                 min_value=0.0,
-                value=float(st.session_state.get(value_key, default_value)),
+                value=float(st.session_state[value_key]),
                 step=0.1,
                 help="Set the default value for this decision",
-                key=value_key  # Streamlit manages value automatically via session state
+                key=value_key
             )
     
     with col2:
-        st.metric("Current", f"{value:.2f}")
-        if value != default_value:
+        # Read from session state for immediate updates
+        current_value = st.session_state.get(value_key, default_value)
+        st.metric("Current", f"{current_value:.2f}")
+        if current_value != default_value:
             st.caption("⚙️ Modified")
         else:
             st.caption("✓ Default")
@@ -304,7 +314,7 @@ def render_placeholder_default_config(decision_name, default_value):
     
     descriptions = {
         "RANDOM_WITHIN_LIMIT": "Random value within consumption limit (computed per agent based on income category)",
-        "CALCULATED": "Calculated as: Consumption quantity ÷ Period duration",
+        "CALCULATED": "Calculated by spreading Consumption quantity over simulation term",
         "RANDOM_WITHIN_RANGE": "Random bid amount within bidding price range (computed based on market parameters)",
         "deterministic": "Deterministic selection based on highest weighted vendor-product score",
         "NA": "Not applicable - this decision is not relevant given other parameter choices"
@@ -314,7 +324,14 @@ def render_placeholder_default_config(decision_name, default_value):
     
     st.info(f"ℹ️ **Computed During Simulation**")
     st.caption(description)
-    st.caption("💡 No pre-configuration needed - this value is automatically calculated only for agents who ended up placing a bid")
+    
+    # Decision-specific captions
+    if decision_name in ["consumption_quantity", "consumption_frequency"]:
+        st.caption("💡 No pre-configuration needed - this value is automatically calculated for all agents")
+    elif decision_name == "bid_amount":
+        st.caption("💡 No pre-configuration needed - this value is automatically calculated only for agents who ended up placing a bid")
+    else:
+        st.caption("💡 No pre-configuration needed - this value is automatically calculated during simulation")
 
 
 def reset_all_default_parameters(unselected_decisions):

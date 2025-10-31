@@ -241,12 +241,16 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         **Consumption Quantity Default Logic:**
         
         1. **Income Category Assignment**: Each agent is assigned to an income category (1 to NFIC) based on:
-           - Category 1: Income ≤ discount threshold (lowest income, discount customers)
-           - Categories 2-NFIC: Income > threshold, distributed by percentile
+           - The income range is split into NFIC equal intervals
+           - All customers (discount, fixed, regular) are assigned to categories based on their income
+           - **No distinction by customer type** during category assignment
+           - Example: If NFIC=10 and range is [$0-$100k], Category 1 = [$0-$10k], Category 2 = [$10k-$20k], etc.
         
         2. **Consumption Limit**: 
-           - If consumption limits enabled: Uses category-specific limit
-           - If disabled: Uses `max_purchases_per_term` fallback
+           - **Discount customers**: Use consumption limit from Category 1 (lowest)
+           - **Regular customers**: Use consumption limit from Category 10 (highest)
+           - **Fixed customers**: Use consumption limit from their actual income category
+           - If limits disabled: Uses `max_purchases_per_term` fallback
         
         3. **Total Quantity**: Random integer uniformly distributed in [0, limit]
         
@@ -256,9 +260,10 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
            - Timestamps randomly distributed across term duration
         
         **Professor's Specification**: 
-        "The total quantity of items purchased during the term will be a random number 
-        between 0 and the corresponding consumption limit. Each purchase order is for 
-        1 item by default, and purchase requests are randomly spread during the term."
+        "The income range is split into equal intervals. All customers with income within 
+        the corresponding interval are assigned to it irrespective of their type. The total 
+        quantity is a random number between 0 and the consumption limit, with each purchase 
+        order for 1 item by default, randomly spread during the term."
         """)
     
     # Export section for consumption quantity / transactions

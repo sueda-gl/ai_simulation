@@ -23,93 +23,99 @@ from src.decisions.income_utils import get_agent_income, get_simulation_param
 
 def _assign_income_category(income: float, simulation_config: Optional[Dict]) -> int:
     """
-    Assign agent to a fixed income category (1 to NFIC) based on their income.
+    Assign agent to an income category (1 to N) based on their income.
     
-    Logic:
-    - If income <= discount_threshold: Category 1 (discount customers, lowest income)
-    - If income > threshold: Categories 2 to NFIC (fixed-price customers)
-      - Map uniformly across remaining categories based on income percentile
+    PROFESSOR'S SPECIFICATION:
+    - The income range is split into N equal intervals
+    - ALL customers (discount, fixed, regular) are assigned to categories based ONLY on income
+    - NO distinction by customer type during category assignment
+    - Customer type only affects which consumption limit applies (not which category)
     
-    This matches the CONSUMPTION_LIMITS_GUIDE.md specification:
-    - Category 1 = Lowest income (discount customers)
-    - Category 2-NFIC = Higher income levels (fixed-price customers)
+    Example with N=10 and income range [$0, $100,000]:
+        Category 1:  [$0,      $10,000)   - Lowest income
+        Category 2:  [$10,000, $20,000)
+        Category 3:  [$20,000, $30,000)
+        ...
+        Category 10: [$90,000, $100,000]  - Highest income
     
     Args:
-        income: Agent's annual income
-        simulation_config: Contains discount_income_threshold and num_fixed_categories
+        income: Agent's annual income (dollar amount)
+        simulation_config: Contains num_fixed_categories and distribution parameters
         
     Returns:
-        Income category number (1 to NFIC)
+        Income category number (1 to N, where N = num_fixed_categories)
     """
-    # Get Page 1 parameters using centralized helper
-    threshold = get_simulation_param(simulation_config, 'discount_income_threshold', 12500.0)
-    nfic = get_simulation_param(simulation_config, 'num_fixed_categories', 10)
-    nfic = max(1, int(nfic))  # Ensure at least 1 category
-    
-    # Category 1: Discount customers (income <= threshold)
-    if income <= threshold:
-        return 1
+    # Get number of income categories from Page 1
+    num_categories = get_simulation_param(simulation_config, 'num_fixed_categories', 10)
+    num_categories = max(1, int(num_categories))
     
     # If only 1 category exists, everyone goes there
-    if nfic == 1:
+    if num_categories == 1:
         return 1
     
-    # Categories 2-NFIC: Fixed-price customers
-    # Simple approach: distribute uniformly based on how far above threshold
-    # More sophisticated approach would use income distribution CDF, but for defaults
-    # we use a simple linear mapping
-    
-    # Get distribution bounds to normalize income
-    # Use the config max_income directly if available, otherwise use the income_max from Page 1
-    # This ensures consistency with the actual income generation range
+    # STEP 1: Determine the full income range (min to max)
+    # This depends on the distribution type configured on Page 1
     dist_type = get_simulation_param(simulation_config, 'income_distribution', 'lognormal')
     
-    # For all distributions, prefer the explicitly set income_max from Page 1
-    # This is the actual upper bound used for income generation
-    max_income = get_simulation_param(simulation_config, 'income_max', None)
+    # Get minimum income
+    if dist_type == 'lognormal':
+        min_income = get_simulation_param(simulation_config, 'lognormal_min', 0.0)
+    elif dist_type == 'generalised_gamma':
+        min_income = get_simulation_param(simulation_config, 'gg_min', 0.0)
+    elif dist_type == 'dagum':
+        min_income = get_simulation_param(simulation_config, 'dagum_min', 0.0)
+    else:
+        min_income = get_simulation_param(simulation_config, 'income_min', 0.0)
     
-    # If income_max is not set, fall back to distribution-specific estimates
-    if max_income is None:
-        if dist_type == 'lognormal':
-            max_income = get_simulation_param(simulation_config, 'lognormal_max', None)
-            if max_income is None:
-                # For lognormal, use more conservative estimate (mean + 2*std instead of 3*std)
-                # to better match actual population range
-                mu = get_simulation_param(simulation_config, 'lognormal_mu', 10.0)
-                sigma = get_simulation_param(simulation_config, 'lognormal_sigma', 0.5)
-                min_val = get_simulation_param(simulation_config, 'lognormal_min', 0.0)
-                mean = min_val + np.exp(mu + 0.5 * sigma**2)
-                std = np.sqrt((np.exp(sigma**2) - 1) * np.exp(2*mu + sigma**2))
-                max_income = mean + 2 * std
-        elif dist_type == 'generalised_gamma':
-            max_income = get_simulation_param(simulation_config, 'gg_max', None)
-            if max_income is None:
-                max_income = get_simulation_param(simulation_config, 'gg_lambda', 20000.0) * 2
-        elif dist_type == 'dagum':
-            max_income = get_simulation_param(simulation_config, 'dagum_max', None)
-            if max_income is None:
-                max_income = get_simulation_param(simulation_config, 'dagum_b', 25000.0) * 2
-        else:
-            # Default fallback
-            max_income = 100000.0
+    # Get maximum income
+    if dist_type == 'lognormal':
+        max_income = get_simulation_param(simulation_config, 'lognormal_max', None)
+        # If no max specified, estimate using mean + 3*std
+        if max_income is None:
+            mu = get_simulation_param(simulation_config, 'lognormal_mu', 10.0)
+            sigma = get_simulation_param(simulation_config, 'lognormal_sigma', 0.5)
+            mean = min_income + np.exp(mu + 0.5 * sigma**2)
+            std = np.sqrt((np.exp(sigma**2) - 1) * np.exp(2*mu + sigma**2))
+            max_income = mean + 3 * std
+    elif dist_type == 'generalised_gamma':
+        max_income = get_simulation_param(simulation_config, 'gg_max', None)
+        if max_income is None:
+            max_income = get_simulation_param(simulation_config, 'gg_lambda', 20000.0) * 3
+    elif dist_type == 'dagum':
+        max_income = get_simulation_param(simulation_config, 'dagum_max', None)
+        if max_income is None:
+            max_income = get_simulation_param(simulation_config, 'dagum_b', 25000.0) * 3
+    else:
+        max_income = get_simulation_param(simulation_config, 'income_max', 100000.0)
     
-    # Normalize income position within [threshold, max_income] range
-    if max_income <= threshold:
-        max_income = threshold * 2  # Safety fallback
+    # Safety check: ensure max > min
+    if max_income <= min_income:
+        max_income = min_income + 100000.0  # Default range
     
-    # Calculate position as fraction of range above threshold
-    position = (income - threshold) / (max_income - threshold)
-    position = np.clip(position, 0.0, 1.0)  # Ensure [0, 1]
+    # STEP 2: Calculate interval width
+    income_range = max_income - min_income
+    interval_width = income_range / num_categories
     
-    # Map to categories 2 through NFIC
-    num_categories_above_threshold = nfic - 1  # Categories 2, 3, ..., NFIC
-    category_index = int(np.floor(position * num_categories_above_threshold))
-    category = 2 + category_index
+    # STEP 3: Determine which interval the agent's income falls into
+    # Category i contains incomes in range [min + (i-1)*width, min + i*width)
+    # Special case: Category N includes the upper bound
     
-    # Ensure we don't exceed NFIC
-    category = min(category, nfic)
-    
-    return int(category)
+    if income <= min_income:
+        # Edge case: income at or below minimum → Category 1
+        return 1
+    elif income >= max_income:
+        # Edge case: income at or above maximum → Category N (highest)
+        return num_categories
+    else:
+        # Normal case: find which interval contains this income
+        position = (income - min_income) / income_range  # Fraction in [0, 1]
+        category_index = int(np.floor(position * num_categories))  # 0 to N-1
+        category = category_index + 1  # Convert to 1-based (1 to N)
+        
+        # Safety clamp to valid range
+        category = max(1, min(category, num_categories))
+        
+        return int(category)
 
 
 def consumption_quantity(agent_state: dict, params: dict, rng: np.random.Generator, 

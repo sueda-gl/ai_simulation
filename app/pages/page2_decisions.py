@@ -3,7 +3,7 @@
 Page 2: Decision-Specific Parameters for the Enhanced AI Agent Simulation.
 """
 import streamlit as st
-from app.models import ALL_DECISIONS
+from app.models import ALL_DECISIONS, initialize_session_state
 from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
@@ -105,6 +105,10 @@ def render_page2():
     """Render Page 2: Decision-Specific Parameters"""
     st.markdown('<h2 class="page-header">Page 2: Decision-Specific Parameters</h2>', unsafe_allow_html=True)
     
+    # Ensure all defaults are initialized BEFORE any widgets are created
+    # This guarantees sliders pick up session_state values on first render
+    initialize_session_state()
+    
     # Decision selection
     st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)
     
@@ -147,25 +151,28 @@ def render_page2():
         # Update manual selections for persistence
         st.session_state.page2_manual_selections = selected_decisions
     
-    # Store the final selected decisions
-    st.session_state.decision_params.selected_decisions = selected_decisions
+    # Store the final selected decisions (sorted in chronological order)
+    # Ensure decisions are always displayed in chronological execution order
+    selected_set = set(selected_decisions)
+    selected_decisions_ordered = [d for d in ALL_DECISIONS if d in selected_set]
+    st.session_state.decision_params.selected_decisions = selected_decisions_ordered
     
     # Show informational message based on selection state
-    if not selected_decisions:
+    if not selected_decisions_ordered:
         st.info("ℹ️ No decisions selected for custom configuration. You can run the complete simulation using default values for all decisions, or select specific decisions to customize their parameters.")
     
     # Create tabs - Overview tab is always present
-    if selected_decisions:
-        # Overview + decision-specific tabs
-        tab_names = ["📊 Overview"] + [f"🎯 {format_decision_title(d)}" for d in selected_decisions]
+    if selected_decisions_ordered:
+        # Overview + decision-specific tabs (in chronological order)
+        tab_names = ["📊 Overview"] + [f"🎯 {format_decision_title(d)}" for d in selected_decisions_ordered]
         tabs = st.tabs(tab_names)
         
         # Overview Tab
         with tabs[0]:
-            render_overview_tab(selected_decisions)
+            render_overview_tab(selected_decisions_ordered)
         
         # Decision-specific tabs
-        for i, decision in enumerate(selected_decisions):
+        for i, decision in enumerate(selected_decisions_ordered):
             with tabs[i + 1]:
                 render_decision_tab(decision)
     else:
@@ -174,7 +181,7 @@ def render_page2():
         
         # Overview Tab
         with tabs[0]:
-            render_overview_tab(selected_decisions)
+            render_overview_tab(selected_decisions_ordered)
     
     # Navigation
     render_navigation('page2')

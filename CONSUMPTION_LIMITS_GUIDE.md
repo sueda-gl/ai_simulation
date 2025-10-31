@@ -165,21 +165,43 @@ Total Income Distribution
 
 ### **Category Assignment Logic**
 
-**For Discount Customers:**
+**Step 1: Assign Income Category (ALL customers, regardless of type):**
 ```python
-if agent.income < discount_threshold:
-    customer_status = "Discount"
-    consumption_category = 1  # Always Category 1 (lowest)
-    consumption_limit = limits[category_1]
+# Income range is split into N equal intervals
+min_income = 0  # From distribution parameters
+max_income = 100000  # From distribution parameters
+interval_width = (max_income - min_income) / N
+
+# All agents assigned based purely on income amount
+if agent.income in [0, interval_width):
+    income_category = 1
+elif agent.income in [interval_width, 2*interval_width):
+    income_category = 2
+# ... and so on ...
+elif agent.income in [(N-1)*interval_width, max_income]:
+    income_category = N
 ```
 
-**For Fixed-Price Customers:**
+**Step 2: Determine Customer Type:**
 ```python
-if agent.income >= discount_threshold:
-    customer_status = "Fixed"
-    # Assign to category based on income percentile within fixed range
-    consumption_category = calculate_category(agent.income, NFIC)
-    consumption_limit = limits[consumption_category]
+# Based on disclosure decisions and threshold
+if agent.income < discount_threshold and disclosed_documents:
+    customer_type = "Discount"
+elif disclosed_income:
+    customer_type = "Fixed"
+else:
+    customer_type = "Regular"
+```
+
+**Step 3: Apply Consumption Limit (based on customer type):**
+```python
+# Customer type determines WHICH limit to use
+if customer_type == "Discount":
+    consumption_limit = limits[category_1]  # Lowest category
+elif customer_type == "Regular":
+    consumption_limit = limits[category_N]  # Highest category  
+elif customer_type == "Fixed":
+    consumption_limit = limits[income_category]  # Their actual category
 ```
 
 ---

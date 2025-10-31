@@ -1,12 +1,14 @@
 import streamlit as st
 import yaml
 from pathlib import Path
-from app.models import get_decision_global_parameters, get_all_global_parameters
+from app.models import get_decision_global_parameters, get_all_global_parameters, ALL_DECISIONS
 
 
 def render_parameter_applicability_summary():
     """Render parameter applicability summary for the run"""
-    selected_decisions = st.session_state.decision_params.selected_decisions
+    # Get selected decisions in chronological order
+    selected_set = set(st.session_state.decision_params.selected_decisions)
+    selected_decisions = [d for d in ALL_DECISIONS if d in selected_set]
     
     if selected_decisions:
         # Calculate overall applicability

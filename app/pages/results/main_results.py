@@ -91,8 +91,10 @@ def render_single_run_results():
         results_dict = st.session_state.simulation_results
         df = next(iter(results_dict.values())) if results_dict else pd.DataFrame()
         
-        # Only show decisions that were actually executed
-        executed_decisions = st.session_state.custom_decisions + st.session_state.default_decisions
+        # Only show decisions that were actually executed, in chronological order
+        # Use ALL_DECISIONS order to maintain chronological sequence
+        all_executed = set(st.session_state.custom_decisions + st.session_state.default_decisions)
+        executed_decisions = [d for d in ALL_DECISIONS if d in all_executed]
         
         # Don't use dropdown - show each decision individually
         use_dropdown = False

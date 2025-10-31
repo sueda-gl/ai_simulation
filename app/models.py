@@ -487,20 +487,22 @@ def get_all_global_parameters() -> set:
 
 
 # All available decisions list
+# NOTE: This order matches the chronological execution order in orchestrators
+# Decisions execute in this sequence (1-13)
 ALL_DECISIONS = [
-    "donation_default",
-    "disclose_income", 
-    "disclose_documents",
-    "rejected_transaction_defaults",
-    "vendor_choice_weights",
-    "consumption_quantity",
-    "consumption_frequency", 
-    "vendor_selection",
-    "purchase_vs_bid",
-    "bid_value",
-    "rejected_transaction_option",
-    "rejected_bid_value",
-    "final_donation_rate"
+    "disclose_income",               # 1
+    "disclose_documents",            # 2
+    "donation_default",              # 3
+    "rejected_transaction_defaults", # 4
+    "vendor_choice_weights",         # 5
+    "consumption_quantity",          # 6
+    "consumption_frequency",         # 7
+    "vendor_selection",              # 8
+    "purchase_vs_bid",               # 9 (deprecated - kept for backward compatibility)
+    "bid_value",                     # 10 (deprecated - kept for backward compatibility)
+    "rejected_transaction_option",   # 11
+    "rejected_bid_value",            # 12
+    "final_donation_rate"            # 13
 ]
 
 
