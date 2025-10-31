@@ -329,7 +329,7 @@ def render_page1():
                     st.markdown('<h4 class="subsection-header">📦 Products Configuration</h4>', unsafe_allow_html=True)
                     
                     vendor_products_min = st.number_input(
-                    "Min Products per Vendor",
+                    "Min Products per Vendor/Period",
                     min_value=1,
                     max_value=10000,
                     value=st.session_state.sim_params.vendor_products_min,
@@ -349,7 +349,7 @@ def render_page1():
                         st.warning(f"⚠️ Auto-adjusted: Max products was set to {st.session_state.sim_params.vendor_products_min} (cannot be below min products)")
                     
                     vendor_products_max = st.number_input(
-                    "Max Products per Vendor",
+                    "Max Products per Vendor/Period",
                     min_value=min_for_max_products,
                     max_value=10000,
                     value=current_max_products,
@@ -374,7 +374,7 @@ def render_page1():
                         st.warning(f"⚠️ Auto-adjusted: Average products was set to {st.session_state.sim_params.vendor_products_max} (cannot be above max products)")
                     
                     vendor_products_avg = st.number_input(
-                    "Average Products per Vendor",
+                    "Average Products per Vendor/Period",
                     min_value=min_products,
                     max_value=max_products,
                     value=current_avg_products,
