@@ -3,7 +3,7 @@
 Page 2: Decision-Specific Parameters for the Enhanced AI Agent Simulation.
 """
 import streamlit as st
-from app.models import ALL_DECISIONS, initialize_session_state
+from app.models import ALL_DECISIONS
 from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
@@ -11,11 +11,31 @@ from app.pages.decision_tabs.default_config import render_default_decisions_conf
 from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation
 
 
-def format_decision_title(decision_name):
-    """Format decision name for display, with special handling for specific decisions"""
+def format_decision_title(decision_name, include_number=False):
+    """Format decision name for display, with special handling for specific decisions
+    
+    Args:
+        decision_name: The decision name to format
+        include_number: If True, prepend decision number (e.g., "1. Decision Name")
+    
+    Returns:
+        Formatted decision title string
+    """
+    # Get decision number from ALL_DECISIONS
+    decision_number = None
+    if include_number and decision_name in ALL_DECISIONS:
+        decision_number = ALL_DECISIONS.index(decision_name) + 1
+    
+    # Format the title
     if decision_name == "purchase_vs_bid":
-        return "Purchase Now Vs Bid"
-    return decision_name.replace('_', ' ').title()
+        title = "Purchase Now Vs Bid"
+    else:
+        title = decision_name.replace('_', ' ').title()
+    
+    # Add number prefix if requested
+    if decision_number is not None:
+        return f"{decision_number}. {title}"
+    return title
 
 
 def render_overview_tab(selected_decisions):
@@ -105,10 +125,6 @@ def render_page2():
     """Render Page 2: Decision-Specific Parameters"""
     st.markdown('<h2 class="page-header">Page 2: Decision-Specific Parameters</h2>', unsafe_allow_html=True)
     
-    # Ensure all defaults are initialized BEFORE any widgets are created
-    # This guarantees sliders pick up session_state values on first render
-    initialize_session_state()
-    
     # Decision selection
     st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)
     
@@ -133,6 +149,7 @@ def render_page2():
             "Selected Decisions",
             ALL_DECISIONS,
             default=ALL_DECISIONS,
+            format_func=lambda d: format_decision_title(d, include_number=True),
             help="All decisions are selected",
             disabled=True
         )
@@ -144,6 +161,7 @@ def render_page2():
             "Select Decisions to Run",
             ALL_DECISIONS,
             default=st.session_state.page2_manual_selections,
+            format_func=lambda d: format_decision_title(d, include_number=True),
             key="page2_manual_multiselect",
             help="Select one or more decisions to run",
             placeholder="Choose decisions..."
@@ -163,8 +181,8 @@ def render_page2():
     
     # Create tabs - Overview tab is always present
     if selected_decisions_ordered:
-        # Overview + decision-specific tabs (in chronological order)
-        tab_names = ["📊 Overview"] + [f"🎯 {format_decision_title(d)}" for d in selected_decisions_ordered]
+        # Overview + decision-specific tabs (in chronological order with numbers)
+        tab_names = ["📊 Overview"] + [f"🎯 {format_decision_title(d, include_number=True)}" for d in selected_decisions_ordered]
         tabs = st.tabs(tab_names)
         
         # Overview Tab

@@ -46,12 +46,20 @@ def render_default_decisions_config(selected_decisions, all_decisions):
 
 def render_decision_default_config(decision_name):
     """Render configuration UI for a specific default decision"""
+    from app.models import ALL_DECISIONS
+    
+    # Get decision number
+    decision_number = ALL_DECISIONS.index(decision_name) + 1 if decision_name in ALL_DECISIONS else None
     
     # Special handling for purchase_vs_bid to show "Purchase Now" instead of "Purchase"
     if decision_name == "purchase_vs_bid":
         decision_title = "Purchase Now Vs Bid"
     else:
         decision_title = decision_name.replace('_', ' ').title()
+    
+    # Add number prefix
+    if decision_number is not None:
+        decision_title = f"{decision_number}. {decision_title}"
     
     default_value = DEFAULT_DECISION_VALUES.get(decision_name)
     
@@ -60,6 +68,9 @@ def render_decision_default_config(decision_name):
     # Handle different types of default decisions
     if isinstance(default_value, dict) and default_value.get("type") == "random_probability":
         render_probability_default_config(decision_name, default_value)
+    
+    elif isinstance(default_value, dict) and default_value.get("type") == "prioritized_selection":
+        render_prioritized_default_config(decision_name, default_value)
     
     elif isinstance(default_value, dict) and default_value.get("type") == "radio_selection":
         render_radio_default_config(decision_name, default_value)
@@ -86,9 +97,6 @@ def render_probability_default_config(decision_name, default_value):
     
     # Session state key for this decision's probability
     prob_key = f"{decision_name}_default_probability_y"
-    # Guard: ensure key exists so the widget doesn't re-seed with stale value
-    if prob_key not in st.session_state:
-        st.session_state[prob_key] = default_probability
     
     # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
     # This ensures values persist even when widgets are conditionally rendered
@@ -140,30 +148,135 @@ def render_probability_default_config(decision_name, default_value):
             slider_label = f"P({options[0]}) - Probability of {options[0]}"
             slider_help = f"Probability that agents will choose {options[0]} vs {options[1]}"
         
-        # Key-only binding. Since defaults are initialized before rendering (see render_page2),
-        # the initial knob shows 50% and updates are immediate without one-rerun lag.
+        # Widget uses ONLY key parameter - Streamlit automatically syncs with session_state[prob_key]
         probability = st.slider(
             slider_label,
             min_value=0.0,
             max_value=1.0,
+            value=st.session_state.get(prob_key, default_probability),
             step=0.01,
             help=slider_help,
-            key=prob_key
+            key=prob_key  # Streamlit manages value automatically via session state
         )
     
     with col2:
-        # Read probability directly from session state for immediate updates
-        current_probability = st.session_state.get(prob_key, default_probability)
-        st.metric("Ratio", f"{current_probability:.0%} : {1-current_probability:.0%}")
+        st.metric("Ratio", f"{probability:.1%} : {1-probability:.1%}")
         st.caption(f"{options[0]} : {options[1]}")
     
     with col3:
         st.metric("Default", f"{default_probability:.0%}")
-        # Use current probability from session state for comparison
-        if current_probability != default_probability:
+        if probability != default_probability:
             st.caption("⚙️ Modified")
         else:
             st.caption("✓ Default")
+
+
+def render_prioritized_default_config(decision_name, default_value):
+    """Render UI for prioritized selection default decisions"""
+    
+    options = default_value.get("options", [])
+    default_template = default_value.get("priority_template", ["forgo_transaction"])
+    description = default_value.get("description", "")
+    
+    # Session state key for this decision's priority template
+    template_key = f"{decision_name}_priority_template"
+    
+    # Initialize if not present
+    if template_key not in st.session_state:
+        st.session_state[template_key] = default_template
+    
+    # Create option names mapping
+    option_names = dict(options) if options else {}
+    option_codes = [opt[0] for opt in options]
+    
+    st.info(f"ℹ️ {description}")
+    
+    # UI for configuring priority list
+    st.markdown("**Configure Priority Template:**")
+    st.caption("Select options in priority order. Agents will try options in this sequence when transactions are rejected.")
+    
+    # Get current template
+    current_template = st.session_state.get(template_key, default_template)
+    
+    # Available options (not yet in template)
+    available_options = [opt for opt in option_codes if opt not in current_template]
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Display current priority list
+        st.markdown("**Current Priority List:**")
+        
+        if current_template:
+            for i, opt in enumerate(current_template, 1):
+                col_item, col_remove = st.columns([4, 1])
+                with col_item:
+                    st.text(f"{i}. {option_names.get(opt, opt)}")
+                with col_remove:
+                    if st.button("❌", key=f"{decision_name}_remove_{i}", help=f"Remove {opt}"):
+                        new_template = current_template.copy()
+                        new_template.remove(opt)
+                        st.session_state[template_key] = new_template
+                        st.rerun()
+        else:
+            st.caption("No options selected")
+        
+        # Add option selector
+        st.markdown("---")
+        st.markdown("**Add Option to List:**")
+        
+        if available_options:
+            selected_to_add = st.selectbox(
+                "Choose an option to add:",
+                options=[""] + available_options,
+                format_func=lambda x: "-- Select option --" if x == "" else option_names.get(x, x),
+                key=f"{decision_name}_add_selector"
+            )
+            
+            if selected_to_add and st.button("➕ Add to List", key=f"{decision_name}_add_btn"):
+                new_template = current_template.copy() if current_template else []
+                
+                # If adding forgo_transaction, ensure it goes to the end
+                if selected_to_add == "forgo_transaction":
+                    new_template.append(selected_to_add)
+                else:
+                    # Add before forgo_transaction if it exists, otherwise at the end
+                    if "forgo_transaction" in new_template:
+                        insert_pos = new_template.index("forgo_transaction")
+                        new_template.insert(insert_pos, selected_to_add)
+                    else:
+                        new_template.append(selected_to_add)
+                
+                st.session_state[template_key] = new_template
+                st.rerun()
+        else:
+            st.success("✅ All options are in the priority list")
+        
+        # Reset to default button
+        if st.button("🔄 Reset to Default", key=f"{decision_name}_reset"):
+            st.session_state[template_key] = default_template
+            st.rerun()
+    
+    with col2:
+        st.metric("Options in List", len(current_template))
+        st.metric("Available to Add", len(available_options))
+        
+        if current_template == default_template:
+            st.caption("✓ Default")
+        else:
+            st.caption("⚙️ Modified")
+        
+        # Validation
+        st.markdown("---")
+        st.markdown("**Validation:**")
+        
+        if "forgo_transaction" in current_template:
+            if current_template[-1] == "forgo_transaction":
+                st.success("✅ Option 5 is last")
+            else:
+                st.error("⚠️ Option 5 must be last!")
+        else:
+            st.info("ℹ️ Option 5 not in list")
 
 
 def render_radio_default_config(decision_name, default_value):
@@ -264,9 +377,6 @@ def render_numeric_default_config(decision_name, default_value):
     
     # Session state key for this decision's value
     value_key = f"{decision_name}_default_value"
-    # Guard: ensure key exists so widget binds to it directly
-    if value_key not in st.session_state:
-        st.session_state[value_key] = default_value
     
     # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
     # This ensures values persist even when widgets are conditionally rendered
@@ -276,34 +386,32 @@ def render_numeric_default_config(decision_name, default_value):
     with col1:
         # Determine if this is a percentage (between 0 and 1)
         if 0 <= default_value <= 1:
-            # Key-only binding; defaults were pre-seeded before widget creation
+            # Widget uses ONLY key parameter - Streamlit automatically manages the value
             value = st.slider(
                 "Default Value",
                 min_value=0.0,
                 max_value=1.0,
+                value=st.session_state.get(value_key, default_value),
                 step=0.01,
                 format="%.2f",
                 help="Set the default value for this decision",
-                key=value_key
+                key=value_key  # Streamlit manages value automatically via session state
             )
-            # Read from session state for immediate updates
-            current_value = st.session_state.get(value_key, default_value)
-            st.caption(f"Percentage: {current_value:.1%}")
+            st.caption(f"Percentage: {value:.1%}")
         else:
+            # Widget uses ONLY key parameter - Streamlit automatically manages the value
             value = st.number_input(
                 "Default Value",
                 min_value=0.0,
-                value=float(st.session_state[value_key]),
+                value=float(st.session_state.get(value_key, default_value)),
                 step=0.1,
                 help="Set the default value for this decision",
-                key=value_key
+                key=value_key  # Streamlit manages value automatically via session state
             )
     
     with col2:
-        # Read from session state for immediate updates
-        current_value = st.session_state.get(value_key, default_value)
-        st.metric("Current", f"{current_value:.2f}")
-        if current_value != default_value:
+        st.metric("Current", f"{value:.2f}")
+        if value != default_value:
             st.caption("⚙️ Modified")
         else:
             st.caption("✓ Default")
@@ -343,7 +451,8 @@ def reset_all_default_parameters(unselected_decisions):
             f"{decision_name}_default_probability_y",
             f"{decision_name}_default_selection",
             f"{decision_name}_default_params",
-            f"{decision_name}_default_value"
+            f"{decision_name}_default_value",
+            f"{decision_name}_priority_template"  # For prioritized selection
         ]
         
         for key in keys_to_clear:

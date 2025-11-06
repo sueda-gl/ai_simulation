@@ -6,6 +6,205 @@ Handles vendor_choice_weights and vendor_selection decisions.
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from datetime import datetime
+from io import BytesIO
+import numpy as np
+
+
+def _build_purchase_request_export(df, vendors_data):
+    """
+    Build purchase request-level export data from simulation results.
+    
+    Args:
+        df: DataFrame with simulation results
+        vendors_data: List of vendor dictionaries (or None if not available)
+    
+    Returns:
+        List of dicts with purchase request level data
+    """
+    purchase_request_records = []
+    
+    # Check if we have purchase_requests column
+    if 'purchase_requests' not in df.columns:
+        return []
+    
+    # Build vendor lookup dictionary for quick access
+    vendor_lookup = {}
+    if vendors_data:
+        for vendor in vendors_data:
+            vendor_id = vendor.get('vendor_id')
+            vendor_lookup[vendor_id] = vendor
+    
+    # Iterate through each agent
+    for idx, row in df.iterrows():
+        # Get agent-level data
+        agent_id = row.get('agent_id', idx + 1)
+        allowance_level = row.get('Assigned Allowance Level', np.nan)
+        group_experiment = row.get('Group_experiment', np.nan)
+        
+        # Get vendor proximity scores for this agent
+        proximity_scores = row.get('vendor_proximity_scores', {})
+        if not isinstance(proximity_scores, dict):
+            proximity_scores = {}
+        
+        # Get vendor choice weights for score calculation
+        vendor_weights = row.get('vendor_choice_weights', {})
+        if not isinstance(vendor_weights, dict):
+            vendor_weights = {
+                'price': 0.25,
+                'quality': 0.25,
+                'proximity': 0.25,
+                'sustainability': 0.25
+            }
+        
+        # Get purchase requests for this agent
+        purchase_requests = row.get('purchase_requests', [])
+        if not isinstance(purchase_requests, list):
+            continue
+        
+        # Process each purchase request
+        for req_idx, request in enumerate(purchase_requests):
+            if not isinstance(request, dict):
+                continue
+            
+            # Extract request data
+            transaction_id = request.get('transactionID', request.get('request_id', f"T{agent_id}_{req_idx+1}"))
+            vendor_id = request.get('vendorID', np.nan)
+            
+            # Get timestamp and convert to readable format
+            timestamp_hours = request.get('timestamp_hours', np.nan)
+            if not pd.isna(timestamp_hours):
+                # Convert hours to period (assuming 24 hours per period)
+                period = int(timestamp_hours // 24) + 1 if timestamp_hours >= 0 else np.nan
+                # Format as "Period X, Hour Y"
+                hour_in_period = timestamp_hours % 24 if timestamp_hours >= 0 else 0
+                request_datetime = f"Period {period}, Hour {hour_in_period:.1f}"
+            else:
+                request_datetime = request.get('requestDateTime', '')
+                period = request.get('period', np.nan)
+            
+            # Determine customer type from request or agent
+            customer_type = request.get('customer_type', request.get('customerType', 'Regular'))
+            # Capitalize first letter
+            if isinstance(customer_type, str):
+                customer_type = customer_type.capitalize()
+            
+            # Get vendor attributes
+            vendor_price = np.nan
+            vendor_quality = np.nan
+            vendor_sustainability = np.nan
+            vendor_proximity = np.nan
+            vendor_integrated_score = np.nan
+            
+            if not pd.isna(vendor_id) and vendor_id in vendor_lookup:
+                vendor = vendor_lookup[vendor_id]
+                vendor_price = vendor.get('price', np.nan)
+                vendor_quality = vendor.get('quality', np.nan)
+                vendor_sustainability = vendor.get('sustainability', np.nan)
+                
+                # Get proximity for this agent-vendor pair
+                vendor_proximity = proximity_scores.get(str(int(vendor_id)), np.nan)
+                
+                # Calculate vendor integrated score
+                if not pd.isna(vendor_price) and not pd.isna(vendor_quality) and \
+                   not pd.isna(vendor_sustainability) and not pd.isna(vendor_proximity):
+                    vendor_integrated_score = _calculate_vendor_score(
+                        vendor, vendor_weights, vendor_proximity, vendors_data
+                    )
+            
+            # Get transaction outcome
+            # Check multiple possible field names
+            transaction_completed = request.get('transactionCompleted', 
+                                               request.get('completed', 
+                                               request.get('transaction_completed', np.nan)))
+            if isinstance(transaction_completed, bool):
+                transaction_completed = 1 if transaction_completed else 0
+            elif pd.isna(transaction_completed):
+                # If not tracked, assume completed for now (can be updated later)
+                transaction_completed = np.nan
+            
+            # Get customer paid price (without donation)
+            # Try multiple field names, fallback to vendor price if available
+            customer_paid_price = request.get('pricePaid', 
+                                             request.get('price_paid', 
+                                             request.get('price', vendor_price)))
+            
+            # Build record
+            record = {
+                'Transaction ID': transaction_id,
+                'Agent ID': agent_id,
+                'Assigned Allowance Level': allowance_level,
+                'Group_experiment': group_experiment,
+                'Customer Type': customer_type,
+                'Request Date & Time': request_datetime,
+                'Period': period,
+                'Selected Vendor': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else np.nan,
+                'Vendor Price': vendor_price,
+                'Quality': vendor_quality,
+                'Sustainability': vendor_sustainability,
+                'Proximity': vendor_proximity,
+                'Vendor Integrated Score': vendor_integrated_score,
+                'Transaction Completed': transaction_completed,
+                'Customer Paid Price': customer_paid_price
+            }
+            
+            purchase_request_records.append(record)
+    
+    return purchase_request_records
+
+
+def _calculate_vendor_score(vendor, weights, proximity, all_vendors):
+    """
+    Calculate vendor integrated composite score.
+    
+    Args:
+        vendor: Vendor dict with attributes
+        weights: Dict of weights for each attribute
+        proximity: Proximity score for this agent-vendor pair
+        all_vendors: List of all vendors (for price normalization)
+    
+    Returns:
+        float: Composite score
+    """
+    # Get vendor attributes
+    price = vendor.get('price', 0)
+    quality = vendor.get('quality', 3)
+    sustainability = vendor.get('sustainability', 3)
+    
+    # Normalize attributes to [0, 1]
+    # Price: inverted normalization (lower price = higher score)
+    if all_vendors and len(all_vendors) > 0:
+        prices = [v.get('price', 0) for v in all_vendors]
+        min_price = min(prices)
+        max_price = max(prices)
+        if max_price > min_price:
+            norm_price = 1 - ((price - min_price) / (max_price - min_price))
+        else:
+            norm_price = 0.5
+    else:
+        norm_price = 0.5
+    
+    # Quality: [1, 5] -> [0, 1]
+    norm_quality = (quality - 1) / 4 if quality >= 1 else 0
+    
+    # Sustainability: [1, 5] -> [0, 1]
+    norm_sustainability = (sustainability - 1) / 4 if sustainability >= 1 else 0
+    
+    # Proximity: [0, 100] -> [0, 1]
+    norm_proximity = proximity / 100 if proximity >= 0 else 0
+    
+    # Calculate weighted composite score
+    w_price = weights.get('price', 0.25)
+    w_quality = weights.get('quality', 0.25)
+    w_proximity = weights.get('proximity', 0.25)
+    w_sustainability = weights.get('sustainability', 0.25)
+    
+    score = (w_price * norm_price + 
+             w_quality * norm_quality + 
+             w_proximity * norm_proximity + 
+             w_sustainability * norm_sustainability)
+    
+    return score
 
 
 def render_vendor_choice_weights(df, decision_name, decision_title, decision_data):
@@ -132,7 +331,7 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
                 color_discrete_sequence=px.colors.qualitative.Set3
             )
             fig.update_layout(showlegend=True, height=400)
-            st.plotly_chart(fig, use_container_width=True, key="vendor_choice_weights_chart")
+            st.plotly_chart(fig, use_container_width=True, key="vendor_choice_weights_chart", config={'displayModeBar': True, 'displaylogo': False})
             
             # Show summary
             st.markdown("**📋 Weight Summary:**")
@@ -150,39 +349,151 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
             st.markdown("\n".join(summary_text))
         else:
             st.info("Select parameters to see weight distribution")
+    
+    # Excel Export Section
+    st.markdown("---")
+    st.markdown("**💾 Export Vendor Choice Weights**")
+    
+    # Build export dataframe
+    export_data = []
+    
+    for idx, row in df.iterrows():
+        # Start with basic info
+        row_data = {}
+        
+        # Add Agent ID
+        if 'agent_id' in df.columns:
+            row_data['Agent ID'] = row['agent_id']
+        
+        # Add Assigned Allowance Level
+        if 'Assigned Allowance Level' in df.columns:
+            row_data['Assigned Allowance Level'] = row['Assigned Allowance Level']
+        
+        # Add Group_experiment
+        if 'Group_experiment' in df.columns:
+            row_data['Group_experiment'] = row['Group_experiment']
+        
+        # Extract weights from the decision_data (which is a dict)
+        weights = decision_data.iloc[idx]
+        
+        if isinstance(weights, dict):
+            # Add each weight as a numeric value (e.g., 0.25 instead of "25%")
+            row_data['Price'] = weights.get('price', 0.0)
+            row_data['Quality'] = weights.get('quality', 0.0)
+            row_data['Proximity'] = weights.get('proximity', 0.0)
+            row_data['Sustainability'] = weights.get('sustainability', 0.0)
+        else:
+            # Fallback if weights aren't in expected format
+            row_data['Price'] = 0.0
+            row_data['Quality'] = 0.0
+            row_data['Proximity'] = 0.0
+            row_data['Sustainability'] = 0.0
+        
+        export_data.append(row_data)
+    
+    if export_data:
+        export_df = pd.DataFrame(export_data)
+        
+        # Create Excel file
+        try:
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                export_df.to_excel(writer, index=False, sheet_name='Vendor Choice Weights')
+            
+            col_download, col_info = st.columns([1, 2])
+            
+            with col_download:
+                st.download_button(
+                    label="📊 Download Vendor Weights Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"vendor_choice_weights_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Download vendor choice weights with agent info and weight percentages (numeric format)"
+                )
+            
+            with col_info:
+                st.caption(f"📋 Export includes {len(export_df):,} agents with {len(export_df.columns)} columns")
+                st.caption(f"✅ Fields: Agent ID, Assigned Allowance Level, Group_experiment, Price, Quality, Proximity, Sustainability")
+        
+        except ImportError:
+            st.warning("⚠️ Excel export requires openpyxl package")
+        except Exception as e:
+            st.error(f"❌ Error creating Excel file: {str(e)}")
+    else:
+        st.warning("⚠️ No data available for export")
 
 
 def render_vendor_selection(df, decision_name, decision_title, decision_data):
     """Visualization for vendor_selection - shows vendor distribution and selection logic"""
     
-    # Overview metrics
-    col1, col2, col3, col4 = st.columns(4)
+    # Get vendor data to determine total vendors available
+    vendors_data = None
+    total_vendors_available = 0
+    
+    if hasattr(st.session_state, 'vendors') and st.session_state.vendors:
+        vendors_data = st.session_state.vendors
+        total_vendors_available = len(vendors_data)
+    elif 'simulation_results' in st.session_state:
+        results = st.session_state.simulation_results
+        if isinstance(results, dict):
+            vendors_data = results.get('vendors') or results.get('config', {}).get('vendors')
+            if vendors_data:
+                total_vendors_available = len(vendors_data)
+    
+    # Count unique vendors selected (excluding NaN)
+    vendor_counts = decision_data.dropna().value_counts()
+    num_vendors_selected = len(vendor_counts)
+    
+    # Calculate purchase request and transaction shares
+    total_purchase_requests = 0
+    total_transactions_completed = 0
+    
+    if 'purchase_requests' in df.columns:
+        for idx, row in df.iterrows():
+            requests = row.get('purchase_requests', [])
+            if isinstance(requests, list):
+                total_purchase_requests += len(requests)
+                # Count completed transactions
+                for req in requests:
+                    if isinstance(req, dict):
+                        completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
+                        if completed or completed == 1:
+                            total_transactions_completed += 1
+    
+    # Calculate average shares
+    avg_purchase_request_share = (100.0 / num_vendors_selected) if num_vendors_selected > 0 else 0
+    avg_transaction_share = (100.0 / num_vendors_selected) if num_vendors_selected > 0 else 0
+    
+    # Overview metrics - 6 columns
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
         st.metric("Total Agents", f"{len(decision_data):,}")
     
-    # Count unique vendors selected (excluding NaN)
-    vendor_counts = decision_data.dropna().value_counts()
-    
     with col2:
-        num_vendors_used = len(vendor_counts)
-        st.metric("Vendors Selected", f"{num_vendors_used}")
+        st.metric("Vendors Available", f"{total_vendors_available}", 
+                 help="Total number of vendors configured in the simulation")
     
     with col3:
-        if len(vendor_counts) > 0:
-            most_common_vendor = vendor_counts.idxmax()
-            most_common_count = vendor_counts.max()
-            st.metric("Most Popular Vendor", f"Vendor {int(most_common_vendor)}")
-        else:
-            st.metric("Most Popular Vendor", "N/A")
+        st.metric("Vendors Selected", f"{num_vendors_selected}",
+                 help="Number of vendors that were actually chosen by at least one agent")
     
     with col4:
         agents_with_selection = decision_data.notna().sum()
-        pct_with_selection = agents_with_selection / len(decision_data) * 100
-        st.metric("Agents with Selection", f"{pct_with_selection:.1f}%")
+        avg_agents_share = (100.0 / num_vendors_selected) if num_vendors_selected > 0 else 0
+        st.metric("Average Agents Share", f"{avg_agents_share:.1f}%",
+                 help="Average share of agents per vendor (100% ÷ vendors selected)")
+    
+    with col5:
+        st.metric("Average Purchase Requests Share", f"{avg_purchase_request_share:.1f}%",
+                 help="Average share of purchase requests per vendor (100% ÷ vendors selected)")
+    
+    with col6:
+        st.metric("Average Transaction Share", f"{avg_transaction_share:.1f}%",
+                 help="Average share of completed transactions per vendor (100% ÷ vendors selected)")
     
     # Check if only 1 vendor exists
-    if num_vendors_used == 1 and len(vendor_counts) == 1:
+    if num_vendors_selected == 1 and len(vendor_counts) == 1:
         st.info(f"""
         ℹ️ **Single Vendor Simulation**: Only 1 vendor was configured on Page 1, so all agents select that vendor.
         
@@ -199,13 +510,40 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     st.markdown("**📊 Vendor Selection Distribution:**")
     
     if len(vendor_counts) > 0:
+        # Sort vendor_counts by vendor ID (index) instead of by count
+        vendor_counts_sorted = vendor_counts.sort_index()
+        
+        # Count purchase requests and transactions per vendor
+        vendor_purchase_requests = {}
+        vendor_transactions = {}
+        
+        if 'purchase_requests' in df.columns:
+            for idx, row in df.iterrows():
+                requests = row.get('purchase_requests', [])
+                if isinstance(requests, list):
+                    for req in requests:
+                        if isinstance(req, dict):
+                            vendor_id = req.get('vendorID')
+                            if not pd.isna(vendor_id):
+                                # Count purchase request
+                                vendor_purchase_requests[vendor_id] = vendor_purchase_requests.get(vendor_id, 0) + 1
+                                
+                                # Count transaction if completed
+                                completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
+                                if completed or completed == 1:
+                                    vendor_transactions[vendor_id] = vendor_transactions.get(vendor_id, 0) + 1
+        
+        # Calculate totals for percentages
+        total_vendor_purchase_requests = sum(vendor_purchase_requests.values()) if vendor_purchase_requests else 0
+        total_vendor_transactions = sum(vendor_transactions.values()) if vendor_transactions else 0
+        
         col_plot, col_stats = st.columns([2, 1])
         
         with col_plot:
-            # Bar chart showing vendor distribution
+            # Bar chart showing vendor distribution (sorted by vendor ID)
             fig = px.bar(
-                x=[f"Vendor {int(vid)}" for vid in vendor_counts.index],
-                y=vendor_counts.values,
+                x=[f"Vendor {int(vid)}" for vid in vendor_counts_sorted.index],
+                y=vendor_counts_sorted.values,
                 title="Number of Agents Selecting Each Vendor",
                 labels={'x': 'Vendor', 'y': 'Number of Agents'}
             )
@@ -214,40 +552,203 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 xaxis_title="Vendor",
                 yaxis_title="Number of Agents"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
         
         with col_stats:
             st.markdown("**📈 Selection Breakdown:**")
-            breakdown_df = pd.DataFrame({
-                'Vendor': [f"Vendor {int(vid)}" for vid in vendor_counts.index],
-                'Agents': vendor_counts.values,
-                'Percentage': [f"{(count/agents_with_selection)*100:.1f}%" for count in vendor_counts.values]
-            })
+            
+            # Build detailed breakdown data
+            breakdown_data = []
+            for vid in vendor_counts_sorted.index:
+                agent_count = vendor_counts_sorted[vid]
+                pr_count = vendor_purchase_requests.get(vid, 0)
+                tx_count = vendor_transactions.get(vid, 0)
+                
+                breakdown_data.append({
+                    'Vendor': f"Vendor {int(vid)}",
+                    'Agents': int(agent_count),
+                    'Percentage Agents': f"{(agent_count/agents_with_selection)*100:.1f}%",
+                    'Purchase Requests': int(pr_count),
+                    'Percentage Purchase Requests': f"{(pr_count/total_vendor_purchase_requests)*100:.1f}%" if total_vendor_purchase_requests > 0 else "0.0%",
+                    'Transactions': int(tx_count),
+                    'Percentage Transactions': f"{(tx_count/total_vendor_transactions)*100:.1f}%" if total_vendor_transactions > 0 else "0.0%"
+                })
+            
+            breakdown_df = pd.DataFrame(breakdown_data)
             st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     else:
         st.info("No vendor selections found (agents may have 0 purchases)")
     
+    # Breakdown by Period
+    st.markdown("---")
+    st.markdown("**📅 Vendor Selection Breakdown by Period:**")
+    
+    if 'purchase_requests' in df.columns and len(vendor_counts) > 0:
+        # Collect data by period
+        period_data = {}  # {period: {vendor_id: {'agents': set(), 'requests': count, 'transactions': count}}}
+        
+        for idx, row in df.iterrows():
+            requests = row.get('purchase_requests', [])
+            agent_id = row.get('agent_id', idx + 1)
+            
+            if isinstance(requests, list):
+                for req in requests:
+                    if isinstance(req, dict):
+                        vendor_id = req.get('vendorID')
+                        
+                        # Get period from timestamp_hours or period field
+                        timestamp_hours = req.get('timestamp_hours', np.nan)
+                        if not pd.isna(timestamp_hours):
+                            period = int(timestamp_hours // 24) + 1 if timestamp_hours >= 0 else np.nan
+                        else:
+                            period = req.get('period', np.nan)
+                        
+                        if not pd.isna(vendor_id) and not pd.isna(period):
+                            # Initialize period if not exists
+                            if period not in period_data:
+                                period_data[period] = {}
+                            
+                            # Initialize vendor if not exists for this period
+                            if vendor_id not in period_data[period]:
+                                period_data[period][vendor_id] = {
+                                    'agents': set(),
+                                    'requests': 0,
+                                    'transactions': 0
+                                }
+                            
+                            # Add agent to set (for unique count)
+                            period_data[period][vendor_id]['agents'].add(agent_id)
+                            
+                            # Count purchase request
+                            period_data[period][vendor_id]['requests'] += 1
+                            
+                            # Count transaction if completed
+                            completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
+                            if completed or completed == 1:
+                                period_data[period][vendor_id]['transactions'] += 1
+        
+        if period_data:
+            # Sort periods
+            sorted_periods = sorted(period_data.keys())
+            
+            # Create tabs for each period
+            period_tabs = st.tabs([f"Period {int(p)}" for p in sorted_periods])
+            
+            for tab_idx, period in enumerate(sorted_periods):
+                with period_tabs[tab_idx]:
+                    # Get all vendors that appeared in this period
+                    period_vendors = period_data[period]
+                    
+                    # Calculate totals for this period
+                    total_agents_period = len(set().union(*[v['agents'] for v in period_vendors.values()]))
+                    total_requests_period = sum(v['requests'] for v in period_vendors.values())
+                    total_transactions_period = sum(v['transactions'] for v in period_vendors.values())
+                    
+                    # Build breakdown data for this period (sorted by vendor ID)
+                    period_breakdown_data = []
+                    for vid in sorted(period_vendors.keys()):
+                        vendor_stats = period_vendors[vid]
+                        agent_count = len(vendor_stats['agents'])
+                        request_count = vendor_stats['requests']
+                        transaction_count = vendor_stats['transactions']
+                        
+                        period_breakdown_data.append({
+                            'Vendor': f"Vendor {int(vid)}",
+                            'Agents': int(agent_count),
+                            'Percentage Agents': f"{(agent_count/total_agents_period)*100:.1f}%" if total_agents_period > 0 else "0.0%",
+                            'Purchase Requests': int(request_count),
+                            'Percentage Purchase Requests': f"{(request_count/total_requests_period)*100:.1f}%" if total_requests_period > 0 else "0.0%",
+                            'Transactions': int(transaction_count),
+                            'Percentage Transactions': f"{(transaction_count/total_transactions_period)*100:.1f}%" if total_transactions_period > 0 else "0.0%"
+                        })
+                    
+                    period_breakdown_df = pd.DataFrame(period_breakdown_data)
+                    
+                    # Show summary metrics
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Total Agents (Period)", f"{total_agents_period:,}")
+                    with col2:
+                        st.metric("Total Purchase Requests", f"{total_requests_period:,}")
+                    with col3:
+                        st.metric("Total Transactions", f"{total_transactions_period:,}")
+                    
+                    st.markdown("---")
+                    
+                    # Display table
+                    st.dataframe(period_breakdown_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No period data available in purchase requests")
+    else:
+        st.info("No purchase request data available for period breakdown")
+    
+    # Purchase Request Level Export
+    st.markdown("---")
+    st.markdown("**📊 Purchase Request Level Data Export**")
+    st.caption("Download detailed data for each purchase request with vendor attributes and transaction outcomes")
+    
+    # Try to get vendor data from multiple sources
+    vendors_for_export = None
+    if hasattr(st.session_state, 'vendors') and st.session_state.vendors:
+        vendors_for_export = st.session_state.vendors
+    elif 'simulation_results' in st.session_state:
+        results = st.session_state.simulation_results
+        if isinstance(results, dict):
+            vendors_for_export = results.get('vendors') or results.get('config', {}).get('vendors')
+    
+    # Build purchase request level data
+    purchase_request_data = _build_purchase_request_export(df, vendors_for_export)
+    
+    if purchase_request_data and len(purchase_request_data) > 0:
+        try:
+            # Create DataFrame
+            pr_df = pd.DataFrame(purchase_request_data)
+            
+            # Create Excel with multiple sheets
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                # Sheet 1: Total (all data)
+                pr_df.to_excel(writer, index=False, sheet_name='Total')
+                
+                # Additional sheets by Period
+                if 'Period' in pr_df.columns:
+                    periods = sorted(pr_df['Period'].unique())
+                    for period in periods:
+                        period_df = pr_df[pr_df['Period'] == period]
+                        sheet_name = f'Period {period}'
+                        period_df.to_excel(writer, index=False, sheet_name=sheet_name)
+            
+            col_download, col_info = st.columns([1, 2])
+            
+            with col_download:
+                st.download_button(
+                    label="📥 Download Purchase Requests Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"purchase_requests_detailed_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Download purchase request-level data with vendor attributes and outcomes"
+                )
+            
+            with col_info:
+                num_sheets = 1 + len(pr_df['Period'].unique()) if 'Period' in pr_df.columns else 1
+                st.caption(f"📋 Export includes {len(pr_df):,} purchase requests across {num_sheets} sheets")
+                st.caption(f"✅ Sheets: Total + {len(pr_df['Period'].unique())} Period sheets" if 'Period' in pr_df.columns else "✅ Sheet: Total")
+        
+        except ImportError:
+            st.warning("⚠️ Excel export requires openpyxl package")
+        except Exception as e:
+            st.error(f"❌ Error creating Excel file: {str(e)}")
+    else:
+        st.info("ℹ️ No purchase request data available for export")
+    
     # Vendor Data Section (only for multiple vendors)
-    if num_vendors_used > 1:
+    if num_vendors_selected > 1:
         st.markdown("---")
         st.markdown("**🏪 Vendor Data & Selection Analysis:**")
         st.caption("Understanding why certain vendors were selected or not selected")
         
-        # Try multiple ways to get vendor data
-        vendors_data = None
-        
-        # Method 1: Check session_state.vendors (generated during simulation)
-        if hasattr(st.session_state, 'vendors') and st.session_state.vendors:
-            vendors_data = st.session_state.vendors
-        
-        # Method 2: Check simulation_results
-        if not vendors_data and 'simulation_results' in st.session_state:
-            results = st.session_state.simulation_results
-            if isinstance(results, dict):
-                # Try different possible locations
-                vendors_data = results.get('vendors') or results.get('config', {}).get('vendors')
-        
-        # Method 3: Try to infer from DataFrame metadata if available
+        # Use vendors_data already retrieved at the beginning of the function
+        # If not available, try to get from DataFrame metadata
         if not vendors_data and hasattr(df, 'attrs') and 'vendors' in df.attrs:
             vendors_data = df.attrs['vendors']
         
@@ -275,7 +776,6 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                                 proximity_lists[vendor_key].append(float(proximity_value))
                     
                     # Calculate statistics
-                    import numpy as np
                     for vendor_key in proximity_lists:
                         scores = proximity_lists[vendor_key]
                         if len(scores) > 0:
@@ -285,31 +785,49 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                             max_proximity_per_vendor[vendor_id] = np.max(scores)
                             std_proximity_per_vendor[vendor_id] = np.std(scores)
             
+            # Calculate integrated scores for each vendor (average across all agents)
+            vendor_integrated_scores = {}
+            
+            if 'vendor_choice_weights' in df.columns and 'vendor_proximity_scores' in df.columns:
+                for vendor in vendors_data:
+                    vendor_id = vendor.get('vendor_id')
+                    scores = []
+                    
+                    # Calculate score for each agent
+                    for idx, row in df.iterrows():
+                        weights = row.get('vendor_choice_weights', {})
+                        proximity_scores = row.get('vendor_proximity_scores', {})
+                        
+                        if isinstance(weights, dict) and isinstance(proximity_scores, dict):
+                            proximity = proximity_scores.get(str(vendor_id), 50.0)
+                            score = _calculate_vendor_score(vendor, weights, proximity, vendors_data)
+                            scores.append(score)
+                    
+                    # Average score across all agents
+                    if scores:
+                        vendor_integrated_scores[vendor_id] = np.mean(scores)
+            
             # Create vendor comparison table
             vendor_table_data = []
             
             for idx, vendor in enumerate(vendors_data, 1):
                 vendor_id = vendor.get('vendor_id', idx)
                 
-                # Get selection count for this vendor
-                selection_count = 0
+                # Get counts for this vendor (from earlier calculations)
+                agent_count = 0
                 if vendor_id in vendor_counts.index:
-                    selection_count = int(vendor_counts[vendor_id])
+                    agent_count = int(vendor_counts[vendor_id])
+                
+                pr_count = vendor_purchase_requests.get(vendor_id, 0)
+                tx_count = vendor_transactions.get(vendor_id, 0)
                 
                 # Get proximity statistics for this vendor
                 avg_proximity = avg_proximity_per_vendor.get(vendor_id, None)
-                min_proximity = min_proximity_per_vendor.get(vendor_id, None)
-                max_proximity = max_proximity_per_vendor.get(vendor_id, None)
-                std_proximity = std_proximity_per_vendor.get(vendor_id, None)
-                
-                # Create proximity range display
-                if min_proximity is not None and max_proximity is not None:
-                    proximity_range = f"{min_proximity:.1f} - {max_proximity:.1f}"
-                else:
-                    proximity_range = "N/A"
-                
                 proximity_avg_display = f"{avg_proximity:.1f}" if avg_proximity is not None else "N/A"
-                proximity_std_display = f"{std_proximity:.1f}" if std_proximity is not None else "N/A"
+                
+                # Get integrated score
+                integrated_score = vendor_integrated_scores.get(vendor_id, None)
+                integrated_score_display = f"{integrated_score:.3f}" if integrated_score is not None else "N/A"
                 
                 vendor_table_data.append({
                     'Vendor ID': f"Vendor {vendor_id}",
@@ -317,11 +835,14 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     'Quantity Offered': vendor.get('quantity_offered', 100),
                     'Quality': vendor.get('quality', 'N/A'),
                     'Sustainability': vendor.get('sustainability', 'N/A'),
-                    'Proximity Range': proximity_range,
-                    'Proximity Avg±Std': f"{proximity_avg_display}±{proximity_std_display}" if avg_proximity is not None else "N/A",
-                    'Times Selected': selection_count,
-                    'Selection %': f"{(selection_count / agents_with_selection * 100) if agents_with_selection > 0 else 0:.1f}%",
-                    'Status': '✅ Selected' if selection_count > 0 else '❌ Not Selected'
+                    'Average Proximity': proximity_avg_display,
+                    'Integrated Score': integrated_score_display,
+                    'Agents': agent_count,
+                    '% Agents': f"{(agent_count / agents_with_selection * 100) if agents_with_selection > 0 else 0:.1f}%",
+                    'Purchase Requests': pr_count,
+                    '% Purchase Requests': f"{(pr_count / total_vendor_purchase_requests * 100) if total_vendor_purchase_requests > 0 else 0:.1f}%",
+                    'Transactions': tx_count,
+                    '% Transactions': f"{(tx_count / total_vendor_transactions * 100) if total_vendor_transactions > 0 else 0:.1f}%"
                 })
             
             vendor_df = pd.DataFrame(vendor_table_data)
@@ -333,19 +854,30 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             st.markdown("**📊 Vendor Attribute Comparison:**")
             
             col_price, col_quality = st.columns(2)
-            col_sust, col_prox = st.columns(2)
+            col_sust, col_integrated = st.columns(2)
             
             with col_price:
                 # Price comparison (inverted - lower is better)
+                # Normalize to 0-100 scale
+                prices = [float(p.replace('$', '').replace(',', '')) for p in vendor_df['Price ($)']]
+                min_price = min(prices) if prices else 0
+                max_price = max(prices) if prices else 100
+                
+                # Inverted normalization: lower price = higher score
+                if max_price > min_price:
+                    price_scores = [100 * (1 - (p - min_price) / (max_price - min_price)) for p in prices]
+                else:
+                    price_scores = [50.0] * len(prices)  # All same price
+                
                 price_fig = px.bar(
                     vendor_df,
                     x='Vendor ID',
-                    y=[100 - float(p.replace('$', '').replace(',', '')) for p in vendor_df['Price ($)']],
-                    title="Price Score (Higher = Lower Price)",
-                    labels={'y': 'Score (Inverted)', 'x': ''}
+                    y=price_scores,
+                    title="Price Score (0-100) (Higher = Lower Price)",
+                    labels={'y': 'Score', 'x': ''}
                 )
-                price_fig.update_layout(showlegend=False, height=250)
-                st.plotly_chart(price_fig, use_container_width=True)
+                price_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 100]))
+                st.plotly_chart(price_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
             
             with col_quality:
                 # Quality comparison
@@ -358,7 +890,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     labels={'y': 'Quality', 'x': ''}
                 )
                 qual_fig.update_layout(showlegend=False, height=250)
-                st.plotly_chart(qual_fig, use_container_width=True)
+                st.plotly_chart(qual_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
             
             with col_sust:
                 # Sustainability comparison
@@ -371,85 +903,87 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     labels={'y': 'Sustainability', 'x': ''}
                 )
                 sust_fig.update_layout(showlegend=False, height=250)
-                st.plotly_chart(sust_fig, use_container_width=True)
+                st.plotly_chart(sust_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
             
-            with col_prox:
-                # Proximity range visualization (shows variation)
-                import plotly.graph_objects as go
-                
-                # Extract min and max from proximity range
-                vendor_ids = []
-                min_vals = []
-                max_vals = []
-                avg_vals = []
-                
-                for row in vendor_table_data:
-                    vendor_ids.append(row['Vendor ID'])
-                    range_str = row['Proximity Range']
-                    if range_str != "N/A":
-                        min_val, max_val = map(float, range_str.split(' - '))
-                        min_vals.append(min_val)
-                        max_vals.append(max_val)
-                        # Extract average from "Avg±Std" format
-                        avg_str = row['Proximity Avg±Std'].split('±')[0]
-                        avg_vals.append(float(avg_str))
+            with col_integrated:
+                # Integrated Score comparison
+                integrated_vals = []
+                for val in vendor_df['Integrated Score']:
+                    if val != "N/A":
+                        integrated_vals.append(float(val))
                     else:
-                        min_vals.append(0.0)
-                        max_vals.append(0.0)
-                        avg_vals.append(0.0)
+                        integrated_vals.append(0.0)
                 
-                # Create range plot
-                prox_fig = go.Figure()
-                
-                # Add range bars
-                for i in range(len(vendor_ids)):
-                    prox_fig.add_trace(go.Scatter(
-                        x=[vendor_ids[i], vendor_ids[i]],
-                        y=[min_vals[i], max_vals[i]],
-                        mode='lines',
-                        line=dict(color='lightblue', width=8),
-                        showlegend=False,
-                        hoverinfo='skip'
-                    ))
-                
-                # Add average markers
-                prox_fig.add_trace(go.Scatter(
-                    x=vendor_ids,
-                    y=avg_vals,
-                    mode='markers',
-                    marker=dict(size=12, color='darkblue', symbol='diamond'),
-                    name='Average',
-                    hovertemplate='%{y:.1f}<extra></extra>'
-                ))
-                
-                prox_fig.update_layout(
-                    title="Proximity Range & Average (0-100)",
-                    xaxis_title="",
-                    yaxis_title="Proximity Score",
-                    showlegend=True,
-                    height=250,
-                    yaxis=dict(range=[0, 100])
+                int_fig = px.bar(
+                    vendor_df,
+                    x='Vendor ID',
+                    y=integrated_vals,
+                    title="Integrated Score (0-1)",
+                    labels={'y': 'Score', 'x': ''}
                 )
-                st.plotly_chart(prox_fig, use_container_width=True)
+                int_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 1]))
+                st.plotly_chart(int_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
             
-            # Show sample of individual agent-vendor proximities to prove randomization
+            # Agent-Vendor Proximity Matrix Download
             st.markdown("---")
-            st.markdown("**🔍 Sample: Individual Agent-Vendor Proximity Scores (First 10 Agents)**")
-            st.caption("This table shows that each agent has DIFFERENT proximity to each vendor (proof of randomization):")
+            st.markdown("**🔍 Agent-Vendor Proximity Score Matrix**")
+            st.caption("Download the complete matrix showing each agent's proximity to each vendor")
             
             if 'vendor_proximity_scores' in df.columns:
-                sample_data = []
-                for idx in range(min(10, len(df))):
-                    row_data = {'Agent': f"Agent {idx+1}"}
+                # Build complete proximity matrix
+                proximity_matrix_data = []
+                for idx in range(len(df)):
+                    row_data = {}
+                    
+                    # Add Agent ID
+                    if 'agent_id' in df.columns:
+                        row_data['Agent ID'] = df.iloc[idx]['agent_id']
+                    else:
+                        row_data['Agent ID'] = idx + 1
+                    
+                    # Add Assigned Allowance Level if available
+                    if 'Assigned Allowance Level' in df.columns:
+                        row_data['Assigned Allowance Level'] = df.iloc[idx]['Assigned Allowance Level']
+                    
+                    # Add Group_experiment if available
+                    if 'Group_experiment' in df.columns:
+                        row_data['Group_experiment'] = df.iloc[idx]['Group_experiment']
+                    
+                    # Add proximity scores for each vendor
                     scores = df.iloc[idx]['vendor_proximity_scores']
                     if isinstance(scores, dict):
                         for v_id in sorted(scores.keys(), key=lambda x: int(x)):
-                            row_data[f'Vendor {v_id}'] = f"{scores[v_id]:.1f}"
-                    sample_data.append(row_data)
+                            row_data[f'Vendor {v_id} Proximity'] = scores[v_id]
+                    
+                    proximity_matrix_data.append(row_data)
                 
-                if sample_data:
-                    sample_df = pd.DataFrame(sample_data)
-                    st.dataframe(sample_df, use_container_width=True, hide_index=True)
+                if proximity_matrix_data:
+                    proximity_df = pd.DataFrame(proximity_matrix_data)
+                    
+                    # Create Excel file for proximity matrix
+                    try:
+                        buffer = BytesIO()
+                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            proximity_df.to_excel(writer, index=False, sheet_name='Agent-Vendor Proximity')
+                        
+                        col_download, col_info = st.columns([1, 2])
+                        
+                        with col_download:
+                            st.download_button(
+                                label="📊 Download Proximity Matrix Excel",
+                                data=buffer.getvalue(),
+                                file_name=f"agent_vendor_proximity_matrix_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                help="Download complete Agent-Vendor proximity score matrix"
+                            )
+                        
+                        with col_info:
+                            st.caption(f"📋 Matrix includes {len(proximity_df):,} agents × {len(vendors_data)} vendors = {len(proximity_df) * len(vendors_data):,} proximity scores")
+                    
+                    except ImportError:
+                        st.warning("⚠️ Excel export requires openpyxl package")
+                    except Exception as e:
+                        st.error(f"❌ Error creating Excel file: {str(e)}")
         else:
             st.info("ℹ️ Vendor attribute data not available. This section shows detailed vendor data in multi-vendor simulations.")
     
@@ -525,7 +1059,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         names=[k.title() for k in active_weights.keys()],
                         title="Weight Distribution"
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
                 elif len(active_weights) == 1:
                     st.info(f"Single factor: {list(active_weights.keys())[0].title()}")
         

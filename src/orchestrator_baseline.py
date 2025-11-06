@@ -77,12 +77,17 @@ class OrchestratorBaseline:
                 print(f"Warning: Could not load decision module {decision_name}: {e}")
     
     def run_simulation(self, n_agents: int, seed: int, 
-                      single_decision: Optional[Union[str, List[str]]] = None) -> pd.DataFrame:
+                      single_decision: Optional[Union[str, List[str]]] = None,
+                      agents_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Run simulation for n_agents using original participants with no stochastic component.
         
         If n_agents <= 280, use first n_agents participants.
         If n_agents > 280, bootstrap sample from the 280 participants.
+        
+        Args:
+            agents_df: Optional pre-loaded agents DataFrame. If provided, skip loading participants.
+                      This ensures the same agents are used across multiple configurations.
         """
         # Determine which decisions to run
         if single_decision:
@@ -110,14 +115,16 @@ class OrchestratorBaseline:
         if 'vendor_remaining_capacity' in self.simulation_config:
             del self.simulation_config['vendor_remaining_capacity']
         
-        if n_agents <= len(self.original_data):
-            # Use first n_agents participants
-            agents_df = self.original_data.iloc[:n_agents].copy()
-        else:
-            # Bootstrap sample to reach n_agents using setup RNG
-            indices = rng_setup.choice(len(self.original_data), size=n_agents, replace=True)
-            agents_df = self.original_data.iloc[indices].copy()
-            agents_df.index = range(len(agents_df))  # Reset index
+        # Load/sample agents if not provided
+        if agents_df is None:
+            if n_agents <= len(self.original_data):
+                # Use first n_agents participants
+                agents_df = self.original_data.iloc[:n_agents].copy()
+            else:
+                # Bootstrap sample to reach n_agents using setup RNG
+                indices = rng_setup.choice(len(self.original_data), size=n_agents, replace=True)
+                agents_df = self.original_data.iloc[indices].copy()
+                agents_df.index = range(len(agents_df))  # Reset index
         
         # Create dedicated RNG for agent processing (independent of setup)
         # All modes use same seed here, ensuring identical agent RNG derivation

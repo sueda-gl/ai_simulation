@@ -9,11 +9,33 @@ from app.simulation import run_simulation_from_sidebar
 from app.models import ALL_DECISIONS
 
 
-def format_decision_title(decision_name):
-    """Format decision name for display, with special handling for specific decisions"""
+def format_decision_title(decision_name, include_number=False):
+    """Format decision name for display, with special handling for specific decisions
+    
+    Args:
+        decision_name: The decision name to format
+        include_number: If True, prepend decision number (e.g., "1. Decision Name")
+    
+    Returns:
+        Formatted decision title string
+    """
+    from app.models import ALL_DECISIONS
+    
+    # Get decision number from ALL_DECISIONS
+    decision_number = None
+    if include_number and decision_name in ALL_DECISIONS:
+        decision_number = ALL_DECISIONS.index(decision_name) + 1
+    
+    # Format the title
     if decision_name == "purchase_vs_bid":
-        return "Purchase Now Vs Bid"
-    return decision_name.replace('_', ' ').title()
+        title = "Purchase Now Vs Bid"
+    else:
+        title = decision_name.replace('_', ' ').title()
+    
+    # Add number prefix if requested
+    if decision_number is not None:
+        return f"{decision_number}. {title}"
+    return title
 
 
 def can_run_complete_simulation():
@@ -116,12 +138,12 @@ def render_simulation_buttons(decision_name, selected_decisions):
                 for i, dec in enumerate(selected_decisions, 1):
                     icon = "🎯" if dec == decision_name else "✓"
                     label = " **(current tab)**" if dec == decision_name else ""
-                    st.caption(f"{i}. {icon} {format_decision_title(dec)}{label}")
+                    st.caption(f"{icon} {format_decision_title(dec, include_number=True)}{label}")
             
             if len(unselected_decisions) > 0:
                 st.markdown(f"\n**🔧 Default Values ({len(unselected_decisions)} decisions):**")
                 for i, dec in enumerate(unselected_decisions, 1):
-                    st.caption(f"{i}. {format_decision_title(dec)}")
+                    st.caption(f"{format_decision_title(dec, include_number=True)}")
         
         # Check if complete simulation can run (validation for multiple configurations)
         can_run, reason, config_count = can_run_complete_simulation()
@@ -197,15 +219,16 @@ DEFAULT_DECISION_VALUES = {
         "description": "Probability of disclosing documents (applies only to agents qualified for discount: income < threshold)"
     },
     "rejected_transaction_defaults": {
-        "type": "radio_selection",
-        "default_option": "forgo_transaction",
+        "type": "prioritized_selection",
+        "priority_template": ["forgo_transaction"],  # Default: all agents use Option 5 only
         "options": [
             ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
             ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"), 
             ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"),
             ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
             ("forgo_transaction", "Option 5: Forgo the purchase request")
-        ]
+        ],
+        "description": "Each agent gets a prioritized list. If Option 5 is included, it must be last."
     },
     "vendor_choice_weights": {
         "type": "checkbox_selection",
@@ -298,6 +321,18 @@ def get_actual_default_value(decision_name, sim_params=None):
             return options[0]  # First option (Y or purchase)
         else:
             return options[1]  # Second option (N or bid)
+    
+    # Handle prioritized selection decisions (rejected_transaction_defaults)
+    elif isinstance(base_value, dict) and base_value.get("type") == "prioritized_selection":
+        # Priority 1: Check for configured priority template from Overview tab
+        pre_config_key = f"{decision_name}_priority_template"
+        
+        # Priority 2: Use hard-coded default template
+        priority_template = st.session_state.get(
+            pre_config_key,
+            base_value.get("priority_template", ["forgo_transaction"])
+        )
+        return priority_template
     
     # Handle radio selection decisions (rejected transaction options)
     elif isinstance(base_value, dict) and base_value.get("type") == "radio_selection":

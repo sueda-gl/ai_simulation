@@ -42,11 +42,11 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             x=decision_name,
             nbins=min(30, int(decision_data.max()) + 1),
             title="Distribution of Consumption Quantities",
-            labels={decision_name: 'Items per Term', 'count': 'Number of Agents'}
+            labels={decision_name: 'Items per Period', 'count': 'Number of Agents'}
         )
         fig.update_layout(
             showlegend=False,
-            xaxis_title="Items Purchased per Term",
+            xaxis_title="Items Purchased per Period",
             yaxis_title="Number of Agents"
         )
         st.plotly_chart(fig, use_container_width=True)
@@ -54,9 +54,16 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
     with col_stats:
         st.markdown("**📈 Statistics**")
         stats = decision_data.describe()
+        
+        # Get number of periods from simulation config
+        if hasattr(st.session_state, 'sim_params'):
+            periods = st.session_state.sim_params.periods
+        else:
+            periods = 15  # default
+        
         stats_df = pd.DataFrame({
             'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-            'Value': [
+            'Value per Term': [
                 f"{stats['mean']:.2f}",
                 f"{stats['std']:.2f}",
                 f"{int(stats['min'])}",
@@ -64,9 +71,192 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                 f"{stats['50%']:.2f}",
                 f"{stats['25%']:.2f}",
                 f"{stats['75%']:.2f}"
+            ],
+            'Value per Period': [
+                f"{stats['mean']/periods:.2f}",
+                f"{stats['std']/periods:.2f}",
+                f"{int(stats['min'])/periods:.2f}",
+                f"{int(stats['max'])/periods:.2f}",
+                f"{stats['50%']/periods:.2f}",
+                f"{stats['25%']/periods:.2f}",
+                f"{stats['75%']/periods:.2f}"
             ]
         })
         st.dataframe(stats_df, use_container_width=True, hide_index=True)
+    
+    # Customer Type Breakdown - Purchases by customer type
+    if 'purchase_requests' in df.columns:
+        st.markdown("---")
+        st.markdown("**🎯 Purchases by Customer Type**")
+        st.caption("Distribution of total purchases across Regular, Fixed, and Discount customers")
+        
+        # Extract customer type from purchase_requests
+        customer_type_counts = {'Regular': 0, 'Fixed': 0, 'Discount': 0}
+        
+        for idx, row in df.iterrows():
+            purchase_requests = row.get('purchase_requests', [])
+            if isinstance(purchase_requests, list):
+                for req in purchase_requests:
+                    if isinstance(req, dict):
+                        customer_type = req.get('customer_type', 'regular')
+                        # Normalize to title case
+                        if isinstance(customer_type, str):
+                            customer_type = customer_type.capitalize()
+                        
+                        if customer_type in customer_type_counts:
+                            customer_type_counts[customer_type] += 1
+        
+        total_purchases_by_type = sum(customer_type_counts.values())
+        
+        if total_purchases_by_type > 0:
+            col_pie, col_stats_table = st.columns([2, 1])
+            
+            with col_pie:
+                # Create pie chart
+                pie_data = pd.DataFrame({
+                    'Customer Type': list(customer_type_counts.keys()),
+                    'Purchases': list(customer_type_counts.values())
+                })
+                
+                # Filter out zero values for cleaner pie chart
+                pie_data = pie_data[pie_data['Purchases'] > 0]
+                
+                fig_pie = px.pie(
+                    pie_data,
+                    values='Purchases',
+                    names='Customer Type',
+                    title="Purchase Distribution by Customer Type",
+                    color='Customer Type',
+                    color_discrete_map={
+                        'Regular': '#1f77b4',
+                        'Fixed': '#ff7f0e',
+                        'Discount': '#2ca02c'
+                    }
+                )
+                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            with col_stats_table:
+                st.markdown("**📊 Statistics**")
+                
+                # Create statistics table
+                type_stats = []
+                for ctype, count in customer_type_counts.items():
+                    percentage = (count / total_purchases_by_type * 100) if total_purchases_by_type > 0 else 0
+                    type_stats.append({
+                        'Customer Type': ctype,
+                        'Purchases': f"{count:,}",
+                        'Percentage': f"{percentage:.1f}%"
+                    })
+                
+                # Add total row
+                type_stats.append({
+                    'Customer Type': 'TOTAL',
+                    'Purchases': f"{total_purchases_by_type:,}",
+                    'Percentage': '100.0%'
+                })
+                
+                type_stats_df = pd.DataFrame(type_stats)
+                st.dataframe(type_stats_df, use_container_width=True, hide_index=True)
+            
+            # Now create three sub-sections, one for each customer type
+            st.markdown("---")
+            st.markdown("**📊 Detailed Analysis by Customer Type**")
+            st.caption("Consumption quantity distribution and statistics for each customer type")
+            
+            # Get number of periods for per-period calculations
+            if hasattr(st.session_state, 'sim_params'):
+                periods = st.session_state.sim_params.periods
+            else:
+                periods = 15  # default
+            
+            # Helper function to get consumption quantities for a specific customer type
+            def get_quantities_by_customer_type(df, target_type):
+                """Extract consumption quantities for agents of a specific customer type"""
+                quantities = []
+                for idx, row in df.iterrows():
+                    purchase_requests = row.get('purchase_requests', [])
+                    if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
+                        # Check customer type from first request (all requests have same customer type)
+                        first_req = purchase_requests[0]
+                        if isinstance(first_req, dict):
+                            customer_type = first_req.get('customer_type', 'regular')
+                            if isinstance(customer_type, str):
+                                customer_type = customer_type.capitalize()
+                            
+                            if customer_type == target_type:
+                                # Add this agent's consumption quantity
+                                qty = row.get('consumption_quantity', 0)
+                                quantities.append(qty)
+                
+                return pd.Series(quantities) if quantities else pd.Series([0])
+            
+            # Create three sub-sections
+            customer_types_to_analyze = ['Regular', 'Fixed', 'Discount']
+            icons = {'Regular': '🔵', 'Fixed': '🟠', 'Discount': '🟢'}
+            
+            for ctype in customer_types_to_analyze:
+                if customer_type_counts.get(ctype, 0) > 0:  # Only show if there are customers of this type
+                    st.markdown(f"### {icons[ctype]} {ctype} Customers")
+                    
+                    # Get quantities for this customer type
+                    type_quantities = get_quantities_by_customer_type(df, ctype)
+                    
+                    if len(type_quantities) > 0 and type_quantities.sum() > 0:
+                        # Create two columns: plot and stats
+                        col_plot_type, col_stats_type = st.columns([2, 1])
+                        
+                        with col_plot_type:
+                            # Create histogram for this customer type
+                            type_df = pd.DataFrame({decision_name: type_quantities})
+                            
+                            fig_type = px.histogram(
+                                type_df,
+                                x=decision_name,
+                                nbins=min(30, int(type_quantities.max()) + 1),
+                                title=f"Distribution of Consumption Quantities - {ctype} Customers",
+                                labels={decision_name: 'Items per Period', 'count': 'Number of Agents'}
+                            )
+                            fig_type.update_layout(
+                                showlegend=False,
+                                xaxis_title="Items Purchased per Period",
+                                yaxis_title="Number of Agents"
+                            )
+                            st.plotly_chart(fig_type, use_container_width=True)
+                        
+                        with col_stats_type:
+                            st.markdown("**📈 Statistics**")
+                            type_stats_desc = type_quantities.describe()
+                            
+                            type_stats_table = pd.DataFrame({
+                                'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
+                                'Value per Term': [
+                                    f"{type_stats_desc['mean']:.2f}",
+                                    f"{type_stats_desc['std']:.2f}",
+                                    f"{int(type_stats_desc['min'])}",
+                                    f"{int(type_stats_desc['max'])}",
+                                    f"{type_stats_desc['50%']:.2f}",
+                                    f"{type_stats_desc['25%']:.2f}",
+                                    f"{type_stats_desc['75%']:.2f}"
+                                ],
+                                'Value per Period': [
+                                    f"{type_stats_desc['mean']/periods:.2f}",
+                                    f"{type_stats_desc['std']/periods:.2f}",
+                                    f"{int(type_stats_desc['min'])/periods:.2f}",
+                                    f"{int(type_stats_desc['max'])/periods:.2f}",
+                                    f"{type_stats_desc['50%']/periods:.2f}",
+                                    f"{type_stats_desc['25%']/periods:.2f}",
+                                    f"{type_stats_desc['75%']/periods:.2f}"
+                                ]
+                            })
+                            st.dataframe(type_stats_table, use_container_width=True, hide_index=True)
+                        
+                        # Add agent count
+                        st.caption(f"📊 {len(type_quantities)} {ctype.lower()} customers with {int(type_quantities.sum()):,} total purchases")
+                    else:
+                        st.info(f"No purchase data for {ctype} customers")
+        else:
+            st.info("No purchase data available by customer type")
     
     # Income category analysis if available
     if 'income_category' in df.columns:
@@ -111,7 +301,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
     # Purchase request timing analysis if available
     if 'purchase_requests' in df.columns:
         st.markdown("---")
-        st.markdown("**⏱️ Purchase Timing & Frequency Analysis**")
+        st.markdown("**⏱️ Purchase Requests and Completed Transactions**")
         
         # Extract all timestamps and prepare data
         all_timestamps = []
@@ -142,7 +332,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             
             # 1. PURCHASES PER PERIOD (Most important visualization)
             st.markdown("**📊 Purchase Volume by Period**")
-            st.caption("Shows how many purchases occur in each period - demonstrates random distribution")
+            st.caption("Shows purchase requests and completed transactions per period")
             
             # Create period bins
             period_bins = []
@@ -156,81 +346,175 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             
             # Count purchases per period
             period_counts = pd.cut(all_timestamps, bins=period_bins, labels=period_labels, include_lowest=True)
+            purchase_requests_per_period = [sum(period_counts == label) for label in period_labels]
+            
+            # For now, all purchase requests are completed (100% completion rate)
+            # In future versions, this could be different based on rejection logic
+            purchases_completed_per_period = purchase_requests_per_period.copy()
+            
+            # Create DataFrame for the chart
             period_df = pd.DataFrame({
                 'Period': period_labels,
-                'Purchases': [sum(period_counts == label) for label in period_labels],
-                'Hours': [f"{i*duration_hours:.0f}-{(i+1)*duration_hours:.0f}" for i in range(periods)]
+                'Purchase Requests': purchase_requests_per_period,
+                'Purchases Completed': purchases_completed_per_period
             })
             
             col_period1, col_period2 = st.columns([3, 1])
             
             with col_period1:
-                # Bar chart by period
+                # Grouped bar chart showing both metrics side by side
                 fig_periods = px.bar(
                     period_df,
                     x='Period',
-                    y='Purchases',
-                    title=f"Purchase Requests per Period (Total: {len(all_timestamps):,} requests)",
-                    labels={'Purchases': 'Number of Requests', 'Period': 'Period'},
-                    text='Purchases'
+                    y=['Purchase Requests', 'Purchases Completed'],
+                    title=f"Purchase Requests and Completed Transactions per Period",
+                    labels={'value': 'Count', 'Period': 'Period', 'variable': 'Type'},
+                    barmode='group',
+                    color_discrete_sequence=['#1f77b4', '#2ca02c']
                 )
-                fig_periods.update_traces(textposition='outside')
                 fig_periods.update_layout(
-                    xaxis_title="Period (Time Window)",
-                    yaxis_title="Number of Purchase Requests",
-                    showlegend=False
+                    xaxis_title="Period",
+                    yaxis_title="Number of Transactions",
+                    legend_title_text="Transaction Type"
                 )
                 st.plotly_chart(fig_periods, use_container_width=True)
             
             with col_period2:
                 st.markdown("**Period Details**")
+                
+                # Create statistics table with Purchase Requests, Purchases Completed, and % Completed
+                stats_rows = []
+                for i, label in enumerate(period_labels):
+                    requests = purchase_requests_per_period[i]
+                    completed = purchases_completed_per_period[i]
+                    pct_completed = (completed / requests * 100) if requests > 0 else 100.0
+                    
+                    stats_rows.append({
+                        'Period': label,
+                        'Purchase Requests': requests,
+                        'Purchases Completed': completed,
+                        '% Completed': f"{pct_completed:.1f}%"
+                    })
+                
+                # Add TOTAL row
+                total_requests = sum(purchase_requests_per_period)
+                total_completed = sum(purchases_completed_per_period)
+                total_pct = (total_completed / total_requests * 100) if total_requests > 0 else 100.0
+                
+                stats_rows.append({
+                    'Period': 'TOTAL',
+                    'Purchase Requests': total_requests,
+                    'Purchases Completed': total_completed,
+                    '% Completed': f"{total_pct:.1f}%"
+                })
+                
+                stats_df = pd.DataFrame(stats_rows)
                 st.dataframe(
-                    period_df.rename(columns={'Hours': 'Time Range'}),
+                    stats_df,
                     use_container_width=True,
                     hide_index=True,
                     height=400
                 )
             
-            # 2. CUMULATIVE PURCHASES OVER TIME
+            # Breakdown by Customer Type
             st.markdown("---")
-            st.markdown("**📈 Cumulative Purchases Over Time**")
-            st.caption("Shows how total purchases accumulate throughout the term")
+            st.markdown("**📊 Purchase Requests and Completed Transactions by Customer Type**")
+            st.caption("Detailed breakdown for Regular, Fixed, and Discount customers")
             
-            # Sort timestamps and create cumulative count
-            sorted_times = sorted(all_timestamps)
-            cumulative_counts = list(range(1, len(sorted_times) + 1))
+            # Extract timestamps by customer type
+            timestamps_by_type = {'Regular': [], 'Fixed': [], 'Discount': []}
             
-            cumulative_df = pd.DataFrame({
-                'Time (hours)': sorted_times,
-                'Cumulative Purchases': cumulative_counts
-            })
+            for idx, requests in enumerate(df['purchase_requests']):
+                if isinstance(requests, list) and len(requests) > 0:
+                    for req in requests:
+                        if isinstance(req, dict) and 'timestamp_hours' in req:
+                            customer_type = req.get('customer_type', 'regular')
+                            if isinstance(customer_type, str):
+                                customer_type = customer_type.capitalize()
+                            
+                            if customer_type in timestamps_by_type:
+                                timestamps_by_type[customer_type].append(req['timestamp_hours'])
             
-            fig_cumulative = px.line(
-                cumulative_df,
-                x='Time (hours)',
-                y='Cumulative Purchases',
-                title="Cumulative Purchase Requests Over Time"
-            )
+            # Create sub-sections for each customer type
+            customer_types_order = ['Regular', 'Fixed', 'Discount']
+            icons = {'Regular': '🔵', 'Fixed': '🟠', 'Discount': '🟢'}
             
-            # Add period markers
-            for i in range(1, periods):
-                fig_cumulative.add_vline(
-                    x=i * duration_hours,
-                    line_dash="dot",
-                    line_color="gray",
-                    opacity=0.5,
-                    annotation_text=f"P{i+1}",
-                    annotation_position="top"
-                )
-            
-            fig_cumulative.update_layout(
-                    xaxis_title="Time (hours from term start)",
-                yaxis_title="Total Purchases",
-                showlegend=False
-            )
-            st.plotly_chart(fig_cumulative, use_container_width=True)
-            
-            st.info("💡 To see **individual agent purchase schedules** (frequency visualization), view the **Consumption Frequency** decision.")
+            for ctype in customer_types_order:
+                type_timestamps = timestamps_by_type[ctype]
+                
+                if len(type_timestamps) > 0:
+                    st.markdown(f"### {icons[ctype]} {ctype} Customers")
+                    
+                    # Count requests per period for this customer type
+                    type_period_counts = pd.cut(type_timestamps, bins=period_bins, labels=period_labels, include_lowest=True)
+                    type_requests_per_period = [sum(type_period_counts == label) for label in period_labels]
+                    
+                    # All requests are completed (100% completion rate)
+                    type_completed_per_period = type_requests_per_period.copy()
+                    
+                    # Create DataFrame for the chart
+                    type_period_df = pd.DataFrame({
+                        'Period': period_labels,
+                        'Purchase Requests': type_requests_per_period,
+                        'Purchases Completed': type_completed_per_period
+                    })
+                    
+                    col_type_chart, col_type_stats = st.columns([3, 1])
+                    
+                    with col_type_chart:
+                        # Grouped bar chart for this customer type
+                        fig_type_periods = px.bar(
+                            type_period_df,
+                            x='Period',
+                            y=['Purchase Requests', 'Purchases Completed'],
+                            title=f"Purchase Requests and Completed Transactions - {ctype} Customers",
+                            labels={'value': 'Count', 'Period': 'Period', 'variable': 'Type'},
+                            barmode='group',
+                            color_discrete_sequence=['#1f77b4', '#2ca02c']
+                        )
+                        fig_type_periods.update_layout(
+                            xaxis_title="Period",
+                            yaxis_title="Number of Transactions",
+                            legend_title_text="Transaction Type"
+                        )
+                        st.plotly_chart(fig_type_periods, use_container_width=True)
+                    
+                    with col_type_stats:
+                        st.markdown("**Period Details**")
+                        
+                        # Create statistics table
+                        type_stats_rows = []
+                        for i, label in enumerate(period_labels):
+                            requests = type_requests_per_period[i]
+                            completed = type_completed_per_period[i]
+                            pct_completed = (completed / requests * 100) if requests > 0 else 100.0
+                            
+                            type_stats_rows.append({
+                                'Period': label,
+                                'Purchase Requests': requests,
+                                'Purchases Completed': completed,
+                                '% Completed': f"{pct_completed:.1f}%"
+                            })
+                        
+                        # Add TOTAL row
+                        type_total_requests = sum(type_requests_per_period)
+                        type_total_completed = sum(type_completed_per_period)
+                        type_total_pct = (type_total_completed / type_total_requests * 100) if type_total_requests > 0 else 100.0
+                        
+                        type_stats_rows.append({
+                            'Period': 'TOTAL',
+                            'Purchase Requests': type_total_requests,
+                            'Purchases Completed': type_total_completed,
+                            '% Completed': f"{type_total_pct:.1f}%"
+                        })
+                        
+                        type_stats_df = pd.DataFrame(type_stats_rows)
+                        st.dataframe(
+                            type_stats_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=400
+                        )
         
         else:
             st.info("No purchase requests found in the data")
@@ -340,6 +624,129 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
+        
+        # Agent-Level Export
+        st.markdown("---")
+        st.markdown("**📊 Export Agent-Level Purchasing Information**")
+        st.caption("Download aggregated purchasing data at the agent level with breakdown by period")
+        
+        try:
+            # Get simulation parameters for period breakdown
+            if hasattr(st.session_state, 'sim_params'):
+                periods = st.session_state.sim_params.periods
+                duration_hours = st.session_state.sim_params.duration_hours
+            else:
+                periods = 15
+                duration_hours = 2.0
+            
+            # Build agent-level data
+            agent_level_data = []
+            
+            for idx, row in df.iterrows():
+                agent_id = row.get('agent_id', idx + 1)
+                allowance_level = row.get('Assigned Allowance Level', '')
+                group_experiment = row.get('Group_experiment', '')
+                income_category = row.get('income_category', '')
+                
+                # Get customer type from purchase_requests
+                purchase_requests = row.get('purchase_requests', [])
+                customer_type = ''
+                
+                if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
+                    first_req = purchase_requests[0]
+                    if isinstance(first_req, dict):
+                        customer_type = first_req.get('customer_type', '')
+                        if isinstance(customer_type, str):
+                            customer_type = customer_type.capitalize()
+                
+                # Total counts
+                total_requests = len(purchase_requests) if isinstance(purchase_requests, list) else 0
+                total_completed = total_requests  # All requests are completed (100%)
+                pct_completed = 100.0 if total_requests > 0 else 0.0
+                
+                # Add overall record
+                agent_level_data.append({
+                    'Agent ID': agent_id,
+                    'Assigned Allowance Level': allowance_level,
+                    'Group_experiment': group_experiment,
+                    'Customer Type': customer_type,
+                    'Income Category': income_category,
+                    'Count of Purchase Requests': total_requests,
+                    'Count of Completed Transactions': total_completed,
+                    '% Completed Transactions': f"{pct_completed:.1f}%",
+                    'Period': 'Total'
+                })
+                
+                # Breakdown by period
+                if isinstance(purchase_requests, list):
+                    # Count requests per period for this agent
+                    period_counts = {f"P{i+1}": 0 for i in range(periods)}
+                    
+                    for req in purchase_requests:
+                        if isinstance(req, dict) and 'timestamp_hours' in req:
+                            timestamp = req['timestamp_hours']
+                            # Determine which period this request belongs to
+                            period_idx = int(timestamp // duration_hours)
+                            if 0 <= period_idx < periods:
+                                period_label = f"P{period_idx + 1}"
+                                period_counts[period_label] += 1
+                    
+                    # Add one record per period for this agent
+                    for period_label, count in period_counts.items():
+                        completed = count  # All requests are completed
+                        pct = 100.0 if count > 0 else 0.0
+                        
+                        agent_level_data.append({
+                            'Agent ID': agent_id,
+                            'Assigned Allowance Level': allowance_level,
+                            'Group_experiment': group_experiment,
+                            'Customer Type': customer_type,
+                            'Income Category': income_category,
+                            'Count of Purchase Requests': count,
+                            'Count of Completed Transactions': completed,
+                            '% Completed Transactions': f"{pct:.1f}%",
+                            'Period': period_label
+                        })
+            
+            if len(agent_level_data) > 0:
+                agent_df = pd.DataFrame(agent_level_data)
+                
+                # Create multi-sheet Excel
+                buffer_agent = BytesIO()
+                with pd.ExcelWriter(buffer_agent, engine='openpyxl') as writer:
+                    # Sheet 1: Total (all agents, total across all periods)
+                    total_df = agent_df[agent_df['Period'] == 'Total'].drop(columns=['Period'])
+                    total_df.to_excel(writer, index=False, sheet_name='Total')
+                    
+                    # Additional sheets: One per Period
+                    period_labels = [f"P{i+1}" for i in range(periods)]
+                    for period_label in period_labels:
+                        period_df = agent_df[agent_df['Period'] == period_label].drop(columns=['Period'])
+                        if len(period_df) > 0:
+                            period_df.to_excel(writer, index=False, sheet_name=period_label)
+                
+                col_download_agent, col_info_agent = st.columns([1, 2])
+                
+                with col_download_agent:
+                    st.download_button(
+                        label="📥 Download Agent-Level Excel",
+                        data=buffer_agent.getvalue(),
+                        file_name=f"agent_level_purchases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Download agent-level purchasing information with Total + Period breakdown"
+                    )
+                
+                with col_info_agent:
+                    num_sheets = 1 + periods
+                    st.caption(f"📋 {len(df):,} agents across {num_sheets} sheets (Total + {periods} Periods)")
+                    st.caption("✅ Each sheet contains: Agent ID, Allowance Level, Group, Customer Type, Income Category, Requests, Completed, % Completed")
+            else:
+                st.info("No agent data to export")
+        
+        except ImportError:
+            st.caption("⚠️ Excel export requires openpyxl")
+        except Exception as e:
+            st.error(f"⚠️ Error creating agent-level export: {str(e)}")
 
 
 def render_consumption_frequency(df, decision_name, decision_title, decision_data):
@@ -360,18 +767,87 @@ def render_consumption_frequency(df, decision_name, decision_title, decision_dat
         periods = 15
         duration_hours = 2.0
     
-    # Extract all timestamps from purchase_requests
+    # Extract all data from purchase_requests for analysis
     all_timestamps = []
+    all_platform_prices = []
+    regular_requests = []
+    
     for idx, row in df.iterrows():
         requests = row.get('purchase_requests', [])
         if isinstance(requests, list):
             for req in requests:
-                if isinstance(req, dict) and 'timestamp_hours' in req:
-                    all_timestamps.append(req['timestamp_hours'])
+                if isinstance(req, dict):
+                    if 'timestamp_hours' in req:
+                        all_timestamps.append(req['timestamp_hours'])
+                    
+                    # Collect platform price data for breakdown
+                    platform_price = req.get('platformPrice')
+                    all_platform_prices.append(platform_price)
+                    
+                    # Count only PN and BID for regular customers
+                    if platform_price in ['PN', 'BID']:
+                        regular_requests.append(platform_price)
     
     if len(all_timestamps) == 0:
         st.info("No purchase requests found")
         return
+    
+    # Display Purchase Decisions per Request breakdown
+    st.markdown("### 🛒 Purchase Decisions per Request")
+    st.caption("Breakdown of all purchase requests by customer type and pricing model")
+    
+    from collections import Counter
+    all_counts = Counter(all_platform_prices)
+    regular_counts = Counter(regular_requests)
+    
+    total_requests = len(all_platform_prices)
+    total_regular_requests = len(regular_requests)
+    
+    # Overall metrics showing breakdown by customer type
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Requests", f"{total_requests:,}", help="All purchase requests across all agents")
+    with col2:
+        discount_count = all_counts.get('DISCOUNT', 0)
+        st.metric("Discount Requests", 
+                 f"{discount_count:,}",
+                 f"{discount_count/total_requests*100 if total_requests > 0 else 0:.1f}%")
+    with col3:
+        fixed_count = all_counts.get('FIXED', 0)
+        st.metric("Fixed Requests", 
+                 f"{fixed_count:,}",
+                 f"{fixed_count/total_requests*100 if total_requests > 0 else 0:.1f}%")
+    with col4:
+        st.metric("Regular Requests", 
+                 f"{total_regular_requests:,}",
+                 f"{total_regular_requests/total_requests*100 if total_requests > 0 else 0:.1f}%")
+    
+    # Add completed transactions metrics (all requests are considered completed transactions)
+    st.markdown("---")
+    st.markdown("### ✅ Completed Transactions")
+    st.caption("All purchase requests result in completed transactions in this simulation")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Transactions", f"{total_requests:,}", 
+                 help="Total completed transactions (same as total requests)")
+    with col2:
+        discount_pct = (discount_count/total_requests*100) if total_requests > 0 else 0
+        st.metric("Discount Transactions", 
+                 f"{discount_count:,}",
+                 f"{discount_pct:.1f}%")
+    with col3:
+        fixed_pct = (fixed_count/total_requests*100) if total_requests > 0 else 0
+        st.metric("Fixed Transactions", 
+                 f"{fixed_count:,}",
+                 f"{fixed_pct:.1f}%")
+    with col4:
+        regular_pct = (total_regular_requests/total_requests*100) if total_requests > 0 else 0
+        st.metric("Regular Transactions", 
+                 f"{total_regular_requests:,}",
+                 f"{regular_pct:.1f}%")
     
     # MAIN VISUALIZATION: Sample Agent Purchase Schedules (Timeline)
     st.markdown("---")

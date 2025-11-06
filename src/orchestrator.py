@@ -62,7 +62,8 @@ class Orchestrator:
                 print(f"Warning: Could not load decision module {decision_name}: {e}")
     
     def run_simulation(self, n_agents: int, seed: int, 
-                      single_decision: Optional[Union[str, List[str]]] = None) -> pd.DataFrame:
+                      single_decision: Optional[Union[str, List[str]]] = None,
+                      agents_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Run simulation for n_agents with specified seed.
         
@@ -70,9 +71,22 @@ class Orchestrator:
         - If it's a string, only run that decision
         - If it's a list of strings, run those decisions in order
         Otherwise run all decisions in order.
+        
+        Args:
+            agents_df: Optional pre-sampled agents DataFrame. If provided, skip trait sampling.
+                      This ensures the same agents are used across multiple configurations.
         """
         # Sample synthetic agents FIRST (copula uses its own internal RNG)
-        agents_df = self.trait_engine.sample(n_agents, seed)
+        # UNLESS pre-sampled agents are provided (for multi-config consistency)
+        if agents_df is None:
+            agents_df = self.trait_engine.sample(n_agents, seed)
+        else:
+            # Validate that provided agents have the required traits
+            required_traits = set(self.trait_engine.get_available_traits())
+            provided_traits = set(agents_df.columns)
+            if not required_traits.issubset(provided_traits):
+                missing = required_traits - provided_traits
+                raise ValueError(f"Provided agents_df missing required traits: {missing}")
         
         # Create separate RNG for setup tasks (vendors, etc.)
         rng_setup = np.random.default_rng(seed)

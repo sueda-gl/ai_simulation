@@ -14,90 +14,18 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
     
     # Get parameters from session state (from Page 1)
     if hasattr(st.session_state, 'sim_params'):
-        vendor_price = getattr(st.session_state.sim_params, 'market_price', 100.0)  # Default €100
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)  # Default 10%
         price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)  # Default 25%
     else:
         # Fallback defaults
-        vendor_price = 100.0
         platform_markup = 0.1
         price_range = 0.25
     
-    # Calculate bidding range using the formula
-    baseline_price = (1 + platform_markup) * vendor_price  # Pc = (1+m) × vendor_price
-    min_bid_price = (1 - price_range) * baseline_price      # Pmb = (1-r) × Pc
-    max_bid_price = (1 + price_range) * baseline_price      # Ppn = (1+r) × Pc
-    
-    # Top section: Current parameters and calculated range
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Agents", f"{len(decision_data):,}")
-    
-    with col2:
-        st.metric("Vendor Price", f"€{vendor_price:.2f}")
-    
-    with col3:
-        st.metric("Baseline Price (Pc)", f"€{baseline_price:.2f}")
-    
-    with col4:
-        st.metric("Range Parameter (r)", f"{price_range:.1%}")
-    
-    # Bidding range display
-    st.markdown("---")
-    st.markdown("**📊 Bidding Range Formula**")
-    
-    col_formula, col_range = st.columns([1, 1])
-    
-    with col_formula:
-        st.markdown("**Formula Components:**")
-        st.write(f"• **Vendor Price**: €{vendor_price:.2f}")
-        st.write(f"• **Platform Markup (m)**: {platform_markup:.1%}")
-        st.write(f"• **Range Parameter (r)**: {price_range:.1%}")
-        st.write("")
-        st.markdown("**Calculations:**")
-        st.write(f"• **Baseline Price (Pc)**: (1 + {platform_markup:.1%}) × €{vendor_price:.2f} = €{baseline_price:.2f}")
-        st.write(f"• **Min Bid (Pmb)**: (1 - {price_range:.1%}) × €{baseline_price:.2f} = €{min_bid_price:.2f}")
-        st.write(f"• **Max Bid (Ppn)**: (1 + {price_range:.1%}) × €{baseline_price:.2f} = €{max_bid_price:.2f}")
-    
-    with col_range:
-        st.markdown("**📈 Bidding Range:**")
-        
-        # Visual range display
-        range_width = max_bid_price - min_bid_price
-        
-        # Create metrics for the range
-        col_min, col_max = st.columns(2)
-        with col_min:
-            st.metric("Minimum Bid", f"€{min_bid_price:.2f}")
-        with col_max:
-            st.metric("Maximum Bid", f"€{max_bid_price:.2f}")
-        
-        st.metric("Range Width", f"€{range_width:.2f}")
-        
-        # Show the range notation
-        st.success(f"**Bidding Range**: [€{min_bid_price:.2f}, €{max_bid_price:.2f})")
-        st.caption("Range notation: [minimum, maximum)")
-        
-        # Show sample bids
-        import random
-        example_bids = []
-        for i in range(5):
-            random_bid = random.uniform(min_bid_price, max_bid_price)
-            example_bids.append(f"€{random_bid:.2f}")
-        st.write(f"Sample bids: {', '.join(example_bids)}")
-    
-    # Configuration section
-    st.markdown("---")
-    st.markdown("**🎛️ Bidding Behavior:**")
-    
-    st.info("**Default Behavior**: Random bid amount within the calculated range")
-    st.caption("💡 Agents will select random bid values between the minimum and maximum bid prices")
-    
-    # Current simulation results summary - REQUEST LEVEL
-    st.markdown("---")
-    st.markdown("**📊 Actual Bid Values from Simulation (Request-Level)**")
-    st.caption("Each bid request gets a unique random bid value")
+    # ============================================================================
+    # SECTION 1: ACTUAL SIMULATION RESULTS (Request-Level)
+    # ============================================================================
+    st.markdown("### 📊 Actual Bid Values from Simulation")
+    st.caption("Each bid request gets a unique random bid value based on the vendor's price")
     
     if 'purchase_requests' in df.columns:
         # Extract all bid values from all requests
@@ -117,6 +45,7 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
                                 pass
         
         if len(all_bids) > 0:
+            # Summary metrics
             col_stats1, col_stats2, col_stats3, col_stats4 = st.columns(4)
             
             with col_stats1:
@@ -132,8 +61,8 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
             with col_stats4:
                 st.metric("Max Bid", f"€{max(all_bids):.2f}")
             
-            # Histogram of bid values
-            st.markdown("**📈 Distribution of Actual Bid Values:**")
+            # Distribution visualization
+            st.markdown("**📈 Distribution of Bid Values:**")
             
             col_hist, col_info = st.columns([2, 1])
             
@@ -141,16 +70,9 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
                 fig = px.histogram(
                     x=all_bids,
                     nbins=30,
-                    title=f"Distribution of {len(all_bids):,} Bid Values",
+                    title=f"Distribution of {len(all_bids):,} Bid Values Across All Requests",
                     labels={'x': 'Bid Amount (€)', 'count': 'Number of Bids'}
                 )
-                
-                # Add vertical lines for theoretical range
-                fig.add_vline(x=min_bid_price, line_dash="dash", line_color="red", 
-                             annotation_text=f"Min €{min_bid_price:.2f}")
-                fig.add_vline(x=max_bid_price, line_dash="dash", line_color="red",
-                             annotation_text=f"Max €{max_bid_price:.2f}")
-                
                 st.plotly_chart(fig, use_container_width=True)
             
             with col_info:
@@ -174,7 +96,87 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
                 if unique_bids == len(all_bids):
                     st.success("🎯 All bids are unique!")
         else:
-            st.info("No bid requests found (no agents chose to bid)")
+            st.info("ℹ️ No bid requests found (no agents chose to bid in this simulation)")
     else:
-        st.caption("No purchase_requests data available")
+        st.warning("⚠️ No purchase_requests data available in results")
+    
+    # ============================================================================
+    # SECTION 2: FORMULA EXPLANATION (Educational)
+    # ============================================================================
+    st.markdown("---")
+    st.markdown("### 📚 How Bid Values Are Calculated")
+    st.info("**Note**: The following is an illustration of how the bidding range formula works. Each vendor in the simulation has its own price, so bid ranges vary by vendor.")
+    
+    # Use example vendor price for illustration
+    example_vendor_price = 100.0
+    
+    # Calculate example bidding range using the formula
+    baseline_price = (1 + platform_markup) * example_vendor_price  # Pc = (1+m) × vendor_price
+    min_bid_price = (1 - price_range) * baseline_price      # Pmb = (1-r) × Pc
+    max_bid_price = (1 + price_range) * baseline_price      # Ppn = (1+r) × Pc
+    
+    # Display formula parameters
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**🔧 Simulation Parameters:**")
+        st.write(f"• **Platform Markup (m)**: {platform_markup:.1%}")
+        st.write(f"• **Price Range Parameter (r)**: {price_range:.1%}")
+    
+    with col2:
+        st.markdown("**🎯 Bidding Behavior:**")
+        st.write("Each agent selects a **random bid value** within the range calculated for their chosen vendor")
+    
+    st.markdown("---")
+    
+    # Formula breakdown with example
+    col_formula, col_example = st.columns([1, 1])
+    
+    with col_formula:
+        st.markdown("**📐 Formula:**")
+        st.code("""
+Given a vendor price V:
+  
+1. Baseline Price (Pc):
+   Pc = (1 + m) × V
+   
+2. Minimum Bid (Pmb):
+   Pmb = (1 - r) × Pc
+   
+3. Maximum Bid (Ppn):
+   Ppn = (1 + r) × Pc
+   
+4. Actual Bid:
+   Random value in [Pmb, Ppn)
+        """, language="text")
+    
+    with col_example:
+        st.markdown(f"**💡 Example Calculation:**")
+        st.markdown(f"*Assuming vendor price = €{example_vendor_price:.2f}*")
+        st.write("")
+        st.write(f"**Step 1: Baseline Price**")
+        st.write(f"Pc = (1 + {platform_markup:.1%}) × €{example_vendor_price:.2f}")
+        st.write(f"Pc = €{baseline_price:.2f}")
+        st.write("")
+        st.write(f"**Step 2: Minimum Bid**")
+        st.write(f"Pmb = (1 - {price_range:.1%}) × €{baseline_price:.2f}")
+        st.write(f"Pmb = €{min_bid_price:.2f}")
+        st.write("")
+        st.write(f"**Step 3: Maximum Bid**")
+        st.write(f"Ppn = (1 + {price_range:.1%}) × €{baseline_price:.2f}")
+        st.write(f"Ppn = €{max_bid_price:.2f}")
+        st.write("")
+        st.success(f"**Bidding Range**: [€{min_bid_price:.2f}, €{max_bid_price:.2f})")
+        
+        # Show sample bids from this example
+        import random
+        st.write("")
+        st.write("**Example random bids:**")
+        example_bids = []
+        for i in range(5):
+            random_bid = random.uniform(min_bid_price, max_bid_price)
+            example_bids.append(f"€{random_bid:.2f}")
+        st.caption(", ".join(example_bids))
+    
+    st.caption("💡 **Remember**: In the actual simulation, each of the 6 vendors has a different price, so the bidding range varies per vendor.")
 

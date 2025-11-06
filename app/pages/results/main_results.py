@@ -30,7 +30,6 @@ from app.models import ALL_DECISIONS
 from app.pages.results.decision_visualizations import (
     render_decision_results,
     DECISION_VISUALIZATIONS,
-    render_probability_controls,
     get_dynamic_description
 )
 from app.pages.results.config_selection import (
@@ -100,11 +99,18 @@ def render_single_run_results():
         use_dropdown = False
         
         for decision in executed_decisions:
+            # Get decision number and format title
+            decision_number = ALL_DECISIONS.index(decision) + 1 if decision in ALL_DECISIONS else None
+            
             # Special handling for purchase_vs_bid
             if decision == "purchase_vs_bid":
                 decision_title = "Purchase Now Vs Bid"
             else:
                 decision_title = decision.replace('_', ' ').title()
+            
+            # Add number prefix
+            if decision_number is not None:
+                decision_title = f"{decision_number}. {decision_title}"
             
             # Determine if this decision was customized or uses defaults
             if decision in st.session_state.custom_decisions:
@@ -162,9 +168,6 @@ def render_single_run_results():
                         # Show decision-specific results if available
                         if not df.empty and decision in df.columns:
                             render_decision_results(df, decision, decision_title)
-                            
-                            # Add probability controls for random decisions
-                            render_probability_controls(decision, df)
                         else:
                             st.caption("💡 To see results and customize this decision, select it on Page 2")
                 else:
@@ -178,9 +181,6 @@ def render_single_run_results():
                     if not df.empty and decision in df.columns:
                         st.markdown("**📊 Results with Default Values:**")
                         render_decision_results(df, decision, decision_title)
-                        
-                        # Add probability controls for random decisions
-                        render_probability_controls(decision, df)
                     else:
                         st.caption("💡 To see results and customize this decision, select it on Page 2")
         
@@ -229,14 +229,20 @@ def render_single_run_results():
             # Check if we're using a selected configuration (should not show overview)
             using_selected_config = hasattr(st.session_state, '_using_selected_config') and st.session_state._using_selected_config
             
+            # Check if this is a donation_default custom parameters run (should not show overview)
+            is_donation_custom_only = (
+                hasattr(st.session_state, 'custom_decisions') and 
+                'donation_default' in st.session_state.custom_decisions
+            )
+            
             if st.session_state.population_mode == "Compare all":
                 render_all_modes_comparison(results_dict)
             elif st.session_state.population_mode == "Dependent variable resampling":
                 render_dependent_variable_results(results_dict)
             elif st.session_state.income_spec_mode == "Compare both":
                 render_income_comparison(results_dict)
-            elif not using_selected_config:
-                # Single mode display - show high-level summary (but NOT for selected configurations)
+            elif not using_selected_config and not is_donation_custom_only:
+                # Single mode display - show high-level summary (but NOT for selected configurations or donation custom runs)
                 st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
                 df = next(iter(results_dict.values()))
                 mode_name = next(iter(results_dict.keys()))
@@ -280,7 +286,7 @@ def render_single_run_results():
                     result_key=mode_name,
                     enable_selection=enable_selection
                 )
-            # If using_selected_config is True, we skip the overview display entirely
+            # If using_selected_config is True or is_donation_custom_only is True, we skip the overview display entirely
     
     # Configuration selection UI - shows config cards and "Run Complete Simulation" button
     render_configuration_selection_ui(results_dict)

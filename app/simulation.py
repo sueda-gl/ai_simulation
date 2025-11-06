@@ -405,6 +405,36 @@ def run_simulation_from_sidebar():
                     orchestrator.simulation_config['simulation']['bidding_percentage'] = sim_params.bidding_percentage
                     orchestrator.simulation_config['simulation']['num_vendors'] = sim_params.num_vendors
                     
+                    # Vendor configuration parameters - CRITICAL for vendor generation
+                    # Without these, orchestrator falls back to YAML defaults regardless of UI settings
+                    orchestrator.simulation_config['simulation']['vendor_config_mode'] = sim_params.vendor_config_mode
+                    orchestrator.simulation_config['simulation']['vendor_price_source'] = sim_params.vendor_price_source
+                    
+                    # Vendor pricing parameters (for random generation)
+                    orchestrator.simulation_config['simulation']['vendor_price_min'] = sim_params.vendor_price_min
+                    orchestrator.simulation_config['simulation']['vendor_price_max'] = sim_params.vendor_price_max
+                    
+                    # Vendor products parameters (for random generation)
+                    # These control quantity_offered per vendor, which determines total market supply
+                    orchestrator.simulation_config['simulation']['vendor_products_min'] = sim_params.vendor_products_min
+                    orchestrator.simulation_config['simulation']['vendor_products_max'] = sim_params.vendor_products_max
+                    orchestrator.simulation_config['simulation']['vendor_products_avg'] = sim_params.vendor_products_avg
+                    
+                    # Vendor carryover parameters
+                    orchestrator.simulation_config['simulation']['vendor_carryover_probability'] = sim_params.vendor_carryover_probability
+                    orchestrator.simulation_config['simulation']['override_carryover'] = sim_params.override_carryover
+                    orchestrator.simulation_config['simulation']['global_carryover'] = sim_params.global_carryover
+                    
+                    # Vendor configuration data (if uploaded via CSV)
+                    if hasattr(sim_params, 'vendor_config_data') and sim_params.vendor_config_data is not None:
+                        orchestrator.simulation_config['simulation']['vendor_config_data'] = sim_params.vendor_config_data
+                    
+                    # Legacy vendor parameters (for backward compatibility)
+                    orchestrator.simulation_config['simulation']['products_per_vendor'] = sim_params.products_per_vendor
+                    orchestrator.simulation_config['simulation']['carryover'] = sim_params.carryover
+                    if hasattr(sim_params, 'vendor_prices') and sim_params.vendor_prices is not None:
+                        orchestrator.simulation_config['simulation']['vendor_prices'] = sim_params.vendor_prices
+                    
                     # Time parameters
                     orchestrator.simulation_config['simulation']['periods'] = sim_params.periods
                     orchestrator.simulation_config['simulation']['duration_hours'] = sim_params.duration_hours
@@ -485,6 +515,12 @@ def run_simulation_from_sidebar():
                         prob_y = settings['probability_y']
                         options = settings['options']
                         setting_info.append(f"{decision}: {prob_y:.0%} {options[0]} / {1-prob_y:.0%} {options[1]}")
+                    elif decision_type == 'prioritized_selection':
+                        priority_template = settings.get('priority_template', [])
+                        if len(priority_template) == 1:
+                            setting_info.append(f"{decision}: {priority_template[0]} only")
+                        else:
+                            setting_info.append(f"{decision}: {len(priority_template)} priorities")
                     elif decision_type == 'checkbox_selection':
                         selected = settings.get('selected_params', [])
                         setting_info.append(f"{decision}: {len(selected)} params selected ({', '.join(selected)})")
@@ -694,7 +730,27 @@ def collect_decision_settings():
                     "type": "checkbox_selection"
                 }
             
-            # Handle radio selection decisions (rejected_transaction_defaults, rejected_transaction_option)
+            # Handle prioritized selection decisions (rejected_transaction_defaults with priority lists)
+            elif decision_type == "prioritized_selection":
+                # Priority order:
+                # 1. Pre-configured priority template from Overview tab ({decision_name}_priority_template)
+                # 2. Hard-coded default from DEFAULT_DECISION_VALUES
+                
+                pre_config_key = f"{decision_name}_priority_template"
+                hardcoded_default = default_value.get("priority_template", ["forgo_transaction"])
+                
+                # Get configured priority template
+                priority_template = st.session_state.get(pre_config_key, hardcoded_default)
+                
+                # print(f"[DEBUG] collect_settings: {decision_name} (prioritized) = {priority_template}")
+                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                
+                decision_settings[decision_name] = {
+                    "priority_template": priority_template,
+                    "type": "prioritized_selection"
+                }
+            
+            # Handle radio selection decisions (rejected_transaction_option)
             elif decision_type == "radio_selection":
                 # Priority order:
                 # 1. Post-simulation adjustment from Results page (specific to each decision)
