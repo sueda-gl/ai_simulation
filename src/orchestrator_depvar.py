@@ -112,7 +112,8 @@ class OrchestratorDepVar:
             print("Dependent variable mode: Using RAW (pre-truncation) distribution")
     
     def run_simulation(self, n_agents: int, seed: int, 
-                      single_decision: Optional[Union[str, List[str]]] = None) -> pd.DataFrame:
+                      single_decision: Optional[Union[str, List[str]]] = None,
+                      agents_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """
         Generate n_agents by resampling from empirical donation distribution.
         
@@ -120,6 +121,7 @@ class OrchestratorDepVar:
             n_agents: Number of agents to generate
             seed: Random seed for reproducible sampling
             single_decision: If specified, must be 'donation_default' (only decision supported)
+            agents_df: Ignored for DepVar mode - this mode doesn't use agent traits
         
         Returns:
             DataFrame with single column 'donation_default' containing resampled values

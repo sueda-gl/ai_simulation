@@ -301,7 +301,7 @@ def run_simulation_from_sidebar():
     try:
         with st.spinner("🔄 Generating synthetic agents and running simulation..."):
             # Helper to run simulation with chosen orchestrator and income mode
-            def _run(pop_mode: str, inc_mode: str, prob_settings=None):
+            def _run(pop_mode: str, inc_mode: str, prob_settings=None, agents_df=None):
                 # Initialize appropriate orchestrator
                 if pop_mode == "documentation":
                     orchestrator = OrchestratorDocMode()
@@ -483,7 +483,8 @@ def run_simulation_from_sidebar():
                 return orchestrator.run_simulation(
                     n_agents=st.session_state.n_agents,
                     seed=st.session_state.seed if st.session_state.sim_params.simulation_mode == "Single Run" else st.session_state.base_seed,
-                    single_decision=decision_param
+                    single_decision=decision_param,
+                    agents_df=agents_df  # Pass pre-sampled agents for consistency
                 )
             
             # CRITICAL FIX: Apply selected donation configuration BEFORE determining result variants
@@ -549,6 +550,43 @@ def run_simulation_from_sidebar():
                     # Also print to console for debugging
                     # print(f"[DEBUG] Decision settings: {random_decision_probabilities}")
             
+            # CRITICAL FIX: Pre-sample agents ONCE for all configurations
+            # This ensures agent alignment across different income/population modes
+            agents_df = None
+            n_agents = st.session_state.n_agents
+            seed = st.session_state.seed if st.session_state.sim_params.simulation_mode == "Single Run" else st.session_state.base_seed
+            
+            # Determine which type of agents to use based on population mode
+            if st.session_state.population_mode == "Dependent variable resampling":
+                # DepVar mode doesn't use agents (only resamples outcomes)
+                agents_df = None
+            elif st.session_state.population_mode in ["Research Specification", "Research Baseline"]:
+                # Load original 280 participants for research modes
+                from src.orchestrator_baseline import OrchestratorBaseline
+                temp_orchestrator = OrchestratorBaseline()
+                if n_agents <= len(temp_orchestrator.original_data):
+                    agents_df = temp_orchestrator.original_data.iloc[:n_agents].copy()
+                else:
+                    # Bootstrap sample if more agents requested than available
+                    rng = np.random.default_rng(seed)
+                    indices = rng.choice(len(temp_orchestrator.original_data), size=n_agents, replace=True)
+                    agents_df = temp_orchestrator.original_data.iloc[indices].copy()
+                    agents_df.index = range(len(agents_df))
+                st.info(f"📊 Using {len(agents_df)} agents from original participant data")
+            elif st.session_state.population_mode == "Compare all":
+                # For comparison mode, we need to decide: use copula or research participants?
+                # Default to copula for synthetic diversity
+                from src.trait_engine import TraitEngine
+                trait_engine = TraitEngine()
+                agents_df = trait_engine.sample(n_agents, seed)
+                st.info(f"🎲 Sampled {len(agents_df)} synthetic agents from copula for comparison")
+            else:  # Copula (synthetic)
+                # Sample from copula for single copula mode
+                from src.trait_engine import TraitEngine
+                trait_engine = TraitEngine()
+                agents_df = trait_engine.sample(n_agents, seed)
+                st.info(f"🎲 Sampled {len(agents_df)} synthetic agents from copula")
+            
             # Run based on population and income specification modes
             results = {}
             
@@ -556,15 +594,15 @@ def run_simulation_from_sidebar():
                 # Compare all three population modes
                 for pop_name, pop_type in [("copula", "copula"), ("research_spec", "documentation"), ("research_baseline", "baseline")]:
                     if st.session_state.income_spec_mode == "Compare both":
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
                     elif st.session_state.income_spec_mode == "continuous only":
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
                     else:  # categorical only
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
             elif st.session_state.population_mode == "Dependent variable resampling":
                 # Dependent variable mode - only one result regardless of income spec
-                results["depvar"] = _run("depvar", "categorical", random_decision_probabilities)  # income mode is ignored
+                results["depvar"] = _run("depvar", "categorical", random_decision_probabilities, agents_df)  # income mode is ignored, agents_df is None
             else:
                 # Single population mode
                 if st.session_state.population_mode == "Research Specification":
@@ -575,12 +613,12 @@ def run_simulation_from_sidebar():
                     pop_type = "copula"
                     
                 if st.session_state.income_spec_mode == "Compare both":
-                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
-                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
+                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
+                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
                 elif st.session_state.income_spec_mode == "continuous only":
-                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities)
+                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
                 else:  # categorical only
-                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities)
+                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
             
             # COMMENTED OUT: Auto-save to parquet file (redundant with Results page Excel export)
             # Uncomment if needed for batch processing or programmatic access
