@@ -12,15 +12,31 @@ from src.decisions.income_utils import get_agent_income, get_simulation_param, g
 def disclose_documents(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
     """Decision 2: Disclose documents for Discount status
     
-    This decision only applies to agents who qualify for discount (income below threshold).
-    For agents with income >= threshold, returns "NA" (not applicable).
+    This decision only applies to agents who:
+    1. Disclosed their income (disclose_income = "Y")
+    2. Have income below threshold
+    
+    For all other agents, returns "NA" (not applicable).
     """
     
-    # STEP 1: Get or generate agent's income using centralized utility
+    # STEP 1: Check if agent disclosed income first
+    # Only agents who disclosed income can be asked to disclose documents
+    disclose_income = agent_state.get('disclose_income', 'N')
+    
+    if disclose_income != "Y":
+        # Agent did not disclose income, so cannot be asked for documents
+        agent_state['disclose_documents'] = "NA"
+        customer_type = get_customer_type(agent_state, simulation_config)
+        return {
+            "disclose_documents": "NA",
+            "customer_type": customer_type
+        }
+    
+    # STEP 2: Get or generate agent's income using centralized utility
     # This is the single source of truth for income generation
     income = get_agent_income(agent_state, simulation_config, rng)
     
-    # STEP 2: Check eligibility based on income threshold
+    # STEP 3: Check eligibility based on income threshold
     agent_income = income  # Use the income we just retrieved/generated
     
     # Get discount threshold from simulation config using helper
@@ -39,7 +55,7 @@ def disclose_documents(agent_state: dict, params: dict, rng, simulation_config: 
             "customer_type": customer_type
         }
     
-    # STEP 3: Agent qualifies for discount - apply probability-based decision
+    # STEP 4: Agent qualifies for discount - apply probability-based decision
     # Check if probability settings are available from simulation config
     if simulation_config and 'random_decisions' in simulation_config:
         prob_config = simulation_config['random_decisions'].get('disclose_documents')

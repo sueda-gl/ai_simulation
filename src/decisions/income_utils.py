@@ -484,17 +484,19 @@ def determine_customer_type(agent_state: dict, simulation_config: dict) -> str:
     This should be called AFTER Decision 1 (disclose_income) and Decision 2 (disclose_documents).
     
     Customer Type Logic:
-    1. DISCOUNT: income < threshold AND disclose_documents = "Y"
+    1. DISCOUNT: disclose_income = "Y" AND income < threshold AND disclose_documents = "Y"
        - Qualifies for discount pricing
-       - Only available to low-income agents who submitted documents
+       - Only available to agents who disclosed income AND have low income AND submitted documents
     
-    2. FIXED: disclose_income = "Y" (regardless of income level)
+    2. FIXED: disclose_income = "Y" (and not discount)
        - Fixed prices, no bidding option
        - Available to anyone who disclosed their income upfront
+       - Includes agents who disclosed income but not documents, or have income above threshold
     
-    3. REGULAR: Everyone else (disclose_income = "N")
+    3. REGULAR: disclose_income = "N"
        - Purchase Now or Bid options
        - Default customer type for non-disclosers
+       - These agents are NEVER asked to disclose documents
     
     Args:
         agent_state: Agent's state dict containing:
@@ -508,7 +510,7 @@ def determine_customer_type(agent_state: dict, simulation_config: dict) -> str:
         
     Example:
         customer_type = determine_customer_type(agent_state, simulation_config)
-        # Returns: "discount" if low income + documents submitted
+        # Returns: "discount" if disclosed income + low income + documents submitted
     """
     
     # Get required values
@@ -520,17 +522,18 @@ def determine_customer_type(agent_state: dict, simulation_config: dict) -> str:
     threshold = get_simulation_param(simulation_config, 'discount_income_threshold', 12500.0)
     
     # Priority 1: Check for DISCOUNT customer
-    # Must have low income AND submitted documents
-    if income <= threshold and disclose_documents == "Y":
+    # Must have disclosed income AND low income AND submitted documents
+    if disclose_income == "Y" and income <= threshold and disclose_documents == "Y":
         return "discount"
     
     # Priority 2: Check for FIXED customer
     # Disclosed income upfront (regardless of income level)
+    # This includes agents who disclosed income but not documents, or income above threshold
     if disclose_income == "Y":
         return "fixed"
     
     # Priority 3: REGULAR customer (default)
-    # Everyone else - can use Purchase Now or Bid
+    # Did not disclose income - can use Purchase Now or Bid
     return "regular"
 
 

@@ -71,7 +71,7 @@ donation_default:
     income_mode: categorical
     beta_income_linear: 0.0256
   adjustment:
-    shift_value: 0.0
+    shift_value: -4
 disclose_income:
   uses_global_parameters: []
   placeholder: true

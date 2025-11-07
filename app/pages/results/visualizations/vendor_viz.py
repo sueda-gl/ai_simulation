@@ -564,14 +564,17 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 pr_count = vendor_purchase_requests.get(vid, 0)
                 tx_count = vendor_transactions.get(vid, 0)
                 
+                # Calculate completion rate for this vendor (% of requests completed)
+                completion_rate = f"{(tx_count/pr_count)*100:.1f}%" if pr_count > 0 else "0.0%"
+                
                 breakdown_data.append({
                     'Vendor': f"Vendor {int(vid)}",
                     'Agents': int(agent_count),
-                    'Percentage Agents': f"{(agent_count/agents_with_selection)*100:.1f}%",
+                    '% Agents': f"{(agent_count/agents_with_selection)*100:.1f}%",
                     'Purchase Requests': int(pr_count),
-                    'Percentage Purchase Requests': f"{(pr_count/total_vendor_purchase_requests)*100:.1f}%" if total_vendor_purchase_requests > 0 else "0.0%",
+                    '% Requests': f"{(pr_count/total_vendor_purchase_requests)*100:.1f}%" if total_vendor_purchase_requests > 0 else "0.0%",
                     'Transactions': int(tx_count),
-                    'Percentage Transactions': f"{(tx_count/total_vendor_transactions)*100:.1f}%" if total_vendor_transactions > 0 else "0.0%"
+                    '% Completed': completion_rate
                 })
             
             breakdown_df = pd.DataFrame(breakdown_data)
@@ -652,14 +655,17 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         request_count = vendor_stats['requests']
                         transaction_count = vendor_stats['transactions']
                         
+                        # Calculate completion rate for this vendor in this period (% of requests completed)
+                        period_completion_rate = f"{(transaction_count/request_count)*100:.1f}%" if request_count > 0 else "0.0%"
+                        
                         period_breakdown_data.append({
                             'Vendor': f"Vendor {int(vid)}",
                             'Agents': int(agent_count),
-                            'Percentage Agents': f"{(agent_count/total_agents_period)*100:.1f}%" if total_agents_period > 0 else "0.0%",
+                            '% Agents': f"{(agent_count/total_agents_period)*100:.1f}%" if total_agents_period > 0 else "0.0%",
                             'Purchase Requests': int(request_count),
-                            'Percentage Purchase Requests': f"{(request_count/total_requests_period)*100:.1f}%" if total_requests_period > 0 else "0.0%",
+                            '% Requests': f"{(request_count/total_requests_period)*100:.1f}%" if total_requests_period > 0 else "0.0%",
                             'Transactions': int(transaction_count),
-                            'Percentage Transactions': f"{(transaction_count/total_transactions_period)*100:.1f}%" if total_transactions_period > 0 else "0.0%"
+                            '% Completed': period_completion_rate
                         })
                     
                     period_breakdown_df = pd.DataFrame(period_breakdown_data)
