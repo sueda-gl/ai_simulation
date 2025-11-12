@@ -74,10 +74,16 @@ def _build_purchase_request_export(df, vendors_data):
             # Get timestamp and convert to readable format
             timestamp_hours = request.get('timestamp_hours', np.nan)
             if not pd.isna(timestamp_hours):
-                # Convert hours to period (assuming 24 hours per period)
-                period = int(timestamp_hours // 24) + 1 if timestamp_hours >= 0 else np.nan
-                # Format as "Period X, Hour Y"
-                hour_in_period = timestamp_hours % 24 if timestamp_hours >= 0 else 0
+                # Get duration_hours from simulation config
+                if hasattr(st.session_state, 'sim_params'):
+                    duration_hours = st.session_state.sim_params.duration_hours
+                else:
+                    duration_hours = 2.0  # Default fallback
+                
+                # FIXED: Use actual duration_hours instead of hardcoded 24
+                period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else np.nan
+                # Format as "Period X, Hour Y" (hour within the period)
+                hour_in_period = timestamp_hours % duration_hours if timestamp_hours >= 0 else 0
                 request_datetime = f"Period {period}, Hour {hour_in_period:.1f}"
             else:
                 request_datetime = request.get('requestDateTime', '')
@@ -541,10 +547,10 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         
         with col_plot:
             # Bar chart showing vendor distribution (sorted by vendor ID)
+            st.markdown("**Number of Agents Selecting Each Vendor**")
             fig = px.bar(
                 x=[f"Vendor {int(vid)}" for vid in vendor_counts_sorted.index],
                 y=vendor_counts_sorted.values,
-                title="Number of Agents Selecting Each Vendor",
                 labels={'x': 'Vendor', 'y': 'Number of Agents'}
             )
             fig.update_layout(
@@ -587,6 +593,12 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     st.markdown("**📅 Vendor Selection Breakdown by Period:**")
     
     if 'purchase_requests' in df.columns and len(vendor_counts) > 0:
+        # Get duration_hours from simulation config
+        if hasattr(st.session_state, 'sim_params'):
+            duration_hours = st.session_state.sim_params.duration_hours
+        else:
+            duration_hours = 2.0  # Default fallback
+        
         # Collect data by period
         period_data = {}  # {period: {vendor_id: {'agents': set(), 'requests': count, 'transactions': count}}}
         
@@ -602,7 +614,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         # Get period from timestamp_hours or period field
                         timestamp_hours = req.get('timestamp_hours', np.nan)
                         if not pd.isna(timestamp_hours):
-                            period = int(timestamp_hours // 24) + 1 if timestamp_hours >= 0 else np.nan
+                            # FIXED: Use actual duration_hours instead of hardcoded 24
+                            period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else np.nan
                         else:
                             period = req.get('period', np.nan)
                         
@@ -692,6 +705,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     st.markdown("---")
     st.markdown("**📊 Purchase Request Level Data Export**")
     st.caption("Download detailed data for each purchase request with vendor attributes and transaction outcomes")
+    
+    st.info("ℹ️ **Note on Customer Paid Price**: The 'Customer Paid Price' column currently shows vendor base prices as placeholder values. Final customer prices will be calculated based on customer type (Discount/Fixed/Regular), platform price type (PN/BID), and pricing parameters once the pricing algorithm integration is completed.")
     
     # Try to get vendor data from multiple sources
     vendors_for_export = None

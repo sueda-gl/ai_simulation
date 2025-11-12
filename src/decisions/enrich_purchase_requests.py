@@ -2,7 +2,7 @@
 """
 Decision 6b: Enrich Purchase Requests
 
-This decision runs AFTER consumption_quantity (Decision 6) and enriches each purchase request
+This decision runs AFTER purchasing_quantity (Decision 6) and enriches each purchase request
 with transaction-level decisions:
 - platformPrice: "DISCOUNT", "FIXED", "PN", or "BID" based on per-request purchase_vs_bid decision
 - bid_value: Actual bid amount for BID requests, or "N/A" otherwise

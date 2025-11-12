@@ -30,12 +30,12 @@ vendor_choice_weights:
   # Decision 5: Select default weights for vendor/product choice
   - placeholder_trait
 
-consumption_quantity:
-  # Decision 6: Decide consumption quantity per calendar period
+purchasing_quantity:
+  # Decision 6: Decide purchasing quantity per calendar period
   - placeholder_trait
 
-consumption_frequency:
-  # Decision 7: Decide consumption frequency per day
+purchasing_frequency:
+  # Decision 7: Decide purchasing frequency per day
   - placeholder_trait
 
 vendor_selection:

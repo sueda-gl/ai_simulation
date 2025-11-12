@@ -56,9 +56,9 @@ class OrchestratorBaseline:
             'donation_default',          # 3
             'rejected_transaction_defaults',  # 4
             'vendor_choice_weights',     # 5
-            'consumption_quantity',      # 6
+            'purchasing_quantity',      # 6
             'enrich_purchase_requests',  # 6b (NEW!) - Enriches each purchase request with transaction decisions
-            'consumption_frequency',     # 7
+            'purchasing_frequency',     # 7
             'vendor_selection',          # 8
             'purchase_vs_bid',           # 9 (now deprecated - kept for backward compatibility)
             'bid_value',                 # 10 (now deprecated - kept for backward compatibility)

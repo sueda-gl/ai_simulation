@@ -63,7 +63,7 @@ simulation:
   num_discount_categories: 10  # ✅ Changed from 3 to 10
   num_fixed_categories: 10  # ✅ Changed from 5 to 10
   
-  # Consumption limits (per product and income category per period)
-  apply_consumption_limits: false  # ✅ Changed from true to false (unchecked)
-  consumption_limits: {}  # Will be populated dynamically
-  consumption_limits_source: "manual"  # "manual" or "upload"
+  # Purchasing limits (per product and income category per period)
+  apply_purchasing_limits: false  # ✅ Changed from true to false (unchecked)
+  purchasing_limits: {}  # Will be populated dynamically
+  purchasing_limits_source: "manual"  # "manual" or "upload"

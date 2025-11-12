@@ -34,7 +34,7 @@ def test_purchase_requests():
     
     # Check columns
     print("\n2. Checking key columns exist...")
-    required_cols = ['customer_type', 'purchase_requests', 'consumption_quantity', 'enriched_requests_count']
+    required_cols = ['customer_type', 'purchase_requests', 'purchasing_quantity', 'enriched_requests_count']
     for col in required_cols:
         if col in results_df.columns:
             print(f"  ✓ {col}")
@@ -46,7 +46,7 @@ def test_purchase_requests():
     agent1 = results_df.iloc[0]
     
     print(f"  Customer Type: {agent1.get('customer_type')}")
-    print(f"  Consumption Quantity: {agent1.get('consumption_quantity')}")
+    print(f"  Consumption Quantity: {agent1.get('purchasing_quantity')}")
     print(f"  Enriched Requests Count: {agent1.get('enriched_requests_count')}")
     
     purchase_requests = agent1.get('purchase_requests', [])

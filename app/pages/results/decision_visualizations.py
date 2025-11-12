@@ -8,7 +8,7 @@ The actual visualization functions are organized in the visualizations/ subdirec
 - disclosure_viz.py: Disclosure-related decisions
 - transaction_viz.py: Transaction and purchase decisions
 - vendor_viz.py: Vendor choice decisions
-- consumption_viz.py: Consumption decisions
+- purchasing_viz.py: Purchasing decisions
 - bidding_viz.py: Bidding decisions
 - viz_helpers.py: Helper functions and utilities
 """

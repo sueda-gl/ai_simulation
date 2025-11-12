@@ -8,9 +8,132 @@ from app.components import show_income_distribution_histogram
 from app.pages.navigation import render_navigation
 
 
+def initialize_widget_keys():
+    """Initialize all widget keys from sim_params if they don't exist yet.
+    This ensures widget values persist across page navigation."""
+    
+    # Initialize keys for all number_input and slider widgets
+    # Only initialize if key doesn't exist - this preserves user changes
+    
+    # Simulation Settings (not in sim_params, but in session_state directly)
+    if "n_agents_input" not in st.session_state:
+        st.session_state.n_agents_input = st.session_state.n_agents
+    
+    if "seed_input" not in st.session_state:
+        st.session_state.seed_input = st.session_state.seed
+    
+    if "n_runs_input" not in st.session_state:
+        st.session_state.n_runs_input = st.session_state.n_runs
+    
+    if "base_seed_input" not in st.session_state:
+        st.session_state.base_seed_input = st.session_state.base_seed
+    
+    if "periods_input" not in st.session_state:
+        st.session_state.periods_input = st.session_state.sim_params.periods
+    
+    if "duration_hours_input" not in st.session_state:
+        st.session_state.duration_hours_input = int(st.session_state.sim_params.duration_hours)
+    
+    if "num_vendors_input" not in st.session_state:
+        st.session_state.num_vendors_input = st.session_state.sim_params.num_vendors
+    
+    if "single_vendor_price_input" not in st.session_state:
+        st.session_state.single_vendor_price_input = st.session_state.sim_params.market_price
+    
+    if "single_vendor_products_input" not in st.session_state:
+        st.session_state.single_vendor_products_input = st.session_state.sim_params.vendor_products_avg
+    
+    if "vendor_price_min_input" not in st.session_state:
+        st.session_state.vendor_price_min_input = st.session_state.sim_params.vendor_price_min
+    
+    if "vendor_price_max_input" not in st.session_state:
+        st.session_state.vendor_price_max_input = st.session_state.sim_params.vendor_price_max
+    
+    if "market_price_input" not in st.session_state:
+        st.session_state.market_price_input = st.session_state.sim_params.market_price
+    
+    if "vendor_products_min_input" not in st.session_state:
+        st.session_state.vendor_products_min_input = st.session_state.sim_params.vendor_products_min
+    
+    if "vendor_products_max_input" not in st.session_state:
+        st.session_state.vendor_products_max_input = st.session_state.sim_params.vendor_products_max
+    
+    if "vendor_products_avg_input" not in st.session_state:
+        st.session_state.vendor_products_avg_input = st.session_state.sim_params.vendor_products_avg
+    
+    if "vendor_carryover_probability_slider" not in st.session_state:
+        st.session_state.vendor_carryover_probability_slider = st.session_state.sim_params.vendor_carryover_probability
+    
+    if "platform_markup_slider" not in st.session_state:
+        st.session_state.platform_markup_slider = st.session_state.sim_params.platform_markup
+    
+    if "price_range_slider" not in st.session_state:
+        st.session_state.price_range_slider = st.session_state.sim_params.price_range
+    
+    if "bidding_percentage_slider" not in st.session_state:
+        st.session_state.bidding_percentage_slider = st.session_state.sim_params.bidding_percentage
+    
+    if "price_grid_input" not in st.session_state:
+        st.session_state.price_grid_input = st.session_state.sim_params.price_grid
+    
+    # Lognormal parameters
+    if "lognormal_mu_input" not in st.session_state:
+        st.session_state.lognormal_mu_input = st.session_state.sim_params.lognormal_mu
+    
+    if "lognormal_sigma_input" not in st.session_state:
+        st.session_state.lognormal_sigma_input = st.session_state.sim_params.lognormal_sigma
+    
+    if "lognormal_min_input" not in st.session_state:
+        st.session_state.lognormal_min_input = st.session_state.sim_params.lognormal_min
+    
+    # Generalised Gamma parameters
+    if "gg_k_input" not in st.session_state:
+        st.session_state.gg_k_input = st.session_state.sim_params.gg_k
+    
+    if "gg_c_input" not in st.session_state:
+        st.session_state.gg_c_input = st.session_state.sim_params.gg_c
+    
+    if "gg_lambda_input" not in st.session_state:
+        st.session_state.gg_lambda_input = st.session_state.sim_params.gg_lambda
+    
+    if "gg_min_input" not in st.session_state:
+        st.session_state.gg_min_input = st.session_state.sim_params.gg_min
+    
+    # Dagum parameters
+    if "dagum_a_input" not in st.session_state:
+        st.session_state.dagum_a_input = st.session_state.sim_params.dagum_a
+    
+    if "dagum_p_input" not in st.session_state:
+        st.session_state.dagum_p_input = st.session_state.sim_params.dagum_p
+    
+    if "dagum_b_input" not in st.session_state:
+        st.session_state.dagum_b_input = st.session_state.sim_params.dagum_b
+    
+    if "dagum_min_input" not in st.session_state:
+        st.session_state.dagum_min_input = st.session_state.sim_params.dagum_min
+    
+    # Income categories
+    if "num_discount_categories_input" not in st.session_state:
+        st.session_state.num_discount_categories_input = st.session_state.sim_params.num_discount_categories
+    
+    if "num_fixed_categories_input" not in st.session_state:
+        st.session_state.num_fixed_categories_input = st.session_state.sim_params.num_fixed_categories
+    
+    # Artificial limit
+    if "artificial_limit_input" not in st.session_state:
+        st.session_state.artificial_limit_input = st.session_state.sim_params.max_purchases_per_term
+    
+    # Discount threshold
+    if "discount_threshold_input" not in st.session_state:
+        st.session_state.discount_threshold_input = st.session_state.sim_params.discount_income_threshold
+
+
 def render_page1():
     """Render Page 1: Common Simulation Parameters"""
     st.markdown('<h2 class="page-header">Page 1: Common Simulation Parameters</h2>', unsafe_allow_html=True)
+    
+    # Initialize widget keys to preserve values across navigation
+    initialize_widget_keys()
     
     # Create columns for better layout
     col1, col2 = st.columns(2)
@@ -68,7 +191,7 @@ def render_page1():
             "Number of Agents",
             min_value=10,
             max_value=50000,
-            value=st.session_state.n_agents,
+            value=st.session_state.n_agents_input,  # Read from widget key
             step=100,
             help="Number of agents to generate for the simulation",
             key="n_agents_input",
@@ -80,7 +203,7 @@ def render_page1():
                 "Random Seed",
                 min_value=1,
                 max_value=2147483647,
-                value=st.session_state.seed,
+                value=st.session_state.seed_input,  # Read from widget key
                 help="Seed for random number generation (for reproducible results)",
                 key="seed_input",
                 on_change=lambda: setattr(st.session_state, 'seed', st.session_state.seed_input)
@@ -90,7 +213,7 @@ def render_page1():
                 "Number of Runs",
                 min_value=2,
                 max_value=1000,
-                value=st.session_state.n_runs,
+                value=st.session_state.n_runs_input,  # Read from widget key
                 step=10,
                 help="Number of Monte-Carlo runs to execute",
                 key="n_runs_input",
@@ -101,7 +224,7 @@ def render_page1():
                 "Base Seed",
                 min_value=1,
                 max_value=2147483647,
-                value=st.session_state.base_seed,
+                value=st.session_state.base_seed_input,  # Read from widget key
                 help="Base seed for Monte-Carlo runs (each run uses base_seed + run_number)",
                 key="base_seed_input",
                 on_change=lambda: setattr(st.session_state, 'base_seed', st.session_state.base_seed_input)
@@ -133,7 +256,7 @@ def render_page1():
             "Number of Periods",
             min_value=1,
             max_value=100,
-            value=st.session_state.sim_params.periods,
+            value=st.session_state.periods_input,  # Read from widget key (persists across navigation)
             help="Number of periods for simulation run",
             key="periods_input",
             on_change=lambda: setattr(st.session_state.sim_params, 'periods', st.session_state.periods_input)
@@ -143,7 +266,7 @@ def render_page1():
             "Duration per Period (hours)",
             min_value=1,
             max_value=24,
-            value=int(st.session_state.sim_params.duration_hours),
+            value=st.session_state.duration_hours_input,  # Read from widget key
             step=1,
             help="Duration of each period in hours (will be converted to seconds for simulation)",
             key="duration_hours_input",
@@ -163,7 +286,7 @@ def render_page1():
             "Number of Vendors (N)",
             min_value=1,
             max_value=50,
-            value=st.session_state.sim_params.num_vendors,
+            value=st.session_state.num_vendors_input,  # Read from widget key (persists across navigation)
             help="Total number of vendors operating on the platform",
             key="num_vendors_input",
             on_change=lambda: setattr(st.session_state.sim_params, 'num_vendors', st.session_state.num_vendors_input)
@@ -182,7 +305,7 @@ def render_page1():
                     "Product Price ($)",
                     min_value=0.01,
                     max_value=1000.0,
-                    value=st.session_state.sim_params.market_price,
+                    value=st.session_state.single_vendor_price_input,  # Read from widget key
                     step=1.0,
                     help="Price for the single vendor",
                     key="single_vendor_price_input",
@@ -199,7 +322,7 @@ def render_page1():
                     "Products Offered",
                     min_value=1,
                     max_value=10000,
-                    value=st.session_state.sim_params.vendor_products_avg,
+                    value=st.session_state.single_vendor_products_input,  # Read from widget key
                     help="Number of products offered by the vendor",
                     key="single_vendor_products_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.single_vendor_products_input)
@@ -209,13 +332,17 @@ def render_page1():
                 st.session_state.sim_params.vendor_products_max = st.session_state.sim_params.vendor_products_avg
             
             # Single vendor carryover
+            # Initialize key if not exists
+            if "single_vendor_carryover" not in st.session_state:
+                st.session_state.single_vendor_carryover = st.session_state.sim_params.global_carryover
+            
             def update_single_vendor_carryover():
                 st.session_state.sim_params.global_carryover = st.session_state.single_vendor_carryover
                 st.session_state.sim_params.override_carryover = True  # Always override in single vendor mode
             
             single_vendor_carryover = st.checkbox(
                 "Enable Product Carryover to Next Period",
-                value=st.session_state.sim_params.global_carryover,
+                value=st.session_state.single_vendor_carryover,  # Read from widget key
                 help="If checked, unsold products carry over to the next period",
                 key="single_vendor_carryover",
                 on_change=update_single_vendor_carryover
@@ -259,7 +386,7 @@ def render_page1():
                         "Min Price per Vendor ($)",
                         min_value=0.01,
                         max_value=1000.0,
-                        value=st.session_state.sim_params.vendor_price_min,
+                        value=st.session_state.vendor_price_min_input,  # Read from widget key
                         step=1.0,
                         help="Minimum price any vendor can have",
                         key="vendor_price_min_input",
@@ -268,20 +395,22 @@ def render_page1():
                     )
                     
                     # Ensure vendor_price_max is at least vendor_price_min before creating the widget
-                    min_for_max = st.session_state.sim_params.vendor_price_min
-                    current_max = st.session_state.sim_params.vendor_price_max
+                    # Read from widget keys first (for persistence), fallback to sim_params
+                    min_for_max = st.session_state.vendor_price_min_input
+                    current_max = st.session_state.vendor_price_max_input
                     
                     # Auto-adjust vendor_price_max if it's below vendor_price_min
                     if current_max < min_for_max:
-                        st.session_state.sim_params.vendor_price_max = st.session_state.sim_params.vendor_price_min
+                        st.session_state.vendor_price_max_input = min_for_max
+                        st.session_state.sim_params.vendor_price_max = min_for_max
                         current_max = min_for_max
-                        st.warning(f"⚠️ Auto-adjusted: Max price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
+                        st.warning(f"⚠️ Auto-adjusted: Max price was set to ${min_for_max:.2f} (cannot be below min price)")
                     
                     vendor_price_max = st.number_input(
                         "Max Price per Vendor ($)",
                         min_value=min_for_max,
                         max_value=1000.0,
-                        value=current_max,
+                        value=current_max,  # Now uses widget key value
                         step=1.0,
                         help="Maximum price any vendor can have",
                         key="vendor_price_max_input",
@@ -290,25 +419,28 @@ def render_page1():
                     )
                     
                     # Ensure market_price is within bounds before creating the widget
-                    min_price_dollars = st.session_state.sim_params.vendor_price_min
-                    max_price_dollars = st.session_state.sim_params.vendor_price_max
-                    current_price_dollars = st.session_state.sim_params.market_price
+                    # Read from widget keys first (for persistence), fallback to sim_params
+                    min_price_dollars = st.session_state.vendor_price_min_input
+                    max_price_dollars = st.session_state.vendor_price_max_input
+                    current_price_dollars = st.session_state.market_price_input
                     
                     # Auto-adjust market_price if it's outside the new bounds
                     if current_price_dollars < min_price_dollars:
-                        st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_min
+                        st.session_state.market_price_input = min_price_dollars
+                        st.session_state.sim_params.market_price = min_price_dollars
                         current_price_dollars = min_price_dollars
-                        st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_min:.2f} (cannot be below min price)")
+                        st.warning(f"⚠️ Auto-adjusted: Average price was set to ${min_price_dollars:.2f} (cannot be below min price)")
                     elif current_price_dollars > max_price_dollars:
-                        st.session_state.sim_params.market_price = st.session_state.sim_params.vendor_price_max
+                        st.session_state.market_price_input = max_price_dollars
+                        st.session_state.sim_params.market_price = max_price_dollars
                         current_price_dollars = max_price_dollars
-                        st.warning(f"⚠️ Auto-adjusted: Average price was set to ${st.session_state.sim_params.vendor_price_max:.2f} (cannot be above max price)")
+                        st.warning(f"⚠️ Auto-adjusted: Average price was set to ${max_price_dollars:.2f} (cannot be above max price)")
                     
                     market_price = st.number_input(
                         "Average Price per Vendor ($)",
                         min_value=min_price_dollars,
                         max_value=max_price_dollars,
-                        value=current_price_dollars,
+                        value=current_price_dollars,  # Now uses widget key value
                         step=1.0,
                         help="Target average price across all vendors",
                         key="market_price_input",
@@ -332,52 +464,57 @@ def render_page1():
                     "Min Products per Vendor/Period",
                     min_value=1,
                     max_value=10000,
-                    value=st.session_state.sim_params.vendor_products_min,
+                    value=st.session_state.vendor_products_min_input,  # Read from widget key
                     help="Minimum products any vendor can offer per period",
                     key="vendor_products_min_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_min', st.session_state.vendor_products_min_input)
                 )
                     
                     # Ensure vendor_products_max is at least vendor_products_min before creating the widget
-                    min_for_max_products = st.session_state.sim_params.vendor_products_min
-                    current_max_products = st.session_state.sim_params.vendor_products_max
+                    # Read from widget keys first (for persistence)
+                    min_for_max_products = st.session_state.vendor_products_min_input
+                    current_max_products = st.session_state.vendor_products_max_input
                     
                     # Auto-adjust vendor_products_max if it's below vendor_products_min
                     if current_max_products < min_for_max_products:
-                        st.session_state.sim_params.vendor_products_max = st.session_state.sim_params.vendor_products_min
+                        st.session_state.vendor_products_max_input = min_for_max_products
+                        st.session_state.sim_params.vendor_products_max = min_for_max_products
                         current_max_products = min_for_max_products
-                        st.warning(f"⚠️ Auto-adjusted: Max products was set to {st.session_state.sim_params.vendor_products_min} (cannot be below min products)")
+                        st.warning(f"⚠️ Auto-adjusted: Max products was set to {min_for_max_products} (cannot be below min products)")
                     
                     vendor_products_max = st.number_input(
                     "Max Products per Vendor/Period",
                     min_value=min_for_max_products,
                     max_value=10000,
-                    value=current_max_products,
+                    value=current_max_products,  # Now uses widget key value
                     help="Maximum products any vendor can offer per period",
                     key="vendor_products_max_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_max', st.session_state.vendor_products_max_input)
                 )
                     
                     # Ensure vendor_products_avg is within bounds before creating the widget
-                    min_products = st.session_state.sim_params.vendor_products_min
-                    max_products = st.session_state.sim_params.vendor_products_max
-                    current_avg_products = st.session_state.sim_params.vendor_products_avg
+                    # Read from widget keys first (for persistence)
+                    min_products = st.session_state.vendor_products_min_input
+                    max_products = st.session_state.vendor_products_max_input
+                    current_avg_products = st.session_state.vendor_products_avg_input
                     
                     # Auto-adjust vendor_products_avg if it's outside the new bounds
                     if current_avg_products < min_products:
-                        st.session_state.sim_params.vendor_products_avg = st.session_state.sim_params.vendor_products_min
+                        st.session_state.vendor_products_avg_input = min_products
+                        st.session_state.sim_params.vendor_products_avg = min_products
                         current_avg_products = min_products
-                        st.warning(f"⚠️ Auto-adjusted: Average products was set to {st.session_state.sim_params.vendor_products_min} (cannot be below min products)")
+                        st.warning(f"⚠️ Auto-adjusted: Average products was set to {min_products} (cannot be below min products)")
                     elif current_avg_products > max_products:
-                        st.session_state.sim_params.vendor_products_avg = st.session_state.sim_params.vendor_products_max
+                        st.session_state.vendor_products_avg_input = max_products
+                        st.session_state.sim_params.vendor_products_avg = max_products
                         current_avg_products = max_products
-                        st.warning(f"⚠️ Auto-adjusted: Average products was set to {st.session_state.sim_params.vendor_products_max} (cannot be above max products)")
+                        st.warning(f"⚠️ Auto-adjusted: Average products was set to {max_products} (cannot be above max products)")
                     
                     vendor_products_avg = st.number_input(
                     "Average Products per Vendor/Period",
                     min_value=min_products,
                     max_value=max_products,
-                    value=current_avg_products,
+                    value=current_avg_products,  # Now uses widget key value
                     help="Target average products per vendor",
                     key="vendor_products_avg_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.vendor_products_avg_input)
@@ -431,7 +568,7 @@ def render_page1():
                         "Carryover Probability (p)",
                         min_value=0.0,
                         max_value=1.0,
-                        value=st.session_state.sim_params.vendor_carryover_probability,
+                        value=st.session_state.vendor_carryover_probability_slider,  # Read from widget key
                         step=0.01,
                         help="Probability that any given vendor will have carryover enabled (Bernoulli per vendor)",
                         key="vendor_carryover_probability_slider",
@@ -644,7 +781,7 @@ BUDGET_SHOP,5.25,50,0""")
             "Platform Markup (m)",
             min_value=0.0,
             max_value=0.5,
-            value=st.session_state.sim_params.platform_markup,
+            value=st.session_state.platform_markup_slider,  # Read from widget key
             step=0.01,
             help="Platform markup: Customer Price = (1+m) × Vendor Price",
             key="platform_markup_slider",
@@ -655,7 +792,7 @@ BUDGET_SHOP,5.25,50,0""")
             "Price Range (r)",
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 for simulation flexibility
-            value=st.session_state.sim_params.price_range,
+            value=st.session_state.price_range_slider,  # Read from widget key
             step=0.01,
             help="Price range for Purchase Now and Minimum Bid prices. Extended to 1.0 for simulation flexibility.",
             key="price_range_slider",
@@ -666,7 +803,7 @@ BUDGET_SHOP,5.25,50,0""")
             "Bidding Percentage (bp)",
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 as requested
-            value=st.session_state.sim_params.bidding_percentage,
+            value=st.session_state.bidding_percentage_slider,  # Read from widget key
             step=0.01,
             help="Proportion of products available for bidding (NA = bp × NV). Now supports up to 100%!",
             key="bidding_percentage_slider",
@@ -688,7 +825,7 @@ BUDGET_SHOP,5.25,50,0""")
             "Price Grid Categories (g)",
             min_value=3,
             max_value=21,
-            value=st.session_state.sim_params.price_grid,
+            value=st.session_state.price_grid_input,  # Read from widget key
             step=2,
             help="Number of price categories (must be odd)",
             key="price_grid_input",
@@ -752,7 +889,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "μ (mu) - Mean of ln(Y)",
                     min_value=0.0,
                     max_value=15.0,
-                    value=st.session_state.sim_params.lognormal_mu,
+                    value=st.session_state.lognormal_mu_input,  # Read from widget key
                     step=0.1,
                     help="Mean parameter of the log-transformed values. For income distributions, typically 8-12.",
                     key="lognormal_mu_input",
@@ -764,7 +901,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "σ (sigma) - Std Dev of ln(Y)",
                     min_value=0.1,
                     max_value=3.0,
-                    value=st.session_state.sim_params.lognormal_sigma,
+                    value=st.session_state.lognormal_sigma_input,  # Read from widget key
                     step=0.1,
                     help="Standard deviation parameter of the log-transformed values",
                     key="lognormal_sigma_input",
@@ -779,7 +916,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "a - Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
-                    value=st.session_state.sim_params.lognormal_min,
+                    value=st.session_state.lognormal_min_input,  # Read from widget key
                     step=100.0,
                     help="Linear shift: all values will be at least this amount",
                     key="lognormal_min_input",
@@ -863,7 +1000,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "k - Shape 1 (tail)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.sim_params.gg_k,
+                    value=st.session_state.gg_k_input,  # Read from widget key
                     step=0.1,
                     help="Shape parameter controlling tail thickness (0.3-3.0 typical)",
                     key="gg_k_input",
@@ -875,7 +1012,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "c - Shape 2 (skew)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.sim_params.gg_c,
+                    value=st.session_state.gg_c_input,  # Read from widget key
                     step=0.1,
                     help="Shape parameter controlling skewness (0.5-5.0 typical)",
                     key="gg_c_input",
@@ -887,7 +1024,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "λ - Scale ($)",
                     min_value=100.0,
                     max_value=1000000.0,
-                    value=st.session_state.sim_params.gg_lambda,
+                    value=st.session_state.gg_lambda_input,  # Read from widget key
                     step=1000.0,
                     help="Scale parameter: sets overall income scale",
                     key="gg_lambda_input",
@@ -902,7 +1039,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "a - Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
-                    value=st.session_state.sim_params.gg_min,
+                    value=st.session_state.gg_min_input,  # Read from widget key
                     step=100.0,
                     help="Linear shift: all values will be at least this amount",
                     key="gg_min_input",
@@ -986,7 +1123,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "a - Shape (tail)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.sim_params.dagum_a,
+                    value=st.session_state.dagum_a_input,  # Read from widget key
                     step=0.1,
                     help="Tail thickness: smaller values = heavier tail (>1 for finite mean)",
                     key="dagum_a_input",
@@ -998,7 +1135,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "p - Shape (body)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.sim_params.dagum_p,
+                    value=st.session_state.dagum_p_input,  # Read from widget key
                     step=0.1,
                     help="Body shape: controls concentration around median",
                     key="dagum_p_input",
@@ -1010,7 +1147,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "b - Scale ($)",
                     min_value=100.0,
                     max_value=1000000.0,
-                    value=st.session_state.sim_params.dagum_b,
+                    value=st.session_state.dagum_b_input,  # Read from widget key
                     step=1000.0,
                     help="Scale parameter: sets median income level",
                     key="dagum_b_input",
@@ -1025,7 +1162,7 @@ BUDGET_SHOP,5.25,50,0""")
                     "Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
-                    value=st.session_state.sim_params.dagum_min,
+                    value=st.session_state.dagum_min_input,  # Read from widget key
                     step=100.0,
                     help="Linear shift: all values will be at least this amount",
                     key="dagum_min_input",
@@ -1085,14 +1222,17 @@ BUDGET_SHOP,5.25,50,0""")
             income_max = st.session_state.sim_params.dagum_max if st.session_state.sim_params.dagum_max else income_min + 150000
         
         # Ensure discount threshold is within bounds before creating the widget
-        current_threshold = st.session_state.sim_params.discount_income_threshold
+        # Read from widget key first (for persistence)
+        current_threshold = st.session_state.discount_threshold_input
         
         # Auto-adjust discount threshold if it's outside the income distribution bounds
         if current_threshold < income_min:
+            st.session_state.discount_threshold_input = income_min
             st.session_state.sim_params.discount_income_threshold = income_min
             current_threshold = income_min
             st.warning(f"⚠️ Auto-adjusted: Discount threshold was set to ${income_min:,.0f} (cannot be below income minimum)")
         elif current_threshold > income_max:
+            st.session_state.discount_threshold_input = income_max
             st.session_state.sim_params.discount_income_threshold = income_max
             current_threshold = income_max
             st.warning(f"⚠️ Auto-adjusted: Discount threshold was set to ${income_max:,.0f} (cannot be above income maximum)")
@@ -1101,7 +1241,7 @@ BUDGET_SHOP,5.25,50,0""")
             "Threshold Income for Discount ($)",
             min_value=income_min,
             max_value=income_max,
-            value=current_threshold,
+            value=current_threshold,  # Now uses widget key value
             step=100.0,
             help="Income threshold below which agents qualify for discounts (pending document disclosure)",
             key="discount_threshold_input",
@@ -1123,7 +1263,7 @@ BUDGET_SHOP,5.25,50,0""")
         
         # Income Categories Section
         st.markdown('<h3 class="section-header">📊 Income Categories</h3>', unsafe_allow_html=True)
-        st.caption("Categories determine customer status (discount/fixed) and consumption limits")
+        st.caption("Categories determine customer status (discount/fixed) and purchasing limits")
         
         # Use narrower columns with gaps to keep buttons close while maintaining same level
         col_cat1, col_gap, col_cat2 = st.columns([1.2, 0.6, 1.2])
@@ -1132,7 +1272,7 @@ BUDGET_SHOP,5.25,50,0""")
                 "Discount Income Categories (NDIC)",
                 min_value=1,
                 max_value=10,
-                value=st.session_state.sim_params.num_discount_categories,
+                value=st.session_state.num_discount_categories_input,  # Read from widget key
                 help="Number of customer discount income categories (lowest income levels)",
                 key="num_discount_categories_input",
                 on_change=lambda: setattr(st.session_state.sim_params, 'num_discount_categories', st.session_state.num_discount_categories_input)
@@ -1160,60 +1300,60 @@ BUDGET_SHOP,5.25,50,0""")
                 "Fixed Income Categories (NFIC)",
                 min_value=1,
                 max_value=50,
-                value=st.session_state.sim_params.num_fixed_categories,
-                help=f"Number of customer fixed income categories (higher income levels). Used for consumption limits. Default: Price Grid - 1 = {default_nfic}",
+                value=st.session_state.num_fixed_categories_input,  # Read from widget key
+                help=f"Number of customer fixed income categories (higher income levels). Used for purchasing limits. Default: Price Grid - 1 = {default_nfic}",
                 key="num_fixed_categories_input",
                 on_change=update_nfic
             )
     
-    # Create columns for Consumption Limits and Population Mode side by side
+    # Create columns for Purchasing Limits and Population Mode side by side
     col_limits, col_population = st.columns(2)
     
     with col_limits:
-        # Consumption Limits Configuration
-        st.markdown('<h3 class="section-header">🛒 Consumption Limits</h3>', unsafe_allow_html=True)
+        # Purchasing Limits Configuration
+        st.markdown('<h3 class="section-header">🛒 Purchasing Limits</h3>', unsafe_allow_html=True)
         st.caption("📊 Limits by **Fixed Income Categories** (Cat 1 = lowest income, applies to discount customers)")
 
         # Initialize the widget key if it doesn't exist
         if "page1_apply_limits" not in st.session_state:
-            # Use the existing apply_consumption_limits value
-            st.session_state.page1_apply_limits = "Yes" if st.session_state.sim_params.apply_consumption_limits else "No"
+            # Use the existing apply_purchasing_limits value
+            st.session_state.page1_apply_limits = "Yes" if st.session_state.sim_params.apply_purchasing_limits else "No"
 
         apply_limits = st.radio(
-            "Apply Consumption Limits?",
+            "Apply Purchasing Limits?",
             ["Yes", "No"],
             horizontal=True,
-            help="Choose whether to apply consumption limits per income category",
+            help="Choose whether to apply purchasing limits per income category",
             key="page1_apply_limits"
         )
 
         # Sync the widget's state to the sim_params
-        st.session_state.sim_params.apply_consumption_limits = (st.session_state.page1_apply_limits == "Yes")
+        st.session_state.sim_params.apply_purchasing_limits = (st.session_state.page1_apply_limits == "Yes")
 
-        if st.session_state.sim_params.apply_consumption_limits:
+        if st.session_state.sim_params.apply_purchasing_limits:
             # Calculate term duration for display
             term_periods = st.session_state.sim_params.periods
             term_hours = st.session_state.sim_params.periods * st.session_state.sim_params.duration_hours
             
-            st.caption(f"Set consumption limits per product for each **fixed income category** **per term**")
+            st.caption(f"Set purchasing limits per product for each **fixed income category** **per term**")
             st.info(f"📅 **Term Definition**: Number of Periods × Length of Period = {term_periods} period(s) × {int(st.session_state.sim_params.duration_hours)}h = {term_hours}h total")
             st.caption("💡 **Income Order**: Category 1 = Lowest Income (discount customers) → Higher Categories = Higher Income")
 
-            # Create a simple interface for setting consumption limits
+            # Create a simple interface for setting purchasing limits
             total_categories = st.session_state.sim_params.num_fixed_categories
             
             # Initialize uniform limit in session state if not exists
-            if "uniform_consumption_limit" not in st.session_state:
-                st.session_state.uniform_consumption_limit = 10
+            if "uniform_purchasing_limit" not in st.session_state:
+                st.session_state.uniform_purchasing_limit = 10
             
             # Callback function to update all category limits when uniform limit changes
             def update_uniform_limit():
                 """Update all category limits to the uniform value"""
-                uniform_value = st.session_state.uniform_consumption_limit_input
-                st.session_state.uniform_consumption_limit = uniform_value
+                uniform_value = st.session_state.uniform_purchasing_limit_input
+                st.session_state.uniform_purchasing_limit = uniform_value
                 # Update all category limit keys
                 for i in range(total_categories):
-                    key = f"consumption_limit_{i}"
+                    key = f"purchasing_limit_{i}"
                     st.session_state[key] = uniform_value
             
             # Uniform limit input (shown first, above per-category inputs)
@@ -1222,9 +1362,9 @@ BUDGET_SHOP,5.25,50,0""")
                 "Maximum number of Items Purchased per Term",
                 min_value=0,
                 max_value=1000,
-                value=st.session_state.uniform_consumption_limit,
-                help=f"Set a uniform consumption limit for all income categories. This will update the default values below, which you can then adjust individually per category. Term = {term_hours}h total.",
-                key="uniform_consumption_limit_input",
+                value=st.session_state.uniform_purchasing_limit,
+                help=f"Set a uniform purchasing limit for all income categories. This will update the default values below, which you can then adjust individually per category. Term = {term_hours}h total.",
+                key="uniform_purchasing_limit_input",
                 on_change=update_uniform_limit
             )
             
@@ -1232,16 +1372,16 @@ BUDGET_SHOP,5.25,50,0""")
             st.markdown("**Fixed Income Categories** (ordered from lowest to highest income)")
             st.caption("Adjust individual category limits below (these values will be used in the simulation)")
 
-            # Initialize consumption limits in session state if not exists
-            if "consumption_limits_temp" not in st.session_state:
-                st.session_state.consumption_limits_temp = st.session_state.sim_params.consumption_limits.copy()
+            # Initialize purchasing limits in session state if not exists
+            if "purchasing_limits_temp" not in st.session_state:
+                st.session_state.purchasing_limits_temp = st.session_state.sim_params.purchasing_limits.copy()
 
-            consumption_limits = {}
+            purchasing_limits = {}
             cols = st.columns(min(5, total_categories))
             for i in range(total_categories):
                 col_idx = i % len(cols)
                 with cols[col_idx]:
-                    key = f"consumption_limit_{i}"
+                    key = f"purchasing_limit_{i}"
                     cat_key = f"cat_{i+1}"
                     
                     # Label for first category (discount customers)
@@ -1252,7 +1392,7 @@ BUDGET_SHOP,5.25,50,0""")
 
                     # Initialize widget key if it doesn't exist
                     if key not in st.session_state:
-                        st.session_state[key] = st.session_state.sim_params.consumption_limits.get(cat_key, st.session_state.uniform_consumption_limit)
+                        st.session_state[key] = st.session_state.sim_params.purchasing_limits.get(cat_key, st.session_state.uniform_purchasing_limit)
 
                     limit = st.number_input(
                         label,
@@ -1260,40 +1400,40 @@ BUDGET_SHOP,5.25,50,0""")
                         max_value=1000,
                         value=st.session_state[key],
                         key=key,
-                        help=f"Max consumption for fixed income category {i+1} over entire term ({term_hours}h total). Cat 1 = lowest income (discount customers).",
-                        on_change=lambda k=key, c=cat_key: st.session_state.consumption_limits_temp.update({c: st.session_state[k]})
+                        help=f"Max purchasing for fixed income category {i+1} over entire term ({term_hours}h total). Cat 1 = lowest income (discount customers).",
+                        on_change=lambda k=key, c=cat_key: st.session_state.purchasing_limits_temp.update({c: st.session_state[k]})
                     )
-                    consumption_limits[cat_key] = st.session_state[key]
+                    purchasing_limits[cat_key] = st.session_state[key]
 
-            st.session_state.sim_params.consumption_limits = consumption_limits
+            st.session_state.sim_params.purchasing_limits = purchasing_limits
 
         else:
-            # Consumption limits are disabled - show artificial limit input
-            st.info("ℹ️ Consumption limits are disabled. For the practical purpose of running the simulation, an artificial consumption limit is specified here, indicating a maximum number of purchased items for all agents based on their assumed consumption preferences and budget limit.")
+            # Purchasing limits are disabled - show artificial limit input
+            st.info("ℹ️ Purchasing limits are disabled. For the practical purpose of running the simulation, an artificial purchasing limit is specified here, indicating a maximum number of purchased items for all agents based on their assumed purchasing preferences and budget limit.")
             
             # Calculate term duration for display
             term_periods = st.session_state.sim_params.periods
             term_hours = st.session_state.sim_params.periods * st.session_state.sim_params.duration_hours
             
-            st.caption("💡 **Note**: This artificial limit represents a market-based constraint derived from customer budget preferences and needs, rather than a regulatory consumption restriction.")
+            st.caption("💡 **Note**: This artificial limit represents a market-based constraint derived from customer budget preferences and needs, rather than a regulatory purchasing restriction.")
             
             # Define callback to update the parameter
             def update_artificial_limit():
                 st.session_state.sim_params.max_purchases_per_term = st.session_state.artificial_limit_input
             
-            # Input field for artificial consumption limit
+            # Input field for artificial purchasing limit
             artificial_limit = st.number_input(
-                "Artificial Consumption Limit (Maximum Items per Term)",
+                "Max Purchases per Term (All Agents)",
                 min_value=1,
                 max_value=1000,
-                value=st.session_state.sim_params.max_purchases_per_term,
-                help=f"Maximum number of items any agent can purchase over the entire term ({term_hours}h total). This represents a practical constraint based on customer budget preferences and assumed consumption patterns.",
+                value=st.session_state.artificial_limit_input,  # Read from widget key
+                help=f"Maximum number of items any agent can purchase over the entire term ({term_hours}h total). This represents a practical constraint based on customer budget preferences and assumed purchasing patterns.",
                 key="artificial_limit_input",
                 on_change=update_artificial_limit
             )
             
-            # Clear consumption limits when disabled
-            st.session_state.sim_params.consumption_limits = {}
+            # Clear purchasing limits when disabled
+            st.session_state.sim_params.purchasing_limits = {}
     
     with col_population:
         # Population Mode Selection (Global Parameter)

@@ -96,11 +96,17 @@ def _vendor_selection_default(agent_state: dict, rng, simulation_config: dict) -
     # STEP 3: Initialize vendor capacity tracking (first agent only)
     if 'vendor_remaining_capacity' not in simulation_config:
         # Initialize capacity for each vendor
+        # IMPORTANT: quantity_offered is PER PERIOD, so multiply by number of periods
+        from src.decisions.income_utils import get_simulation_param
+        num_periods = get_simulation_param(simulation_config, 'periods', 1)
+        
         simulation_config['vendor_remaining_capacity'] = {}
         for vendor in vendors:
             vendor_id = vendor['vendor_id']
-            capacity = vendor.get('quantity_offered', 100)  # Default to 100 if not specified
-            simulation_config['vendor_remaining_capacity'][vendor_id] = capacity
+            capacity_per_period = vendor.get('quantity_offered', 100)  # Default to 100 if not specified
+            # Total capacity = capacity per period × number of periods
+            total_capacity = capacity_per_period * num_periods
+            simulation_config['vendor_remaining_capacity'][vendor_id] = total_capacity
     
     remaining_capacity = simulation_config['vendor_remaining_capacity']
     
@@ -148,23 +154,29 @@ def _vendor_selection_default(agent_state: dict, rng, simulation_config: dict) -
             remaining_capacity[vendor_id] -= agent_demand
             break
     
-    # STEP 8: Fallback if no vendor has sufficient capacity
+    # STEP 8: Fallback if preferred vendor doesn't have capacity
     if selected_vendor_id is None:
-        # Find vendor with most remaining capacity
-        max_capacity = 0
-        fallback_vendor_id = None
-        for vendor_id, capacity in remaining_capacity.items():
-            if capacity > max_capacity:
-                max_capacity = capacity
-                fallback_vendor_id = vendor_id
-        
-        # Take what we can get IF there's any capacity left
-        if fallback_vendor_id is not None and max_capacity > 0:
-            selected_vendor_id = fallback_vendor_id
-            remaining_capacity[fallback_vendor_id] -= min(agent_demand, max_capacity)
-            vendor_rank = next((i+1 for i, (vid, _) in enumerate(vendor_scores) if vid == fallback_vendor_id), len(vendor_scores))
+        # Try next-best vendors in order of score (not just highest capacity)
+        for rank, (vendor_id, score) in enumerate(vendor_scores, 1):
+            # Check if this vendor has ANY capacity left
+            if remaining_capacity.get(vendor_id, 0) > 0:
+                # Only assign if vendor can fulfill FULL demand (no partial fulfillment)
+                if remaining_capacity.get(vendor_id, 0) >= agent_demand:
+                    selected_vendor_id = vendor_id
+                    vendor_rank = rank
+                    remaining_capacity[vendor_id] -= agent_demand
+                    break
         else:
             # ALL VENDORS SOLD OUT - agent cannot be allocated
+            # Mark all purchase requests as failed by setting vendorID to NaN
+            for request in purchase_requests:
+                if isinstance(request, dict):
+                    request['vendorID'] = np.nan  # Mark as failed allocation
+                    request['allocation_failed'] = True
+            
+            # Update agent_state with modified purchase_requests
+            agent_state['purchase_requests'] = purchase_requests
+            
             # Return NaN to indicate no vendor available
             return {
                 "vendor_selection": np.nan,

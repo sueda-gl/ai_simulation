@@ -27,9 +27,9 @@ from .vendor_viz import (
     render_vendor_selection
 )
 
-from .consumption_viz import (
-    render_consumption_quantity,
-    render_consumption_frequency
+from .purchasing_viz import (
+    render_purchasing_quantity,
+    render_purchasing_frequency
 )
 
 from .bidding_viz import (
@@ -64,9 +64,9 @@ DECISION_VISUALIZATIONS = {
     'vendor_choice_weights': render_vendor_choice_weights,
     'vendor_selection': render_vendor_selection,
     
-    # Consumption decisions
-    'consumption_quantity': render_consumption_quantity,
-    'consumption_frequency': render_consumption_frequency,
+    # Purchasing decisions
+    'purchasing_quantity': render_purchasing_quantity,
+    'purchasing_frequency': render_purchasing_frequency,
     
     # Bidding decisions
     'bid_value': render_bid_value,
@@ -95,9 +95,9 @@ __all__ = [
     'render_vendor_choice_weights',
     'render_vendor_selection',
     
-    # Consumption
-    'render_consumption_quantity',
-    'render_consumption_frequency',
+    # Purchasing
+    'render_purchasing_quantity',
+    'render_purchasing_frequency',
     
     # Bidding
     'render_bid_value',

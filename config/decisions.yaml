@@ -92,15 +92,15 @@ vendor_choice_weights:
   placeholder: true
   output_field: vendor_choice_weights
   default_value: NA
-consumption_quantity:
+purchasing_quantity:
   uses_global_parameters: []
   placeholder: true
-  output_field: consumption_quantity
+  output_field: purchasing_quantity
   default_value: NA
-consumption_frequency:
+purchasing_frequency:
   uses_global_parameters: []
   placeholder: true
-  output_field: consumption_frequency
+  output_field: purchasing_frequency
   default_value: NA
 vendor_selection:
   uses_global_parameters: []

@@ -144,10 +144,10 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
             col_plot, col_stats = st.columns([2, 1])
             
             with col_plot:
+                st.markdown(f"**Purchase Decisions Distribution ({total_regular_requests:,} requests)**")
                 fig = px.pie(
                     values=[pn_count, bid_count],
                     names=['Purchase Now (PN)', 'Bid (BID)'],
-                    title=f"Purchase Decisions Distribution ({total_regular_requests:,} requests)",
                     hole=0.4,  # Donut chart
                     color_discrete_map={
                         'Purchase Now (PN)': '#4CAF50',  # Green

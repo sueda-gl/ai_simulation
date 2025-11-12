@@ -36,10 +36,10 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
     
     with col_plot:
         if len(value_counts) > 0:
+            st.markdown(f"**{decision_title} Distribution**")
             fig = px.pie(
                 values=value_counts.values,
                 names=value_counts.index,
-                title=f"{decision_title} Distribution",
                 color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
             )
             st.plotly_chart(fig, use_container_width=True)
@@ -216,10 +216,10 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
                             pie_labels.append('Discount')
                         pie_values.append(count)
                 
+                st.markdown("**Customer Type Distribution**")
                 fig = px.pie(
                     values=pie_values,
                     names=pie_labels,
-                    title="Customer Type Distribution",
                     color_discrete_map={
                         'Regular': '#4169E1',      # Royal Blue
                         'Fixed Price': '#FF8C00',  # Dark Orange
@@ -314,8 +314,10 @@ def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         export_df['Assigned Allowance Level'] = ''
     
-    # Group_experiment
-    if 'group' in df.columns:
+    # Group_experiment (check for various possible column names, case-insensitive)
+    if 'Group_experiment' in df.columns:
+        export_df['Group_experiment'] = df['Group_experiment']
+    elif 'group' in df.columns:
         export_df['Group_experiment'] = df['group']
     elif 'group_experiment' in df.columns:
         export_df['Group_experiment'] = df['group_experiment']
@@ -336,10 +338,10 @@ def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         export_df['Disclosed income'] = ''
     
-    # Disclosed documents (Y/N/NA to 1/0/blank)
+    # Disclosed documents (Y/N/NA to 1/0/N/A)
     if 'disclose_documents' in df.columns:
         export_df['Disclosed documents'] = df['disclose_documents'].apply(
-            lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
+            lambda x: 1 if x == 'Y' else (0 if x == 'N' else 'N/A')
         )
     else:
         export_df['Disclosed documents'] = ''

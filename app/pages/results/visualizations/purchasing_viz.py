@@ -1,7 +1,7 @@
-# app/pages/results/visualizations/consumption_viz.py
+# app/pages/results/visualizations/purchasing_viz.py
 """
-Consumption-related visualization functions.
-Handles consumption_quantity and consumption_frequency decisions.
+Purchasing-related visualization functions.
+Handles purchasing_quantity and purchasing_frequency decisions.
 """
 import streamlit as st
 import pandas as pd
@@ -10,8 +10,8 @@ from io import BytesIO
 from datetime import datetime, timedelta
 
 
-def render_consumption_quantity(df, decision_name, decision_title, decision_data):
-    """Visualization for consumption_quantity - quantity analysis with purchase requests"""
+def render_purchasing_quantity(df, decision_name, decision_title, decision_data):
+    """Visualization for purchasing_quantity - quantity analysis with purchase requests"""
     
     # Overview metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -36,18 +36,18 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
     col_plot, col_stats = st.columns([2, 1])
     
     with col_plot:
-        # Histogram of consumption quantities
+        # Histogram of purchase quantities
+        st.markdown("**Distribution of Purchase Quantities**")
         fig = px.histogram(
             df,
             x=decision_name,
             nbins=min(30, int(decision_data.max()) + 1),
-            title="Distribution of Consumption Quantities",
-            labels={decision_name: 'Items per Period', 'count': 'Number of Agents'}
+            labels={decision_name: 'Items per Period', 'count': 'Number of Purchases'}
         )
         fig.update_layout(
             showlegend=False,
             xaxis_title="Items Purchased per Period",
-            yaxis_title="Number of Agents"
+            yaxis_title="Number of Purchases"
         )
         st.plotly_chart(fig, use_container_width=True)
     
@@ -63,7 +63,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         
         stats_df = pd.DataFrame({
             'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-            'Value per Term': [
+            'Purchases per Term': [
                 f"{stats['mean']:.2f}",
                 f"{stats['std']:.2f}",
                 f"{int(stats['min'])}",
@@ -72,7 +72,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                 f"{stats['25%']:.2f}",
                 f"{stats['75%']:.2f}"
             ],
-            'Value per Period': [
+            'Purchases per Period': [
                 f"{stats['mean']/periods:.2f}",
                 f"{stats['std']/periods:.2f}",
                 f"{int(stats['min'])/periods:.2f}",
@@ -162,7 +162,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             # Now create three sub-sections, one for each customer type
             st.markdown("---")
             st.markdown("**📊 Detailed Analysis by Customer Type**")
-            st.caption("Consumption quantity distribution and statistics for each customer type")
+            st.caption("Purchasing quantity distribution and statistics for each customer type")
             
             # Get number of periods for per-period calculations
             if hasattr(st.session_state, 'sim_params'):
@@ -170,24 +170,32 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             else:
                 periods = 15  # default
             
-            # Helper function to get consumption quantities for a specific customer type
+            # Helper function to get purchasing quantities for a specific customer type
             def get_quantities_by_customer_type(df, target_type):
-                """Extract consumption quantities for agents of a specific customer type"""
+                """Extract purchasing quantities for agents of a specific customer type"""
                 quantities = []
                 for idx, row in df.iterrows():
-                    purchase_requests = row.get('purchase_requests', [])
-                    if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
-                        # Check customer type from first request (all requests have same customer type)
-                        first_req = purchase_requests[0]
-                        if isinstance(first_req, dict):
-                            customer_type = first_req.get('customer_type', 'regular')
-                            if isinstance(customer_type, str):
-                                customer_type = customer_type.capitalize()
-                            
-                            if customer_type == target_type:
-                                # Add this agent's consumption quantity
-                                qty = row.get('consumption_quantity', 0)
-                                quantities.append(qty)
+                    # Get customer type - try direct column first, then purchase_requests as fallback
+                    customer_type = ''
+                    
+                    # Priority 1: Check if customer_type is directly available in the dataframe
+                    if 'customer_type' in row and pd.notna(row['customer_type']) and str(row['customer_type']).strip():
+                        customer_type = str(row['customer_type']).capitalize()
+                    else:
+                        # Priority 2: Extract from purchase_requests if available
+                        purchase_requests = row.get('purchase_requests', [])
+                        if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
+                            # Check customer type from first request (all requests have same customer type)
+                            first_req = purchase_requests[0]
+                            if isinstance(first_req, dict):
+                                customer_type = first_req.get('customer_type', 'regular')
+                                if isinstance(customer_type, str):
+                                    customer_type = customer_type.capitalize()
+                    
+                    # If this agent matches the target customer type, include their quantity
+                    if customer_type == target_type:
+                        qty = row.get('purchasing_quantity', 0)
+                        quantities.append(qty)
                 
                 return pd.Series(quantities) if quantities else pd.Series([0])
             
@@ -208,19 +216,19 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                         
                         with col_plot_type:
                             # Create histogram for this customer type
+                            st.markdown(f"**Distribution of Purchase Quantities - {ctype} Customers**")
                             type_df = pd.DataFrame({decision_name: type_quantities})
                             
                             fig_type = px.histogram(
                                 type_df,
                                 x=decision_name,
                                 nbins=min(30, int(type_quantities.max()) + 1),
-                                title=f"Distribution of Consumption Quantities - {ctype} Customers",
-                                labels={decision_name: 'Items per Period', 'count': 'Number of Agents'}
+                                labels={decision_name: 'Items per Period', 'count': 'Number of Purchases'}
                             )
                             fig_type.update_layout(
                                 showlegend=False,
                                 xaxis_title="Items Purchased per Period",
-                                yaxis_title="Number of Agents"
+                                yaxis_title="Number of Purchases"
                             )
                             st.plotly_chart(fig_type, use_container_width=True)
                         
@@ -230,7 +238,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                             
                             type_stats_table = pd.DataFrame({
                                 'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                                'Value per Term': [
+                                'Purchases per Term': [
                                     f"{type_stats_desc['mean']:.2f}",
                                     f"{type_stats_desc['std']:.2f}",
                                     f"{int(type_stats_desc['min'])}",
@@ -239,7 +247,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                                     f"{type_stats_desc['25%']:.2f}",
                                     f"{type_stats_desc['75%']:.2f}"
                                 ],
-                                'Value per Period': [
+                                'Purchases per Period': [
                                     f"{type_stats_desc['mean']/periods:.2f}",
                                     f"{type_stats_desc['std']/periods:.2f}",
                                     f"{int(type_stats_desc['min'])/periods:.2f}",
@@ -263,7 +271,14 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         st.markdown("---")
         st.markdown("**📊 Quantity by Income Category**")
         
-        category_stats = df.groupby('income_category')['consumption_quantity'].agg([
+        # Warning: Temporary category assignment
+        st.info(
+            "⚠️ **Note:** The current income category assignments shown below are **not representative** "
+            "and are based on temporary logic. In production, category assignments will be read from "
+            "an external algorithm that properly handles income categorization."
+        )
+        
+        category_stats = df.groupby('income_category')['purchasing_quantity'].agg([
             ('count', 'count'),
             ('mean', 'mean'),
             ('std', 'std'),
@@ -288,11 +303,11 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             fig_box = px.box(
                 df_sorted,
                 x='income_category',
-                y='consumption_quantity',
+                y='purchasing_quantity',
                 title="Quantity Distribution by Income Category",
                 labels={
                     'income_category': 'Income Category',
-                    'consumption_quantity': 'Items per Term'
+                    'purchasing_quantity': 'Items per Term'
                 },
                 category_orders={"income_category": sorted(df['income_category'].unique())}
             )
@@ -522,7 +537,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
     # Default behavior explanation
     with st.expander("ℹ️ How This Decision Works (Default Behavior)", expanded=False):
         st.markdown("""
-        **Consumption Quantity Default Logic:**
+        **Purchasing Quantity Default Logic:**
         
         1. **Income Category Assignment**: Each agent is assigned to an income category (1 to NFIC) based on:
            - The income range is split into NFIC equal intervals
@@ -530,10 +545,10 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
            - **No distinction by customer type** during category assignment
            - Example: If NFIC=10 and range is [$0-$100k], Category 1 = [$0-$10k], Category 2 = [$10k-$20k], etc.
         
-        2. **Consumption Limit**: 
-           - **Discount customers**: Use consumption limit from Category 1 (lowest)
-           - **Regular customers**: Use consumption limit from Category 10 (highest)
-           - **Fixed customers**: Use consumption limit from their actual income category
+        2. **Purchasing Limit**: 
+           - **Discount customers**: Use purchasing limit from Category 1 (lowest)
+           - **Regular customers**: Use purchasing limit from Category 10 (highest)
+           - **Fixed customers**: Use purchasing limit from their actual income category
            - If limits disabled: Uses `max_purchases_per_term` fallback
         
         3. **Total Quantity**: Random integer uniformly distributed in [0, limit]
@@ -546,11 +561,11 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
         **Professor's Specification**: 
         "The income range is split into equal intervals. All customers with income within 
         the corresponding interval are assigned to it irrespective of their type. The total 
-        quantity is a random number between 0 and the consumption limit, with each purchase 
+        quantity is a random number between 0 and the purchasing limit, with each purchase 
         order for 1 item by default, randomly spread during the term."
         """)
     
-    # Export section for consumption quantity / transactions
+    # Export section for purchasing quantity / transactions
     if 'purchase_requests' in df.columns:
         st.markdown("---")
         st.markdown("**📥 Export Transaction Data**")
@@ -608,7 +623,7 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                     st.download_button(
                         label="📊 Download Transactions Excel",
                         data=buffer.getvalue(),
-                        file_name=f"consumption_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        file_name=f"purchasing_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Download transaction-level data with one row per purchase request"
                     )
@@ -648,16 +663,24 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
                 group_experiment = row.get('Group_experiment', '')
                 income_category = row.get('income_category', '')
                 
-                # Get customer type from purchase_requests
-                purchase_requests = row.get('purchase_requests', [])
+                # Get customer type - try direct column first, then purchase_requests as fallback
                 customer_type = ''
                 
-                if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
-                    first_req = purchase_requests[0]
-                    if isinstance(first_req, dict):
-                        customer_type = first_req.get('customer_type', '')
-                        if isinstance(customer_type, str):
-                            customer_type = customer_type.capitalize()
+                # Priority 1: Check if customer_type is directly available in the dataframe
+                if 'customer_type' in row and pd.notna(row['customer_type']) and str(row['customer_type']).strip():
+                    customer_type = str(row['customer_type']).capitalize()
+                else:
+                    # Priority 2: Extract from purchase_requests if available
+                    purchase_requests = row.get('purchase_requests', [])
+                    if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
+                        first_req = purchase_requests[0]
+                        if isinstance(first_req, dict):
+                            customer_type = first_req.get('customer_type', '')
+                            if isinstance(customer_type, str):
+                                customer_type = customer_type.capitalize()
+                
+                # Get purchase_requests for counting
+                purchase_requests = row.get('purchase_requests', [])
                 
                 # Total counts
                 total_requests = len(purchase_requests) if isinstance(purchase_requests, list) else 0
@@ -749,8 +772,8 @@ def render_consumption_quantity(df, decision_name, decision_title, decision_data
             st.error(f"⚠️ Error creating agent-level export: {str(e)}")
 
 
-def render_consumption_frequency(df, decision_name, decision_title, decision_data):
-    """Visualization for consumption_frequency - shows WHEN purchases occur (timing/frequency)"""
+def render_purchasing_frequency(df, decision_name, decision_title, decision_data):
+    """Visualization for purchasing_frequency - shows WHEN purchases occur (timing/frequency)"""
     
     # Check if purchase_requests data is available
     if 'purchase_requests' not in df.columns:
@@ -855,14 +878,14 @@ def render_consumption_frequency(df, decision_name, decision_title, decision_dat
     st.caption("Individual agent timelines showing random distribution of their purchases")
     
     # Select up to 20 agents with most purchases for visualization
-    agent_purchase_counts = df.groupby(df.index)['consumption_quantity'].first().sort_values(ascending=False)
+    agent_purchase_counts = df.groupby(df.index)['purchasing_quantity'].first().sort_values(ascending=False)
     sample_agents = agent_purchase_counts.head(20).index.tolist()
     
     timeline_data = []
     for idx in sample_agents:
         requests = df.iloc[idx]['purchase_requests']
         agent_id = df.iloc[idx].get('agent_id', idx + 1)
-        quantity = df.iloc[idx].get('consumption_quantity', 0)
+        quantity = df.iloc[idx].get('purchasing_quantity', 0)
         
         if isinstance(requests, list):
             for req in requests:
@@ -908,6 +931,6 @@ def render_consumption_frequency(df, decision_name, decision_title, decision_dat
     - Each horizontal line represents one agent
     - Each vertical tick mark is a purchase request
     - Purchases are randomly distributed across the term duration (not evenly spaced)
-    - Different agents have different frequencies based on their consumption quantity
+    - Different agents have different frequencies based on their purchasing quantity
     """)
 

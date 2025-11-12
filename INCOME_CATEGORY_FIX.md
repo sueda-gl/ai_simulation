@@ -152,3 +152,4 @@ To verify the fix works correctly:
 **Solution:** Implemented equal-interval category assignment per professor's specification
 
 
+

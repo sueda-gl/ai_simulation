@@ -187,3 +187,17 @@ app/pages/results/components/export_section.py
 - Excel filename includes timestamp for uniqueness
 - Error handling prevents UI crashes if data is missing
 
+---
+
+## 🐛 Bug Fix History
+
+### November 12, 2025: Income Category Column Empty
+**Issue:** The Income Category column (Column E) in exported Excel files was completely empty for all transactions.
+
+**Root Cause:** The column filtering logic in `render_export_section()` used substring matching to exclude the `'income'` column, which accidentally also excluded `'income_category'` since it contains the substring 'income'.
+
+**Fix:** Modified the filtering logic to use exact matching for `'income'` while preserving `'income_category'`. See `INCOME_CATEGORY_EXPORT_BUG_FIX.md` for full details.
+
+**Status:** ✅ Fixed in app/pages/results/components/export_section.py
+
+

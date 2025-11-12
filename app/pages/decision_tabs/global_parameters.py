@@ -61,13 +61,13 @@ def render_global_parameters_readonly(decision_name=None):
         
         # Consumption Limits
         st.markdown('<h4 class="subsection-header">🛒 Consumption Limits</h4>', unsafe_allow_html=True)
-        limits_status = "Enabled" if st.session_state.sim_params.apply_consumption_limits else "Disabled"
+        limits_status = "Enabled" if st.session_state.sim_params.apply_purchasing_limits else "Disabled"
         st.text(f"Apply Limits: {limits_status}")
-        if st.session_state.sim_params.apply_consumption_limits:
-            limits_source = "Manual Entry" if st.session_state.sim_params.consumption_limits_source == "manual" else "Upload CSV"
+        if st.session_state.sim_params.apply_purchasing_limits:
+            limits_source = "Manual Entry" if st.session_state.sim_params.purchasing_limits_source == "manual" else "Upload CSV"
             st.text(f"Configuration Source: {limits_source}")
         else:
-            # Show artificial limit when consumption limits are disabled
+            # Show artificial limit when purchasing limits are disabled
             st.text(f"Artificial Limit: {st.session_state.sim_params.max_purchases_per_term} items/term")
     
     with col3:

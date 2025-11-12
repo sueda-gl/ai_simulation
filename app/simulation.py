@@ -461,13 +461,13 @@ def run_simulation_from_sidebar():
                             'default_decisions': prob_settings
                         }
                 
-                # Pass consumption limits to orchestrator if enabled
-                if st.session_state.sim_params.apply_consumption_limits:
+                # Pass purchasing limits to orchestrator if enabled
+                if st.session_state.sim_params.apply_purchasing_limits:
                     if hasattr(orchestrator, 'simulation_config'):
-                        orchestrator.simulation_config['consumption_limits'] = st.session_state.sim_params.consumption_limits
+                        orchestrator.simulation_config['purchasing_limits'] = st.session_state.sim_params.purchasing_limits
                     else:
                         orchestrator.simulation_config = {
-                            'consumption_limits': st.session_state.sim_params.consumption_limits
+                            'purchasing_limits': st.session_state.sim_params.purchasing_limits
                         }
                 
                 # Also pass information about which decisions are custom vs default

@@ -67,10 +67,10 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
             col_hist, col_info = st.columns([2, 1])
             
             with col_hist:
+                st.markdown(f"**Distribution of {len(all_bids):,} Bid Values Across All Requests**")
                 fig = px.histogram(
                     x=all_bids,
                     nbins=30,
-                    title=f"Distribution of {len(all_bids):,} Bid Values Across All Requests",
                     labels={'x': 'Bid Amount (€)', 'count': 'Number of Bids'}
                 )
                 st.plotly_chart(fig, use_container_width=True)

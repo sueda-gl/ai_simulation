@@ -91,10 +91,10 @@ class SimulationParameters:
     num_fixed_categories: int = 10  # ✅ Changed from 5 to 10
     
     # Consumption limits
-    apply_consumption_limits: bool = False  # ✅ Changed from True to False (unchecked)
-    consumption_limits: Dict[str, float] = field(default_factory=dict)
-    consumption_limits_source: str = "manual"  # "manual" or "upload"
-    max_purchases_per_term: int = 50  # Fallback maximum when consumption limits disabled
+    apply_purchasing_limits: bool = False  # ✅ Changed from True to False (unchecked)
+    purchasing_limits: Dict[str, float] = field(default_factory=dict)
+    purchasing_limits_source: str = "manual"  # "manual" or "upload"
+    max_purchases_per_term: int = 50  # Fallback maximum when purchasing limits disabled
     
     def get_duration_seconds(self) -> float:
         """Convert duration from hours to seconds"""
@@ -495,8 +495,8 @@ ALL_DECISIONS = [
     "donation_default",              # 3
     "rejected_transaction_defaults", # 4
     "vendor_choice_weights",         # 5
-    "consumption_quantity",          # 6
-    "consumption_frequency",         # 7
+    "purchasing_quantity",           # 6
+    "purchasing_frequency",          # 7
     "vendor_selection",              # 8
     "purchase_vs_bid",               # 9 (deprecated - kept for backward compatibility)
     "bid_value",                     # 10 (deprecated - kept for backward compatibility)

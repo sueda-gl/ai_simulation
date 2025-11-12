@@ -186,11 +186,11 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
                 st.metric("Range", f"{numeric_data.min():.2%} - {numeric_data.max():.2%}")
             col_plot, col_stats = st.columns([2, 1])
             with col_plot:
+                st.markdown(f"**Distribution of {decision_title}**")
                 fig = px.histogram(
                     df,
                     x=decision_name,
                     nbins=30,
-                    title=f"Distribution of {decision_title}",
                     labels={decision_name: decision_title, 'count': 'Number of Agents'}
                 )
                 fig.update_layout(
@@ -343,10 +343,10 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         
         with col_hist:
             # Histogram showing the distribution - match overview chart settings for consistency
+            st.markdown("**Distribution of Donation Rates Across Agents**")
             fig = px.histogram(
                 df,
                 x='donation_default',
-                title="Distribution of Donation Rates Across Agents",
                 labels={'donation_default': 'Donation Rate', 'count': 'Number of Agents'},
                 nbins=30,  # Match overview chart
                 marginal="box"  # Match overview chart
@@ -422,6 +422,9 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                 
                 # Download button
                 transaction_filename = f"donation_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                
+                st.info("ℹ️ **Note on Customer Price**: The 'Customer Price' column currently uses simplified placeholder calculations. Final customer prices will be calculated from actual vendor prices and customer-specific parameters once the pricing algorithm integration is completed.")
+                
                 st.download_button(
                     label="📥 Download Transaction-Level Excel",
                     data=buffer_transactions.getvalue(),

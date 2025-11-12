@@ -102,40 +102,7 @@ def render_probability_default_config(decision_name, default_value):
     # This ensures values persist even when widgets are conditionally rendered
     
     # Special handling for purchase_vs_bid - show it only applies to regular customers
-    if decision_name == "purchase_vs_bid":
-        st.caption(description)
-        
-        # Show customer type distribution if simulation results exist
-        if 'simulation_results' in st.session_state and st.session_state.simulation_results:
-            results_dict = st.session_state.simulation_results
-            first_result = next(iter(results_dict.values()))
-            
-            if first_result is not None and not first_result.empty and 'customer_type' in first_result.columns:
-                # Analyze customer types
-                from src.decisions.income_utils import analyze_customer_types
-                stats = analyze_customer_types(first_result)
-                
-                # Show distribution
-                type_col1, type_col2, type_col3 = st.columns(3)
-                with type_col1:
-                    st.metric("Regular Customers", 
-                             f"{stats['regular']['count']:,}", 
-                             f"{stats['regular']['percentage']:.1f}%",
-                             help="Only these customers make Purchase Now vs Bid choice")
-                with type_col2:
-                    st.metric("Fixed Customers", 
-                             f"{stats['fixed']['count']:,}",
-                             f"{stats['fixed']['percentage']:.1f}%",
-                             help="Use fixed pricing only")
-                with type_col3:
-                    st.metric("Discount Customers", 
-                             f"{stats['discount']['count']:,}",
-                             f"{stats['discount']['percentage']:.1f}%",
-                             help="Use discount pricing")
-                
-                st.caption(f"💡 The probability below applies to {stats['regular']['count']:,} regular customers ({stats['regular']['percentage']:.1f}% of total)")
-    else:
-        st.caption(description)
+    st.caption(description)
     
     col1, col2, col3 = st.columns([2, 1, 1])
     
@@ -421,8 +388,8 @@ def render_placeholder_default_config(decision_name, default_value):
     """Render info for placeholder/computed default decisions"""
     
     descriptions = {
-        "RANDOM_WITHIN_LIMIT": "Random value within consumption limit (computed per agent based on income category)",
-        "CALCULATED": "Calculated by spreading Consumption quantity over simulation term",
+        "RANDOM_WITHIN_LIMIT": "Random value within purchasing limit (computed per agent based on income category)",
+        "CALCULATED": "Calculated by spreading Purchasing quantity over simulation term",
         "RANDOM_WITHIN_RANGE": "Random bid amount within bidding price range (computed based on market parameters)",
         "deterministic": "Deterministic selection based on highest weighted vendor-product score",
         "NA": "Not applicable - this decision is not relevant given other parameter choices"
@@ -434,7 +401,7 @@ def render_placeholder_default_config(decision_name, default_value):
     st.caption(description)
     
     # Decision-specific captions
-    if decision_name in ["consumption_quantity", "consumption_frequency"]:
+    if decision_name in ["purchasing_quantity", "purchasing_frequency"]:
         st.caption("💡 No pre-configuration needed - this value is automatically calculated for all agents")
     elif decision_name == "bid_amount":
         st.caption("💡 No pre-configuration needed - this value is automatically calculated only for agents who ended up placing a bid")

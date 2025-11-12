@@ -240,8 +240,8 @@ DEFAULT_DECISION_VALUES = {
             "sustainability": {"name": "Sustainability", "description": "vendor sustainability rating"}
         }
     },
-    "consumption_quantity": "RANDOM_WITHIN_LIMIT",  # Random within consumption limit
-    "consumption_frequency": "CALCULATED",  # Consumption quantity / Period duration
+    "purchasing_quantity": "RANDOM_WITHIN_LIMIT",  # Random within purchasing limit
+    "purchasing_frequency": "CALCULATED",  # Consumption quantity / Period duration
     "vendor_selection": "deterministic",  # Deterministic based on highest weighted vendor-product score
     "purchase_vs_bid": {
         "type": "random_probability",
@@ -272,8 +272,8 @@ DEFAULT_DECISION_DESCRIPTIONS = {
     "disclose_documents": "configurable probability Y/N (applies only to agents with income < discount threshold, default 50% each)",
     "rejected_transaction_defaults": "Selected option for handling rejected transactions will be applied to all agents",
     "vendor_choice_weights": "equal weight distribution among selected parameters (Price, Quality, Proximity, Sustainability)",
-    "consumption_quantity": "random within consumption limit",
-    "consumption_frequency": "Consumption quantity divided by Period duration",
+    "purchasing_quantity": "random within purchasing limit",
+    "purchasing_frequency": "Consumption quantity divided by Period duration",
     "vendor_selection": "deterministic based on highest weighted vendor-product score",
     "purchase_vs_bid": "configurable probability Purchase Now/bid for REGULAR customers only (default 50% each)",
     "bid_value": "random within bidding price range (only for REGULAR customers who chose to bid)",
@@ -410,15 +410,15 @@ def get_actual_default_value(decision_name, sim_params=None):
             )
         )
     
-    # Handle random within consumption limit
+    # Handle random within purchasing limit
     elif base_value == "RANDOM_WITHIN_LIMIT":
         # This needs to be handled per agent based on their income category
         # Return a placeholder that the simulation will interpret
         return "RANDOM_WITHIN_LIMIT"
     
-    # Handle calculated consumption frequency
+    # Handle calculated purchasing frequency
     elif base_value == "CALCULATED":
-        # This will be calculated based on consumption quantity / period duration
+        # This will be calculated based on purchasing quantity / period duration
         # Return a placeholder that the simulation will interpret
         return "CALCULATED"
     
