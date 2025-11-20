@@ -102,9 +102,13 @@ def render_single_run_results():
             # Get decision number and format title
             decision_number = ALL_DECISIONS.index(decision) + 1 if decision in ALL_DECISIONS else None
             
-            # Special handling for purchase_vs_bid
+            # Special handling for decision names
             if decision == "purchase_vs_bid":
                 decision_title = "Purchase Now Vs Bid"
+            elif decision == "purchasing_quantity":
+                decision_title = "Purchase Request Quantity"
+            elif decision == "purchasing_frequency":
+                decision_title = "Purchase Request Frequency"
             else:
                 decision_title = decision.replace('_', ' ').title()
             

@@ -56,20 +56,20 @@ def _build_donation_transaction_export(df, simulation_config=None):
         group_experiment = row.get('Group_experiment', '')
         income_category = row.get('income_category', np.nan)
         
-        # Get donation rates
-        default_donation_rate = row.get('donation_default', np.nan)
-        final_donation_rate = row.get('final_donation_rate', default_donation_rate)
+        # Get AGENT-LEVEL donation rates (used as fallback only)
+        agent_default_rate = row.get('donation_default', np.nan)
+        agent_final_rate = row.get('final_donation_rate', agent_default_rate)
         
-        # Convert donation rates to numeric
+        # Convert to numeric for fallback
         try:
-            default_donation_rate = float(default_donation_rate) if not pd.isna(default_donation_rate) else np.nan
+            agent_default_rate = float(agent_default_rate) if not pd.isna(agent_default_rate) else 0.10
         except (ValueError, TypeError):
-            default_donation_rate = np.nan
+            agent_default_rate = 0.10
         
         try:
-            final_donation_rate = float(final_donation_rate) if not pd.isna(final_donation_rate) else default_donation_rate
+            agent_final_rate = float(agent_final_rate) if not pd.isna(agent_final_rate) else agent_default_rate
         except (ValueError, TypeError):
-            final_donation_rate = default_donation_rate
+            agent_final_rate = agent_default_rate
         
         # Get purchase requests
         purchase_requests = row.get('purchase_requests', [])
@@ -132,12 +132,29 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 purchase_request_type = 'PN' if customer_type.lower() == 'regular' else customer_type_display
                 customer_price = baseline_price
             
-            # Transaction Completed (0/1)
-            transaction_completed = request.get('transaction_completed', 
-                                               request.get('transactionCompleted', 1))
-            # Ensure it's 0 or 1
-            if transaction_completed not in [0, 1]:
-                transaction_completed = 1 if transaction_completed else 0
+            # Transaction Completed - Not available (enrich_requests not currently used)
+            # Decision 6 and 7 only track purchase REQUESTS, not completed transactions
+            transaction_completed = 'N/A'
+            
+            # ====================================================================
+            # NEW: Get REQUEST-SPECIFIC donation rate (priority over agent-level)
+            # ====================================================================
+            # Check if this request has its own donation rate
+            request_donation_rate = request.get('final_donation_rate', None)
+            
+            # Use request-level if available, otherwise fall back to agent-level
+            if request_donation_rate is not None:
+                try:
+                    final_donation_rate = float(request_donation_rate)
+                except (ValueError, TypeError):
+                    final_donation_rate = agent_final_rate
+            else:
+                # No request-level rate, use agent-level fallback
+                final_donation_rate = agent_final_rate
+            
+            # Ensure valid range
+            final_donation_rate = np.clip(final_donation_rate, 0.0, 1.0) if not pd.isna(final_donation_rate) else agent_final_rate
+            # ====================================================================
             
             # Calculate donation and total paid
             if not pd.isna(final_donation_rate) and not pd.isna(customer_price):
@@ -159,7 +176,7 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 'Period': period,
                 'Customer Price': customer_price,
                 'Transaction Completed': transaction_completed,
-                'Default Donation Rate': default_donation_rate,
+                'Default Donation Rate': agent_default_rate,
                 'Final Donation Rate': final_donation_rate,
                 'Donation Paid': donation_paid,
                 'Total Paid by Customer': total_paid
@@ -373,11 +390,45 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                 config = st.session_state.selected_donation_config
                 st.caption(f"Population: {config['population_mode']}")
                 st.caption(f"Income: {config['income_spec_mode']}")
+    
+    else:
+        # Fall back to slider if no donation_default data available
+        st.info("💡 **No donation configuration selected** - Using simple rate configuration")
+        st.caption("Select a donation configuration on Page 2 to see the full distribution")
         
-        # Transaction-Level Export Section
+        # Use _default_value key (consistent with Page 2 for numeric defaults)
+        slider_key = f"{decision_name}_default_value"
+        if slider_key not in st.session_state:
+            st.session_state[slider_key] = 0.10  # 10% as default
+        
+        # Top section: Current settings
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Agents", f"{len(decision_data):,}")
+        
+        with col2:
+            # Calculate average of actual final donation rates
+            avg_final_rate = pd.to_numeric(decision_data, errors='coerce').mean()
+            if pd.isna(avg_final_rate):
+                avg_final_rate = st.session_state[slider_key]
+            st.metric("Final Donation Rate", f"{avg_final_rate:.2%}")
+        
+        with col3:
+            # Default donation rate with 2 decimal points
+            default_rate = 0.10
+            st.metric("Default Donation Rate", f"{default_rate:.2%}")
+    
+    # ========================================================================
+    # NEW: Transaction-Level Export (ALWAYS AVAILABLE if purchase_requests exist)
+    # ========================================================================
+    # This section appears REGARDLESS of whether donation_default was selected
+    # It will use request-level rates if available, or agent-level fallback
+    
+    if 'purchase_requests' in df.columns:
         st.markdown("---")
-        st.markdown("**💾 Transaction-Level Export (All Customer Types)**")
-        st.caption("Download detailed transaction data with donation information, organized by period")
+        st.markdown("**💾 Transaction-Level Export**")
+        st.caption("Download detailed purchase request data with donation rates (one row per request)")
         
         try:
             # Build transaction records
@@ -393,7 +444,7 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                 # Show summary
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Transactions", f"{len(transactions_df):,}")
+                    st.metric("Total Requests", f"{len(transactions_df):,}")
                 with col2:
                     num_agents = transactions_df['Agent ID'].nunique()
                     st.metric("Total Agents", f"{num_agents:,}")
@@ -423,50 +474,22 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                 # Download button
                 transaction_filename = f"donation_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
                 
-                st.info("ℹ️ **Note on Customer Price**: The 'Customer Price' column currently uses simplified placeholder calculations. Final customer prices will be calculated from actual vendor prices and customer-specific parameters once the pricing algorithm integration is completed.")
-                
                 st.download_button(
                     label="📥 Download Transaction-Level Excel",
                     data=buffer_transactions.getvalue(),
                     file_name=transaction_filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Downloads transaction-level data with Total sheet + one sheet per period"
+                    help="Downloads purchase request-level data with donation rates (Total sheet + one sheet per period)"
                 )
                 
                 # Show preview of data
                 with st.expander("📊 Preview Transaction Data"):
                     st.dataframe(transactions_df.head(20), use_container_width=True)
             else:
-                st.info("ℹ️ No transaction data found in this simulation")
+                st.info("ℹ️ No purchase request data found in this simulation")
         
         except Exception as e:
             st.error(f"⚠️ Error creating transaction export: {str(e)}")
-    
-    else:
-        # Fall back to slider if no donation_default data available
-        st.info("💡 **No donation configuration selected** - Using simple rate configuration")
-        st.caption("Select a donation configuration on Page 2 to see the full distribution")
-        
-        # Use _default_value key (consistent with Page 2 for numeric defaults)
-        slider_key = f"{decision_name}_default_value"
-        if slider_key not in st.session_state:
-            st.session_state[slider_key] = 0.10  # 10% as default
-        
-        # Top section: Current settings
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Total Agents", f"{len(decision_data):,}")
-        
-        with col2:
-            # Calculate average of actual final donation rates
-            avg_final_rate = pd.to_numeric(decision_data, errors='coerce').mean()
-            if pd.isna(avg_final_rate):
-                avg_final_rate = st.session_state[slider_key]
-            st.metric("Final Donation Rate", f"{avg_final_rate:.2%}")
-        
-        with col3:
-            # Default donation rate with 2 decimal points
-            default_rate = 0.10
-            st.metric("Default Donation Rate", f"{default_rate:.2%}")
+            import traceback
+            st.code(traceback.format_exc())
 

@@ -34,7 +34,7 @@ class Orchestrator:
         # Set population context for decision modules
         self.pop_context = 'copula'
         
-        # Define decision order (1-13 as specified, plus 6b for per-request enrichment)
+        # Define decision order (1-13 as specified)
         self.decision_order = [
             'disclose_income',           # 1
             'disclose_documents',        # 2  
@@ -42,7 +42,6 @@ class Orchestrator:
             'rejected_transaction_defaults',  # 4
             'vendor_choice_weights',     # 5
             'purchasing_quantity',       # 6
-            'enrich_purchase_requests',  # 6b (NEW!) - Enriches each purchase request with transaction decisions
             'purchasing_frequency',      # 7
             'vendor_selection',          # 8
             'purchase_vs_bid',           # 9 (now deprecated - kept for backward compatibility)

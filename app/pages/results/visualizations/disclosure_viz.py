@@ -156,101 +156,118 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
     })
     st.dataframe(full_breakdown, use_container_width=True, hide_index=True)
     
-    # NEW: Customer Type Breakdown
-    st.markdown("### Customer Type Distribution")
-    st.caption("📊 Based on disclosure decisions and income threshold")
+    # CUSTOMER TYPE DISTRIBUTION - Comprehensive visualization
+    st.markdown("---")
+    st.markdown("### 👥 Customer Type Distribution")
+    st.info("💡 **Customer types** are determined by disclosure decisions and affect pricing and purchasing behavior throughout the simulation.")
     
     # Check if customer_type column exists in the dataframe
     if 'customer_type' in df.columns:
-        customer_type_counts = df['customer_type'].value_counts()
+        from src.decisions.income_utils import analyze_customer_types
+        customer_stats = analyze_customer_types(df)
         
-        # Define customer type mapping with descriptions
-        customer_type_labels = {
-            'regular': 'Regular customers (did not disclose income)',
-            'fixed': 'Fixed price customers (disclosed income but not documents)',
-            'discount': 'Discount customers (income below threshold, disclosed both income and documents)'
-        }
+        # Show customer type breakdown with detailed metrics
+        type_col1, type_col2, type_col3, type_col4 = st.columns(4)
         
-        # Calculate metrics
-        total_agents_ct = len(df)
-        regular_count = customer_type_counts.get('regular', 0)
-        fixed_count = customer_type_counts.get('fixed', 0)
-        discount_count = customer_type_counts.get('discount', 0)
+        with type_col1:
+            st.metric("Total Agents", f"{customer_stats['total']:,}")
+        with type_col2:
+            st.metric("Regular Customers", 
+                     f"{customer_stats['regular']['count']:,} ({customer_stats['regular']['percentage']:.1f}%)",
+                     help="Did not disclose income → Pay regular Purchase Now (PN) prices or place bids (BID)")
+        with type_col3:
+            st.metric("Fixed Customers", 
+                     f"{customer_stats['fixed']['count']:,} ({customer_stats['fixed']['percentage']:.1f}%)",
+                     help="Disclosed income but not documents → Use fixed pricing only (FIXED)")
+        with type_col4:
+            st.metric("Discount Customers", 
+                     f"{customer_stats['discount']['count']:,} ({customer_stats['discount']['percentage']:.1f}%)",
+                     help="Income < threshold, disclosed both → Get discount pricing (DISCOUNT)")
         
-        # Show metrics
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Total Agents", f"{total_agents_ct:,}")
-        with col2:
-            pct_regular = (regular_count/total_agents_ct)*100
-            st.metric("Regular", f"{regular_count:,} ({pct_regular:.1f}%)",
-                      help="Agents who did not disclose income")
-        with col3:
-            pct_fixed = (fixed_count/total_agents_ct)*100
-            st.metric("Fixed Price", f"{fixed_count:,} ({pct_fixed:.1f}%)",
-                      help="Agents who disclosed income but not documents")
-        with col4:
-            pct_discount = (discount_count/total_agents_ct)*100
-            st.metric("Discount", f"{discount_count:,} ({pct_discount:.1f}%)",
-                      help="Agents below threshold who disclosed both income and documents")
-        
-        # Visualization: Pie chart and breakdown table
-        col_plot, col_stats = st.columns([2, 1])
-        
-        with col_plot:
-            if len(customer_type_counts) > 0:
-                # Create labeled data for pie chart
-                pie_labels = []
-                pie_values = []
-                
-                # Ensure consistent order: Regular, Fixed, Discount
-                for ct_key in ['regular', 'fixed', 'discount']:
-                    if ct_key in customer_type_counts.index:
-                        count = customer_type_counts[ct_key]
-                        if ct_key == 'regular':
-                            pie_labels.append('Regular')
-                        elif ct_key == 'fixed':
-                            pie_labels.append('Fixed Price')
-                        else:  # discount
-                            pie_labels.append('Discount')
-                        pie_values.append(count)
-                
-                st.markdown("**Customer Type Distribution**")
-                fig = px.pie(
-                    values=pie_values,
-                    names=pie_labels,
-                    color_discrete_map={
-                        'Regular': '#4169E1',      # Royal Blue
-                        'Fixed Price': '#FF8C00',  # Dark Orange
-                        'Discount': '#32CD32'      # Lime Green
-                    }
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col_stats:
-            st.markdown("**📊 Customer Type Breakdown**")
+        # Detailed explanation expander
+        with st.expander("📖 Customer Type Definitions & Impact"):
+            st.markdown("""
+            **Customer types are determined by agents' disclosure decisions and income level:**
             
-            # Create breakdown table with consistent order
-            breakdown_data = []
-            for ct_key in ['regular', 'fixed', 'discount']:
-                if ct_key in customer_type_counts.index:
-                    count = customer_type_counts[ct_key]
-                    if ct_key == 'regular':
-                        label = 'Regular'
-                    elif ct_key == 'fixed':
-                        label = 'Fixed Price'
-                    else:  # discount
-                        label = 'Discount'
-                    
-                    breakdown_data.append({
-                        'Customer Type': label,
-                        'Count': count,
-                        'Percentage': f"{(count/total_agents_ct)*100:.1f}%"
-                    })
+            **🔵 Regular Customers**
+            - **How assigned**: Did not disclose income (Decision 1: disclose_income = "N")
+            - **Pricing**: Pay regular Purchase Now (PN) prices or can place bids (BID)
+            - **Purchase decisions**: Choose between Purchase Now and Bid (Decision 9)
+            - **Platform price label**: PN or BID
             
-            breakdown_df = pd.DataFrame(breakdown_data)
-            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+            **🟣 Fixed Customers**
+            - **How assigned**: Disclosed income (Decision 1: disclose_income = "Y") but did NOT disclose documents (Decision 2: disclose_documents = "N" or "NA")
+            - **Pricing**: Use fixed pricing only (FIXED)
+            - **Purchase decisions**: Do not participate in Purchase Now vs Bid decisions (Decision 9 = "NA_fixed")
+            - **Platform price label**: FIXED
+            
+            **🔴 Discount Customers**
+            - **How assigned**: Income below threshold AND disclosed income (Decision 1: "Y") AND disclosed documents (Decision 2: "Y")
+            - **Pricing**: Get discounted prices (DISCOUNT)
+            - **Purchase decisions**: Do not participate in Purchase Now vs Bid decisions (Decision 9 = "NA_discount")
+            - **Platform price label**: DISCOUNT
+            
+            💡 **Note**: Customer types are used throughout the simulation to determine pricing, purchase options, and vendor selection behavior.
+            """)
+        
+        # Visualization: Donut chart and breakdown table
+        col_pie, col_table = st.columns([2, 1])
+        
+        with col_pie:
+            # Create donut chart for customer types
+            customer_types_data = {
+                'Customer Type': ['Regular Customers', 'Fixed Customers', 'Discount Customers'],
+                'Count': [
+                    customer_stats['regular']['count'],
+                    customer_stats['fixed']['count'],
+                    customer_stats['discount']['count']
+                ]
+            }
+            
+            fig = px.pie(
+                values=customer_types_data['Count'],
+                names=customer_types_data['Customer Type'],
+                title=f"Customer Type Breakdown ({customer_stats['total']:,} total agents)",
+                hole=0.4,  # Donut chart
+                color_discrete_map={
+                    'Regular Customers': '#2196F3',  # Blue
+                    'Fixed Customers': '#9C27B0',     # Purple
+                    'Discount Customers': '#FF5722'   # Red
+                }
+            )
+            fig.update_traces(
+                textposition='inside',
+                textinfo='percent+label',
+                hovertemplate='<b>%{label}</b><br>%{value:,} agents<br>%{percent}<extra></extra>'
+            )
+            fig.update_layout(
+                showlegend=True,
+                height=400,
+                margin=dict(t=60, b=20, l=20, r=20)
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col_table:
+            st.markdown("**📊 Customer Type Summary**")
+            st.caption("Breakdown by pricing model")
+            
+            # Create summary table
+            summary_df = pd.DataFrame({
+                'Type': ['Regular', 'Fixed', 'Discount'],
+                'Agents': [
+                    f"{customer_stats['regular']['count']:,}",
+                    f"{customer_stats['fixed']['count']:,}",
+                    f"{customer_stats['discount']['count']:,}"
+                ],
+                'Share': [
+                    f"{customer_stats['regular']['percentage']:.1f}%",
+                    f"{customer_stats['fixed']['percentage']:.1f}%",
+                    f"{customer_stats['discount']['percentage']:.1f}%"
+                ]
+            })
+            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            
+            st.caption("💡 Only **Regular Customers** participate in Purchase Now vs Bid decisions (Decision 9)")
         
         # Excel download section
         st.markdown("---")

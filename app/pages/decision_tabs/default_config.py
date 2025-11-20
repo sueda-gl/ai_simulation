@@ -7,6 +7,43 @@ import streamlit as st
 from app.pages.decision_execution import DEFAULT_DECISION_VALUES
 
 
+def save_to_persistent_storage(key):
+    """Save a session state value to persistent storage dictionary.
+    
+    This creates a 'shadow state' that persists even if Streamlit widget keys 
+    are cleared or reset during navigation.
+    """
+    if '_persistent_defaults' not in st.session_state:
+        st.session_state._persistent_defaults = {}
+    
+    if key in st.session_state:
+        st.session_state._persistent_defaults[key] = st.session_state[key]
+
+
+def restore_from_persistent_storage(key, default_value):
+    """Restore a value from persistent storage to session state if available.
+    
+    Returns the restored value or the default value.
+    """
+    if '_persistent_defaults' not in st.session_state:
+        st.session_state._persistent_defaults = {}
+    
+    # Priority 1: Use value from persistent storage
+    if key in st.session_state._persistent_defaults:
+        val = st.session_state._persistent_defaults[key]
+        # Restore to session state so widget finds it
+        st.session_state[key] = val
+        return val
+    
+    # Priority 2: Use existing session state value if present
+    if key in st.session_state:
+        return st.session_state[key]
+        
+    # Priority 3: Use default value
+    st.session_state[key] = default_value
+    return default_value
+
+
 def render_default_decisions_config(selected_decisions, all_decisions):
     """
     Render configuration UI for default (unselected) decisions.
@@ -54,6 +91,10 @@ def render_decision_default_config(decision_name):
     # Special handling for purchase_vs_bid to show "Purchase Now" instead of "Purchase"
     if decision_name == "purchase_vs_bid":
         decision_title = "Purchase Now Vs Bid"
+    elif decision_name == "purchasing_quantity":
+        decision_title = "Purchase Request Quantity"
+    elif decision_name == "purchasing_frequency":
+        decision_title = "Purchase Request Frequency"
     else:
         decision_title = decision_name.replace('_', ' ').title()
     
@@ -98,8 +139,8 @@ def render_probability_default_config(decision_name, default_value):
     # Session state key for this decision's probability
     prob_key = f"{decision_name}_default_probability_y"
     
-    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
-    # This ensures values persist even when widgets are conditionally rendered
+    # SHADOW STATE: Restore from persistent storage before rendering
+    current_value = restore_from_persistent_storage(prob_key, default_probability)
     
     # Special handling for purchase_vs_bid - show it only applies to regular customers
     st.caption(description)
@@ -115,15 +156,18 @@ def render_probability_default_config(decision_name, default_value):
             slider_label = f"P({options[0]}) - Probability of {options[0]}"
             slider_help = f"Probability that agents will choose {options[0]} vs {options[1]}"
         
-        # Widget uses ONLY key parameter - Streamlit automatically syncs with session_state[prob_key]
+        # Widget uses key parameter - value is read from session state
+        # SHADOW STATE: Use on_change to save to persistent storage
         probability = st.slider(
             slider_label,
             min_value=0.0,
             max_value=1.0,
-            value=st.session_state.get(prob_key, default_probability),
+            value=current_value,
             step=0.01,
             help=slider_help,
-            key=prob_key  # Streamlit manages value automatically via session state
+            key=prob_key,
+            on_change=save_to_persistent_storage,
+            args=(prob_key,)
         )
     
     with col2:
@@ -148,9 +192,8 @@ def render_prioritized_default_config(decision_name, default_value):
     # Session state key for this decision's priority template
     template_key = f"{decision_name}_priority_template"
     
-    # Initialize if not present
-    if template_key not in st.session_state:
-        st.session_state[template_key] = default_template
+    # SHADOW STATE: Restore from persistent storage
+    current_template = restore_from_persistent_storage(template_key, default_template)
     
     # Create option names mapping
     option_names = dict(options) if options else {}
@@ -161,9 +204,6 @@ def render_prioritized_default_config(decision_name, default_value):
     # UI for configuring priority list
     st.markdown("**Configure Priority Template:**")
     st.caption("Select options in priority order. Agents will try options in this sequence when transactions are rejected.")
-    
-    # Get current template
-    current_template = st.session_state.get(template_key, default_template)
     
     # Available options (not yet in template)
     available_options = [opt for opt in option_codes if opt not in current_template]
@@ -184,6 +224,7 @@ def render_prioritized_default_config(decision_name, default_value):
                         new_template = current_template.copy()
                         new_template.remove(opt)
                         st.session_state[template_key] = new_template
+                        save_to_persistent_storage(template_key)  # SHADOW STATE: Save
                         st.rerun()
         else:
             st.caption("No options selected")
@@ -215,6 +256,7 @@ def render_prioritized_default_config(decision_name, default_value):
                         new_template.append(selected_to_add)
                 
                 st.session_state[template_key] = new_template
+                save_to_persistent_storage(template_key)  # SHADOW STATE: Save
                 st.rerun()
         else:
             st.success("✅ All options are in the priority list")
@@ -222,6 +264,7 @@ def render_prioritized_default_config(decision_name, default_value):
         # Reset to default button
         if st.button("🔄 Reset to Default", key=f"{decision_name}_reset"):
             st.session_state[template_key] = default_template
+            save_to_persistent_storage(template_key)  # SHADOW STATE: Save
             st.rerun()
     
     with col2:
@@ -255,8 +298,8 @@ def render_radio_default_config(decision_name, default_value):
     # Session state key for this decision's selection
     selection_key = f"{decision_name}_default_selection"
     
-    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
-    # This ensures values persist even when widgets are conditionally rendered
+    # SHADOW STATE: Restore from persistent storage
+    current_selection = restore_from_persistent_storage(selection_key, default_option)
     
     # Create option names mapping
     option_names = dict(options) if options else {}
@@ -264,22 +307,26 @@ def render_radio_default_config(decision_name, default_value):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Compute default index based on current session state or configured default option
+        # Compute default index based on current session state
+        # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
         option_codes = [opt[0] for opt in options]
-        default_selected = st.session_state.get(selection_key, default_option)
+        
         try:
-            default_index = option_codes.index(default_selected) if default_selected in option_codes else 0
+            default_index = option_codes.index(current_selection) if current_selection in option_codes else 0
         except Exception:
             default_index = 0
         
-        # Widget uses BOTH an explicit index (first render) and key (subsequent sync)
+        # Widget uses explicit index derived from session state
+        # SHADOW STATE: Use on_change to save to persistent storage
         selected = st.radio(
             "Default Option",
             options=option_codes,
             format_func=lambda x: option_names.get(x, x),
             index=default_index,
             help="Choose the default option for this decision",
-            key=selection_key  # Streamlit manages value automatically via session state
+            key=selection_key,  # Streamlit manages value automatically via session state
+            on_change=save_to_persistent_storage,
+            args=(selection_key,)
         )
     
     with col2:
@@ -299,8 +346,9 @@ def render_checkbox_default_config(decision_name, default_value):
     # Session state key for this decision's selection
     selection_key = f"{decision_name}_default_params"
     
-    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
-    # This ensures values persist even when widgets are conditionally rendered
+    # SHADOW STATE: Restore from persistent storage
+    # We don't use the returned value directly for checkboxes, but we ensure it's in session state
+    restore_from_persistent_storage(selection_key, default_selection)
     
     st.caption("Select which parameters should be included (equal weight distribution)")
     
@@ -312,11 +360,18 @@ def render_checkbox_default_config(decision_name, default_value):
         for param_key, param_info in parameters.items():
             checkbox_key = f"{decision_name}_default_param_{param_key}"
             
-            # Create checkbox - it will use the value from session state automatically
+            # SHADOW STATE: Restore individual checkbox state
+            default_checked = param_key in default_selection
+            restore_from_persistent_storage(checkbox_key, default_checked)
+            
+            # Create checkbox - reads from session state
+            # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
             is_selected = st.checkbox(
                 f"{param_info['name']} - {param_info['description']}",
-                value=st.session_state.get(checkbox_key, param_key in default_selection),
-                key=checkbox_key
+                value=st.session_state[checkbox_key],  # Read directly from key (no fallback)
+                key=checkbox_key,
+                on_change=save_to_persistent_storage,
+                args=(checkbox_key,)
             )
             
             if is_selected:
@@ -324,6 +379,7 @@ def render_checkbox_default_config(decision_name, default_value):
         
         # Update main selection state to reflect current checkbox states
         st.session_state[selection_key] = selected_params
+        save_to_persistent_storage(selection_key)  # SHADOW STATE: Save list
     
     with col2:
         if selected_params:
@@ -345,35 +401,41 @@ def render_numeric_default_config(decision_name, default_value):
     # Session state key for this decision's value
     value_key = f"{decision_name}_default_value"
     
-    # Note: Initialization now happens at app startup in initialize_default_decision_parameters()
-    # This ensures values persist even when widgets are conditionally rendered
+    # SHADOW STATE: Restore from persistent storage
+    current_value = restore_from_persistent_storage(value_key, default_value)
     
     col1, col2 = st.columns([2, 1])
     
     with col1:
         # Determine if this is a percentage (between 0 and 1)
         if 0 <= default_value <= 1:
-            # Widget uses ONLY key parameter - Streamlit automatically manages the value
+            # Widget reads from session state
+            # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
             value = st.slider(
                 "Default Value",
                 min_value=0.0,
                 max_value=1.0,
-                value=st.session_state.get(value_key, default_value),
+                value=st.session_state[value_key],  # Read directly from key (no fallback)
                 step=0.01,
                 format="%.2f",
                 help="Set the default value for this decision",
-                key=value_key  # Streamlit manages value automatically via session state
+                key=value_key,  # Streamlit manages value automatically via session state
+                on_change=save_to_persistent_storage,
+                args=(value_key,)
             )
             st.caption(f"Percentage: {value:.1%}")
         else:
-            # Widget uses ONLY key parameter - Streamlit automatically manages the value
+            # Widget reads from session state
+            # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
             value = st.number_input(
                 "Default Value",
                 min_value=0.0,
-                value=float(st.session_state.get(value_key, default_value)),
+                value=float(st.session_state[value_key]),  # Read directly from key (no fallback)
                 step=0.1,
                 help="Set the default value for this decision",
-                key=value_key  # Streamlit manages value automatically via session state
+                key=value_key,  # Streamlit manages value automatically via session state
+                on_change=save_to_persistent_storage,
+                args=(value_key,)
             )
     
     with col2:
@@ -425,6 +487,9 @@ def reset_all_default_parameters(unselected_decisions):
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
+            # SHADOW STATE: Clear from persistent storage too
+            if '_persistent_defaults' in st.session_state and key in st.session_state._persistent_defaults:
+                del st.session_state._persistent_defaults[key]
         
         # Clear checkbox states for vendor_choice_weights
         default_value = DEFAULT_DECISION_VALUES.get(decision_name)
@@ -434,5 +499,8 @@ def reset_all_default_parameters(unselected_decisions):
                 checkbox_key = f"{decision_name}_default_param_{param_key}"
                 if checkbox_key in st.session_state:
                     del st.session_state[checkbox_key]
+                # SHADOW STATE: Clear from persistent storage too
+                if '_persistent_defaults' in st.session_state and checkbox_key in st.session_state._persistent_defaults:
+                    del st.session_state._persistent_defaults[checkbox_key]
 
 

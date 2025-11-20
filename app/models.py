@@ -513,10 +513,6 @@ def initialize_default_decision_parameters():
     This ensures parameter values persist across reruns even when widgets are not rendered.
     CRITICAL: This prevents state loss when decisions are selected/unselected.
     """
-    # Only initialize once per session
-    if '_default_params_initialized' in st.session_state:
-        return
-    
     # Import here to avoid circular dependency
     from app.pages.decision_execution import DEFAULT_DECISION_VALUES
     
@@ -549,6 +545,12 @@ def initialize_default_decision_parameters():
                 key = f"{decision_name}_default_selection"
                 if key not in st.session_state:
                     st.session_state[key] = default_value.get("default_option", "")
+            
+            # Handle prioritized selection decisions (rejected_transaction_defaults)
+            elif decision_type == "prioritized_selection":
+                key = f"{decision_name}_priority_template"
+                if key not in st.session_state:
+                    st.session_state[key] = default_value.get("priority_template", []).copy()
         
         else:
             # Handle numeric or string placeholder values
@@ -556,8 +558,8 @@ def initialize_default_decision_parameters():
             if key not in st.session_state:
                 st.session_state[key] = default_value
     
-    # Mark as initialized
+    # Mark as initialized (kept for debugging, but logic now allows re-checking)
     st.session_state._default_params_initialized = True
-    print("[DEBUG] Default decision parameters initialized in session state")
+
 
 

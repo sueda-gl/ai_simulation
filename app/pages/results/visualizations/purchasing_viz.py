@@ -436,15 +436,17 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             st.markdown("**📊 Purchase Requests and Completed Transactions by Customer Type**")
             st.caption("Detailed breakdown for Regular, Fixed, and Discount customers")
             
-            # Extract timestamps by customer type
+            # Extract timestamps by customer type from the customer_type field
             timestamps_by_type = {'Regular': [], 'Fixed': [], 'Discount': []}
             
             for idx, requests in enumerate(df['purchase_requests']):
                 if isinstance(requests, list) and len(requests) > 0:
                     for req in requests:
                         if isinstance(req, dict) and 'timestamp_hours' in req:
+                            # Get customer_type from request (lowercase: discount, fixed, regular)
                             customer_type = req.get('customer_type', 'regular')
                             if isinstance(customer_type, str):
+                                # Normalize to title case for grouping
                                 customer_type = customer_type.capitalize()
                             
                             if customer_type in timestamps_by_type:
@@ -581,8 +583,22 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 if isinstance(purchase_requests, list):
                     for req in purchase_requests:
                         if isinstance(req, dict):
-                            # Convert timestamp_hours to datetime format
+                            # Get timestamp_hours
                             timestamp_hours = req.get('timestamp_hours', 0.0)
+                            
+                            # Calculate Period and Hour within period
+                            periods = 1
+                            duration_hours = 1.0
+                            if hasattr(st.session_state, 'simulation_params'):
+                                sim_params = st.session_state.simulation_params.get('simulation', {})
+                                periods = sim_params.get('periods', 1)
+                                duration_hours = sim_params.get('duration_hours', 1.0)
+                            
+                            # Calculate which period this request falls into
+                            period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
+                            hour_in_period = timestamp_hours % duration_hours if timestamp_hours >= 0 else 0
+                            
+                            # Convert timestamp_hours to datetime format
                             timestamp_dt = base_date + timedelta(hours=float(timestamp_hours))
                             timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
                             
@@ -590,9 +606,12 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                                 'customer_id': req.get('customer_id', idx + 1),
                                 'vendorID': req.get('vendorID', 1),
                                 'platformProductID': req.get('platformProductID', 1),
-                                'platformPrice': req.get('platformPrice', 'N/A'),
+                                'purchase type': req.get('platformPrice', 'N/A'),
                                 'purchase_bid_value': req.get('bid_value', 'N/A'),
                                 'timestamp': timestamp_str,
+                                'period': period,
+                                'hour': round(hour_in_period, 2),
+                                'transaction_completed': 'N/A',  # Not available - enrich_requests not used
                                 'timestamp_hours': timestamp_hours  # Keep for sorting
                             })
             
@@ -790,10 +809,8 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
         periods = 15
         duration_hours = 2.0
     
-    # Extract all data from purchase_requests for analysis
+    # Extract all timestamps from purchase_requests for analysis
     all_timestamps = []
-    all_platform_prices = []
-    regular_requests = []
     
     for idx, row in df.iterrows():
         requests = row.get('purchase_requests', [])
@@ -802,14 +819,6 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
                 if isinstance(req, dict):
                     if 'timestamp_hours' in req:
                         all_timestamps.append(req['timestamp_hours'])
-                    
-                    # Collect platform price data for breakdown
-                    platform_price = req.get('platformPrice')
-                    all_platform_prices.append(platform_price)
-                    
-                    # Count only PN and BID for regular customers
-                    if platform_price in ['PN', 'BID']:
-                        regular_requests.append(platform_price)
     
     if len(all_timestamps) == 0:
         st.info("No purchase requests found")
@@ -819,12 +828,26 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
     st.markdown("### 🛒 Purchase Decisions per Request")
     st.caption("Breakdown of all purchase requests by customer type and pricing model")
     
+    # Count by customer_type field directly (not platformPrice which may not exist)
     from collections import Counter
-    all_counts = Counter(all_platform_prices)
-    regular_counts = Counter(regular_requests)
+    customer_type_counts = Counter()
     
-    total_requests = len(all_platform_prices)
-    total_regular_requests = len(regular_requests)
+    for idx, row in df.iterrows():
+        requests = row.get('purchase_requests', [])
+        if isinstance(requests, list):
+            for req in requests:
+                if isinstance(req, dict):
+                    # Get customer_type from request (lowercase: discount, fixed, regular)
+                    customer_type = req.get('customer_type', 'regular')
+                    if isinstance(customer_type, str):
+                        # Normalize to lowercase for counting
+                        customer_type = customer_type.lower()
+                        customer_type_counts[customer_type] += 1
+    
+    total_requests = sum(customer_type_counts.values())
+    discount_count = customer_type_counts.get('discount', 0)
+    fixed_count = customer_type_counts.get('fixed', 0)
+    regular_count = customer_type_counts.get('regular', 0)
     
     # Overall metrics showing breakdown by customer type
     col1, col2, col3, col4 = st.columns(4)
@@ -832,19 +855,20 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
     with col1:
         st.metric("Total Requests", f"{total_requests:,}", help="All purchase requests across all agents")
     with col2:
-        discount_count = all_counts.get('DISCOUNT', 0)
+        discount_pct = (discount_count/total_requests*100) if total_requests > 0 else 0
         st.metric("Discount Requests", 
                  f"{discount_count:,}",
-                 f"{discount_count/total_requests*100 if total_requests > 0 else 0:.1f}%")
+                 f"↗ {discount_pct:.1f}%")
     with col3:
-        fixed_count = all_counts.get('FIXED', 0)
+        fixed_pct = (fixed_count/total_requests*100) if total_requests > 0 else 0
         st.metric("Fixed Requests", 
                  f"{fixed_count:,}",
-                 f"{fixed_count/total_requests*100 if total_requests > 0 else 0:.1f}%")
+                 f"↗ {fixed_pct:.1f}%")
     with col4:
+        regular_pct = (regular_count/total_requests*100) if total_requests > 0 else 0
         st.metric("Regular Requests", 
-                 f"{total_regular_requests:,}",
-                 f"{total_regular_requests/total_requests*100 if total_requests > 0 else 0:.1f}%")
+                 f"{regular_count:,}",
+                 f"↗ {regular_pct:.1f}%")
     
     # Add completed transactions metrics (all requests are considered completed transactions)
     st.markdown("---")
@@ -857,20 +881,17 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
         st.metric("Total Transactions", f"{total_requests:,}", 
                  help="Total completed transactions (same as total requests)")
     with col2:
-        discount_pct = (discount_count/total_requests*100) if total_requests > 0 else 0
         st.metric("Discount Transactions", 
                  f"{discount_count:,}",
-                 f"{discount_pct:.1f}%")
+                 f"↗ {discount_pct:.1f}%")
     with col3:
-        fixed_pct = (fixed_count/total_requests*100) if total_requests > 0 else 0
         st.metric("Fixed Transactions", 
                  f"{fixed_count:,}",
-                 f"{fixed_pct:.1f}%")
+                 f"↗ {fixed_pct:.1f}%")
     with col4:
-        regular_pct = (total_regular_requests/total_requests*100) if total_requests > 0 else 0
         st.metric("Regular Transactions", 
-                 f"{total_regular_requests:,}",
-                 f"{regular_pct:.1f}%")
+                 f"{regular_count:,}",
+                 f"↗ {regular_pct:.1f}%")
     
     # MAIN VISUALIZATION: Sample Agent Purchase Schedules (Timeline)
     st.markdown("---")

@@ -20,9 +20,164 @@ When fully simulated (future):
 - Consideration of agent traits, budget constraints, etc.
 """
 import numpy as np
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from src.decisions.income_utils import get_agent_income, get_simulation_param
+
+
+def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng) -> int:
+    """
+    Calculate which vendor the agent prefers based on weighted composite scores.
+    
+    This uses the same logic as vendor_selection but happens at request creation time.
+    
+    Returns:
+        int: vendor_id of the preferred vendor (highest score)
+    """
+    import numpy as np
+    
+    # Get vendors from simulation_config
+    vendors = simulation_config.get('vendors', [])
+    
+    if not vendors or len(vendors) == 0:
+        # No vendors configured - default to vendor 1
+        return 1
+    
+    # Get vendor choice weights from agent_state (set by Decision 5)
+    weights = agent_state.get('vendor_choice_weights', {
+        'price': 0.25,
+        'quality': 0.25,
+        'proximity': 0.25,
+        'sustainability': 0.25
+    })
+    
+    # Generate proximity scores for this agent (customer-vendor dyad)
+    if 'vendor_proximity_scores' not in agent_state:
+        agent_id = agent_state.get('agent_id', agent_state.get('index', 0) + 1)
+        from src.vendor_attribute_generator import generate_proximity_scores
+        proximity_scores = generate_proximity_scores(agent_id, len(vendors), rng)
+        agent_state['vendor_proximity_scores'] = proximity_scores
+    else:
+        proximity_scores = agent_state['vendor_proximity_scores']
+    
+    # Calculate composite score for ALL vendors
+    from src.vendor_attribute_generator import calculate_vendor_composite_score
+    vendor_scores = []
+    for vendor in vendors:
+        vendor_id = vendor['vendor_id']
+        proximity = proximity_scores.get(str(vendor_id), 50.0)
+        score = calculate_vendor_composite_score(vendor, weights, proximity, vendors)
+        vendor_scores.append((vendor_id, score))
+    
+    # Sort by score descending (best vendor first)
+    vendor_scores.sort(key=lambda x: x[1], reverse=True)
+    
+    # Return the vendor with the highest score
+    preferred_vendor_id = vendor_scores[0][0] if vendor_scores else 1
+    
+    # Store preferred vendor in agent state for reference
+    agent_state['preferred_vendor'] = preferred_vendor_id
+    
+    return preferred_vendor_id
+
+
+def _enrich_purchase_requests(requests: List[Dict], customer_type: str, rng: np.random.Generator, 
+                               simulation_config: Optional[Dict], agent_state: dict) -> List[Dict]:
+    """
+    Enrich purchase requests with per-request decisions:
+    - platformPrice and bid_value (existing)
+    - final_donation_rate (NEW)
+    
+    This function adds these fields to each purchase request based on:
+    - customer_type: "discount", "fixed", or "regular"
+    - agent_state: Contains agent-level decisions like donation_default and final_donation_rate
+    - For regular customers: Makes purchase_vs_bid decision and generates bid_value if needed
+    
+    Args:
+        requests: List of purchase request dictionaries
+        customer_type: Customer type ("discount", "fixed", or "regular")
+        rng: Random number generator
+        simulation_config: Simulation configuration
+        agent_state: Agent's current state with all decisions up to this point
+        
+    Returns:
+        Enriched list of purchase requests
+    """
+    from src.decisions.purchase_vs_bid import purchase_vs_bid_single
+    from src.decisions.bid_value import generate_single_bid_value
+    
+    # ========================================================================
+    # NEW: Get agent's baseline donation rate
+    # ========================================================================
+    # Priority order:
+    # 1. Use final_donation_rate if it exists (Decision 13 ran)
+    # 2. Fall back to donation_default if it exists (Decision 3 ran)
+    # 3. Fall back to 0.10 (10%) if neither exists
+    
+    agent_baseline_rate = agent_state.get('final_donation_rate', 
+                                          agent_state.get('donation_default', 0.10))
+    
+    # Convert to float if it's not already (handles string "0.10" or numeric)
+    try:
+        agent_baseline_rate = float(agent_baseline_rate)
+    except (ValueError, TypeError):
+        agent_baseline_rate = 0.10  # Default if conversion fails
+    
+    # Ensure it's in valid range [0, 1]
+    agent_baseline_rate = np.clip(agent_baseline_rate, 0.0, 1.0)
+    # ========================================================================
+    
+    enriched_requests = []
+    
+    for request in requests:
+        # Create a copy to avoid modifying original
+        enriched_request = request.copy()
+        
+        # ====================================================================
+        # EXISTING: Set platformPrice and bid_value based on customer type
+        # ====================================================================
+        if customer_type.lower() == 'discount':
+            enriched_request['platformPrice'] = 'DISCOUNT'
+            enriched_request['bid_value'] = 'N/A'
+        
+        elif customer_type.lower() == 'fixed':
+            enriched_request['platformPrice'] = 'FIXED'
+            enriched_request['bid_value'] = 'N/A'
+        
+        elif customer_type.lower() == 'regular':
+            # Make purchase_vs_bid decision for this specific request
+            decision = purchase_vs_bid_single(customer_type, {}, rng, simulation_config)
+            
+            if decision == 'bid':
+                enriched_request['platformPrice'] = 'BID'
+                # Generate unique bid value for this request
+                bid_amount = generate_single_bid_value(rng, simulation_config, {})
+                enriched_request['bid_value'] = bid_amount
+            else:
+                # Purchase Now
+                enriched_request['platformPrice'] = 'PN'
+                enriched_request['bid_value'] = 'N/A'
+        else:
+            # Unknown customer type - default to PN
+            enriched_request['platformPrice'] = 'PN'
+            enriched_request['bid_value'] = 'N/A'
+        
+        # ====================================================================
+        # NEW: Add final_donation_rate to this specific request
+        # ====================================================================
+        # For now, use the agent's baseline rate for each request
+        # This creates the infrastructure for per-request rates
+        # Later, you can add variation here if needed:
+        #   - Random variation: agent_baseline_rate * rng.normal(1.0, 0.1)
+        #   - Price-based: higher price → higher donation
+        #   - Time-based: later requests → different rates
+        
+        enriched_request['final_donation_rate'] = agent_baseline_rate
+        # ====================================================================
+        
+        enriched_requests.append(enriched_request)
+    
+    return enriched_requests
 
 
 def _assign_income_category(income: float, simulation_config: Optional[Dict]) -> int:
@@ -250,15 +405,12 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
     else:
         total_quantity = 0
     
-    # STEP 6: Generate purchase requests with timestamps and transaction fields
-    # Professor's specification: each request = 1 item for defaults
+    # STEP 6: Generate purchase requests with timestamps and vendor preference
+    # Each request = 1 item for defaults
     # Timestamps spread randomly across term duration
     # 
-    # NEW: Include transaction fields that are known at this stage:
-    # - customer_id (agent ID)
-    # - customer_type (from disclose_documents)
-    # - vendorID (default 1 for now)
-    # - platformPrice and bid_value will be filled by enrich_purchase_requests (Decision 6b)
+    # NOTE: These are REQUESTS only, not actual transactions
+    # The system tracks what agents want to purchase, not transaction outcomes
     
     purchase_requests = []
     
@@ -279,22 +431,34 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
         from src.decisions.income_utils import get_customer_type
         customer_type = get_customer_type(agent_state, simulation_config)
         
-        # Create purchase request objects with transaction fields
+        # STEP 6a: Calculate preferred vendor based on scores
+        # This determines which vendor the agent wants to buy from
+        preferred_vendor_id = _calculate_preferred_vendor(agent_state, simulation_config, rng)
+        
+        # Create purchase request objects with vendor preference
         for i, timestamp in enumerate(timestamps):
             purchase_requests.append({
                 "request_id": i + 1,
                 "quantity": 1,  # 1 item per request for defaults
                 "timestamp_hours": float(timestamp),
                 
-                # Transaction fields (matching Excel export format)
+                # Basic request metadata
                 "customer_id": int(agent_id),
                 "customer_type": customer_type,  # "discount", "fixed", or "regular"
-                "vendorID": 1,  # Default vendor ID (can be updated by vendor_selection later)
-                
-                # These will be filled by enrich_purchase_requests (Decision 6b)
-                "platformPrice": None,  # Will be "DISCOUNT", "FIXED", "PN", or "BID"
-                "bid_value": None       # Will be actual bid amount or "N/A"
+                "vendorID": preferred_vendor_id  # Vendor agent wants to buy from (based on scores)
             })
+    
+    # STEP 7: Enrich purchase requests with per-request decisions
+    # (platformPrice, bid_value, final_donation_rate)
+    # This happens AFTER basic requests are created but BEFORE returning
+    if purchase_requests:
+        purchase_requests = _enrich_purchase_requests(
+            requests=purchase_requests,
+            customer_type=customer_type,
+            rng=rng,
+            simulation_config=simulation_config,
+            agent_state=agent_state  # NEW: Pass agent_state for donation rates
+        )
     
     # Return results
     return {

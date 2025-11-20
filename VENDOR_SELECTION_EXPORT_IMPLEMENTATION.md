@@ -15,8 +15,6 @@ Enhanced the vendor selection results page with two new export capabilities:
 - **Sheet Name:** "Agent-Vendor Proximity"
 - **Columns:**
   - Agent ID
-  - Assigned Allowance Level (if available)
-  - Group_experiment (if available)
   - Vendor 1 Proximity
   - Vendor 2 Proximity
   - ... (one column per vendor)
@@ -41,13 +39,13 @@ Contains all purchase requests across all periods
 #### Additional Sheets: "Period 1", "Period 2", etc.
 One sheet per period with requests from that period only
 
-**Columns (17 total):**
+**Columns (15 total):**
 1. **Transaction ID** - Unique identifier for the purchase request
 2. **Agent ID** - Customer/agent identifier
 3. **Assigned Allowance Level** - Income/allowance tier
 4. **Group_experiment** - Experimental group assignment
 5. **Customer Type** - Regular, Fixed, or Discount
-6. **Request Date & Time** - Formatted as "Period X, Hour Y.Y"
+6. **Request Date & Time** - Actual timestamp (simulation start time + elapsed hours), sorted chronologically
 7. **Period** - Period number (derived from timestamp)
 8. **Selected Vendor** - Vendor chosen for this request
 9. **Vendor Price** - Price offered by selected vendor
@@ -80,8 +78,9 @@ One sheet per period with requests from that period only
 
 **Key Features:**
 - Handles missing vendor data gracefully
-- Converts timestamp_hours to readable "Period X, Hour Y" format
-- Calculates period automatically (24 hours per period)
+- Converts timestamp_hours to actual datetime (current time + elapsed hours)
+- Calculates period automatically based on configured duration_hours
+- Sorts all records chronologically by timestamp
 - Capitalizes customer type for consistency
 - Supports multiple field name variations for compatibility
 
@@ -242,6 +241,7 @@ Both exports appear in the **Vendor Selection** section of the Results page, aft
 - Large: 1000 agents × 10 requests × 10 periods = 100,000 rows (~5 MB)
 
 All file sizes are well within Excel's limits (1 million rows per sheet).
+
 
 
 

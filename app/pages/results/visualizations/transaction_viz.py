@@ -5,8 +5,136 @@ Handles purchase_vs_bid, rejected_transaction_defaults, and rejected_transaction
 """
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 from collections import Counter
+
+
+def _build_purchase_vs_bid_export(df):
+    """
+    Build transaction-level export data for regular customers showing purchase vs bid decisions.
+    
+    Returns a list of transaction records with fields:
+    - Agent ID
+    - Assigned Allowance Level
+    - Group_experiment
+    - Customer Type (Regular, Fixed, Discount)
+    - Income Category
+    - Purchase Request Type (PN/Bid)
+    - Date/Time of Purchase Request
+    - Period
+    - Customer Price (based on PN price or bid value)
+    - Transaction Completed (0/1)
+    """
+    transaction_records = []
+    
+    if 'purchase_requests' not in df.columns:
+        return transaction_records
+    
+    # Get pricing parameters from session state or use defaults
+    market_price = 100.0
+    platform_markup = 0.1
+    if hasattr(st.session_state, 'simulation_params'):
+        sim_params = st.session_state.simulation_params.get('simulation', {})
+        market_price = sim_params.get('market_price', 100.0)
+        platform_markup = sim_params.get('platform_markup', 0.1)
+    elif hasattr(st.session_state, 'sim_params'):
+        market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
+        platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
+    
+    # Calculate standard prices
+    baseline_price = (1 + platform_markup) * market_price  # PN price
+    
+    for idx, row in df.iterrows():
+        # Get agent information
+        agent_id = row.get('agent_id', idx + 1)
+        allowance_level = row.get('Assigned Allowance Level', np.nan)
+        group_experiment = row.get('Group_experiment', '')
+        income_category = row.get('income_category', np.nan)
+        
+        # Get purchase requests
+        purchase_requests = row.get('purchase_requests', [])
+        if not isinstance(purchase_requests, list):
+            continue
+        
+        # Process each purchase request
+        for req_idx, request in enumerate(purchase_requests):
+            if not isinstance(request, dict):
+                continue
+            
+            # Get customer type from request
+            customer_type = request.get('customer_type', request.get('customerType', 'regular'))
+            if isinstance(customer_type, str):
+                customer_type_display = customer_type.capitalize()
+            else:
+                customer_type_display = 'Regular'
+            
+            # Only include regular customers for this export
+            if customer_type.lower() != 'regular':
+                continue
+            
+            # Get timestamp and convert to Period
+            timestamp_hours = request.get('timestamp_hours', np.nan)
+            if not pd.isna(timestamp_hours):
+                # Get periods and duration from session state or use defaults
+                periods = 1
+                duration_hours = 1.0
+                if hasattr(st.session_state, 'simulation_params'):
+                    sim_params = st.session_state.simulation_params.get('simulation', {})
+                    periods = sim_params.get('periods', 1)
+                    duration_hours = sim_params.get('duration_hours', 1.0)
+                elif hasattr(st.session_state, 'sim_params'):
+                    periods = getattr(st.session_state.sim_params, 'periods', 1)
+                    duration_hours = getattr(st.session_state.sim_params, 'duration_hours', 1.0)
+                
+                # Calculate period (each period has duration_hours hours)
+                period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
+                # Format as "Period X, Hour Y"
+                hour_in_period = timestamp_hours % duration_hours if timestamp_hours >= 0 else 0
+                request_datetime = f"Period {period}, Hour {hour_in_period:.1f}"
+            else:
+                request_datetime = request.get('requestDateTime', '')
+                period = request.get('period', 1)
+            
+            # Determine Purchase Request Type and Customer Price
+            platform_price = request.get('platformPrice', request.get('platform_price', ''))
+            bid_value = request.get('bid_value', 'N/A')
+            
+            # Only include PN and BID for regular customers
+            if platform_price == 'PN':
+                purchase_request_type = 'PN'
+                customer_price = baseline_price
+            elif platform_price == 'BID' and bid_value != 'N/A':
+                purchase_request_type = 'Bid'
+                try:
+                    customer_price = float(bid_value)
+                except (ValueError, TypeError):
+                    customer_price = baseline_price
+            else:
+                # Skip if not PN or BID
+                continue
+            
+            # Transaction Completed - Not available (enrich_requests not currently used)
+            # Decision 6 and 7 only track purchase REQUESTS, not completed transactions
+            transaction_completed = 'N/A'
+            
+            # Build record
+            record = {
+                'Agent ID': agent_id,
+                'Assigned Allowance Level': allowance_level,
+                'Group_experiment': group_experiment,
+                'Customer Type': customer_type_display,
+                'Income Category': income_category,
+                'Purchase Request Type': purchase_request_type,
+                'Date/Time of Purchase Request': request_datetime,
+                'Period': period,
+                'Customer Price': customer_price,
+                'Transaction Completed': transaction_completed
+            }
+            
+            transaction_records.append(record)
+    
+    return transaction_records
 
 
 def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
@@ -15,95 +143,13 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
     # Show that decisions are now made PER REQUEST
     st.info("⚠️ **Note**: Decisions are made **per purchase request**, not per agent. A single agent can choose differently for each purchase.")
     
-    # Analyze customer type distribution at agent level
-    if 'customer_type' in df.columns:
-        from src.decisions.income_utils import analyze_customer_types
-        customer_stats = analyze_customer_types(df)
-        
-        # Show customer type breakdown
-        type_col1, type_col2, type_col3, type_col4 = st.columns(4)
-        
-        with type_col1:
-            st.metric("Total Agents", f"{customer_stats['total']:,}")
-        with type_col2:
-            st.metric("Regular Customers", 
-                     f"{customer_stats['regular']['count']:,} ({customer_stats['regular']['percentage']:.1f}%)",
-                     help="Only these customers make Purchase Now vs Bid choice")
-        with type_col3:
-            st.metric("Fixed Customers", 
-                     f"{customer_stats['fixed']['count']:,} ({customer_stats['fixed']['percentage']:.1f}%)",
-                     help="Use fixed pricing only (NA)")
-        with type_col4:
-            st.metric("Discount Customers", 
-                     f"{customer_stats['discount']['count']:,} ({customer_stats['discount']['percentage']:.1f}%)",
-                     help="Use discount pricing (NA)")
-        
-        # Add pie chart showing customer type distribution
-        st.markdown("---")
-        st.markdown("### 👥 Customer Type Distribution")
-        
-        col_pie, col_table = st.columns([2, 1])
-        
-        with col_pie:
-            # Create pie chart for customer types
-            customer_types_data = {
-                'Customer Type': ['Regular Customers', 'Fixed Customers', 'Discount Customers'],
-                'Count': [
-                    customer_stats['regular']['count'],
-                    customer_stats['fixed']['count'],
-                    customer_stats['discount']['count']
-                ]
-            }
-            
-            fig = px.pie(
-                values=customer_types_data['Count'],
-                names=customer_types_data['Customer Type'],
-                title=f"Customer Type Breakdown ({customer_stats['total']:,} total agents)",
-                hole=0.4,  # Donut chart
-                color_discrete_map={
-                    'Regular Customers': '#2196F3',  # Blue
-                    'Fixed Customers': '#9C27B0',     # Purple
-                    'Discount Customers': '#FF5722'   # Red
-                }
-            )
-            fig.update_traces(
-                textposition='inside',
-                textinfo='percent+label',
-                hovertemplate='<b>%{label}</b><br>%{value:,} agents<br>%{percent}<extra></extra>'
-            )
-            fig.update_layout(
-                showlegend=True,
-                height=400,
-                margin=dict(t=60, b=20, l=20, r=20)
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        
-        with col_table:
-            st.markdown("**📊 Customer Type Summary**")
-            st.caption("Breakdown by pricing model")
-            
-            # Create summary table
-            summary_df = pd.DataFrame({
-                'Type': ['Regular', 'Fixed', 'Discount'],
-                'Agents': [
-                    f"{customer_stats['regular']['count']:,}",
-                    f"{customer_stats['fixed']['count']:,}",
-                    f"{customer_stats['discount']['count']:,}"
-                ],
-                'Share': [
-                    f"{customer_stats['regular']['percentage']:.1f}%",
-                    f"{customer_stats['fixed']['percentage']:.1f}%",
-                    f"{customer_stats['discount']['percentage']:.1f}%"
-                ]
-            })
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
-            
-            st.caption("💡 Only **Regular Customers** participate in Purchase Now vs Bid decisions")
+    # Reference to Decision 2 for customer type definitions
+    st.info("💡 **Customer Type Information**: This decision only applies to **Regular Customers**. For detailed customer type definitions and distribution, see **Decision 2: Disclose Documents**.")
     
     # Extract REQUEST-LEVEL data from purchase_requests
     st.markdown("---")
     st.markdown("### 🎯 Purchase Now vs Bid Decisions")
-    st.caption("📊 For request-level breakdown by customer type, see **Decision 7: Consumption Frequency**")
+    st.caption("📊 Decisions for **Regular Customers only** - For full customer type breakdown, see **Decision 2: Disclose Documents**")
     
     if 'purchase_requests' in df.columns:
         # Collect all purchase decisions from all requests
@@ -170,6 +216,59 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
         else:
             st.info("No regular customer purchase requests found")
+        
+        # Excel Export Section
+        st.markdown("---")
+        st.markdown("**📥 Export Purchase vs Bid Decision Data**")
+        st.caption("Download detailed request-level data for all regular customers with pricing and transaction information")
+        
+        # Build transaction records
+        transaction_records = _build_purchase_vs_bid_export(df)
+        
+        if transaction_records and len(transaction_records) > 0:
+            try:
+                from io import BytesIO
+                from datetime import datetime
+                
+                # Create DataFrame
+                export_df = pd.DataFrame(transaction_records)
+                
+                # Create Excel with multiple sheets
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    # Sheet 1: Total (all data)
+                    export_df.to_excel(writer, index=False, sheet_name='Total')
+                    
+                    # Additional sheets by Period
+                    if 'Period' in export_df.columns:
+                        periods = sorted(export_df['Period'].dropna().unique())
+                        for period in periods:
+                            period_df = export_df[export_df['Period'] == period]
+                            sheet_name = f'Period {int(period)}'
+                            period_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                
+                col_download, col_info = st.columns([1, 2])
+                
+                with col_download:
+                    st.download_button(
+                        label="📊 Download Purchase vs Bid Excel",
+                        data=buffer.getvalue(),
+                        file_name=f"purchase_vs_bid_decisions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Download request-level data for regular customers with purchase decisions"
+                    )
+                
+                with col_info:
+                    num_sheets = 1 + len(export_df['Period'].dropna().unique()) if 'Period' in export_df.columns else 1
+                    st.caption(f"📋 Export includes {len(export_df):,} requests across {num_sheets} sheets")
+                    st.caption(f"✅ Fields: Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, Date/Time, Period, Customer Price, Transaction Completed")
+            
+            except ImportError:
+                st.warning("⚠️ Excel export requires openpyxl package")
+            except Exception as e:
+                st.error(f"❌ Error creating Excel file: {str(e)}")
+        else:
+            st.info("ℹ️ No purchase request data available for export")
     else:
         st.warning("No purchase_requests data available")
 

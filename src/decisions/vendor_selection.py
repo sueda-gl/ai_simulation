@@ -2,18 +2,15 @@
 """
 Decision 8: Vendor Selection
 
-Selects vendor for each purchase request based on weighted composite scores.
+NOTE: This decision currently only showcases agent preferences (which vendor they want).
+The vendorID in purchase requests is calculated in Decision 6 (purchasing_quantity) based on 
+weighted composite scores.
 
-Default behavior (when not selected for custom configuration):
-1. Get vendor_choice_weights from agent_state (set by Decision 5)
-2. Get vendor pool from simulation_config (quality, sustainability, price)
-3. Generate proximity scores for this customer-vendor dyad (fixed for this agent)
-4. For each purchase request:
-   - Calculate composite score for each vendor
-   - Select vendor with highest score (deterministic)
-   - Update vendorID in the purchase request
+This decision will be used by the algorithm to determine actual vendor assignments 
+(considering capacity constraints, availability, etc.), but currently it only returns 
+the agent's preferred vendor for visualization and analysis purposes.
 
-Composite Score Formula:
+Composite Score Formula (calculated in Decision 6):
    score = w_price × norm_price + w_quality × norm_quality + 
            w_proximity × norm_proximity + w_sustainability × norm_sustainability
 
@@ -30,178 +27,73 @@ from src.vendor_attribute_generator import generate_proximity_scores, select_bes
 
 def vendor_selection(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
     """
-    Decision 8: Select vendor for each purchase request based on weighted scores.
+    Decision 8: Vendor Selection - Currently showcases agent preferences only.
     
-    This is a REQUEST-LEVEL decision - updates vendorID for each purchase request.
+    NOTE: This decision returns the agent's preferred vendor (calculated in Decision 6).
+    In the future, this will be used by the algorithm to assign actual vendors based on:
+    - Capacity constraints
+    - Availability
+    - Dynamic pricing
+    - Other market conditions
+    
+    Currently, it simply reads the vendorID from purchase requests (set in Decision 6)
+    and returns summary information about the agent's vendor preference.
     
     Args:
         agent_state: Agent's state dict containing:
-            - vendor_choice_weights: Weights dict from Decision 5
-            - purchase_requests: List of purchase request dicts from Decision 6
+            - preferred_vendor: Vendor with highest score (set in Decision 6)
+            - purchase_requests: List of purchase requests with vendorID
         params: Decision-specific parameters (not used for defaults)
-        rng: Random number generator for this agent (used for proximity generation)
-        simulation_config: Global configuration containing vendors list
+        rng: Random number generator for this agent
+        simulation_config: Global configuration
         
     Returns:
         dict: {
-            "vendor_selection": int (vendor_id of first/most common selection),
-            "purchase_requests": updated list with vendorID for each request
+            "vendor_selection": int (preferred vendor ID),
+            "preferred_vendor": int (same as vendor_selection for now)
         }
     """
     
-    # Check if this decision is using defaults (when NOT selected for custom config)
-    if simulation_config and 'default_decisions_list' in simulation_config:
-        if 'vendor_selection' in simulation_config.get('default_decisions_list', []):
-            # ========== DEFAULT MODE ==========
-            return _vendor_selection_default(agent_state, rng, simulation_config)
-    
-    # ========== CUSTOM MODE (future implementation) ==========
-    # When vendor_selection is selected for custom configuration,
-    # this would read custom parameters from params and implement
-    # a sophisticated vendor selection algorithm
-    
-    # For now, fall back to default behavior
-    return _vendor_selection_default(agent_state, rng, simulation_config)
+    # Simply return the preferred vendor that was already calculated in Decision 6
+    return _showcase_vendor_preference(agent_state, simulation_config)
 
 
-def _vendor_selection_default(agent_state: dict, rng, simulation_config: dict) -> dict:
+def _showcase_vendor_preference(agent_state: dict, simulation_config: dict) -> dict:
     """
-    Default vendor selection implementation with supply constraints.
+    Showcase the agent's vendor preference (calculated in Decision 6).
     
-    Enforces vendor capacity limits in snapshot mode:
-    - Tracks remaining capacity for each vendor across all agents
-    - Agents processed in order get their preferred vendor if capacity available
-    - If preferred vendor sold out, agent gets next-best available vendor
+    This function simply reads and returns the preferred vendor information
+    that was already determined when creating purchase requests.
+    
+    NOTE: This is for visualization/analysis purposes only.
+    The actual vendor assignment algorithm will be implemented here in the future.
     """
     import numpy as np
-    from src.vendor_attribute_generator import calculate_vendor_composite_score
     
-    # STEP 1: Get purchase requests from agent_state
+    # Get the preferred vendor that was already calculated in Decision 6
+    preferred_vendor = agent_state.get('preferred_vendor', None)
+    
+    # Get purchase requests to verify consistency
     purchase_requests = agent_state.get('purchase_requests', [])
     
     if not isinstance(purchase_requests, list) or len(purchase_requests) == 0:
-        # No purchase requests - return NaN instead of "NA" for numeric compatibility
-        return {"vendor_selection": np.nan}
-    
-    # Count how many units this agent wants to purchase
-    agent_demand = len(purchase_requests)
-    
-    # STEP 2: Get vendors from simulation_config
-    vendors = simulation_config.get('vendors', [])
-    
-    if not vendors or len(vendors) == 0:
-        # No vendors configured - keep default vendorID=1
-        return {"vendor_selection": 1}
-    
-    # STEP 3: Initialize vendor capacity tracking (first agent only)
-    if 'vendor_remaining_capacity' not in simulation_config:
-        # Initialize capacity for each vendor
-        # IMPORTANT: quantity_offered is PER PERIOD, so multiply by number of periods
-        from src.decisions.income_utils import get_simulation_param
-        num_periods = get_simulation_param(simulation_config, 'periods', 1)
-        
-        simulation_config['vendor_remaining_capacity'] = {}
-        for vendor in vendors:
-            vendor_id = vendor['vendor_id']
-            capacity_per_period = vendor.get('quantity_offered', 100)  # Default to 100 if not specified
-            # Total capacity = capacity per period × number of periods
-            total_capacity = capacity_per_period * num_periods
-            simulation_config['vendor_remaining_capacity'][vendor_id] = total_capacity
-    
-    remaining_capacity = simulation_config['vendor_remaining_capacity']
-    
-    # STEP 4: Get vendor choice weights from agent_state (set by Decision 5)
-    weights = agent_state.get('vendor_choice_weights', {
-        'price': 0.25,
-        'quality': 0.25,
-        'proximity': 0.25,
-        'sustainability': 0.25
-    })
-    
-    # STEP 5: Generate proximity scores for this agent (customer-vendor dyad)
-    if 'vendor_proximity_scores' not in agent_state:
-        agent_id = agent_state.get('agent_id', agent_state.get('index', 0) + 1)
-        proximity_scores = generate_proximity_scores(agent_id, len(vendors), rng)
-        agent_state['vendor_proximity_scores'] = proximity_scores
-    else:
-        proximity_scores = agent_state['vendor_proximity_scores']
-    
-    # STEP 6: Calculate composite score for ALL vendors
-    # Create list of (vendor_id, score) tuples
-    vendor_scores = []
-    for vendor in vendors:
-        vendor_id = vendor['vendor_id']
-        proximity = proximity_scores.get(str(vendor_id), 50.0)
-        score = calculate_vendor_composite_score(vendor, weights, proximity, vendors)
-        vendor_scores.append((vendor_id, score))
-    
-    # Sort by score descending (best vendor first)
-    vendor_scores.sort(key=lambda x: x[1], reverse=True)
-    
-    # Store agent's preferred vendor (before capacity constraints)
-    preferred_vendor_id = vendor_scores[0][0] if vendor_scores else None
-    
-    # STEP 7: Select best vendor that has capacity
-    selected_vendor_id = None
-    vendor_rank = None
-    
-    for rank, (vendor_id, score) in enumerate(vendor_scores, 1):
-        # Check if this vendor has enough capacity for this agent's demand
-        if remaining_capacity.get(vendor_id, 0) >= agent_demand:
-            selected_vendor_id = vendor_id
-            vendor_rank = rank
-            # Reserve capacity for this agent
-            remaining_capacity[vendor_id] -= agent_demand
-            break
-    
-    # STEP 8: Fallback if preferred vendor doesn't have capacity
-    if selected_vendor_id is None:
-        # Try next-best vendors in order of score (not just highest capacity)
-        for rank, (vendor_id, score) in enumerate(vendor_scores, 1):
-            # Check if this vendor has ANY capacity left
-            if remaining_capacity.get(vendor_id, 0) > 0:
-                # Only assign if vendor can fulfill FULL demand (no partial fulfillment)
-                if remaining_capacity.get(vendor_id, 0) >= agent_demand:
-                    selected_vendor_id = vendor_id
-                    vendor_rank = rank
-                    remaining_capacity[vendor_id] -= agent_demand
-                    break
-        else:
-            # ALL VENDORS SOLD OUT - agent cannot be allocated
-            # Mark all purchase requests as failed by setting vendorID to NaN
-            for request in purchase_requests:
-                if isinstance(request, dict):
-                    request['vendorID'] = np.nan  # Mark as failed allocation
-                    request['allocation_failed'] = True
-            
-            # Update agent_state with modified purchase_requests
-            agent_state['purchase_requests'] = purchase_requests
-            
-            # Return NaN to indicate no vendor available
+        # No purchase requests
             return {
                 "vendor_selection": np.nan,
-                "purchase_requests": purchase_requests,
-                "vendor_rank": np.nan,
-                "preferred_vendor": preferred_vendor_id,
-                "got_preferred": False,
-                "allocation_failed": True  # Flag to indicate allocation failure
-            }
+            "preferred_vendor": np.nan,
+            "note": "Agent preference calculated in Decision 6 (purchasing_quantity)"
+        }
     
-    # STEP 9: Update vendorID for ALL purchase requests (only if vendor was found)
-    if selected_vendor_id is not None:
-        for request in purchase_requests:
-            if isinstance(request, dict):
-                request['vendorID'] = selected_vendor_id
+    # If preferred_vendor wasn't stored, extract from first purchase request
+    if preferred_vendor is None:
+        first_request = purchase_requests[0] if purchase_requests else {}
+        preferred_vendor = first_request.get('vendorID', 1)
     
-    # Update agent_state with modified purchase_requests
-    agent_state['purchase_requests'] = purchase_requests
-    
-    # STEP 10: Return results including tracking info
+    # Return the preference information
+    # NOTE: In the future, this will be replaced by actual vendor assignment logic
     return {
-        "vendor_selection": selected_vendor_id,
-        "purchase_requests": purchase_requests,
-        "vendor_rank": vendor_rank,  # Which preference rank (1st choice, 2nd choice, etc.)
-        "preferred_vendor": preferred_vendor_id,  # What they wanted before capacity constraints
-        "got_preferred": (selected_vendor_id == preferred_vendor_id),  # Did they get their first choice?
-        "allocation_failed": False  # Successful allocation
+        "vendor_selection": preferred_vendor,
+        "preferred_vendor": preferred_vendor,
+        "total_requests": len(purchase_requests),
+        "note": "Currently shows agent preference only. Actual vendor assignment will be implemented by the algorithm."
     }

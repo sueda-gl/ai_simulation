@@ -22,11 +22,16 @@ def _build_purchase_request_export(df, vendors_data):
     Returns:
         List of dicts with purchase request level data
     """
+    from datetime import datetime, timedelta
+    
     purchase_request_records = []
     
     # Check if we have purchase_requests column
     if 'purchase_requests' not in df.columns:
         return []
+    
+    # Get simulation start time (use current time as base)
+    simulation_start_time = datetime.now()
     
     # Build vendor lookup dictionary for quick access
     vendor_lookup = {}
@@ -71,7 +76,7 @@ def _build_purchase_request_export(df, vendors_data):
             transaction_id = request.get('transactionID', request.get('request_id', f"T{agent_id}_{req_idx+1}"))
             vendor_id = request.get('vendorID', np.nan)
             
-            # Get timestamp and convert to readable format
+            # Get timestamp and convert to actual datetime
             timestamp_hours = request.get('timestamp_hours', np.nan)
             if not pd.isna(timestamp_hours):
                 # Get duration_hours from simulation config
@@ -80,13 +85,15 @@ def _build_purchase_request_export(df, vendors_data):
                 else:
                     duration_hours = 2.0  # Default fallback
                 
-                # FIXED: Use actual duration_hours instead of hardcoded 24
+                # Calculate period number
                 period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else np.nan
-                # Format as "Period X, Hour Y" (hour within the period)
-                hour_in_period = timestamp_hours % duration_hours if timestamp_hours >= 0 else 0
-                request_datetime = f"Period {period}, Hour {hour_in_period:.1f}"
+                
+                # Convert timestamp_hours to actual datetime
+                # Add hours as timedelta to simulation start time
+                request_datetime = simulation_start_time + timedelta(hours=float(timestamp_hours))
             else:
-                request_datetime = request.get('requestDateTime', '')
+                # Fallback if timestamp_hours not available
+                request_datetime = simulation_start_time
                 period = request.get('period', np.nan)
             
             # Determine customer type from request or agent
@@ -118,16 +125,9 @@ def _build_purchase_request_export(df, vendors_data):
                         vendor, vendor_weights, vendor_proximity, vendors_data
                     )
             
-            # Get transaction outcome
-            # Check multiple possible field names
-            transaction_completed = request.get('transactionCompleted', 
-                                               request.get('completed', 
-                                               request.get('transaction_completed', np.nan)))
-            if isinstance(transaction_completed, bool):
-                transaction_completed = 1 if transaction_completed else 0
-            elif pd.isna(transaction_completed):
-                # If not tracked, assume completed for now (can be updated later)
-                transaction_completed = np.nan
+            # Transaction Completed - Not available (enrich_requests not currently used)
+            # Decision 6 and 7 only track purchase REQUESTS, not completed transactions
+            transaction_completed = 'N/A'
             
             # Get customer paid price (without donation)
             # Try multiple field names, fallback to vendor price if available
@@ -155,6 +155,10 @@ def _build_purchase_request_export(df, vendors_data):
             }
             
             purchase_request_records.append(record)
+    
+    # Sort records by Request Date & Time (timestamp) in chronological order
+    if purchase_request_records:
+        purchase_request_records.sort(key=lambda x: x['Request Date & Time'] if isinstance(x['Request Date & Time'], datetime) else datetime.min)
     
     return purchase_request_records
 
@@ -763,7 +767,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         st.info("ℹ️ No purchase request data available for export")
     
     # Vendor Data Section (only for multiple vendors)
-    if num_vendors_selected > 1:
+    # FIXED: Show vendor table if multiple vendors were GENERATED (not just selected)
+    if total_vendors_available > 1:
         st.markdown("---")
         st.markdown("**🏪 Vendor Data & Selection Analysis:**")
         st.caption("Understanding why certain vendors were selected or not selected")
@@ -945,10 +950,108 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 int_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 1]))
                 st.plotly_chart(int_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
             
-            # Agent-Vendor Proximity Matrix Download
+            # Third row: Proximity chart
+            col_proximity, col_spacer = st.columns(2)
+            
+            with col_proximity:
+                # Proximity comparison (average across all agents)
+                proximity_vals = []
+                for val in vendor_df['Average Proximity']:
+                    if val != "N/A":
+                        proximity_vals.append(float(val))
+                    else:
+                        proximity_vals.append(0.0)
+                
+                prox_fig = px.bar(
+                    vendor_df,
+                    x='Vendor ID',
+                    y=proximity_vals,
+                    title="Average Proximity Score (0-100)",
+                    labels={'y': 'Proximity', 'x': ''}
+                )
+                prox_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 100]))
+                st.plotly_chart(prox_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
+            
+            with col_spacer:
+                # Empty space to maintain layout balance
+                pass
+            
+            # Vendor Score Breakdown Table (NEW: Show transparent scoring)
+            st.markdown("---")
+            st.markdown("**🔍 Vendor Score Breakdown (Average Across All Agents)**")
+            st.caption("Shows how each vendor's score is calculated from normalized attributes and weights")
+            
+            # Build score breakdown table
+            if 'vendor_choice_weights' in df.columns and 'vendor_proximity_scores' in df.columns:
+                score_breakdown_data = []
+                
+                # Get average weights across all agents
+                all_weights = df['vendor_choice_weights'].dropna()
+                if len(all_weights) > 0:
+                    avg_weights = {
+                        'price': np.mean([w.get('price', 0) for w in all_weights if isinstance(w, dict)]),
+                        'quality': np.mean([w.get('quality', 0) for w in all_weights if isinstance(w, dict)]),
+                        'proximity': np.mean([w.get('proximity', 0) for w in all_weights if isinstance(w, dict)]),
+                        'sustainability': np.mean([w.get('sustainability', 0) for w in all_weights if isinstance(w, dict)])
+                    }
+                    
+                    for vendor in vendors_data:
+                        vendor_id = vendor.get('vendor_id')
+                        price = vendor.get('price', 0)
+                        quality = vendor.get('quality', 3)
+                        sustainability = vendor.get('sustainability', 3)
+                        avg_proximity = avg_proximity_per_vendor.get(vendor_id, 50.0)
+                        
+                        # Calculate normalized values
+                        prices = [v.get('price', 0) for v in vendors_data]
+                        min_price = min(prices)
+                        max_price = max(prices)
+                        norm_price = 1 - ((price - min_price) / (max_price - min_price)) if max_price > min_price else 0.5
+                        norm_quality = (quality - 1) / 4 if quality >= 1 else 0
+                        norm_sustainability = (sustainability - 1) / 4 if sustainability >= 1 else 0
+                        norm_proximity = avg_proximity / 100 if avg_proximity >= 0 else 0
+                        
+                        # Calculate weighted components
+                        w_price_component = avg_weights['price'] * norm_price
+                        w_quality_component = avg_weights['quality'] * norm_quality
+                        w_proximity_component = avg_weights['proximity'] * norm_proximity
+                        w_sustainability_component = avg_weights['sustainability'] * norm_sustainability
+                        
+                        # Final score
+                        final_score = w_price_component + w_quality_component + w_proximity_component + w_sustainability_component
+                        
+                        score_breakdown_data.append({
+                            'Vendor': f"Vendor {vendor_id}",
+                            'Price ($)': f"${price:.2f}",
+                            'Norm Price': f"{norm_price:.3f}",
+                            'Price Weight': f"{avg_weights['price']:.2f}",
+                            'Price Component': f"{w_price_component:.3f}",
+                            'Quality (1-5)': quality,
+                            'Norm Quality': f"{norm_quality:.3f}",
+                            'Quality Weight': f"{avg_weights['quality']:.2f}",
+                            'Quality Component': f"{w_quality_component:.3f}",
+                            'Sustainability (1-5)': sustainability,
+                            'Norm Sustain': f"{norm_sustainability:.3f}",
+                            'Sustain Weight': f"{avg_weights['sustainability']:.2f}",
+                            'Sustain Component': f"{w_sustainability_component:.3f}",
+                            'Avg Proximity': f"{avg_proximity:.1f}",
+                            'Norm Proximity': f"{norm_proximity:.3f}",
+                            'Proximity Weight': f"{avg_weights['proximity']:.2f}",
+                            'Proximity Component': f"{w_proximity_component:.3f}",
+                            'Final Score': f"{final_score:.3f}"
+                        })
+                    
+                    if score_breakdown_data:
+                        score_df = pd.DataFrame(score_breakdown_data)
+                        st.dataframe(score_df, use_container_width=True, hide_index=True, height=min(400, 35 + 35 * len(score_breakdown_data)))
+                        
+                        st.caption("💡 **Formula**: Final Score = (Price Weight × Norm Price) + (Quality Weight × Norm Quality) + (Proximity Weight × Norm Proximity) + (Sustainability Weight × Norm Sustainability)")
+                        st.caption("📊 **Normalization**: Price is inverted (lower=better), others are scaled to [0,1]. Proximity averaged across all agents.")
+            
+            # Agent-Vendor Proximity Matrix (NEW: Display table + Download)
             st.markdown("---")
             st.markdown("**🔍 Agent-Vendor Proximity Score Matrix**")
-            st.caption("Download the complete matrix showing each agent's proximity to each vendor")
+            st.caption("View and download the complete matrix showing each agent's proximity to each vendor")
             
             if 'vendor_proximity_scores' in df.columns:
                 # Build complete proximity matrix
@@ -962,14 +1065,6 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     else:
                         row_data['Agent ID'] = idx + 1
                     
-                    # Add Assigned Allowance Level if available
-                    if 'Assigned Allowance Level' in df.columns:
-                        row_data['Assigned Allowance Level'] = df.iloc[idx]['Assigned Allowance Level']
-                    
-                    # Add Group_experiment if available
-                    if 'Group_experiment' in df.columns:
-                        row_data['Group_experiment'] = df.iloc[idx]['Group_experiment']
-                    
                     # Add proximity scores for each vendor
                     scores = df.iloc[idx]['vendor_proximity_scores']
                     if isinstance(scores, dict):
@@ -980,6 +1075,24 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 
                 if proximity_matrix_data:
                     proximity_df = pd.DataFrame(proximity_matrix_data)
+                    
+                    # Display proximity matrix table (with option to show all or just sample)
+                    with st.expander("📊 View Proximity Matrix Table", expanded=False):
+                        show_all_agents = st.checkbox(
+                            "Show all agents", 
+                            value=False, 
+                            key="show_all_proximity_matrix",
+                            help="Display proximity matrix for all agents (can be large). Default shows first 20 agents."
+                        )
+                        
+                        if show_all_agents:
+                            st.dataframe(proximity_df, use_container_width=True, height=min(600, 35 + 35 * len(proximity_df)))
+                            st.caption(f"Showing all {len(proximity_df)} agents")
+                        else:
+                            # Show first 20 agents
+                            display_df = proximity_df.head(20)
+                            st.dataframe(display_df, use_container_width=True, height=min(600, 35 + 35 * len(display_df)))
+                            st.caption(f"Showing first 20 agents (out of {len(proximity_df)} total). Check 'Show all agents' to view complete matrix.")
                     
                     # Create Excel file for proximity matrix
                     try:

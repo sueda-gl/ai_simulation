@@ -1,7 +1,9 @@
 # Per-Request Purchase Decisions Implementation
 
 **Date:** October 15, 2025  
-**Status:** ✅ Complete and Tested
+**Status:** ❌ DEPRECATED - Removed November 20, 2025
+
+**This feature has been removed. The system now only tracks purchase REQUESTS, not actual transaction details.**
 
 ---
 

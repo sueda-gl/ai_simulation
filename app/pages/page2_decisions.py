@@ -11,6 +11,178 @@ from app.pages.decision_tabs.default_config import render_default_decisions_conf
 from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation
 
 
+def initialize_page2_widget_keys():
+    """Initialize all Page 2 widget keys to preserve values across navigation.
+    
+    CRITICAL: This function ensures donation decision parameters persist when:
+    - Navigating from Results back to Page 2
+    - Switching between Overview and decision tabs
+    - Running simulations
+    
+    Similar to Page 1's initialize_widget_keys(), but for donation-specific parameters.
+    """
+    
+    # Initialize donation widget keys (checkboxes and sliders)
+    # These are the widget keys that store UI state
+    if "tab_sigma_in_copula" not in st.session_state:
+        st.session_state.tab_sigma_in_copula = st.session_state.get('sigma_in_copula', False)
+    
+    if "tab_sigma_in_research" not in st.session_state:
+        st.session_state.tab_sigma_in_research = st.session_state.get('sigma_in_research', True)
+    
+    if "tab_sigma_in_copula_compare" not in st.session_state:
+        st.session_state.tab_sigma_in_copula_compare = st.session_state.get('sigma_in_copula', False)
+    
+    if "tab_sigma_in_research_compare" not in st.session_state:
+        st.session_state.tab_sigma_in_research_compare = st.session_state.get('sigma_in_research', True)
+    
+    # Initialize slider widget keys for different population modes
+    if "tab_sigma_coefficient" not in st.session_state:
+        st.session_state.tab_sigma_coefficient = st.session_state.get('sigma_coefficient', 1.0)
+    
+    if "tab_sigma_coefficient_research" not in st.session_state:
+        st.session_state.tab_sigma_coefficient_research = st.session_state.get('sigma_coefficient', 1.0)
+    
+    if "tab_sigma_coefficient_compare" not in st.session_state:
+        st.session_state.tab_sigma_coefficient_compare = st.session_state.get('sigma_coefficient', 1.0)
+    
+    if "tab_anchor_weight" not in st.session_state:
+        st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
+    
+    # Initialize income spec mode widget key
+    if "page2_tab_income_spec_mode" not in st.session_state:
+        # Map current income_spec_mode to radio button options
+        current_mode = st.session_state.get('income_spec_mode', 'categorical only')
+        if current_mode in ["categorical only", "continuous only", "Compare both"]:
+            st.session_state.page2_tab_income_spec_mode = current_mode
+        elif current_mode in ["compare both", "compare side-by-side"]:
+            st.session_state.page2_tab_income_spec_mode = "Compare both"
+        else:
+            st.session_state.page2_tab_income_spec_mode = "categorical only"
+    
+    # CRITICAL: ALWAYS sync non-prefixed variables from widget keys
+    # These non-prefixed variables are what the simulation actually reads
+    # We MUST sync them on every page load to preserve user's values after navigation
+    
+    population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+    
+    # Sync sigma coefficient based on current population mode
+    # ALWAYS sync if widget key exists, regardless of whether non-prefixed variable exists
+    if population_mode == "Copula (synthetic)":
+        # Use Copula widget key
+        if 'tab_sigma_coefficient' in st.session_state:
+            st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient
+            st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient
+        if 'tab_sigma_in_copula' in st.session_state:
+            st.session_state.sigma_in_copula = st.session_state.tab_sigma_in_copula
+        else:
+            # If widget key doesn't exist, ensure non-prefixed variable exists
+            if 'sigma_coefficient' not in st.session_state:
+                st.session_state.sigma_coefficient = 1.0
+                st.session_state.sigma_value_ui = 9.8995
+            if 'sigma_in_copula' not in st.session_state:
+                st.session_state.sigma_in_copula = False
+    elif population_mode == "Research Specification":
+        # Use Research widget key
+        if 'tab_sigma_coefficient_research' in st.session_state:
+            st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient_research
+            st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient_research
+        if 'tab_sigma_in_research' in st.session_state:
+            st.session_state.sigma_in_research = st.session_state.tab_sigma_in_research
+        else:
+            # If widget key doesn't exist, ensure non-prefixed variable exists
+            if 'sigma_coefficient' not in st.session_state:
+                st.session_state.sigma_coefficient = 1.0
+                st.session_state.sigma_value_ui = 9.8995
+            if 'sigma_in_research' not in st.session_state:
+                st.session_state.sigma_in_research = True
+    elif population_mode == "Research Baseline":
+        # Research Baseline has no stochastic component - ALWAYS set to 0
+        st.session_state.sigma_coefficient = 0.0
+        st.session_state.sigma_value_ui = 0.0
+        st.session_state.sigma_in_copula = False
+        st.session_state.sigma_in_research = False
+    elif population_mode == "Compare all":
+        # Use Compare widget key
+        if 'tab_sigma_coefficient_compare' in st.session_state:
+            st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient_compare
+            st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient_compare
+        if 'tab_sigma_in_copula_compare' in st.session_state:
+            st.session_state.sigma_in_copula = st.session_state.tab_sigma_in_copula_compare
+        if 'tab_sigma_in_research_compare' in st.session_state:
+            st.session_state.sigma_in_research = st.session_state.tab_sigma_in_research_compare
+        else:
+            # If widget key doesn't exist, ensure non-prefixed variable exists
+            if 'sigma_coefficient' not in st.session_state:
+                st.session_state.sigma_coefficient = 1.0
+                st.session_state.sigma_value_ui = 9.8995
+            if 'sigma_in_copula' not in st.session_state:
+                st.session_state.sigma_in_copula = False
+            if 'sigma_in_research' not in st.session_state:
+                st.session_state.sigma_in_research = True
+    
+    # ALWAYS sync anchor weight (common across all modes)
+    if 'tab_anchor_weight' in st.session_state:
+        st.session_state.anchor_observed_weight = st.session_state.tab_anchor_weight
+    elif 'anchor_observed_weight' not in st.session_state:
+        st.session_state.anchor_observed_weight = 0.75
+    
+    # ALWAYS sync income spec mode
+    if 'page2_tab_income_spec_mode' in st.session_state:
+        st.session_state.income_spec_mode = st.session_state.page2_tab_income_spec_mode
+    elif 'income_spec_mode' not in st.session_state:
+        st.session_state.income_spec_mode = 'categorical only'
+    
+    # CRITICAL: Initialize default decision parameter keys
+    # These are the keys used by default decision widgets in the Overview tab
+    # They MUST be initialized even when the Overview tab hasn't rendered yet
+    # This prevents loss of default decision configurations when navigating
+    
+    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
+    
+    for decision_name, default_value in DEFAULT_DECISION_VALUES.items():
+        if isinstance(default_value, dict):
+            decision_type = default_value.get("type")
+            
+            # Initialize random probability decision keys
+            if decision_type == "random_probability":
+                prob_key = f"{decision_name}_default_probability_y"
+                if prob_key not in st.session_state:
+                    st.session_state[prob_key] = default_value.get("probability_y", 0.5)
+            
+            # Initialize checkbox selection decision keys
+            elif decision_type == "checkbox_selection":
+                selection_key = f"{decision_name}_default_params"
+                if selection_key not in st.session_state:
+                    st.session_state[selection_key] = default_value.get("default_selection", []).copy()
+                
+                # Initialize individual checkbox keys
+                parameters = default_value.get("parameters", {})
+                default_selection = default_value.get("default_selection", [])
+                for param_key in parameters.keys():
+                    checkbox_key = f"{decision_name}_default_param_{param_key}"
+                    if checkbox_key not in st.session_state:
+                        st.session_state[checkbox_key] = param_key in default_selection
+            
+            # Initialize radio selection decision keys
+            elif decision_type == "radio_selection":
+                selection_key = f"{decision_name}_default_selection"
+                if selection_key not in st.session_state:
+                    st.session_state[selection_key] = default_value.get("default_option", "")
+            
+            # Initialize prioritized selection decision keys
+            elif decision_type == "prioritized_selection":
+                template_key = f"{decision_name}_priority_template"
+                if template_key not in st.session_state:
+                    st.session_state[template_key] = default_value.get("priority_template", []).copy()
+        
+        # Initialize numeric default decision keys
+        elif isinstance(default_value, (int, float)):
+            value_key = f"{decision_name}_default_value"
+            if value_key not in st.session_state:
+                st.session_state[value_key] = default_value
+
+
 def format_decision_title(decision_name, include_number=False):
     """Format decision name for display, with special handling for specific decisions
     
@@ -29,6 +201,10 @@ def format_decision_title(decision_name, include_number=False):
     # Format the title
     if decision_name == "purchase_vs_bid":
         title = "Purchase Now Vs Bid"
+    elif decision_name == "purchasing_quantity":
+        title = "Purchase Request Quantity"
+    elif decision_name == "purchasing_frequency":
+        title = "Purchase Request Frequency"
     else:
         title = decision_name.replace('_', ' ').title()
     
@@ -124,6 +300,10 @@ def render_overview_tab(selected_decisions):
 def render_page2():
     """Render Page 2: Decision-Specific Parameters"""
     st.markdown('<h2 class="page-header">Page 2: Decision-Specific Parameters</h2>', unsafe_allow_html=True)
+    
+    # Initialize widget keys to preserve values across navigation
+    # CRITICAL: This ensures donation parameters persist when navigating from Results back to Page 2
+    initialize_page2_widget_keys()
     
     # Decision selection
     st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)

@@ -1,0 +1,134 @@
+================================================================================
+                WHERE TO FIND THE EXCEL DOWNLOAD BUTTON
+================================================================================
+
+NAVIGATION PATH:
+Page 2 → Run Simulation → Results Page → Scroll Down
+
+================================================================================
+                    RESULTS PAGE LAYOUT
+================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│                        📊 Simulation Results                              │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  [Overall metrics and summary]                                           │
+│                                                                           │
+│  ───────────────────────────────────────────────────────────────────     │
+│                                                                           │
+│  📊 Decision Results                                                     │
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────┐                │
+│  │  Decision 1: Disclose Income                        │                │
+│  │  [Visualization]                                     │                │
+│  └─────────────────────────────────────────────────────┘                │
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────┐                │
+│  │  Decision 2: Disclose Documents                     │                │
+│  │  [Visualization]                                     │                │
+│  └─────────────────────────────────────────────────────┘                │
+│                                                                           │
+│  ...                                                                     │
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────┐                │
+│  │  📊 Final Donation Rate (Custom Parameters)         │ ← SCROLL HERE! │
+│  ├─────────────────────────────────────────────────────┤                │
+│  │                                                      │                │
+│  │  [Donation rate statistics and histogram]           │                │
+│  │                                                      │                │
+│  │  ─────────────────────────────────────────────────  │                │
+│  │                                                      │                │
+│  │  💾 Transaction-Level Export                        │                │
+│  │  Download detailed purchase request data            │                │
+│  │  with donation rates                                │                │
+│  │                                                      │                │
+│  │  ┌────┬────────┬────────┬─────────┐                │                │
+│  │  │ 89 │   5    │   2    │  17.3%  │                │                │
+│  │  │Req │ Agents │Periods │Avg Rate │                │                │
+│  │  └────┴────────┴────────┴─────────┘                │                │
+│  │                                                      │                │
+│  │  ┌──────────────────────────────────────────┐      │                │
+│  │  │ 📥 Download Transaction-Level Excel      │ ← BUTTON HERE!        │
+│  │  └──────────────────────────────────────────┘      │                │
+│  │                                                      │                │
+│  │  ▼ 📊 Preview Transaction Data                     │                │
+│  │  [Table showing first 20 rows]                     │                │
+│  │                                                      │                │
+│  └─────────────────────────────────────────────────────┘                │
+│                                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+                        BUTTON APPEARANCE
+================================================================================
+
+The button looks like this:
+
+    ┌──────────────────────────────────────────┐
+    │ 📥 Download Transaction-Level Excel      │
+    └──────────────────────────────────────────┘
+
+When you hover: cursor changes to pointer
+When you click: downloads .xlsx file immediately
+
+================================================================================
+                    REQUIREMENTS FOR BUTTON TO APPEAR
+================================================================================
+
+✅ Must have run simulation
+✅ Must have selected "purchasing_quantity" decision on Page 2
+✅ Simulation must have created purchase requests (usually always true)
+✅ Must be viewing the "Final Donation Rate" decision section
+
+The button will appear REGARDLESS of whether you:
+- Selected "donation_default" decision
+- Selected a donation configuration
+- Have default or custom donation rates
+
+As long as purchase requests exist, the button will show!
+
+================================================================================
+                        WHAT HAPPENS WHEN YOU CLICK
+================================================================================
+
+1. Excel file downloads immediately to your Downloads folder
+2. Filename: donation_transactions_YYYYMMDD_HHMMSS.xlsx
+3. File contains multiple sheets:
+   - Total (all data)
+   - Period 1
+   - Period 2
+   - etc.
+
+4. Each row = one purchase request with:
+   - Agent ID
+   - Period
+   - Customer Price
+   - Final Donation Rate (per request!)
+   - Donation Paid
+   - Total Paid
+   - And more...
+
+================================================================================
+                    IF YOU DON'T SEE THE BUTTON
+================================================================================
+
+Check:
+1. Did you run the simulation?
+   → Go to Page 2 and click "🚀 Run Simulation"
+
+2. Did you select "purchasing_quantity" decision?
+   → Go to Page 2, make sure it's checked
+
+3. Are you in the right section?
+   → Scroll to "Final Donation Rate" section (not "Donation Default")
+
+4. Do you see metrics above the button?
+   → Look for: Total Requests | Total Agents | Periods | Avg Rate
+   → If you see these, the button should be right below
+
+5. Try refreshing the page
+   → Press Ctrl+R (Windows) or Cmd+R (Mac)
+
+================================================================================
+

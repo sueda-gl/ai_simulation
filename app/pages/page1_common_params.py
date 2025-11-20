@@ -78,39 +78,39 @@ def initialize_widget_keys():
     
     # Lognormal parameters
     if "lognormal_mu_input" not in st.session_state:
-        st.session_state.lognormal_mu_input = st.session_state.sim_params.lognormal_mu
+        st.session_state.lognormal_mu_input = getattr(st.session_state.sim_params, 'lognormal_mu', 10.0)
     
     if "lognormal_sigma_input" not in st.session_state:
-        st.session_state.lognormal_sigma_input = st.session_state.sim_params.lognormal_sigma
+        st.session_state.lognormal_sigma_input = getattr(st.session_state.sim_params, 'lognormal_sigma', 0.5)
     
     if "lognormal_min_input" not in st.session_state:
-        st.session_state.lognormal_min_input = st.session_state.sim_params.lognormal_min
+        st.session_state.lognormal_min_input = getattr(st.session_state.sim_params, 'lognormal_min', 0.0)
     
     # Generalised Gamma parameters
     if "gg_k_input" not in st.session_state:
-        st.session_state.gg_k_input = st.session_state.sim_params.gg_k
+        st.session_state.gg_k_input = getattr(st.session_state.sim_params, 'gg_k', 1.5)
     
     if "gg_c_input" not in st.session_state:
-        st.session_state.gg_c_input = st.session_state.sim_params.gg_c
+        st.session_state.gg_c_input = getattr(st.session_state.sim_params, 'gg_c', 2.0)
     
     if "gg_lambda_input" not in st.session_state:
-        st.session_state.gg_lambda_input = st.session_state.sim_params.gg_lambda
+        st.session_state.gg_lambda_input = getattr(st.session_state.sim_params, 'gg_lambda', 20000.0)
     
     if "gg_min_input" not in st.session_state:
-        st.session_state.gg_min_input = st.session_state.sim_params.gg_min
+        st.session_state.gg_min_input = getattr(st.session_state.sim_params, 'gg_min', 0.0)
     
     # Dagum parameters
     if "dagum_a_input" not in st.session_state:
-        st.session_state.dagum_a_input = st.session_state.sim_params.dagum_a
+        st.session_state.dagum_a_input = getattr(st.session_state.sim_params, 'dagum_a', 2.0)
     
     if "dagum_p_input" not in st.session_state:
-        st.session_state.dagum_p_input = st.session_state.sim_params.dagum_p
+        st.session_state.dagum_p_input = getattr(st.session_state.sim_params, 'dagum_p', 1.5)
     
     if "dagum_b_input" not in st.session_state:
-        st.session_state.dagum_b_input = st.session_state.sim_params.dagum_b
+        st.session_state.dagum_b_input = getattr(st.session_state.sim_params, 'dagum_b', 25000.0)
     
     if "dagum_min_input" not in st.session_state:
-        st.session_state.dagum_min_input = st.session_state.sim_params.dagum_min
+        st.session_state.dagum_min_input = getattr(st.session_state.sim_params, 'dagum_min', 0.0)
     
     # Income categories
     if "num_discount_categories_input" not in st.session_state:
@@ -1471,5 +1471,124 @@ BUDGET_SHOP,5.25,50,0""")
         else:  # Compare all
             st.info("🔬 **Compare All**: Runs all three population modes side-by-side for comprehensive comparison.")
     
+    # Reset to Defaults Button
+    st.markdown("---")
+    col_reset1, col_reset2 = st.columns([3, 1])
+    with col_reset1:
+        st.caption("💡 Reset all simulation parameters (vendors, prices, distributions) to system defaults.")
+    with col_reset2:
+        if st.button("🔄 Reset to Default Values", help="Reset all Page 1 parameters to system defaults", key="reset_page1_defaults"):
+            reset_all_page1_defaults()
+            st.success("✅ All parameters reset to defaults")
+            st.rerun()
+    
     # Navigation
     render_navigation('page1')
+
+
+def reset_all_page1_defaults():
+    """Reset all Page 1 parameters to system defaults"""
+    
+    # 1. Reset sim_params object attributes
+    # Using hardcoded defaults from SimulationParameters class in models.py
+    st.session_state.sim_params.num_vendors = 1
+    st.session_state.sim_params.periods = 1
+    st.session_state.sim_params.duration_hours = 8.0
+    st.session_state.sim_params.market_price = 100.0
+    st.session_state.sim_params.vendor_price_min = 50.0
+    st.session_state.sim_params.vendor_price_max = 150.0
+    st.session_state.sim_params.vendor_products_min = 50
+    st.session_state.sim_params.vendor_products_max = 150
+    st.session_state.sim_params.vendor_products_avg = 100
+    st.session_state.sim_params.platform_markup = 0.15
+    st.session_state.sim_params.price_range = 0.25
+    st.session_state.sim_params.bidding_percentage = 0.25
+    st.session_state.sim_params.price_grid = 9
+    st.session_state.sim_params.vendor_config_mode = "random"
+    st.session_state.sim_params.override_carryover = False
+    st.session_state.sim_params.vendor_carryover_probability = 0.5
+    
+    # Distribution params
+    st.session_state.sim_params.income_distribution = "lognormal"
+    st.session_state.sim_params.lognormal_mu = 10.0
+    st.session_state.sim_params.lognormal_sigma = 0.5
+    st.session_state.sim_params.lognormal_min = 0.0
+    st.session_state.sim_params.lognormal_max = None
+    st.session_state.sim_params.gg_k = 1.5
+    st.session_state.sim_params.gg_c = 2.0
+    st.session_state.sim_params.gg_lambda = 20000.0
+    st.session_state.sim_params.gg_min = 0.0
+    st.session_state.sim_params.gg_max = None
+    st.session_state.sim_params.dagum_a = 2.0
+    st.session_state.sim_params.dagum_p = 1.5
+    st.session_state.sim_params.dagum_b = 25000.0
+    st.session_state.sim_params.dagum_min = 0.0
+    st.session_state.sim_params.dagum_max = None
+    
+    # Categories & Limits
+    st.session_state.sim_params.discount_income_threshold = 20000.0
+    st.session_state.sim_params.num_discount_categories = 2
+    st.session_state.sim_params.num_fixed_categories = 8  # Default (price_grid - 1)
+    st.session_state.sim_params.apply_purchasing_limits = False
+    st.session_state.sim_params.max_purchases_per_term = 10
+    st.session_state.sim_params.purchasing_limits = {}
+    
+    # 2. Reset Session State Keys (Widget Keys)
+    st.session_state.num_vendors_input = 1
+    st.session_state.periods_input = 1
+    st.session_state.duration_hours_input = 8
+    st.session_state.market_price_input = 100.0
+    st.session_state.single_vendor_price_input = 100.0
+    st.session_state.single_vendor_products_input = 100
+    st.session_state.vendor_price_min_input = 50.0
+    st.session_state.vendor_price_max_input = 150.0
+    st.session_state.vendor_products_min_input = 50
+    st.session_state.vendor_products_max_input = 150
+    st.session_state.vendor_products_avg_input = 100
+    st.session_state.platform_markup_slider = 0.15
+    st.session_state.price_range_slider = 0.25
+    st.session_state.bidding_percentage_slider = 0.25
+    st.session_state.price_grid_input = 9
+    st.session_state.page1_vendor_setup_mode = "Generate Randomly"
+    st.session_state.page1_carryover_mode = "Use probability"
+    st.session_state.vendor_carryover_probability_slider = 0.5
+    st.session_state.single_vendor_carryover = False
+    
+    st.session_state.page1_income_distribution = "lognormal"
+    st.session_state.lognormal_mu_input = 10.0
+    st.session_state.lognormal_sigma_input = 0.5
+    st.session_state.lognormal_min_input = 0.0
+    st.session_state.lognormal_max_text_input = "None"
+    st.session_state.gg_k_input = 1.5
+    st.session_state.gg_c_input = 2.0
+    st.session_state.gg_lambda_input = 20000.0
+    st.session_state.gg_min_input = 0.0
+    st.session_state.gg_max_text_input = "None"
+    st.session_state.dagum_a_input = 2.0
+    st.session_state.dagum_p_input = 1.5
+    st.session_state.dagum_b_input = 25000.0
+    st.session_state.dagum_min_input = 0.0
+    st.session_state.dagum_max_text_input = "None"
+    
+    st.session_state.discount_threshold_input = 20000.0
+    st.session_state.num_discount_categories_input = 2
+    st.session_state.num_fixed_categories_input = 8
+    st.session_state.nfic_manually_set = False
+    
+    st.session_state.page1_apply_limits = "No"
+    st.session_state.artificial_limit_input = 10
+    st.session_state.uniform_purchasing_limit_input = 10
+    
+    # Simulation Settings
+    st.session_state.n_agents = 1000
+    st.session_state.n_agents_input = 1000
+    st.session_state.seed = 42
+    st.session_state.seed_input = 42
+    st.session_state.base_seed = 42
+    st.session_state.base_seed_input = 42
+    st.session_state.n_runs = 10
+    st.session_state.n_runs_input = 10
+    st.session_state.show_individual_agents = False
+    st.session_state.page1_simulation_execution_mode = "Live Simulation"
+    st.session_state.page1_simulation_mode = "Single Run"
+    st.session_state.page1_population_mode = "Copula (synthetic)"

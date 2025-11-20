@@ -8,13 +8,14 @@ from app.models import initialize_session_state
 def render_export_section(df, results_dict=None, using_selected_config=False):
     """Render the export/download section (simplified)"""
     # Remove 'raw', 'index', 'consumption_frequency', 'actual_allowance', 'income', 'customer_type', and 'enriched_requests_count' columns before any processing
+    # Use exact column name matching to avoid filtering out 'disclose_income' when we only want to exclude 'income'
     columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'actual_allowance', 'income', 'customer_type', 'enriched_requests_count']
     
     if df is not None:
-        df = df[[col for col in df.columns if not any(excl in col.lower() for excl in columns_to_exclude)]]
+        df = df[[col for col in df.columns if col not in columns_to_exclude]]
     if results_dict is not None:
         results_dict = {
-            key: config_df[[col for col in config_df.columns if not any(excl in col.lower() for excl in columns_to_exclude)]]
+            key: config_df[[col for col in config_df.columns if col not in columns_to_exclude]]
             for key, config_df in results_dict.items()
         }
 

@@ -29,6 +29,10 @@ def format_decision_title(decision_name, include_number=False):
     # Format the title
     if decision_name == "purchase_vs_bid":
         title = "Purchase Now Vs Bid"
+    elif decision_name == "purchasing_quantity":
+        title = "Purchase Request Quantity"
+    elif decision_name == "purchasing_frequency":
+        title = "Purchase Request Frequency"
     else:
         title = decision_name.replace('_', ' ').title()
     
