@@ -7,7 +7,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 
 
@@ -22,7 +22,8 @@ def _build_donation_transaction_export(df, simulation_config=None):
     - Customer Type (Regular, Fixed, Discount)
     - Income Category
     - Purchase Request Type (PN/Bid/Fixed/Discount)
-    - Date/Time of Purchase Request
+    - Purchase Date
+    - Purchase Time
     - Period
     - Customer Price (based on PN price, bid value, Fixed price or Discount price)
     - Transaction Completed (0/1)
@@ -48,6 +49,10 @@ def _build_donation_transaction_export(df, simulation_config=None):
     baseline_price = (1 + platform_markup) * market_price  # PN price
     discount_price = market_price * 0.7  # Assume 30% discount
     fixed_price = market_price  # Fixed price = market price
+    
+    # Get simulation start time for timestamp conversion
+    from datetime import datetime, timedelta
+    simulation_start_time = datetime.now()
     
     for idx, row in df.iterrows():
         # Get agent information
@@ -88,7 +93,7 @@ def _build_donation_transaction_export(df, simulation_config=None):
             else:
                 customer_type_display = 'Regular'
             
-            # Get timestamp and convert to Period
+            # Get timestamp and convert to Period and DateTime
             timestamp_hours = request.get('timestamp_hours', np.nan)
             if not pd.isna(timestamp_hours):
                 # Get periods and duration from session state or use defaults
@@ -101,11 +106,17 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 
                 # Calculate period (each period has duration_hours hours)
                 period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
-                # Format as "Period X, Hour Y"
-                hour_in_period = timestamp_hours % duration_hours if timestamp_hours >= 0 else 0
-                request_datetime = f"Period {period}, Hour {hour_in_period:.1f}"
+                
+                # Convert timestamp_hours to actual datetime
+                # Add hours as timedelta to simulation start time
+                request_datetime = simulation_start_time + timedelta(hours=float(timestamp_hours))
+                purchase_date = request_datetime.date()
+                purchase_time = request_datetime.time()
             else:
-                request_datetime = request.get('requestDateTime', '')
+                # Fallback if timestamp_hours not available
+                request_datetime = simulation_start_time
+                purchase_date = request_datetime.date()
+                purchase_time = request_datetime.time()
                 period = request.get('period', 1)
             
             # Determine Purchase Request Type and Customer Price
@@ -164,7 +175,7 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 donation_paid = np.nan
                 total_paid = customer_price if not pd.isna(customer_price) else np.nan
             
-            # Build record
+            # Build record with separate date and time columns
             record = {
                 'Agent ID': agent_id,
                 'Assigned Allowance Level': allowance_level,
@@ -172,17 +183,27 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 'Customer Type': customer_type_display,
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
-                'Date/Time of Purchase Request': request_datetime,
+                'Purchase Date': purchase_date,
+                'Purchase Time': purchase_time,
                 'Period': period,
                 'Customer Price': customer_price,
                 'Transaction Completed': transaction_completed,
                 'Default Donation Rate': agent_default_rate,
                 'Final Donation Rate': final_donation_rate,
                 'Donation Paid': donation_paid,
-                'Total Paid by Customer': total_paid
+                'Total Paid by Customer': total_paid,
+                '_sort_datetime': request_datetime  # Hidden column for sorting
             }
             
             transaction_records.append(record)
+    
+    # Sort all records by timestamp in chronological order
+    if transaction_records:
+        transaction_records.sort(key=lambda x: x['_sort_datetime'] if isinstance(x['_sort_datetime'], datetime) else datetime.min)
+        
+        # Remove the hidden sorting column before returning
+        for record in transaction_records:
+            record.pop('_sort_datetime', None)
     
     return transaction_records
 
