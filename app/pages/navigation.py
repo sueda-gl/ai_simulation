@@ -6,7 +6,17 @@ import streamlit as st
 
 
 def restore_original_session_state():
-    """Restore original population and income mode values if they were overridden"""
+    """Restore original population and income mode values if they were overridden.
+    
+    IMPORTANT:
+    Only restore when navigating AWAY FROM the results page.
+    This prevents unintended resets when moving between Page 1 and Page 2.
+    """
+    # Only restore when coming from results
+    current_page = st.session_state.get('page', None)
+    if current_page != 'results':
+        return
+    
     if hasattr(st.session_state, '_original_population_mode'):
         st.session_state.population_mode = st.session_state._original_population_mode
         st.session_state.income_spec_mode = st.session_state._original_income_spec_mode

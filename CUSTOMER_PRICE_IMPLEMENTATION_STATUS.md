@@ -144,3 +144,6 @@ Once implemented, remove the info messages added in this update.
 
 **Status:** Users are now informed about placeholder prices ✅
 
+
+
+

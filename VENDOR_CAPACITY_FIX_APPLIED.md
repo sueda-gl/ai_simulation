@@ -237,3 +237,6 @@ After re-running simulation, verify:
 **Files Modified:** `src/decisions/vendor_selection.py`  
 **Test Required:** Re-run simulation to verify capacity fix
 
+
+
+

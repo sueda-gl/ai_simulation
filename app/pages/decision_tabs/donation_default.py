@@ -45,10 +45,43 @@ def get_coefficient_for_input(name):
         return get_coefficient(name, 'cat')  # Default to categorical for "compare both" and "categorical only"
 
 
+def initialize_donation_widget_keys():
+    """Initialize widget keys for donation_default tab to preserve values across navigation"""
+    
+    # Initialize checkbox widget keys
+    if "tab_sigma_in_copula" not in st.session_state:
+        st.session_state.tab_sigma_in_copula = st.session_state.get('sigma_in_copula', False)
+    
+    if "tab_sigma_in_research" not in st.session_state:
+        st.session_state.tab_sigma_in_research = st.session_state.get('sigma_in_research', True)
+    
+    if "tab_sigma_in_copula_compare" not in st.session_state:
+        st.session_state.tab_sigma_in_copula_compare = st.session_state.get('sigma_in_copula', False)
+    
+    if "tab_sigma_in_research_compare" not in st.session_state:
+        st.session_state.tab_sigma_in_research_compare = st.session_state.get('sigma_in_research', True)
+    
+    # Initialize slider widget keys
+    if "tab_sigma_coefficient" not in st.session_state:
+        st.session_state.tab_sigma_coefficient = st.session_state.get('sigma_coefficient', 1.0)
+    
+    if "tab_sigma_coefficient_research" not in st.session_state:
+        st.session_state.tab_sigma_coefficient_research = st.session_state.get('sigma_coefficient', 1.0)
+    
+    if "tab_sigma_coefficient_compare" not in st.session_state:
+        st.session_state.tab_sigma_coefficient_compare = st.session_state.get('sigma_coefficient', 1.0)
+    
+    if "tab_anchor_weight" not in st.session_state:
+        st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
+
+
 def render_donation_default_tab():
     """Render donation_default specific configuration"""
     # Ensure coefficients are loaded from configuration file
     ensure_coefficients_loaded()
+    
+    # Initialize widget keys to preserve values across navigation
+    initialize_donation_widget_keys()
     
     st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
     
@@ -98,7 +131,7 @@ def render_donation_default_tab():
             # Show only Copula controls
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
-                value=st.session_state.sigma_in_copula,
+                value=st.session_state.tab_sigma_in_copula,  # Read from widget key
                 help="When enabled, Copula mode will also use the stochastic component",
                 key="tab_sigma_in_copula"
             )
@@ -111,7 +144,7 @@ def render_donation_default_tab():
                 "σ Coefficient (multiplier)",
                 min_value=0.0,
                 max_value=2.0,
-                value=st.session_state.sigma_coefficient,
+                value=st.session_state.tab_sigma_coefficient,  # Read from widget key
                 step=0.01,
                 help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
                 key="tab_sigma_coefficient"
@@ -126,7 +159,7 @@ def render_donation_default_tab():
             # Show only Research controls
             sigma_in_research = st.checkbox(
                 "Use Normal(anchor, σ) draw in Research mode",
-                value=st.session_state.sigma_in_research,
+                value=st.session_state.tab_sigma_in_research,  # Read from widget key
                 help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
                 key="tab_sigma_in_research"
             )
@@ -140,7 +173,7 @@ def render_donation_default_tab():
                     "σ Coefficient (multiplier)",
                     min_value=0.0,
                     max_value=2.0,
-                    value=st.session_state.sigma_coefficient,
+                    value=st.session_state.tab_sigma_coefficient_research,  # Read from widget key
                     step=0.01,
                     help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
                     key="tab_sigma_coefficient_research"
@@ -171,7 +204,7 @@ def render_donation_default_tab():
             st.markdown("**Copula Mode Controls:**")
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
-                value=st.session_state.sigma_in_copula,
+                value=st.session_state.tab_sigma_in_copula_compare,  # Read from widget key
                 help="When enabled, Copula mode will also use the stochastic component",
                 key="tab_sigma_in_copula_compare"
             )
@@ -180,7 +213,7 @@ def render_donation_default_tab():
             st.markdown("**Research Specification Controls:**")
             sigma_in_research = st.checkbox(
                 "Use Normal(anchor, σ) draw in Research Specification mode",
-                value=st.session_state.sigma_in_research,
+                value=st.session_state.tab_sigma_in_research_compare,  # Read from widget key
                 help="When enabled, Research Specification mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
                 key="tab_sigma_in_research_compare"
             )
@@ -196,7 +229,7 @@ def render_donation_default_tab():
                     "σ Coefficient (multiplier)",
                     min_value=0.0,
                     max_value=2.0,
-                    value=st.session_state.sigma_coefficient,
+                    value=st.session_state.tab_sigma_coefficient_compare,  # Read from widget key
                     step=0.01,
                     help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
                     key="tab_sigma_coefficient_compare"
@@ -218,7 +251,7 @@ def render_donation_default_tab():
                 "Weight for observed vs modeled prosocial behavior",
                 min_value=0.0,
                 max_value=1.0,
-                value=st.session_state.anchor_observed_weight,
+                value=st.session_state.tab_anchor_weight,  # Read from widget key
                 step=0.01,
                 help="Anchor = w × Observed + (1-w) × Predicted",
                 key="tab_anchor_weight"

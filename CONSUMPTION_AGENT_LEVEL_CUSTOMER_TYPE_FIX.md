@@ -157,3 +157,6 @@ To verify the fix:
 
 This fix ensures that the agent-level export correctly identifies every agent's customer type, even when they made 0 purchases. The solution uses a robust two-tier fallback that prioritizes the agent-level `customer_type` column (which is always present in simulation results) before falling back to extracting from purchase requests.
 
+
+
+

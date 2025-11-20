@@ -176,3 +176,6 @@ This reads the `income_category` value from each agent's row in the dataframe. W
 
 **Next Step for User:** Test the export with a new simulation run to confirm the Income Category column is now populated correctly.
 
+
+
+
