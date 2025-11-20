@@ -9,18 +9,20 @@ from app.pages.decision_execution import run_individual_decision
 def render_donation_default_tab():
     """Render donation_default specific configuration"""
     st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
-    
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         population_mode = st.session_state.population_mode  # Use value from Page 1
-        
+
         # Income specification selector
         if population_mode != "Dependent variable resampling":
             st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
-            
-            # Initialize the widget key if it doesn't exist
-            if "page2_tab_income_spec_mode" not in st.session_state:
+
+            # Ensure widget key is synchronized with session state value
+            # This preserves the value when navigating back from results
+            if "page2_tab_income_spec_mode" not in st.session_state or \
+               st.session_state.page2_tab_income_spec_mode != st.session_state.income_spec_mode:
                 # Map current income_spec_mode to radio button options
                 if st.session_state.income_spec_mode in ["categorical only", "continuous only", "Compare both"]:
                     st.session_state.page2_tab_income_spec_mode = st.session_state.income_spec_mode
@@ -53,7 +55,11 @@ def render_donation_default_tab():
             )
             st.session_state.sigma_in_copula = sigma_in_copula
             st.session_state.sigma_in_research = True  # Default for research mode
-            
+
+            # Ensure widget key is synchronized with session state
+            if "tab_sigma_coefficient" not in st.session_state:
+                st.session_state.tab_sigma_coefficient = st.session_state.sigma_coefficient
+
             # Show static sigma value and coefficient slider
             st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
             sigma_coefficient = st.slider(
@@ -163,6 +169,11 @@ def render_donation_default_tab():
         # Anchor weights
         if population_mode != "Dependent variable resampling":
             st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
+
+            # Ensure widget key is synchronized with session state
+            if "tab_anchor_weight" not in st.session_state:
+                st.session_state.tab_anchor_weight = st.session_state.anchor_observed_weight
+
             anchor_observed_weight = st.slider(
                 "Weight for observed vs modeled prosocial behavior",
                 min_value=0.0,

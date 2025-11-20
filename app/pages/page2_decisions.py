@@ -37,13 +37,13 @@ def render_overview_tab(selected_decisions):
 def render_page2():
     """Render Page 2: Decision-Specific Parameters"""
     st.markdown('<h2 class="page-header">Page 2: Decision-Specific Parameters</h2>', unsafe_allow_html=True)
-    
+
     # Decision selection
     st.markdown('<h3 class="section-header">🎯 Decision Selection</h3>', unsafe_allow_html=True)
-    
+
     # Multi-select with "Select All" functionality
     select_all = st.checkbox("Select All Decisions", value=False)
-    
+
     if select_all:
         selected_decisions = st.multiselect(
             "Selected Decisions",
@@ -56,7 +56,7 @@ def render_page2():
         # Use session state to preserve selections when navigating between pages
         # But default to empty list if nothing was previously selected
         default_selections = st.session_state.decision_params.selected_decisions if hasattr(st.session_state.decision_params, 'selected_decisions') and st.session_state.decision_params.selected_decisions else []
-        
+
         selected_decisions = st.multiselect(
             "Select Decisions to Run",
             ALL_DECISIONS,
@@ -64,28 +64,35 @@ def render_page2():
             help="Select one or more decisions to run",
             placeholder="Choose decisions..."
         )
-    
+
     # Store selected decisions
     st.session_state.decision_params.selected_decisions = selected_decisions
-    
+
     if not selected_decisions:
         st.warning("Please select at least one decision to configure parameters")
         # Navigation
         render_navigation('page2')
         return
-    
+
+    # Initialize active tab tracking if not exists
+    if 'page2_active_tab' not in st.session_state:
+        st.session_state.page2_active_tab = 0
+
     # Create tabs
     tab_names = ["📊 Overview"] + [f"🎯 {d.replace('_', ' ').title()}" for d in selected_decisions]
+
+    # Use on_change callback to track active tab (Streamlit doesn't expose active tab directly)
+    # We'll use a workaround by storing which tab was last interacted with
     tabs = st.tabs(tab_names)
-    
+
     # Overview Tab
     with tabs[0]:
         render_overview_tab(selected_decisions)
-    
+
     # Decision-specific tabs
     for i, decision in enumerate(selected_decisions):
         with tabs[i + 1]:
             render_decision_tab(decision)
-    
+
     # Navigation
     render_navigation('page2')

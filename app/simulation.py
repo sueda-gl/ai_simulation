@@ -185,8 +185,13 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         return None, None, None
 
 
-def run_simulation_from_sidebar():
-    """Run simulation using original app.py logic"""
+def run_simulation_from_sidebar(navigate_to_results=True):
+    """Run simulation using original app.py logic
+
+    Args:
+        navigate_to_results: If True, navigates to results page after simulation.
+                           If False, stays on current page (for individual decision runs).
+    """
     try:
         with st.spinner("🔄 Generating synthetic agents and running simulation..."):
             # Helper to run simulation with chosen orchestrator and income mode
@@ -294,10 +299,14 @@ def run_simulation_from_sidebar():
                     df.to_parquet(filepath, index=False)
                 
                 st.sidebar.caption(f"✅ Results saved with timestamp {timestamp}")
-            
+
             st.session_state.simulation_results = results
-            st.session_state.page = 'results'
-            st.rerun()
+
+            # Only navigate to results page if requested (complete simulations)
+            # Individual decision runs stay on current page
+            if navigate_to_results:
+                st.session_state.page = 'results'
+                st.rerun()
             
     except Exception as e:
         st.error(f"❌ Simulation failed: {str(e)}")

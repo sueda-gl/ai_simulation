@@ -108,29 +108,31 @@ def get_actual_default_value(decision_name, sim_params=None):
 
 
 def run_individual_decision(decision_name):
-    """Run a single decision simulation"""
+    """Run a single decision simulation (stays on current page to preserve parameters)"""
     with st.spinner(f"Running {decision_name} simulation..."):
         try:
             # Temporarily modify selected decisions
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
             st.session_state.decision_params.selected_decisions = [decision_name]
-            
+
             # Set custom/default decisions for this single decision run
             st.session_state.custom_decisions = [decision_name]
             st.session_state.default_decisions = [d for d in ALL_DECISIONS if d != decision_name]
-            
-            # Run simulation
-            run_simulation_from_sidebar()
-            
+
+            # Run simulation WITHOUT navigating to results page
+            # This keeps the user on the decision parameters page
+            run_simulation_from_sidebar(navigate_to_results=False)
+
             # Store in individual results
             if st.session_state.simulation_results:
                 if 'individual_results' not in st.session_state:
                     st.session_state.individual_results = {}
-                
+
                 st.session_state.individual_results[decision_name] = st.session_state.simulation_results
                 st.success(f"✅ {decision_name} simulation complete!")
-                
-                # Show preview of results
+
+                # Show preview of results inline
+                st.markdown("### 📊 Quick Results Preview")
                 results = next(iter(st.session_state.simulation_results.values()))
                 if results is not None and not results.empty:
                     col1, col2 = st.columns(2)
@@ -141,10 +143,13 @@ def run_individual_decision(decision_name):
                             donation_col = 'donation_default_raw' if 'donation_default_raw' in results.columns else 'donation_default'
                             if donation_col in results.columns:
                                 st.metric("Average Donation Rate", f"{results[donation_col].mean():.1%}")
-            
+
+                # Add helpful message about running complete simulation
+                st.info("💡 **Tip**: Your parameters are preserved. Switch to the **Overview** tab to run the complete simulation with all decisions when ready.")
+
             # Restore original decisions
             st.session_state.decision_params.selected_decisions = original_decisions
-            
+
         except Exception as e:
             st.error(f"❌ Error running {decision_name}: {str(e)}")
             import traceback
@@ -152,41 +157,36 @@ def run_individual_decision(decision_name):
 
 
 def run_combined_simulation(selected_decisions):
-    """Run complete simulation with selected decisions using custom parameters and unselected decisions using defaults"""
-    
+    """Run complete simulation with selected decisions using custom parameters and unselected decisions using defaults
+
+    This function navigates to the results page after simulation completes.
+    """
+
     # Store information about selected vs default decisions
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
-    
+
     with st.spinner(f"Running complete simulation: {len(selected_decisions)} custom + {len(unselected_decisions)} default decisions..."):
         try:
             # Store original selected decisions
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
-            
+
             # Set to run ALL decisions (this ensures complete simulation)
             st.session_state.decision_params.selected_decisions = ALL_DECISIONS
-            
+
             # Store metadata about which decisions use custom vs default parameters
             st.session_state.custom_decisions = selected_decisions
             st.session_state.default_decisions = unselected_decisions
-            
-            # Run simulation with all decisions
-            run_simulation_from_sidebar()
-            
-            # Restore original selected decisions
+
+            # Run simulation with all decisions and navigate to results page
+            run_simulation_from_sidebar(navigate_to_results=True)
+
+            # Restore original selected decisions (only if we didn't navigate away)
             st.session_state.decision_params.selected_decisions = original_decisions
-            
-            # Show completion message
-            if st.session_state.simulation_results:
-                st.success(f"✅ Complete simulation finished!")
-                st.info(f"📊 **{len(selected_decisions)} decisions** used your custom parameters")
-                st.info(f"🔧 **{len(unselected_decisions)} decisions** used default values")
-                
-                # Show preview
-                results = next(iter(st.session_state.simulation_results.values()))
-                if results is not None and not results.empty:
-                    st.metric("Total Agents Simulated", f"{len(results):,}")
-                    
+
         except Exception as e:
             st.error(f"❌ Error running complete simulation: {str(e)}")
             import traceback
             st.text(traceback.format_exc())
+            # Restore original decisions on error
+            if 'original_decisions' in locals():
+                st.session_state.decision_params.selected_decisions = original_decisions
