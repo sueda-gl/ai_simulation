@@ -905,10 +905,12 @@ def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
     stoch_params = config['stochastic_params']
     
     # Update stochastic settings
+    # CRITICAL: The decision module uses 'in_copula' key, not 'sigma_in_copula'
+    # We must set 'in_copula' for the stochastic behavior to apply correctly
     orchestrator.config['donation_default']['stochastic'].update({
         'sigma_value': stoch_params['stochastic']['sigma_value'],
         'sigma_coefficient': stoch_params['stochastic']['sigma_coefficient'],
-        'sigma_in_copula': stoch_params['stochastic']['sigma_in_copula'],
+        'in_copula': stoch_params['stochastic']['sigma_in_copula'],  # Map to correct key
         'sigma_in_research': stoch_params['stochastic']['sigma_in_research']
     })
     
@@ -946,7 +948,11 @@ def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
             st.session_state.donation_coeff_q2 = coeff
         elif quintile == 'Q3':
             st.session_state.donation_coeff_q3 = coeff
-        elif quintile == 'Q4_Q5':
+        elif quintile == 'Q4':
+            st.session_state.donation_coeff_q4 = coeff
+        elif quintile == 'Q5':
+            st.session_state.donation_coeff_q5 = coeff
+        elif quintile == 'Q4_Q5':  # Legacy support
             st.session_state.donation_coeff_q45 = coeff
     
     # Study programme coefficients
