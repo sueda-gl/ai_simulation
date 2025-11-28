@@ -14,8 +14,10 @@ Composite Score Formula (calculated in Decision 6):
    score = w_price × norm_price + w_quality × norm_quality + 
            w_proximity × norm_proximity + w_sustainability × norm_sustainability
 
-Where each attribute is standardized to [0, 1]:
-- Price: Inverted (lower price = higher score)
+Where each attribute is standardized to [0, 1] using FIXED reference ranges:
+- Price: Inverted using configured bounds (vendor_price_min, vendor_price_max)
+  Formula: 1 - (clamped_price - price_min) / (price_max - price_min)
+  NOTE: Uses configured bounds (not actual min/max) for equal discriminatory power
 - Quality: (value - 1) / 4 for range [1,5]
 - Sustainability: (value - 1) / 4 for range [1,5]  
 - Proximity: value / 100 for range [0,100]
