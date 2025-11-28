@@ -44,6 +44,7 @@ Final Score = (Price Weight × Norm Price) + (Quality Weight × Norm Quality) +
 - Weights are averaged across all agents
 - Proximity is averaged across all agents per vendor
 - Price normalization is inverted (lower price gets higher score)
+- Price normalization uses **configured bounds** (`vendor_price_min`, `vendor_price_max`) as fixed reference, ensuring equal discriminatory power with other attributes
 
 ---
 

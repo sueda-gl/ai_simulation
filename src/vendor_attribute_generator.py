@@ -174,13 +174,18 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
 
 def calculate_vendor_composite_score(vendor: Dict, weights: Dict, 
                                      proximity: float,
-                                     all_vendors: List[Dict]) -> float:
+                                     all_vendors: List[Dict],
+                                     price_min_config: float = None,
+                                     price_max_config: float = None) -> float:
     """
     Calculate weighted composite score for a vendor.
     
     Steps:
     1. Standardize each attribute to [0, 1] range:
-       - Price: Normalized and INVERTED (lower price = higher score)
+       - Price: Normalized using FIXED reference bounds (lower price = higher score)
+         Uses configured price_min and price_max as the reference scale, NOT the
+         actual min/max of vendor prices. This ensures price normalization is
+         consistent with how other attributes are normalized (using theoretical ranges).
        - Quality: (quality - 1) / (5 - 1) = [0, 1]
        - Sustainability: (sustainability - 1) / (5 - 1) = [0, 1]
        - Proximity: proximity / 100 = [0, 1]
@@ -189,11 +194,17 @@ def calculate_vendor_composite_score(vendor: Dict, weights: Dict,
        score = w_price × norm_price + w_quality × norm_quality + 
                w_proximity × norm_proximity + w_sustainability × norm_sustainability
     
+    NOTE: Price normalization now uses fixed reference bounds (price_min_config, price_max_config)
+    to ensure equal discriminatory power across all attributes. Previously, min-max normalization
+    on actual prices gave price artificially more weight than the configured percentage.
+    
     Args:
         vendor: Vendor dict with price, quality, sustainability
         weights: Weight dict from vendor_choice_weights decision
         proximity: Proximity score for this customer-vendor dyad
-        all_vendors: List of all vendors (needed for price normalization)
+        all_vendors: List of all vendors (for fallback if config not provided)
+        price_min_config: Configured minimum price bound (from vendor_price_min)
+        price_max_config: Configured maximum price bound (from vendor_price_max)
         
     Returns:
         Composite score (float)
@@ -207,15 +218,25 @@ def calculate_vendor_composite_score(vendor: Dict, weights: Dict,
     # STEP 1: Standardize each attribute to [0, 1]
     
     # 1a. Price normalization (INVERTED - lower price is better)
-    all_prices = [v['price'] for v in all_vendors]
-    min_price = min(all_prices)
-    max_price = max(all_prices)
+    # Use FIXED reference bounds from configuration for consistent normalization
+    # This ensures price has the same discriminatory power as other attributes
+    if price_min_config is not None and price_max_config is not None:
+        # Use configured bounds as fixed reference (consistent with other attributes)
+        min_price = price_min_config
+        max_price = price_max_config
+    else:
+        # Fallback: use actual vendor price range (legacy behavior)
+        all_prices = [v['price'] for v in all_vendors]
+        min_price = min(all_prices)
+        max_price = max(all_prices)
     
     if max_price > min_price:
         # Normalize to [0, 1] then invert
-        norm_price = 1.0 - (vendor_price - min_price) / (max_price - min_price)
+        # Clamp vendor_price to bounds to avoid scores outside [0, 1]
+        clamped_price = max(min_price, min(vendor_price, max_price))
+        norm_price = 1.0 - (clamped_price - min_price) / (max_price - min_price)
     else:
-        # All prices are the same
+        # All prices are the same (or invalid range)
         norm_price = 1.0
     
     # 1b. Quality normalization (1-5 scale)
@@ -239,7 +260,9 @@ def calculate_vendor_composite_score(vendor: Dict, weights: Dict,
 
 
 def select_best_vendor(vendors: List[Dict], weights: Dict, 
-                      proximity_scores: Dict[str, float]) -> int:
+                      proximity_scores: Dict[str, float],
+                      price_min_config: float = None,
+                      price_max_config: float = None) -> int:
     """
     Select vendor with highest weighted composite score (deterministic).
     
@@ -247,6 +270,8 @@ def select_best_vendor(vendors: List[Dict], weights: Dict,
         vendors: List of vendor dicts with attributes
         weights: Weight dict from vendor_choice_weights decision
         proximity_scores: Dict mapping vendor_id (as STRING) to proximity score for this customer
+        price_min_config: Configured minimum price bound (from vendor_price_min)
+        price_max_config: Configured maximum price bound (from vendor_price_max)
         
     Returns:
         vendor_id of the best vendor (int)
@@ -264,7 +289,11 @@ def select_best_vendor(vendors: List[Dict], weights: Dict,
         proximity = proximity_scores.get(str(vendor_id), 50.0)  # Default to middle if missing
         
         # Calculate composite score for this vendor
-        score = calculate_vendor_composite_score(vendor, weights, proximity, vendors)
+        score = calculate_vendor_composite_score(
+            vendor, weights, proximity, vendors,
+            price_min_config=price_min_config,
+            price_max_config=price_max_config
+        )
         
         # Track best vendor
         if score > best_score:

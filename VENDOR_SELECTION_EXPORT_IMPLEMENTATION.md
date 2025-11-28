@@ -84,7 +84,7 @@ One sheet per period with requests from that period only
 - Capitalizes customer type for consistency
 - Supports multiple field name variations for compatibility
 
-#### `_calculate_vendor_score(vendor, weights, proximity, all_vendors)`
+#### `_calculate_vendor_score(vendor, weights, proximity, all_vendors, price_min_config, price_max_config)`
 **Purpose:** Calculate vendor integrated composite score
 
 **Formula:**
@@ -94,8 +94,13 @@ score = w_price × norm_price + w_quality × norm_quality +
 ```
 
 **Normalization:**
-- **Price:** Inverted min-max normalization (lower price = higher score)
-  - `norm_price = 1 - ((price - min_price) / (max_price - min_price))`
+All attributes are normalized using their **theoretical/configured ranges** to ensure equal discriminatory power. This prevents any single attribute from having artificially more weight than its configured percentage.
+
+- **Price:** Fixed-reference normalization using configured bounds (lower price = higher score)
+  - `norm_price = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))`
+  - Uses `vendor_price_min` and `vendor_price_max` from simulation configuration
+  - Price values are clamped to configured bounds to keep scores in [0, 1]
+  - **Note:** This approach ensures price normalization is consistent with other attributes (quality, sustainability, proximity) which all use fixed theoretical ranges. Previously, min-max normalization on actual vendor prices gave price artificially more discriminatory power.
 - **Quality:** Linear scaling from [1,5] to [0,1]
   - `norm_quality = (quality - 1) / 4`
 - **Sustainability:** Linear scaling from [1,5] to [0,1]

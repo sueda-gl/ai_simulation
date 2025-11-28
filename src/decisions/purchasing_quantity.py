@@ -70,12 +70,20 @@ def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng)
         proximity_scores = agent_state['vendor_proximity_scores']
     
     # Calculate composite score for ALL vendors
+    # Get configured price bounds for consistent normalization
+    price_min_config = simulation_config.get('vendor_price_min', 50.0)
+    price_max_config = simulation_config.get('vendor_price_max', 150.0)
+    
     from src.vendor_attribute_generator import calculate_vendor_composite_score
     vendor_scores = []
     for vendor in vendors:
         vendor_id = vendor['vendor_id']
         proximity = proximity_scores.get(str(vendor_id), 50.0)
-        score = calculate_vendor_composite_score(vendor, weights, proximity, vendors)
+        score = calculate_vendor_composite_score(
+            vendor, weights, proximity, vendors,
+            price_min_config=price_min_config,
+            price_max_config=price_max_config
+        )
         vendor_scores.append((vendor_id, score))
     
     # Sort by score descending (best vendor first)

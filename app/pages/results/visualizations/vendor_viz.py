@@ -11,13 +11,15 @@ from io import BytesIO
 import numpy as np
 
 
-def _build_purchase_request_export(df, vendors_data):
+def _build_purchase_request_export(df, vendors_data, price_min_config=None, price_max_config=None):
     """
     Build purchase request-level export data from simulation results.
     
     Args:
         df: DataFrame with simulation results
         vendors_data: List of vendor dictionaries (or None if not available)
+        price_min_config: Configured minimum price bound (from vendor_price_min)
+        price_max_config: Configured maximum price bound (from vendor_price_max)
     
     Returns:
         List of dicts with purchase request level data
@@ -122,7 +124,9 @@ def _build_purchase_request_export(df, vendors_data):
                 if not pd.isna(vendor_price) and not pd.isna(vendor_quality) and \
                    not pd.isna(vendor_sustainability) and not pd.isna(vendor_proximity):
                     vendor_integrated_score = _calculate_vendor_score(
-                        vendor, vendor_weights, vendor_proximity, vendors_data
+                        vendor, vendor_weights, vendor_proximity, vendors_data,
+                        price_min_config=price_min_config,
+                        price_max_config=price_max_config
                     )
             
             # Get customer paid price (without donation)
@@ -162,7 +166,8 @@ def _build_purchase_request_export(df, vendors_data):
     return purchase_request_records
 
 
-def _calculate_vendor_score(vendor, weights, proximity, all_vendors):
+def _calculate_vendor_score(vendor, weights, proximity, all_vendors, 
+                            price_min_config=None, price_max_config=None):
     """
     Calculate vendor integrated composite score.
     
@@ -170,10 +175,16 @@ def _calculate_vendor_score(vendor, weights, proximity, all_vendors):
         vendor: Vendor dict with attributes
         weights: Dict of weights for each attribute
         proximity: Proximity score for this agent-vendor pair
-        all_vendors: List of all vendors (for price normalization)
+        all_vendors: List of all vendors (for fallback price normalization)
+        price_min_config: Configured minimum price bound (from vendor_price_min)
+        price_max_config: Configured maximum price bound (from vendor_price_max)
     
     Returns:
         float: Composite score
+    
+    NOTE: Price normalization uses fixed reference bounds (price_min_config, price_max_config)
+    to ensure equal discriminatory power across all attributes. This is consistent with how
+    quality, sustainability, and proximity are normalized using their theoretical ranges.
     """
     # Get vendor attributes
     price = vendor.get('price', 0)
@@ -182,14 +193,23 @@ def _calculate_vendor_score(vendor, weights, proximity, all_vendors):
     
     # Normalize attributes to [0, 1]
     # Price: inverted normalization (lower price = higher score)
-    if all_vendors and len(all_vendors) > 0:
+    # Use FIXED reference bounds from configuration for consistent normalization
+    if price_min_config is not None and price_max_config is not None:
+        min_price = price_min_config
+        max_price = price_max_config
+    elif all_vendors and len(all_vendors) > 0:
+        # Fallback: use actual vendor price range (legacy behavior)
         prices = [v.get('price', 0) for v in all_vendors]
         min_price = min(prices)
         max_price = max(prices)
-        if max_price > min_price:
-            norm_price = 1 - ((price - min_price) / (max_price - min_price))
-        else:
-            norm_price = 0.5
+    else:
+        min_price = 0
+        max_price = 1
+    
+    if max_price > min_price:
+        # Clamp price to bounds to avoid scores outside [0, 1]
+        clamped_price = max(min_price, min(price, max_price))
+        norm_price = 1 - ((clamped_price - min_price) / (max_price - min_price))
     else:
         norm_price = 0.5
     
@@ -448,6 +468,18 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             vendors_data = results.get('vendors') or results.get('config', {}).get('vendors')
             if vendors_data:
                 total_vendors_available = len(vendors_data)
+    
+    # Get configured price bounds for consistent normalization
+    # (Used in vendor score calculations throughout this function)
+    price_min_config = None
+    price_max_config = None
+    if hasattr(st.session_state, 'sim_params'):
+        price_min_config = getattr(st.session_state.sim_params, 'vendor_price_min', 50.0)
+        price_max_config = getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
+    elif hasattr(st.session_state, 'simulation_params'):
+        sim_params = st.session_state.simulation_params.get('simulation', {})
+        price_min_config = sim_params.get('vendor_price_min', 50.0)
+        price_max_config = sim_params.get('vendor_price_max', 150.0)
     
     # Count unique vendors selected (excluding NaN)
     vendor_counts = decision_data.dropna().value_counts()
@@ -746,8 +778,23 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         if isinstance(results, dict):
             vendors_for_export = results.get('vendors') or results.get('config', {}).get('vendors')
     
+    # Get configured price bounds for consistent normalization
+    price_min_config = None
+    price_max_config = None
+    if hasattr(st.session_state, 'sim_params'):
+        price_min_config = getattr(st.session_state.sim_params, 'vendor_price_min', 50.0)
+        price_max_config = getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
+    elif hasattr(st.session_state, 'simulation_params'):
+        sim_params = st.session_state.simulation_params.get('simulation', {})
+        price_min_config = sim_params.get('vendor_price_min', 50.0)
+        price_max_config = sim_params.get('vendor_price_max', 150.0)
+    
     # Build purchase request level data
-    purchase_request_data = _build_purchase_request_export(df, vendors_for_export)
+    purchase_request_data = _build_purchase_request_export(
+        df, vendors_for_export, 
+        price_min_config=price_min_config,
+        price_max_config=price_max_config
+    )
     
     if purchase_request_data and len(purchase_request_data) > 0:
         try:
@@ -851,7 +898,11 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         
                         if isinstance(weights, dict) and isinstance(proximity_scores, dict):
                             proximity = proximity_scores.get(str(vendor_id), 50.0)
-                            score = _calculate_vendor_score(vendor, weights, proximity, vendors_data)
+                            score = _calculate_vendor_score(
+                                vendor, weights, proximity, vendors_data,
+                                price_min_config=price_min_config,
+                                price_max_config=price_max_config
+                            )
                             scores.append(score)
                     
                     # Average score across all agents

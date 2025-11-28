@@ -151,6 +151,9 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
     platform_markup = 0.1
     price_range = 0.25
     duration_hours = 1.0
+    # Get configured price bounds for consistent normalization
+    price_min_config = 50.0
+    price_max_config = 150.0
     
     if simulation_params:
         sim_params = simulation_params.get('simulation', {})
@@ -158,15 +161,21 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
         platform_markup = sim_params.get('platform_markup', 0.1)
         price_range = sim_params.get('price_range', 0.25)
         duration_hours = sim_params.get('duration_hours', 1.0)
+        price_min_config = sim_params.get('vendor_price_min', 50.0)
+        price_max_config = sim_params.get('vendor_price_max', 150.0)
     elif hasattr(st.session_state, 'simulation_params'):
         sim_params = st.session_state.simulation_params.get('simulation', {})
         market_price = sim_params.get('market_price', 100.0)
         platform_markup = sim_params.get('platform_markup', 0.1)
         price_range = sim_params.get('price_range', 0.25)
         duration_hours = sim_params.get('duration_hours', 1.0)
+        price_min_config = sim_params.get('vendor_price_min', 50.0)
+        price_max_config = sim_params.get('vendor_price_max', 150.0)
     elif hasattr(st.session_state, 'sim_params'):
         market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
+        price_min_config = getattr(st.session_state.sim_params, 'vendor_price_min', 50.0)
+        price_max_config = getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
         price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
         duration_hours = getattr(st.session_state.sim_params, 'duration_hours', 1.0)
     
@@ -258,14 +267,12 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                    not pd.isna(vendor_sustainability) and not pd.isna(vendor_proximity):
                     
                     # Normalize price (inverted: lower price = higher score)
-                    if vendors_data and len(vendors_data) > 0:
-                        prices = [v.get('price', 0) for v in vendors_data]
-                        min_price = min(prices)
-                        max_price = max(prices)
-                        if max_price > min_price:
-                            vendor_price_score = 1 - ((vendor_price - min_price) / (max_price - min_price))
-                        else:
-                            vendor_price_score = 0.5
+                    # Use FIXED reference bounds from configuration for consistent normalization
+                    # This ensures price has the same discriminatory power as other attributes
+                    if price_max_config > price_min_config:
+                        # Clamp price to configured bounds
+                        clamped_price = max(price_min_config, min(vendor_price, price_max_config))
+                        vendor_price_score = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
                     else:
                         vendor_price_score = 0.5
                     
@@ -387,93 +394,217 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
 
     st.subheader("💾 Export Results")
     
-    st.markdown("""
-    **Two separate Excel files are available for download:**
-    - **Agent-Level Excel**: One row per agent with all agent-level decisions and summary statistics
-    - **Transaction-Level Excel**: One row per purchase request with detailed transaction information
-    """)
+    # Check if this is a donation-only run (special simplified export)
+    trait_columns = ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
+                     'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
     
-    # Get vendor data if available
-    vendors_data = None
-    if hasattr(df, 'attrs') and 'vendors' in df.attrs:
-        vendors_data = df.attrs['vendors']
+    is_donation_only_run = (
+        hasattr(st.session_state, 'custom_decisions') and 
+        st.session_state.custom_decisions == ['donation_default'] and
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) == 0
+    )
     
-    # Get simulation parameters if available
-    simulation_params = None
-    if hasattr(st.session_state, 'simulation_params'):
-        simulation_params = st.session_state.simulation_params
+    if is_donation_only_run:
+        # DONATION-ONLY EXPORT: Simplified version with just donation and traits
+        # Filter main df to only include donation columns
+        columns_to_keep = [col for col in df.columns 
+                          if (col == 'donation_default' or col in trait_columns or col == 'agent_id')]
+        df = df[columns_to_keep]
+        
+        # Filter results_dict to only include donation columns
+        if results_dict is not None:
+            results_dict = {
+                key: config_df[[col for col in config_df.columns 
+                               if (col == 'donation_default' or col in trait_columns or col == 'agent_id')]]
+                for key, config_df in results_dict.items()
+            }
+        
+        # Check if we have multiple configurations to compare
+        export_all_configs = results_dict is not None and len(results_dict) > 1 and not using_selected_config
+        
+        if export_all_configs:
+            st.markdown(f"""
+            **Donation Default Results Export (All {len(results_dict)} Configurations):**
+            - Agent ID, trait columns, and donation_default rate for each configuration
+            - All configurations combined in one file for comparison
+            """)
+        else:
+            st.markdown("""
+            **Donation Default Results Export:**
+            - Agent ID, trait columns, and donation_default rate
+            """)
+        
+        try:
+            buffer = BytesIO()
+            
+            if export_all_configs:
+                # MULTI-CONFIG: Combine all configurations in one Excel for comparison
+                first_config_df = next(iter(results_dict.values()))
+                available_traits = [col for col in trait_columns if col in first_config_df.columns]
+                combined_df = first_config_df[available_traits].copy()
+                
+                # Add agent_id if it exists
+                if 'agent_id' in first_config_df.columns:
+                    combined_df['Agent ID'] = first_config_df['agent_id'].values
+                
+                # Add donation_default from each configuration
+                for config_key, config_df in results_dict.items():
+                    if not config_df.empty and 'donation_default' in config_df.columns:
+                        config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
+                        new_col_name = f"donation_default_{config_suffix}"
+                        combined_df[new_col_name] = config_df['donation_default'].values
+                
+                # Reorder columns to put Agent ID first
+                if 'Agent ID' in combined_df.columns:
+                    cols = ['Agent ID'] + [col for col in combined_df.columns if col != 'Agent ID']
+                    combined_df = combined_df[cols]
+                
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    combined_df.to_excel(writer, index=False, sheet_name='All Configurations')
+                
+                st.metric("Total Agents", len(combined_df))
+                
+                excel_label = f"📊 Download Donation Excel (All {len(results_dict)} Configs)"
+                excel_filename = f"donation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                
+                st.download_button(
+                    label=excel_label,
+                    data=buffer.getvalue(),
+                    file_name=excel_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help=f"Donation results with {len(results_dict)} configurations for comparison"
+                )
+                
+                # Show preview
+                with st.expander("📋 Preview Donation Data (first 5 rows)"):
+                    st.dataframe(combined_df.head(), use_container_width=True)
+                    st.caption(f"**Columns ({len(combined_df.columns)})**: {', '.join(combined_df.columns[:10])}{'...' if len(combined_df.columns) > 10 else ''}")
+            
+            else:
+                # SINGLE CONFIG: Simple export with just one configuration
+                df_export = df.copy()
+                
+                # Rename agent_id to 'Agent ID' for clarity
+                if 'agent_id' in df_export.columns:
+                    df_export = df_export.rename(columns={'agent_id': 'Agent ID'})
+                
+                # Reorder columns to put Agent ID first
+                if 'Agent ID' in df_export.columns:
+                    cols = ['Agent ID'] + [col for col in df_export.columns if col != 'Agent ID']
+                    df_export = df_export[cols]
+                
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    df_export.to_excel(writer, index=False, sheet_name='Donation Results')
+                
+                st.metric("Total Agents", len(df_export))
+                
+                excel_filename = f"donation_default_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                st.download_button(
+                    label="📊 Download Donation Default Excel",
+                    data=buffer.getvalue(),
+                    file_name=excel_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Donation results with agent traits and donation rates"
+                )
+                
+                # Show preview
+                with st.expander("📋 Preview Donation Data (first 5 rows)"):
+                    st.dataframe(df_export.head(), use_container_width=True)
+                    st.caption(f"**Columns ({len(df_export.columns)})**: {', '.join(df_export.columns)}")
+        
+        except ImportError:
+            st.caption("⚠️ Excel export requires openpyxl")
     
-    try:
-        # Build agent-level and transaction-level DataFrames
-        agent_df = _build_agent_level_dataframe(df, vendors_data=vendors_data)
-        transaction_df = _build_transaction_level_dataframe(df, vendors_data=vendors_data, simulation_params=simulation_params)
+    else:
+        # FULL TWO-LEVEL EXPORT: For all other simulations
+        st.markdown("""
+        **Two separate Excel files are available for download:**
+        - **Agent-Level Excel**: One row per agent with all agent-level decisions and summary statistics
+        - **Transaction-Level Excel**: One row per purchase request with detailed transaction information
+        """)
         
-        # Show summary statistics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Agents", len(agent_df))
-            st.caption("Rows in Agent-Level file")
-        with col2:
-            st.metric("Total Transactions", len(transaction_df))
-            st.caption("Rows in Transaction-Level file")
+        # Get vendor data if available
+        vendors_data = None
+        if hasattr(df, 'attrs') and 'vendors' in df.attrs:
+            vendors_data = df.attrs['vendors']
         
-        # Create two separate Excel files
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        # Get simulation parameters if available
+        simulation_params = None
+        if hasattr(st.session_state, 'simulation_params'):
+            simulation_params = st.session_state.simulation_params
         
-        # Agent-Level Excel
-        agent_buffer = BytesIO()
-        with pd.ExcelWriter(agent_buffer, engine='openpyxl') as writer:
-            agent_df.to_excel(writer, index=False, sheet_name='Agent Level')
-        
-        # Transaction-Level Excel
-        transaction_buffer = BytesIO()
-        with pd.ExcelWriter(transaction_buffer, engine='openpyxl') as writer:
-            transaction_df.to_excel(writer, index=False, sheet_name='Transaction Level')
-        
-        # Download buttons for separate files
-        st.markdown("### 📥 Download Files")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            agent_filename = f"simulation_agent_level_{timestamp}.xlsx"
-            st.download_button(
-                label="📊 Download Agent-Level Excel",
-                data=agent_buffer.getvalue(),
-                file_name=agent_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help=f"Agent-level data: {len(agent_df)} agents × {len(agent_df.columns)} columns"
-            )
-        
-        with col2:
-            transaction_filename = f"simulation_transaction_level_{timestamp}.xlsx"
-            st.download_button(
-                label="📊 Download Transaction-Level Excel",
-                data=transaction_buffer.getvalue(),
-                file_name=transaction_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help=f"Transaction-level data: {len(transaction_df)} transactions × {len(transaction_df.columns)} columns"
-            )
-        
-        # Show preview of what's in each file
-        st.markdown("### 📋 Data Preview")
-        
-        with st.expander("👥 Preview Agent-Level Data (first 5 rows)"):
-            st.dataframe(agent_df.head(), use_container_width=True)
-            st.caption(f"**Columns ({len(agent_df.columns)})**: {', '.join(agent_df.columns[:15])}{'...' if len(agent_df.columns) > 15 else ''}")
-        
-        with st.expander("🔄 Preview Transaction-Level Data (first 5 rows)"):
-            st.dataframe(transaction_df.head(), use_container_width=True)
-            st.caption(f"**Columns ({len(transaction_df.columns)})**: {', '.join(transaction_df.columns[:15])}{'...' if len(transaction_df.columns) > 15 else ''}")
-        
-    except Exception as e:
-        st.error(f"Error creating Excel export: {str(e)}")
-        st.caption("⚠️ Please ensure all required data is available. If the problem persists, contact support.")
-        import traceback
-        st.caption(f"Error details: {traceback.format_exc()}")
-        
-        # Fallback: show raw data
-        with st.expander("🔍 View Raw Data (for debugging)"):
-            st.dataframe(df, use_container_width=True)
+        try:
+            # Build agent-level and transaction-level DataFrames
+            agent_df = _build_agent_level_dataframe(df, vendors_data=vendors_data)
+            transaction_df = _build_transaction_level_dataframe(df, vendors_data=vendors_data, simulation_params=simulation_params)
+            
+            # Show summary statistics
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Agents", len(agent_df))
+                st.caption("Rows in Agent-Level file")
+            with col2:
+                st.metric("Total Transactions", len(transaction_df))
+                st.caption("Rows in Transaction-Level file")
+            
+            # Create two separate Excel files
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            # Agent-Level Excel
+            agent_buffer = BytesIO()
+            with pd.ExcelWriter(agent_buffer, engine='openpyxl') as writer:
+                agent_df.to_excel(writer, index=False, sheet_name='Agent Level')
+            
+            # Transaction-Level Excel
+            transaction_buffer = BytesIO()
+            with pd.ExcelWriter(transaction_buffer, engine='openpyxl') as writer:
+                transaction_df.to_excel(writer, index=False, sheet_name='Transaction Level')
+            
+            # Download buttons for separate files
+            st.markdown("### 📥 Download Files")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                agent_filename = f"simulation_agent_level_{timestamp}.xlsx"
+                st.download_button(
+                    label="📊 Download Agent-Level Excel",
+                    data=agent_buffer.getvalue(),
+                    file_name=agent_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help=f"Agent-level data: {len(agent_df)} agents × {len(agent_df.columns)} columns"
+                )
+            
+            with col2:
+                transaction_filename = f"simulation_transaction_level_{timestamp}.xlsx"
+                st.download_button(
+                    label="📊 Download Transaction-Level Excel",
+                    data=transaction_buffer.getvalue(),
+                    file_name=transaction_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help=f"Transaction-level data: {len(transaction_df)} transactions × {len(transaction_df.columns)} columns"
+                )
+            
+            # Show preview of what's in each file
+            st.markdown("### 📋 Data Preview")
+            
+            with st.expander("👥 Preview Agent-Level Data (first 5 rows)"):
+                st.dataframe(agent_df.head(), use_container_width=True)
+                st.caption(f"**Columns ({len(agent_df.columns)})**: {', '.join(agent_df.columns[:15])}{'...' if len(agent_df.columns) > 15 else ''}")
+            
+            with st.expander("🔄 Preview Transaction-Level Data (first 5 rows)"):
+                st.dataframe(transaction_df.head(), use_container_width=True)
+                st.caption(f"**Columns ({len(transaction_df.columns)})**: {', '.join(transaction_df.columns[:15])}{'...' if len(transaction_df.columns) > 15 else ''}")
+            
+        except Exception as e:
+            st.error(f"Error creating Excel export: {str(e)}")
+            st.caption("⚠️ Please ensure all required data is available. If the problem persists, contact support.")
+            import traceback
+            st.caption(f"Error details: {traceback.format_exc()}")
+            
+            # Fallback: show raw data
+            with st.expander("🔍 View Raw Data (for debugging)"):
+                st.dataframe(df, use_container_width=True)
 
     if st.button("🔄 Clear Results"):
         # Clear all session state to reset the entire application
