@@ -14,7 +14,7 @@ def _build_agent_level_dataframe(df, vendors_data=None):
     - Agent ID and traits
     - All agent-level decisions
     - Summary statistics from transactions
-    - Vendor proximity scores (expanded)
+    - Average vendor proximity (not per-vendor)
     
     Args:
         df: Original simulation results DataFrame
@@ -45,11 +45,29 @@ def _build_agent_level_dataframe(df, vendors_data=None):
         agent_record['disclose_documents'] = row.get('disclose_documents', '')
         agent_record['customer_type'] = row.get('customer_type', '')
         
-        # Decision 3: Donation Default
+        # Decision 3: Donation Default (exclude raw/intermediate columns)
         agent_record['donation_default'] = row.get('donation_default', np.nan)
+        # NOTE: donation_default_raw_pos is intentionally excluded
         
-        # Decision 4: Rejected Transaction Defaults
-        agent_record['rejected_transaction_defaults'] = row.get('rejected_transaction_defaults', '')
+        # Decision 4: Rejected Transaction Defaults - Split list into 5 priority columns
+        rejected_defaults = row.get('rejected_transaction_defaults', '')
+        
+        # Parse if it's a string representation of a list
+        if isinstance(rejected_defaults, str) and rejected_defaults.startswith('['):
+            try:
+                import ast
+                rejected_defaults = ast.literal_eval(rejected_defaults)
+            except:
+                rejected_defaults = []
+        elif not isinstance(rejected_defaults, list):
+            rejected_defaults = [rejected_defaults] if rejected_defaults else []
+        
+        # Create 5 priority columns
+        for priority_num in range(1, 6):
+            if isinstance(rejected_defaults, list) and len(rejected_defaults) >= priority_num:
+                agent_record[f'rejected_transaction_{priority_num}_choice'] = rejected_defaults[priority_num - 1]
+            else:
+                agent_record[f'rejected_transaction_{priority_num}_choice'] = ''
         
         # Decision 5: Vendor Choice Weights (flatten dict to columns)
         vendor_weights = row.get('vendor_choice_weights', {})
@@ -65,47 +83,36 @@ def _build_agent_level_dataframe(df, vendors_data=None):
             agent_record['weight_sustainability'] = np.nan
         
         # Decision 6: Purchasing Quantity (agent-level)
-        agent_record['income'] = row.get('income', np.nan)
+        # Income: Try to get from multiple sources
+        income = row.get('income', np.nan)
+        # If income is NaN or not present, try actual_allowance as fallback
+        if pd.isna(income) or income is None:
+            income = row.get('actual_allowance', np.nan)
+        
+        agent_record['income'] = income
         agent_record['income_category'] = row.get('income_category', np.nan)
-        agent_record['purchasing_quantity'] = row.get('purchasing_quantity', 0)
+        
+        # Split purchasing_quantity into two columns
+        total_requests = row.get('purchasing_quantity', 0)
+        agent_record['purchase_requests'] = total_requests  # Count of requests made
+        agent_record['completed_transactions'] = 0  # Placeholder for external algorithm
         
         # Decision 7: Purchasing Frequency
         agent_record['purchasing_frequency'] = row.get('purchasing_frequency', np.nan)
         
         # Decision 8: Vendor Selection (agent-level)
-        agent_record['preferred_vendor'] = row.get('preferred_vendor', np.nan)
+        # Note: This represents the highest scored vendor on average, not a fixed choice
+        # In reality, vendor selection varies by product/request
+        agent_record['highest_scored_vendor_avg'] = row.get('preferred_vendor', np.nan)
         
-        # Vendor proximity scores (expand to columns)
+        # Vendor proximity scores - Calculate AVERAGE instead of per-vendor columns
         proximity_scores = row.get('vendor_proximity_scores', {})
-        if isinstance(proximity_scores, dict):
-            # Get number of vendors
-            num_vendors = len(vendors_data) if vendors_data else 0
-            if num_vendors == 0:
-                # Infer from proximity_scores keys
-                vendor_ids = [int(vid) for vid in proximity_scores.keys() if vid.isdigit()]
-                num_vendors = max(vendor_ids) if vendor_ids else 0
-            
-            for vendor_id in range(1, num_vendors + 1):
-                agent_record[f'proximity_v{vendor_id}'] = proximity_scores.get(str(vendor_id), np.nan)
-        
-        # Decision 9: Purchase vs Bid (summary statistics from transactions)
-        purchase_requests = row.get('purchase_requests', [])
-        if isinstance(purchase_requests, list):
-            total_requests = len(purchase_requests)
-            pn_count = sum(1 for req in purchase_requests 
-                          if isinstance(req, dict) and req.get('platformPrice') == 'PN')
-            bid_count = sum(1 for req in purchase_requests 
-                           if isinstance(req, dict) and req.get('platformPrice') == 'BID')
-            
-            agent_record['total_purchase_requests'] = total_requests
-            agent_record['pn_requests_count'] = pn_count
-            agent_record['bid_requests_count'] = bid_count
-            agent_record['pct_purchase_now'] = (pn_count / total_requests * 100) if total_requests > 0 else np.nan
+        if isinstance(proximity_scores, dict) and proximity_scores:
+            # Calculate average proximity across all vendors
+            proximities = [float(v) for v in proximity_scores.values() if not pd.isna(v)]
+            agent_record['avg_vendor_proximity'] = np.mean(proximities) if proximities else np.nan
         else:
-            agent_record['total_purchase_requests'] = 0
-            agent_record['pn_requests_count'] = 0
-            agent_record['bid_requests_count'] = 0
-            agent_record['pct_purchase_now'] = np.nan
+            agent_record['avg_vendor_proximity'] = np.nan
         
         # Decision 11: Rejected Transaction Option
         agent_record['rejected_transaction_option'] = row.get('rejected_transaction_option', '')
@@ -233,10 +240,10 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             
             # Vendor information
             vendor_id = request.get('vendorID', np.nan)
-            vendor_price = np.nan
-            vendor_quality = np.nan
-            vendor_sustainability = np.nan
-            vendor_proximity = np.nan
+            vendor_price_score = np.nan
+            vendor_quality_score = np.nan
+            vendor_sustainability_score = np.nan
+            vendor_proximity_score = np.nan
             vendor_integrated_score = np.nan
             
             if not pd.isna(vendor_id) and vendor_id in vendor_lookup:
@@ -246,11 +253,37 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 vendor_sustainability = vendor.get('sustainability', np.nan)
                 vendor_proximity = proximity_scores.get(str(int(vendor_id)), np.nan)
                 
-                # Calculate vendor integrated score
+                # Calculate normalized scores (0-1 scale)
                 if not pd.isna(vendor_price) and not pd.isna(vendor_quality) and \
                    not pd.isna(vendor_sustainability) and not pd.isna(vendor_proximity):
-                    vendor_integrated_score = _calculate_vendor_composite_score(
-                        vendor, vendor_weights, vendor_proximity, vendors_data
+                    
+                    # Normalize price (inverted: lower price = higher score)
+                    if vendors_data and len(vendors_data) > 0:
+                        prices = [v.get('price', 0) for v in vendors_data]
+                        min_price = min(prices)
+                        max_price = max(prices)
+                        if max_price > min_price:
+                            vendor_price_score = 1 - ((vendor_price - min_price) / (max_price - min_price))
+                        else:
+                            vendor_price_score = 0.5
+                    else:
+                        vendor_price_score = 0.5
+                    
+                    # Normalize quality (1-5 scale to 0-1)
+                    vendor_quality_score = (vendor_quality - 1) / 4 if vendor_quality >= 1 else 0
+                    
+                    # Normalize sustainability (1-5 scale to 0-1)
+                    vendor_sustainability_score = (vendor_sustainability - 1) / 4 if vendor_sustainability >= 1 else 0
+                    
+                    # Normalize proximity (0-100 scale to 0-1)
+                    vendor_proximity_score = vendor_proximity / 100 if not pd.isna(vendor_proximity) else 0
+                    
+                    # Calculate integrated score (weighted average)
+                    vendor_integrated_score = (
+                        vendor_weights.get('price', 0.25) * vendor_price_score +
+                        vendor_weights.get('quality', 0.25) * vendor_quality_score +
+                        vendor_weights.get('proximity', 0.25) * vendor_proximity_score +
+                        vendor_weights.get('sustainability', 0.25) * vendor_sustainability_score
                     )
             
             # Purchase decision and pricing
@@ -311,12 +344,12 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 'Purchase Date': purchase_date,
                 'Purchase Time': purchase_time,
                 
-                # Vendor
+                # Vendor - All scores normalized to 0-1 scale
                 'Vendor ID': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else '',
-                'Vendor Price': vendor_price,
-                'Vendor Quality': vendor_quality,
-                'Vendor Sustainability': vendor_sustainability,
-                'Vendor Proximity': vendor_proximity,
+                'Vendor Price Score': vendor_price_score,
+                'Vendor Quality Score': vendor_quality_score,
+                'Vendor Sustainability Score': vendor_sustainability_score,
+                'Vendor Proximity Score': vendor_proximity_score,
                 'Vendor Integrated Score': vendor_integrated_score,
                 
                 # Purchase Decision
@@ -343,51 +376,6 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
     return pd.DataFrame(transaction_records)
 
 
-def _calculate_vendor_composite_score(vendor, weights, proximity, all_vendors):
-    """
-    Calculate vendor composite score.
-    
-    Args:
-        vendor: Vendor dict
-        weights: Dict of attribute weights
-        proximity: Proximity score (0-100)
-        all_vendors: List of all vendors
-        
-    Returns:
-        float: Composite score
-    """
-    price = vendor.get('price', 0)
-    quality = vendor.get('quality', 3)
-    sustainability = vendor.get('sustainability', 3)
-    
-    # Normalize price (inverted: lower price = higher score)
-    if all_vendors and len(all_vendors) > 0:
-        prices = [v.get('price', 0) for v in all_vendors]
-        min_price = min(prices)
-        max_price = max(prices)
-        if max_price > min_price:
-            norm_price = 1 - ((price - min_price) / (max_price - min_price))
-        else:
-            norm_price = 0.5
-    else:
-        norm_price = 0.5
-    
-    # Normalize other attributes
-    norm_quality = (quality - 1) / 4 if quality >= 1 else 0
-    norm_sustainability = (sustainability - 1) / 4 if sustainability >= 1 else 0
-    norm_proximity = proximity / 100 if not pd.isna(proximity) else 0
-    
-    # Calculate weighted score
-    score = (
-        weights.get('price', 0.25) * norm_price +
-        weights.get('quality', 0.25) * norm_quality +
-        weights.get('proximity', 0.25) * norm_proximity +
-        weights.get('sustainability', 0.25) * norm_sustainability
-    )
-    
-    return score
-
-
 def render_export_section(df, results_dict=None, using_selected_config=False):
     """Render the export/download section (simplified)"""
     # Remove 'raw', 'index', 'consumption_frequency', 'actual_allowance', 'income', 'customer_type', and 'enriched_requests_count' columns before any processing
@@ -405,7 +393,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     st.subheader("💾 Export Results")
     
     st.markdown("""
-    **Two export options are available:**
+    **Two separate Excel files are available for download:**
     - **Agent-Level Excel**: One row per agent with all agent-level decisions and summary statistics
     - **Transaction-Level Excel**: One row per purchase request with detailed transaction information
     """)
@@ -425,47 +413,68 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         agent_df = _build_agent_level_dataframe(df, vendors_data=vendors_data)
         transaction_df = _build_transaction_level_dataframe(df, vendors_data=vendors_data, simulation_params=simulation_params)
         
-        # Create Excel with both sheets
-        buffer = BytesIO()
-        
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            # Agent-level sheet
-            agent_df.to_excel(writer, index=False, sheet_name='Agent Level')
-            
-            # Transaction-level sheet
-            transaction_df.to_excel(writer, index=False, sheet_name='Transaction Level')
-        
         # Show summary statistics
         col1, col2 = st.columns(2)
         with col1:
             st.metric("Total Agents", len(agent_df))
-            st.caption("Rows in Agent-Level sheet")
+            st.caption("Rows in Agent-Level file")
         with col2:
             st.metric("Total Transactions", len(transaction_df))
-            st.caption("Rows in Transaction-Level sheet")
+            st.caption("Rows in Transaction-Level file")
         
-        # Download button for combined Excel
-        excel_filename = f"simulation_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        st.download_button(
-            label="📊 Download Complete Excel (Both Levels)",
-            data=buffer.getvalue(),
-            file_name=excel_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            help="Excel file with two sheets: Agent Level (one row per agent) and Transaction Level (one row per purchase request)"
-        )
+        # Create two separate Excel files
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        # Show preview of what's in each sheet
-        with st.expander("📋 Preview Agent-Level Data (first 5 rows)"):
+        # Agent-Level Excel
+        agent_buffer = BytesIO()
+        with pd.ExcelWriter(agent_buffer, engine='openpyxl') as writer:
+            agent_df.to_excel(writer, index=False, sheet_name='Agent Level')
+        
+        # Transaction-Level Excel
+        transaction_buffer = BytesIO()
+        with pd.ExcelWriter(transaction_buffer, engine='openpyxl') as writer:
+            transaction_df.to_excel(writer, index=False, sheet_name='Transaction Level')
+        
+        # Download buttons for separate files
+        st.markdown("### 📥 Download Files")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            agent_filename = f"simulation_agent_level_{timestamp}.xlsx"
+            st.download_button(
+                label="📊 Download Agent-Level Excel",
+                data=agent_buffer.getvalue(),
+                file_name=agent_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help=f"Agent-level data: {len(agent_df)} agents × {len(agent_df.columns)} columns"
+            )
+        
+        with col2:
+            transaction_filename = f"simulation_transaction_level_{timestamp}.xlsx"
+            st.download_button(
+                label="📊 Download Transaction-Level Excel",
+                data=transaction_buffer.getvalue(),
+                file_name=transaction_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help=f"Transaction-level data: {len(transaction_df)} transactions × {len(transaction_df.columns)} columns"
+            )
+        
+        # Show preview of what's in each file
+        st.markdown("### 📋 Data Preview")
+        
+        with st.expander("👥 Preview Agent-Level Data (first 5 rows)"):
             st.dataframe(agent_df.head(), use_container_width=True)
-            st.caption(f"**Columns ({len(agent_df.columns)})**: {', '.join(agent_df.columns[:10])}{'...' if len(agent_df.columns) > 10 else ''}")
+            st.caption(f"**Columns ({len(agent_df.columns)})**: {', '.join(agent_df.columns[:15])}{'...' if len(agent_df.columns) > 15 else ''}")
         
-        with st.expander("📋 Preview Transaction-Level Data (first 5 rows)"):
+        with st.expander("🔄 Preview Transaction-Level Data (first 5 rows)"):
             st.dataframe(transaction_df.head(), use_container_width=True)
-            st.caption(f"**Columns ({len(transaction_df.columns)})**: {', '.join(transaction_df.columns[:10])}{'...' if len(transaction_df.columns) > 10 else ''}")
+            st.caption(f"**Columns ({len(transaction_df.columns)})**: {', '.join(transaction_df.columns[:15])}{'...' if len(transaction_df.columns) > 15 else ''}")
         
     except Exception as e:
         st.error(f"Error creating Excel export: {str(e)}")
         st.caption("⚠️ Please ensure all required data is available. If the problem persists, contact support.")
+        import traceback
+        st.caption(f"Error details: {traceback.format_exc()}")
         
         # Fallback: show raw data
         with st.expander("🔍 View Raw Data (for debugging)"):
