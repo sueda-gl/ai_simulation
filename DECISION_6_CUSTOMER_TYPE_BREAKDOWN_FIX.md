@@ -124,3 +124,5 @@ And the same breakdown for completed transactions.
 - **Reference**: `src/decisions/purchasing_quantity.py` (line 348 - where customer_type is set)
 - **Deleted**: `src/decisions/enrich_purchase_requests.py` (the root cause)
 
+
+

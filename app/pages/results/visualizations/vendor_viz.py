@@ -125,15 +125,15 @@ def _build_purchase_request_export(df, vendors_data):
                         vendor, vendor_weights, vendor_proximity, vendors_data
                     )
             
-            # Transaction Completed - Not available (enrich_requests not currently used)
-            # Decision 6 and 7 only track purchase REQUESTS, not completed transactions
-            transaction_completed = 'N/A'
-            
             # Get customer paid price (without donation)
             # Try multiple field names, fallback to vendor price if available
             customer_paid_price = request.get('pricePaid', 
                                              request.get('price_paid', 
                                              request.get('price', vendor_price)))
+            
+            # Determine if this is a PN request to show price
+            platform_price = request.get('platformPrice', request.get('platform_price', ''))
+            display_customer_paid_price = customer_paid_price if platform_price == 'PN' else 'N/A'
             
             # Build record
             record = {
@@ -150,8 +150,7 @@ def _build_purchase_request_export(df, vendors_data):
                 'Sustainability': vendor_sustainability,
                 'Proximity': vendor_proximity,
                 'Vendor Integrated Score': vendor_integrated_score,
-                'Transaction Completed': transaction_completed,
-                'Customer Paid Price': customer_paid_price
+                'Customer Paid Price': display_customer_paid_price
             }
             
             purchase_request_records.append(record)
@@ -547,48 +546,45 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         total_vendor_purchase_requests = sum(vendor_purchase_requests.values()) if vendor_purchase_requests else 0
         total_vendor_transactions = sum(vendor_transactions.values()) if vendor_transactions else 0
         
-        col_plot, col_stats = st.columns([2, 1])
+        # Bar chart showing vendor distribution (sorted by vendor ID)
+        st.markdown("**Number of Agents Selecting Each Vendor**")
+        fig = px.bar(
+            x=[f"Vendor {int(vid)}" for vid in vendor_counts_sorted.index],
+            y=vendor_counts_sorted.values,
+            labels={'x': 'Vendor', 'y': 'Number of Agents'}
+        )
+        fig.update_layout(
+            showlegend=False,
+            xaxis_title="Vendor",
+            yaxis_title="Number of Agents"
+        )
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
         
-        with col_plot:
-            # Bar chart showing vendor distribution (sorted by vendor ID)
-            st.markdown("**Number of Agents Selecting Each Vendor**")
-            fig = px.bar(
-                x=[f"Vendor {int(vid)}" for vid in vendor_counts_sorted.index],
-                y=vendor_counts_sorted.values,
-                labels={'x': 'Vendor', 'y': 'Number of Agents'}
-            )
-            fig.update_layout(
-                showlegend=False,
-                xaxis_title="Vendor",
-                yaxis_title="Number of Agents"
-            )
-            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
+        # Selection breakdown table below the graph
+        st.markdown("**📈 Selection Breakdown:**")
         
-        with col_stats:
-            st.markdown("**📈 Selection Breakdown:**")
+        # Build detailed breakdown data
+        breakdown_data = []
+        for vid in vendor_counts_sorted.index:
+            agent_count = vendor_counts_sorted[vid]
+            pr_count = vendor_purchase_requests.get(vid, 0)
+            tx_count = vendor_transactions.get(vid, 0)
             
-            # Build detailed breakdown data
-            breakdown_data = []
-            for vid in vendor_counts_sorted.index:
-                agent_count = vendor_counts_sorted[vid]
-                pr_count = vendor_purchase_requests.get(vid, 0)
-                tx_count = vendor_transactions.get(vid, 0)
-                
-                # Calculate completion rate for this vendor (% of requests completed)
-                completion_rate = f"{(tx_count/pr_count)*100:.1f}%" if pr_count > 0 else "0.0%"
-                
-                breakdown_data.append({
-                    'Vendor': f"Vendor {int(vid)}",
-                    'Agents': int(agent_count),
-                    '% Agents': f"{(agent_count/agents_with_selection)*100:.1f}%",
-                    'Purchase Requests': int(pr_count),
-                    '% Requests': f"{(pr_count/total_vendor_purchase_requests)*100:.1f}%" if total_vendor_purchase_requests > 0 else "0.0%",
-                    'Transactions': int(tx_count),
-                    '% Completed': completion_rate
-                })
+            # Calculate completion rate for this vendor (% of requests completed)
+            completion_rate = f"{(tx_count/pr_count)*100:.1f}%" if pr_count > 0 else "0.0%"
             
-            breakdown_df = pd.DataFrame(breakdown_data)
-            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+            breakdown_data.append({
+                'Vendor': f"Vendor {int(vid)}",
+                'Agents': int(agent_count),
+                '% Agents': f"{(agent_count/agents_with_selection)*100:.1f}%",
+                'Purchase Requests': int(pr_count),
+                '% Requests': f"{(pr_count/total_vendor_purchase_requests)*100:.1f}%" if total_vendor_purchase_requests > 0 else "0.0%",
+                'Transactions': int(tx_count),
+                '% Completed': completion_rate
+            })
+        
+        breakdown_df = pd.DataFrame(breakdown_data)
+        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     else:
         st.info("No vendor selections found (agents may have 0 purchases)")
     
@@ -651,55 +647,84 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             # Sort periods
             sorted_periods = sorted(period_data.keys())
             
-            # Create tabs for each period
-            period_tabs = st.tabs([f"Period {int(p)}" for p in sorted_periods])
+            # Calculate totals across ALL periods
+            all_agents_across_periods = set()
+            total_requests_all_periods = 0
+            total_transactions_all_periods = 0
             
-            for tab_idx, period in enumerate(sorted_periods):
-                with period_tabs[tab_idx]:
-                    # Get all vendors that appeared in this period
-                    period_vendors = period_data[period]
+            for period in sorted_periods:
+                period_vendors = period_data[period]
+                all_agents_across_periods.update(set().union(*[v['agents'] for v in period_vendors.values()]))
+                total_requests_all_periods += sum(v['requests'] for v in period_vendors.values())
+                total_transactions_all_periods += sum(v['transactions'] for v in period_vendors.values())
+            
+            # Show summary metrics for ALL periods
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Agents", f"{len(all_agents_across_periods):,}")
+            with col2:
+                st.metric("Total Purchase Requests", f"{total_requests_all_periods:,}")
+            with col3:
+                st.metric("Total Transactions", f"{total_transactions_all_periods:,}")
+            
+            st.markdown("---")
+            
+            # Build combined breakdown data for all periods with Period column
+            all_periods_breakdown_data = []
+            
+            for period in sorted_periods:
+                # Get all vendors that appeared in this period
+                period_vendors = period_data[period]
+                
+                # Calculate totals for this period (for percentage calculations)
+                total_agents_period = len(set().union(*[v['agents'] for v in period_vendors.values()]))
+                total_requests_period = sum(v['requests'] for v in period_vendors.values())
+                total_transactions_period = sum(v['transactions'] for v in period_vendors.values())
+                
+                # Build breakdown data for this period (sorted by vendor ID)
+                for vid in sorted(period_vendors.keys()):
+                    vendor_stats = period_vendors[vid]
+                    agent_count = len(vendor_stats['agents'])
+                    request_count = vendor_stats['requests']
+                    transaction_count = vendor_stats['transactions']
                     
-                    # Calculate totals for this period
-                    total_agents_period = len(set().union(*[v['agents'] for v in period_vendors.values()]))
-                    total_requests_period = sum(v['requests'] for v in period_vendors.values())
-                    total_transactions_period = sum(v['transactions'] for v in period_vendors.values())
+                    # Calculate completion rate for this vendor in this period (% of requests completed)
+                    period_completion_rate = f"{(transaction_count/request_count)*100:.1f}%" if request_count > 0 else "0.0%"
                     
-                    # Build breakdown data for this period (sorted by vendor ID)
-                    period_breakdown_data = []
-                    for vid in sorted(period_vendors.keys()):
-                        vendor_stats = period_vendors[vid]
-                        agent_count = len(vendor_stats['agents'])
-                        request_count = vendor_stats['requests']
-                        transaction_count = vendor_stats['transactions']
-                        
-                        # Calculate completion rate for this vendor in this period (% of requests completed)
-                        period_completion_rate = f"{(transaction_count/request_count)*100:.1f}%" if request_count > 0 else "0.0%"
-                        
-                        period_breakdown_data.append({
-                            'Vendor': f"Vendor {int(vid)}",
-                            'Agents': int(agent_count),
-                            '% Agents': f"{(agent_count/total_agents_period)*100:.1f}%" if total_agents_period > 0 else "0.0%",
-                            'Purchase Requests': int(request_count),
-                            '% Requests': f"{(request_count/total_requests_period)*100:.1f}%" if total_requests_period > 0 else "0.0%",
-                            'Transactions': int(transaction_count),
-                            '% Completed': period_completion_rate
-                        })
-                    
-                    period_breakdown_df = pd.DataFrame(period_breakdown_data)
-                    
-                    # Show summary metrics
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total Agents (Period)", f"{total_agents_period:,}")
-                    with col2:
-                        st.metric("Total Purchase Requests", f"{total_requests_period:,}")
-                    with col3:
-                        st.metric("Total Transactions", f"{total_transactions_period:,}")
-                    
-                    st.markdown("---")
-                    
-                    # Display table
-                    st.dataframe(period_breakdown_df, use_container_width=True, hide_index=True)
+                    all_periods_breakdown_data.append({
+                        'Period': int(period),
+                        'Vendor': f"Vendor {int(vid)}",
+                        'Agents': int(agent_count),
+                        '% Agents': f"{(agent_count/total_agents_period)*100:.1f}%" if total_agents_period > 0 else "0.0%",
+                        'Purchase Requests': int(request_count),
+                        '% Requests': f"{(request_count/total_requests_period)*100:.1f}%" if total_requests_period > 0 else "0.0%",
+                        'Transactions': int(transaction_count),
+                        '% Completed': period_completion_rate
+                    })
+            
+            # Create combined DataFrame
+            combined_breakdown_df = pd.DataFrame(all_periods_breakdown_data)
+            
+            # Display combined table
+            st.dataframe(combined_breakdown_df, use_container_width=True, hide_index=True)
+            
+            # EXCEL EXPORT BUTTON
+            try:
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    combined_breakdown_df.to_excel(writer, index=False, sheet_name='Vendor Breakdown')
+                
+                st.download_button(
+                    label="📥 Download Period Breakdown Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"vendor_selection_breakdown_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Download the vendor selection breakdown by period table"
+                )
+            except ImportError:
+                st.warning("⚠️ Excel export requires openpyxl package")
+            except Exception as e:
+                st.error(f"❌ Error creating Excel file: {str(e)}")
         else:
             st.info("No period data available in purchase requests")
     else:
@@ -855,10 +880,27 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 integrated_score = vendor_integrated_scores.get(vendor_id, None)
                 integrated_score_display = f"{integrated_score:.3f}" if integrated_score is not None else "N/A"
                 
+                # Get quantity information - check if per-period data exists
+                quantity_per_period = vendor.get('quantity_offered_per_period', {})
+                if quantity_per_period and isinstance(quantity_per_period, dict):
+                    # Calculate total quantity across all periods
+                    total_quantity = sum(quantity_per_period.values())
+                    # Show average quantity (calculated from per-period values)
+                    avg_quantity = vendor.get('quantity_offered', 100)
+                    # Create a display string with period breakdown
+                    period_values = [f"P{p}:{q}" for p, q in sorted(quantity_per_period.items())]
+                    quantity_display = f"{avg_quantity} avg ({', '.join(period_values)})"
+                    total_quantity_display = total_quantity
+                else:
+                    # Legacy: single quantity value (assume 1 period)
+                    quantity_display = str(vendor.get('quantity_offered', 100))
+                    total_quantity_display = vendor.get('quantity_offered', 100)
+                
                 vendor_table_data.append({
                     'Vendor ID': f"Vendor {vendor_id}",
                     'Price ($)': f"${vendor.get('price', 0):.2f}",
-                    'Quantity Offered': vendor.get('quantity_offered', 100),
+                    'Average Qty Per Period': quantity_display,
+                    'Total Quantity': total_quantity_display,
                     'Quality': vendor.get('quality', 'N/A'),
                     'Sustainability': vendor.get('sustainability', 'N/A'),
                     'Average Proximity': proximity_avg_display,
@@ -966,7 +1008,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     vendor_df,
                     x='Vendor ID',
                     y=proximity_vals,
-                    title="Average Proximity Score (0-100)",
+                    title="Average Proximity Score (0-100) (Higher = Closer)",
                     labels={'y': 'Proximity', 'x': ''}
                 )
                 prox_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 100]))
@@ -1047,6 +1089,24 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         
                         st.caption("💡 **Formula**: Final Score = (Price Weight × Norm Price) + (Quality Weight × Norm Quality) + (Proximity Weight × Norm Proximity) + (Sustainability Weight × Norm Sustainability)")
                         st.caption("📊 **Normalization**: Price is inverted (lower=better), others are scaled to [0,1]. Proximity averaged across all agents.")
+                        
+                        # Excel export for Vendor Score Breakdown
+                        try:
+                            buffer = BytesIO()
+                            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                                score_df.to_excel(writer, index=False, sheet_name='Vendor Score Breakdown')
+                            
+                            st.download_button(
+                                label="📥 Download Vendor Score Breakdown Excel",
+                                data=buffer.getvalue(),
+                                file_name=f"vendor_score_breakdown_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                help="Download the vendor score breakdown table showing normalized attributes and score calculation"
+                            )
+                        except ImportError:
+                            st.warning("⚠️ Excel export requires openpyxl package")
+                        except Exception as e:
+                            st.error(f"❌ Error creating Excel file: {str(e)}")
             
             # Agent-Vendor Proximity Matrix (NEW: Display table + Download)
             st.markdown("---")

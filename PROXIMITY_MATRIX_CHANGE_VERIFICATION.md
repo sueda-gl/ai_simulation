@@ -158,3 +158,5 @@ git diff app/pages/results/visualizations/vendor_viz.py | grep -A 3 -B 3 "Allowa
 
 **The changes are definitely there!** Just need to restart the Streamlit app to see them in action.
 
+
+

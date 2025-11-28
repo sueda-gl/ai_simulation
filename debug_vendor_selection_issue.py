@@ -163,3 +163,5 @@ def debug_vendor_selection():
 if __name__ == "__main__":
     debug_vendor_selection()
 
+
+

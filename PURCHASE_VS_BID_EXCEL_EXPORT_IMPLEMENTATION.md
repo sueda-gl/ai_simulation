@@ -69,10 +69,11 @@ The Excel export includes the following fields for each purchase request:
 | **Customer Type** | Customer classification | Regular, Fixed, Discount |
 | **Income Category** | Income bracket assignment | 1-10 |
 | **Purchase Request Type** | Purchase method chosen | PN, Bid |
-| **Date/Time of Purchase Request** | Timestamp of request | "Period 1, Hour 0.5" |
+| **Timestamp** | Hours since simulation start | 0.5, 1.2, 3.8, ... |
 | **Period** | Period number | 1, 2, 3, ... |
 | **Customer Price** | Price paid by customer | $82.50, $95.00, etc. |
-| **Transaction Completed** | Completion status | 0 (failed) or 1 (completed) |
+
+**Note:** Records are sorted by timestamp in chronological order.
 
 ## 💰 Pricing Logic
 
@@ -201,10 +202,9 @@ The test script verifies:
     'Customer Type': 'Regular',
     'Income Category': 3,
     'Purchase Request Type': 'Bid',
-    'Date/Time of Purchase Request': 'Period 1, Hour 0.8',
+    'Timestamp': 0.8,
     'Period': 1,
-    'Customer Price': 95.67,
-    'Transaction Completed': 1
+    'Customer Price': 95.67
 }
 ```
 
@@ -310,4 +310,6 @@ Potential improvements for future versions:
 ## 🎉 Conclusion
 
 The Purchase vs Bid Excel export is now fully functional and integrated into the simulation platform. Users can download detailed request-level data for Regular Customers, including purchase decisions, pricing, and transaction outcomes. The export provides valuable insights for analysis and research purposes.
+
+
 

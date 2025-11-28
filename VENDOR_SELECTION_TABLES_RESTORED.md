@@ -113,3 +113,5 @@ Run a simulation with multiple vendors (N ≥ 2) and view Decision 8 results:
 3. **NEW**: Expand "View Proximity Matrix Table" to see agent-vendor proximity scores
 4. Download buttons remain available for Excel export
 
+
+

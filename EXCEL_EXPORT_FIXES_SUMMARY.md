@@ -36,22 +36,19 @@ This document summarizes all fixes applied to Excel export functionality.
 
 **Solutions:**
 
-#### A. Separated Period and Hour
+#### A. Added Period Column
 - Added `period` column: Which period the request falls into (1, 2, 3, ...)
-- Added `hour` column: Hour within that period (0.0 to duration_hours)
 - Kept `timestamp` as date/time formatted string (`DD/MM/YYYY HH:MM`)
 
 **Calculation Logic:**
 ```python
 period = int(timestamp_hours // duration_hours) + 1
-hour_in_period = timestamp_hours % duration_hours
 ```
 
-#### B. Set Transaction Completed to N/A
-- Changed from defaulting to `1` or `True`
-- Now explicitly set to `'N/A'`
-- Reflects reality: we track REQUESTS, not completed transactions
-- Prevents misleading analysis
+#### B. Removed Transaction Completed and Hour Columns
+- Removed `hour` column (hour within period) as it's not needed
+- Removed `transaction_completed` column as completion status is not tracked
+- Simplified export structure to focus on essential data
 
 **Files Modified:**
 1. `app/pages/results/visualizations/purchasing_viz.py` (lines 581-617)
@@ -88,11 +85,10 @@ donation_default | vendor_choice_weights | [other decisions...]
 - `donation_transactions_YYYYMMDD_HHMMSS.xlsx`
 - Vendor selection exports
 
-**New Columns:**
+**Columns:**
 ```
 transaction_id | customer_id | vendorID | platformProductID | 
-purchase type | purchase_bid_value | timestamp | period | hour | 
-transaction_completed
+purchase type | purchase_bid_value | timestamp | period
 ```
 
 **Column Details:**
@@ -107,8 +103,6 @@ transaction_completed
 | `purchase_bid_value` | str/float | Bid value or N/A | 52.5 or N/A |
 | `timestamp` | str | Date & time | 20/11/2025 14:30 |
 | `period` | int | Which period | 2 |
-| `hour` | float | Hour within period | 4.5 |
-| `transaction_completed` | str | **N/A** (not tracked) | N/A |
 
 **Sorting:** All transactions sorted chronologically by `timestamp_hours` across ALL customers
 

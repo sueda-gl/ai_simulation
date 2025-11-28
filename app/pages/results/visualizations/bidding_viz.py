@@ -24,7 +24,7 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
     # ============================================================================
     # SECTION 1: ACTUAL SIMULATION RESULTS (Request-Level)
     # ============================================================================
-    st.markdown("### 📊 Actual Bid Values from Simulation")
+    st.markdown("### 📊 Bid Values")
     st.caption("Each bid request gets a unique random bid value based on the vendor's price")
     
     if 'purchase_requests' in df.columns:

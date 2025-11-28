@@ -15,7 +15,16 @@ Default behavior (when not simulated):
 4. Generates random total quantity in [0, limit]
 5. Creates purchase requests (1 item each) with random timestamps across term
 
+⚠️ IMPORTANT: Consumption limits apply to COMPLETED TRANSACTIONS, not REQUESTS
+- In default mode: We generate requests up to the limit (assuming 100% completion)
+- In reality: Agents could make MORE requests than the limit, anticipating rejections
+- Example: Limit=50, agent makes 100 requests, 50% complete = 50 transactions (OK!)
+- When Decision 10 is fully simulated, this behavior will be updated
+
 When fully simulated (future):
+- Decouple request generation from limit enforcement
+- Simulate transaction completion/rejection outcomes
+- Enforce limit on completed transactions (not requests)
 - More sophisticated models for quantity per purchase
 - Consideration of agent traits, budget constraints, etc.
 """
@@ -400,6 +409,12 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
     
     # STEP 5: Generate total quantity for the term
     # Random integer in [0, purchasing_limit] inclusive
+    # 
+    # ⚠️ IMPORTANT NOTE: This is DEFAULT BEHAVIOR when transaction outcomes are not simulated
+    # In reality, the consumption LIMIT applies to COMPLETED TRANSACTIONS, not PURCHASE REQUESTS
+    # An agent could make MORE requests than the limit (e.g., 100 requests with 50% completion rate)
+    # For now, we use the limit as a proxy for requests, assuming 100% completion
+    # When Decision 10 (rejected_transaction_option) is fully simulated, this will be decoupled
     if purchasing_limit > 0:
         total_quantity = int(rng.integers(0, purchasing_limit + 1))
     else:

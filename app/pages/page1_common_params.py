@@ -1243,7 +1243,7 @@ BUDGET_SHOP,5.25,50,0""")
             max_value=income_max,
             value=current_threshold,  # Now uses widget key value
             step=100.0,
-            help="Income threshold below which agents qualify for discounts (pending document disclosure)",
+            help="Income threshold for potential discount eligibility. Agents with income ≤ this value can become discount customers if they also choose to disclose income AND documents.",
             key="discount_threshold_input",
             on_change=lambda: setattr(st.session_state.sim_params, 'discount_income_threshold', st.session_state.discount_threshold_input)
         )

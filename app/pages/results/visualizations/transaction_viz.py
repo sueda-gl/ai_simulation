@@ -21,11 +21,14 @@ def _build_purchase_vs_bid_export(df):
     - Customer Type (Regular, Fixed, Discount)
     - Income Category
     - Purchase Request Type (PN/Bid)
-    - Date/Time of Purchase Request
+    - timestamp (DD/MM/YYYY HH:MM format)
     - Period
     - Customer Price (based on PN price or bid value)
-    - Transaction Completed (0/1)
+    
+    Records are sorted by timestamp in chronological order.
     """
+    from datetime import datetime, timedelta
+    
     transaction_records = []
     
     if 'purchase_requests' not in df.columns:
@@ -34,16 +37,23 @@ def _build_purchase_vs_bid_export(df):
     # Get pricing parameters from session state or use defaults
     market_price = 100.0
     platform_markup = 0.1
+    price_range = 0.25
     if hasattr(st.session_state, 'simulation_params'):
         sim_params = st.session_state.simulation_params.get('simulation', {})
         market_price = sim_params.get('market_price', 100.0)
         platform_markup = sim_params.get('platform_markup', 0.1)
+        price_range = sim_params.get('price_range', 0.25)
     elif hasattr(st.session_state, 'sim_params'):
         market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
+        price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
     
     # Calculate standard prices
-    baseline_price = (1 + platform_markup) * market_price  # PN price
+    baseline_price = (1 + platform_markup) * market_price
+    pn_price = (1 + price_range) * baseline_price  # PN price = max bid price
+    
+    # Base date for timestamp conversion (current date when simulation is run)
+    base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     
     for idx, row in df.iterrows():
         # Get agent information
@@ -73,7 +83,7 @@ def _build_purchase_vs_bid_export(df):
             if customer_type.lower() != 'regular':
                 continue
             
-            # Get timestamp and convert to Period
+            # Get timestamp and convert to Period and formatted timestamp
             timestamp_hours = request.get('timestamp_hours', np.nan)
             if not pd.isna(timestamp_hours):
                 # Get periods and duration from session state or use defaults
@@ -89,12 +99,16 @@ def _build_purchase_vs_bid_export(df):
                 
                 # Calculate period (each period has duration_hours hours)
                 period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
-                # Format as "Period X, Hour Y"
-                hour_in_period = timestamp_hours % duration_hours if timestamp_hours >= 0 else 0
-                request_datetime = f"Period {period}, Hour {hour_in_period:.1f}"
+                
+                # Convert timestamp_hours to datetime format
+                timestamp_dt = base_date + timedelta(hours=float(timestamp_hours))
+                timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
+                sort_key = timestamp_hours  # Use numeric timestamp for sorting
             else:
-                request_datetime = request.get('requestDateTime', '')
+                # Fallback if timestamp_hours not available
+                timestamp_str = base_date.strftime('%d/%m/%Y %H:%M')
                 period = request.get('period', 1)
+                sort_key = 0.0
             
             # Determine Purchase Request Type and Customer Price
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
@@ -103,20 +117,19 @@ def _build_purchase_vs_bid_export(df):
             # Only include PN and BID for regular customers
             if platform_price == 'PN':
                 purchase_request_type = 'PN'
-                customer_price = baseline_price
+                customer_price = pn_price  # PN uses max bid price
             elif platform_price == 'BID' and bid_value != 'N/A':
                 purchase_request_type = 'Bid'
                 try:
                     customer_price = float(bid_value)
                 except (ValueError, TypeError):
-                    customer_price = baseline_price
+                    customer_price = pn_price
             else:
                 # Skip if not PN or BID
                 continue
             
-            # Transaction Completed - Not available (enrich_requests not currently used)
-            # Decision 6 and 7 only track purchase REQUESTS, not completed transactions
-            transaction_completed = 'N/A'
+            # Only show price for PN customers, hide for others
+            display_customer_price = customer_price if purchase_request_type == 'PN' else 'N/A'
             
             # Build record
             record = {
@@ -126,13 +139,21 @@ def _build_purchase_vs_bid_export(df):
                 'Customer Type': customer_type_display,
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
-                'Date/Time of Purchase Request': request_datetime,
+                'timestamp': timestamp_str,
                 'Period': period,
-                'Customer Price': customer_price,
-                'Transaction Completed': transaction_completed
+                'Customer Price': display_customer_price,
+                '_sort_key': sort_key  # Hidden column for sorting
             }
             
             transaction_records.append(record)
+    
+    # Sort all records by timestamp in chronological order
+    if transaction_records:
+        transaction_records.sort(key=lambda x: x.get('_sort_key', 0.0))
+        
+        # Remove the hidden sorting column before returning
+        for record in transaction_records:
+            record.pop('_sort_key', None)
     
     return transaction_records
 
@@ -230,7 +251,7 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 from io import BytesIO
                 from datetime import datetime
                 
-                # Create DataFrame
+                # Create DataFrame (already sorted by the build function)
                 export_df = pd.DataFrame(transaction_records)
                 
                 # Create Excel with multiple sheets
@@ -261,7 +282,8 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 with col_info:
                     num_sheets = 1 + len(export_df['Period'].dropna().unique()) if 'Period' in export_df.columns else 1
                     st.caption(f"📋 Export includes {len(export_df):,} requests across {num_sheets} sheets")
-                    st.caption(f"✅ Fields: Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, Date/Time, Period, Customer Price, Transaction Completed")
+                    st.caption(f"✅ Fields: Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, timestamp, Period, Customer Price")
+                    st.caption(f"🔄 Sorted by: timestamp (chronological order)")
             
             except ImportError:
                 st.warning("⚠️ Excel export requires openpyxl package")

@@ -1,0 +1,141 @@
+================================================================================
+                DONATION EXCEL EXPORT - COLUMN UPDATES
+================================================================================
+
+✅ COMPLETED: November 20, 2025
+
+================================================================================
+                        WHAT WAS CHANGED
+================================================================================
+
+BEFORE:
+  Date/Time of Purchase Request | Period
+  "Period 1, Hour 2.4"          | 1
+
+AFTER:
+  Purchase Date | Purchase Time    | Period
+  2025-11-20    | 10:18:43.983242 | 1
+
+================================================================================
+                        KEY IMPROVEMENTS
+================================================================================
+
+✅ Separate Date and Time columns (not combined)
+✅ Actual date/time formats (not text)
+✅ Standalone Period column (not mixed with date/time)
+✅ Chronological sorting by timestamp (earliest to latest)
+✅ Excel can recognize and work with dates/times
+
+================================================================================
+                        EXCEL STRUCTURE
+================================================================================
+
+File: donation_transactions_YYYYMMDD_HHMMSS.xlsx
+
+Sheets:
+  - Total (all requests, sorted chronologically)
+  - Period 1 (sorted chronologically)
+  - Period 2 (sorted chronologically)
+  - etc.
+
+Column Order:
+  1. Agent ID
+  2. Assigned Allowance Level
+  3. Group_experiment
+  4. Customer Type
+  5. Income Category
+  6. Purchase Request Type
+  7. Purchase Date ← NEW! (separate)
+  8. Purchase Time ← NEW! (separate)
+  9. Period ← UPDATED! (standalone)
+  10. Customer Price
+  11. Transaction Completed
+  12. Default Donation Rate
+  13. Final Donation Rate
+  14. Donation Paid
+  15. Total Paid by Customer
+
+All records sorted by: Purchase Date → Purchase Time (chronological)
+
+================================================================================
+                        TEST RESULTS
+================================================================================
+
+✅ 75 transaction records tested
+✅ All expected columns present
+✅ Purchase Date column exists
+✅ Purchase Time column exists
+✅ Period column exists (separate)
+✅ Old combined column removed
+✅ Records sorted chronologically
+
+🎉 ALL TESTS PASSED!
+
+================================================================================
+                        HOW TO USE
+================================================================================
+
+1. Run simulation with:
+   - donation_default
+   - purchasing_quantity
+   - final_donation_rate
+
+2. Go to Results → Final Donation Rate section
+
+3. Click "📥 Download Transaction-Level Excel"
+
+4. Open Excel file → See separated date/time columns!
+
+================================================================================
+                        EXAMPLE DATA
+================================================================================
+
+Agent | Purchase Date | Purchase Time  | Period | Donation Rate | Donation $
+------|---------------|----------------|--------|---------------|------------
+  3   | 2025-11-20    | 10:18:43       |   1    |    0.1606     |   17.67
+  2   | 2025-11-20    | 10:18:50       |   1    |    0.1001     |   11.01
+  1   | 2025-11-20    | 10:19:48       |   1    |    0.1726     |   18.98
+  2   | 2025-11-20    | 10:22:24       |   1    |    0.1001     |   11.01
+  1   | 2025-11-20    | 10:24:33       |   1    |    0.1726     |   18.98
+
+Notice: Sorted chronologically (10:18 → 10:19 → 10:22 → 10:24)
+
+================================================================================
+                        FILES MODIFIED
+================================================================================
+
+✅ app/pages/results/visualizations/donation_viz.py
+   - Updated _build_donation_transaction_export() function
+   - Separated date and time columns
+   - Added chronological sorting
+
+✅ test_donation_excel_columns.py (NEW)
+   - Test script to verify column structure
+   - Validates sorting
+
+✅ DONATION_EXCEL_COLUMN_UPDATES.md (NEW)
+   - Detailed documentation
+
+================================================================================
+                        BENEFITS
+================================================================================
+
+For Excel Users:
+  ✅ Can filter by date range
+  ✅ Can filter by time of day
+  ✅ Can sort by date/time
+  ✅ Can create time-series charts
+  ✅ Can analyze patterns over time
+  ✅ Can calculate time differences
+
+For Researchers:
+  ✅ Better data organization
+  ✅ Easier temporal analysis
+  ✅ Professional data format
+  ✅ Compatible with analysis tools
+  ✅ Ready for statistical software
+
+================================================================================
+
+
+

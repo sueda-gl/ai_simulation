@@ -26,7 +26,6 @@ def _build_donation_transaction_export(df, simulation_config=None):
     - Purchase Time
     - Period
     - Customer Price (based on PN price, bid value, Fixed price or Discount price)
-    - Transaction Completed (0/1)
     - Default donation rate
     - Final donation rate
     - Donation paid
@@ -40,13 +39,16 @@ def _build_donation_transaction_export(df, simulation_config=None):
     # Get pricing parameters from session state or use defaults
     market_price = 100.0
     platform_markup = 0.1
+    price_range = 0.25
     if hasattr(st.session_state, 'simulation_params'):
         sim_params = st.session_state.simulation_params.get('simulation', {})
         market_price = sim_params.get('market_price', 100.0)
         platform_markup = sim_params.get('platform_markup', 0.1)
+        price_range = sim_params.get('price_range', 0.25)
     
     # Calculate standard prices
-    baseline_price = (1 + platform_markup) * market_price  # PN price
+    baseline_price = (1 + platform_markup) * market_price
+    pn_price = (1 + price_range) * baseline_price  # PN price = max bid price
     discount_price = market_price * 0.7  # Assume 30% discount
     fixed_price = market_price  # Fixed price = market price
     
@@ -131,21 +133,17 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 customer_price = fixed_price
             elif platform_price == 'PN':
                 purchase_request_type = 'PN'
-                customer_price = baseline_price
+                customer_price = pn_price  # PN uses max bid price
             elif platform_price == 'BID' and bid_value != 'N/A':
                 purchase_request_type = 'Bid'
                 try:
                     customer_price = float(bid_value)
                 except (ValueError, TypeError):
-                    customer_price = baseline_price
+                    customer_price = pn_price
             else:
                 # Default to PN for regular customers
                 purchase_request_type = 'PN' if customer_type.lower() == 'regular' else customer_type_display
-                customer_price = baseline_price
-            
-            # Transaction Completed - Not available (enrich_requests not currently used)
-            # Decision 6 and 7 only track purchase REQUESTS, not completed transactions
-            transaction_completed = 'N/A'
+                customer_price = pn_price  # PN uses max bid price
             
             # ====================================================================
             # NEW: Get REQUEST-SPECIFIC donation rate (priority over agent-level)
@@ -175,6 +173,10 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 donation_paid = np.nan
                 total_paid = customer_price if not pd.isna(customer_price) else np.nan
             
+            # Only show price calculations for PN customers, hide for others
+            display_customer_price = customer_price if purchase_request_type == 'PN' else 'N/A'
+            display_total_paid = total_paid if purchase_request_type == 'PN' else 'N/A'
+            
             # Build record with separate date and time columns
             record = {
                 'Agent ID': agent_id,
@@ -186,12 +188,11 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 'Purchase Date': purchase_date,
                 'Purchase Time': purchase_time,
                 'Period': period,
-                'Customer Price': customer_price,
-                'Transaction Completed': transaction_completed,
+                'Customer Price': display_customer_price,
                 'Default Donation Rate': agent_default_rate,
                 'Final Donation Rate': final_donation_rate,
                 'Donation Paid': donation_paid,
-                'Total Paid by Customer': total_paid,
+                'Total Paid by Customer': display_total_paid,
                 '_sort_datetime': request_datetime  # Hidden column for sorting
             }
             

@@ -288,3 +288,5 @@ If you're seeing "all agents select vendor 4" in the app, the config might have 
 **Analysis completed:** November 20, 2025  
 **Diagnostic files:** Available in workspace root
 
+
+

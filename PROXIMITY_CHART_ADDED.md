@@ -242,3 +242,5 @@ This proximity chart complements:
 **Ready for use:** Yes (restart app)  
 **Visibility:** Only shown when multiple vendors exist (total_vendors_available > 1)
 
+
+

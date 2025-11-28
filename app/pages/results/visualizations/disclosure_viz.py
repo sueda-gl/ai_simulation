@@ -83,8 +83,8 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
     with col1:
         st.metric("Total Agents", f"{total_agents:,}")
     with col2:
-        st.metric("Qualified for Discount", f"{qualified_agents:,}", 
-                  help="Agents with income < discount threshold")
+        st.metric("Eligible to Disclose Documents", f"{qualified_agents:,}", 
+                  help="Agents with income < threshold who disclosed income. These agents are asked if they want to disclose documents for discount eligibility.")
     with col3:
         st.metric("Not Qualified (NA)", f"{na_count:,}", 
                   help="Agents with income ≥ discount threshold (decision does not apply)")
@@ -196,7 +196,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
             - **Platform price label**: PN or BID
             
             **🟣 Fixed Customers**
-            - **How assigned**: Disclosed income (Decision 1: disclose_income = "Y") but did NOT disclose documents (Decision 2: disclose_documents = "N" or "NA")
+            - **How assigned**: Disclosed income (Decision 1: disclose_income = "Y") AND (income above threshold OR (income below threshold but did NOT disclose documents (Decision 2: disclose_documents = "N" or "NA")))
             - **Pricing**: Use fixed pricing only (FIXED)
             - **Purchase decisions**: Do not participate in Purchase Now vs Bid decisions (Decision 9 = "NA_fixed")
             - **Platform price label**: FIXED

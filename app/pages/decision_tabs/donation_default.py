@@ -903,7 +903,7 @@ def render_adjustment_override_section():
             # Adjustment input field
             new_adjustment = st.number_input(
                 "Distribution Shift Value",
-                value=st.session_state.adjustment_override_values.get('shift_value', current_yaml_values['shift_value']),
+                value=float(st.session_state.adjustment_override_values.get('shift_value', current_yaml_values['shift_value'])),
                 step=0.1,
                 format="%.3f",
                 help="Shift the distribution up (positive) or down (negative) on 0-100 scale before stochastic component",
@@ -1019,7 +1019,7 @@ def get_current_yaml_adjustment():
     adjustment_params = config['donation_default'].get('adjustment', {})
     
     return {
-        'shift_value': adjustment_params.get('shift_value', 0.0)
+        'shift_value': float(adjustment_params.get('shift_value', 0.0))
     }
 
 

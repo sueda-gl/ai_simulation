@@ -480,9 +480,15 @@ def run_simulation_from_sidebar():
                 
                 # Handle multiple decisions
                 decision_param = None if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS) else st.session_state.decision_params.selected_decisions
+                # Determine correct seed (prefer input widget value to avoid sync issues)
+                if st.session_state.sim_params.simulation_mode == "Single Run":
+                    seed_val = st.session_state.get('seed_input', st.session_state.seed)
+                else:
+                    seed_val = st.session_state.get('base_seed_input', st.session_state.base_seed)
+                
                 return orchestrator.run_simulation(
                     n_agents=st.session_state.n_agents,
-                    seed=st.session_state.seed if st.session_state.sim_params.simulation_mode == "Single Run" else st.session_state.base_seed,
+                    seed=seed_val,
                     single_decision=decision_param,
                     agents_df=agents_df  # Pass pre-sampled agents for consistency
                 )
@@ -684,11 +690,21 @@ def run_simulation_from_sidebar():
 
 
 def collect_decision_settings():
-    """Collect current default decision settings from session state (probabilities, selections, etc.)"""
+    """Collect current default decision settings from session state (probabilities, selections, etc.)
+    
+    IMPORTANT: This function checks both session state AND _persistent_defaults (shadow state).
+    The _persistent_defaults dictionary is used by default_config.py widgets to preserve values
+    across page navigation. We must check it here to ensure configured values are used even when
+    Page 2 hasn't rendered (e.g., when running simulation from Results page).
+    """
     
     from app.pages.decision_execution import DEFAULT_DECISION_VALUES
     
     decision_settings = {}
+    
+    # Get the persistent defaults dictionary (shadow state from default_config.py)
+    # This is critical for preserving user-configured values when Page 2 hasn't rendered
+    persistent_defaults = st.session_state.get('_persistent_defaults', {})
     
     # Check each decision for configured settings
     for decision_name, default_value in DEFAULT_DECISION_VALUES.items():
@@ -699,23 +715,29 @@ def collect_decision_settings():
             if decision_type == "random_probability":
                 # Priority order for probability values:
                 # 1. Post-simulation adjustment from Results page ({decision_name}_probability_y)
-                # 2. Pre-configured default from Overview tab ({decision_name}_default_probability_y)
-                # 3. Hard-coded default from DEFAULT_DECISION_VALUES
+                # 2. Pre-configured default from Overview tab - persistent storage (_persistent_defaults)
+                # 3. Pre-configured default from Overview tab - session state ({decision_name}_default_probability_y)
+                # 4. Hard-coded default from DEFAULT_DECISION_VALUES
                 
                 post_sim_key = f"{decision_name}_probability_y"
                 pre_config_key = f"{decision_name}_default_probability_y"
                 hardcoded_default = default_value.get("probability_y", 0.5)
                 
-                # Check post-simulation first, then pre-config, then hardcoded
-                current_prob = st.session_state.get(
-                    post_sim_key,
-                    st.session_state.get(pre_config_key, hardcoded_default)
-                )
+                # Check in priority order
+                if post_sim_key in st.session_state:
+                    current_prob = st.session_state[post_sim_key]
+                elif pre_config_key in persistent_defaults:
+                    # CRITICAL: Check persistent storage BEFORE session state
+                    # Session state keys might be reset to defaults by initialization scripts during reruns
+                    current_prob = persistent_defaults[pre_config_key]
+                elif pre_config_key in st.session_state:
+                    current_prob = st.session_state[pre_config_key]
+                else:
+                    current_prob = hardcoded_default
                 
-                # Debug print
-                # print(f"[DEBUG] collect_settings: {decision_name} (probability) = {current_prob}")
-                # print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
-                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                # Debug print to verify source
+                # if pre_config_key in persistent_defaults:
+                #    print(f"[DEBUG] {decision_name}: Using persistent value {current_prob}")
                 
                 decision_settings[decision_name] = {
                     "probability_y": current_prob,
@@ -727,18 +749,24 @@ def collect_decision_settings():
             elif decision_type == "checkbox_selection":
                 # Priority order:
                 # 1. Post-simulation adjustment from Results page (vendor_choice_weights_selection)
-                # 2. Pre-configured default from Overview tab (vendor_choice_weights_default_params)
-                # 3. Hard-coded default from DEFAULT_DECISION_VALUES
+                # 2. Pre-configured default from Overview tab - persistent storage (_persistent_defaults)
+                # 3. Pre-configured default from Overview tab - session state (vendor_choice_weights_default_params)
+                # 4. Hard-coded default from DEFAULT_DECISION_VALUES
                 
                 post_sim_key = f"{decision_name}_selection"  # e.g., "vendor_choice_weights_selection"
                 pre_config_key = f"{decision_name}_default_params"  # e.g., "vendor_choice_weights_default_params"
                 hardcoded_default = default_value.get("default_selection", [])
                 
-                # Check post-simulation first, then pre-config, then hardcoded
-                selected_params = st.session_state.get(
-                    post_sim_key,
-                    st.session_state.get(pre_config_key, hardcoded_default)
-                )
+                # Check in priority order
+                if post_sim_key in st.session_state:
+                    selected_params = st.session_state[post_sim_key]
+                elif pre_config_key in persistent_defaults:
+                    # CRITICAL: Check persistent storage BEFORE session state
+                    selected_params = persistent_defaults[pre_config_key]
+                elif pre_config_key in st.session_state:
+                    selected_params = st.session_state[pre_config_key]
+                else:
+                    selected_params = hardcoded_default
                 
                 # Calculate equal weights for selected parameters
                 if len(selected_params) > 0:
@@ -757,11 +785,6 @@ def collect_decision_settings():
                     weight_per_param = 1.0 / len(params) if params else 0.25
                     weights = {param: weight_per_param for param in params}
                 
-                # print(f"[DEBUG] collect_settings: {decision_name} (checkbox) = {selected_params}")
-                # print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
-                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
-                # print(f"[DEBUG]   - weights: {weights}")
-                
                 decision_settings[decision_name] = {
                     "selected_params": selected_params,
                     "weights": weights,
@@ -771,17 +794,21 @@ def collect_decision_settings():
             # Handle prioritized selection decisions (rejected_transaction_defaults with priority lists)
             elif decision_type == "prioritized_selection":
                 # Priority order:
-                # 1. Pre-configured priority template from Overview tab ({decision_name}_priority_template)
-                # 2. Hard-coded default from DEFAULT_DECISION_VALUES
+                # 1. Pre-configured priority template from Overview tab - persistent storage (_persistent_defaults)
+                # 2. Pre-configured priority template from Overview tab - session state ({decision_name}_priority_template)
+                # 3. Hard-coded default from DEFAULT_DECISION_VALUES
                 
                 pre_config_key = f"{decision_name}_priority_template"
                 hardcoded_default = default_value.get("priority_template", ["forgo_transaction"])
                 
-                # Get configured priority template
-                priority_template = st.session_state.get(pre_config_key, hardcoded_default)
-                
-                # print(f"[DEBUG] collect_settings: {decision_name} (prioritized) = {priority_template}")
-                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                # Check in priority order
+                if pre_config_key in persistent_defaults:
+                    # CRITICAL: Check persistent storage BEFORE session state
+                    priority_template = persistent_defaults[pre_config_key]
+                elif pre_config_key in st.session_state:
+                    priority_template = st.session_state[pre_config_key]
+                else:
+                    priority_template = hardcoded_default
                 
                 decision_settings[decision_name] = {
                     "priority_template": priority_template,
@@ -792,8 +819,9 @@ def collect_decision_settings():
             elif decision_type == "radio_selection":
                 # Priority order:
                 # 1. Post-simulation adjustment from Results page (specific to each decision)
-                # 2. Pre-configured default from Overview tab ({decision_name}_default_selection)
-                # 3. Hard-coded default from DEFAULT_DECISION_VALUES
+                # 2. Pre-configured default from Overview tab - persistent storage (_persistent_defaults)
+                # 3. Pre-configured default from Overview tab - session state ({decision_name}_default_selection)
+                # 4. Hard-coded default from DEFAULT_DECISION_VALUES
                 
                 # Map decision names to their post-simulation keys
                 post_sim_keys = {
@@ -805,16 +833,16 @@ def collect_decision_settings():
                 pre_config_key = f"{decision_name}_default_selection"
                 hardcoded_default = default_value.get("default_option", "")
                 
-                # Check post-simulation first, then pre-config, then hardcoded
+                # Check in priority order
                 if post_sim_key and post_sim_key in st.session_state:
                     selected_option = st.session_state[post_sim_key]
+                elif pre_config_key in persistent_defaults:
+                    # CRITICAL: Check persistent storage BEFORE session state
+                    selected_option = persistent_defaults[pre_config_key]
+                elif pre_config_key in st.session_state:
+                    selected_option = st.session_state[pre_config_key]
                 else:
-                    selected_option = st.session_state.get(pre_config_key, hardcoded_default)
-                
-                # print(f"[DEBUG] collect_settings: {decision_name} (radio) = {selected_option}")
-                # if post_sim_key:
-                #     print(f"[DEBUG]   - post_sim ({post_sim_key}): {st.session_state.get(post_sim_key, 'NOT SET')}")
-                # print(f"[DEBUG]   - pre_config ({pre_config_key}): {st.session_state.get(pre_config_key, 'NOT SET')}")
+                    selected_option = hardcoded_default
                 
                 decision_settings[decision_name] = {
                     "selected_option": selected_option,
@@ -825,8 +853,10 @@ def collect_decision_settings():
             # Handle simple values (numeric or string placeholders)
             pre_config_key = f"{decision_name}_default_value"
             
-            # Check if there's a configured value in session state
-            if pre_config_key in st.session_state:
+            # Check in priority order: persistent_defaults → session state → hardcoded default
+            if pre_config_key in persistent_defaults:
+                configured_value = persistent_defaults[pre_config_key]
+            elif pre_config_key in st.session_state:
                 configured_value = st.session_state[pre_config_key]
             else:
                 configured_value = default_value

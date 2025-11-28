@@ -177,3 +177,5 @@ def render_page2():
 **Resolution**: Added page-level initialization to Page 2, matching Page 1 pattern
 
 
+
+

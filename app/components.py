@@ -538,7 +538,7 @@ def show_income_distribution_histogram(sim_params, n_samples: int = 1000, seed: 
             st.metric("Median", f"${actual_median:,.0f}")
         with col_stat3:
             st.metric("Discount Qualification", f"{discount_rate:.1%}",
-                     help="Estimated percentage - actual results may vary slightly due to random seed differences")
+                     help="Percentage of agents with income ≤ threshold (potential eligibility based on income alone). Actual discount customers will be lower, as they must also choose to disclose income AND documents in their decisions.")
         with col_stat4:
             st.metric("Sample Size", f"{n_samples:,}")
         

@@ -207,6 +207,9 @@ class OrchestratorDocMode:
         quantity_min = sim_config.get('vendor_products_min', 50)
         quantity_max = sim_config.get('vendor_products_max', 150)
         
+        # Get number of periods for per-period quantity generation
+        num_periods = sim_config.get('periods', 1)
+        
         # Get vendor prices (for backward compatibility if specified)
         vendor_prices = []
         use_explicit_prices = False
@@ -230,7 +233,8 @@ class OrchestratorDocMode:
             price_min=None if use_explicit_prices else price_min,
             price_max=None if use_explicit_prices else price_max,
             quantity_min=quantity_min,
-            quantity_max=quantity_max
+            quantity_max=quantity_max,
+            num_periods=num_periods  # NEW: Pass number of periods for per-period quantity generation
         )
         
         # Store in simulation_config

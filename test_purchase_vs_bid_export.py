@@ -154,8 +154,7 @@ def test_purchase_vs_bid_export():
             required_fields = [
                 'Agent ID', 'Assigned Allowance Level', 'Group_experiment',
                 'Customer Type', 'Income Category', 'Purchase Request Type',
-                'Date/Time of Purchase Request', 'Period', 'Customer Price',
-                'Transaction Completed'
+                'timestamp', 'Period', 'Customer Price'
             ]
             
             missing_fields = [field for field in required_fields if field not in sample]
@@ -182,4 +181,6 @@ def test_purchase_vs_bid_export():
 if __name__ == "__main__":
     success = test_purchase_vs_bid_export()
     sys.exit(0 if success else 1)
+
+
 

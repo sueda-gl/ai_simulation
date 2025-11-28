@@ -20,7 +20,8 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
                                price_min: float = None,
                                price_max: float = None,
                                quantity_min: int = None,
-                               quantity_max: int = None) -> List[Dict]:
+                               quantity_max: int = None,
+                               num_periods: int = 1) -> List[Dict]:
     """
     Generate vendor attributes for vendor selection.
     
@@ -29,6 +30,7 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
     - Quality: Random integer in [1, 5] per vendor
     - Sustainability: Random integer in [1, 5] per vendor
     - Quantity Offered: Random integer in [quantity_min, quantity_max] per vendor per period
+      (Each period gets a NEW random quantity within the range)
     - Proximity: Generated per customer-vendor dyad (not here)
     
     Args:
@@ -39,6 +41,7 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
         price_max: Maximum price for randomization (optional)
         quantity_min: Minimum quantity offered per period (optional)
         quantity_max: Maximum quantity offered per period (optional)
+        num_periods: Number of periods in the simulation (default: 1)
         
     Returns:
         List of vendor dictionaries with attributes
@@ -62,18 +65,30 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
         # Generate sustainability: random integer in [1, 5]  
         sustainability = int(rng.integers(1, 6))
         
-        # Generate quantity offered per period
+        # Generate quantity offered PER PERIOD
+        # Each period gets a NEW random quantity within [quantity_min, quantity_max]
+        quantity_offered_per_period = {}
+        
         if quantity_min is not None and quantity_max is not None:
-            quantity_offered = int(rng.integers(quantity_min, quantity_max + 1))  # +1 because upper is exclusive
+            for period in range(1, num_periods + 1):
+                # Generate new random quantity for this period
+                quantity_offered_per_period[period] = int(rng.integers(quantity_min, quantity_max + 1))
         else:
-            quantity_offered = 100  # Default quantity
+            # Default: 100 products per period
+            for period in range(1, num_periods + 1):
+                quantity_offered_per_period[period] = 100
+        
+        # For backward compatibility, keep quantity_offered as average across all periods
+        # This is used for display and any code that hasn't been updated yet
+        quantity_offered = int(np.mean(list(quantity_offered_per_period.values())))
         
         vendor = {
             'vendor_id': vendor_id,
             'price': float(price),
             'quality': quality,
             'sustainability': sustainability,
-            'quantity_offered': quantity_offered
+            'quantity_offered': quantity_offered,  # Average (for backward compatibility)
+            'quantity_offered_per_period': quantity_offered_per_period  # NEW: Period-specific quantities
             # Note: proximity is NOT included here - it's customer-vendor specific
         }
         
@@ -130,6 +145,15 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
     else:
         # Many vendors: distribute evenly across 15-85 range
         vendor_means = [15 + (70 * i / (num_vendors - 1)) for i in range(num_vendors)]
+    
+    # SHUFFLE the means deterministically so Vendor ID != Location Quality
+    # Use a fixed seed so all agents agree on which vendor is "urban" vs "rural"
+    # (e.g. Vendor 3 is always the urban one in this run, regardless of agent)
+    # We use a fixed seed (42) combined with num_vendors to ensure reproducibility
+    # while breaking the linear correlation between Vendor ID and proximity score.
+    import random
+    shuffle_rng = random.Random(42 + num_vendors)
+    shuffle_rng.shuffle(vendor_means)
     
     for vendor_id in range(1, num_vendors + 1):
         vendor_idx = vendor_id - 1

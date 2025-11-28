@@ -122,8 +122,6 @@ transaction_completed = 'N/A'
 6. `purchase_bid_value` - Bid value if applicable, else N/A
 7. `timestamp` - Date and time formatted as `DD/MM/YYYY HH:MM`
 8. `period` - Which period (1, 2, 3, ...)
-9. `hour` - Hour within the period (0.0 to duration_hours)
-10. `transaction_completed` - **N/A** (not tracked)
 
 **Sorting:** All transactions sorted by `timestamp_hours` (chronological order across ALL customers)
 
@@ -136,7 +134,6 @@ transaction_completed = 'N/A'
 **Includes:**
 - All columns from purchasing export
 - Plus: Donation-specific fields (donation rate, donation paid, total paid)
-- `Transaction Completed` column set to **N/A**
 
 ---
 
@@ -146,40 +143,21 @@ transaction_completed = 'N/A'
 
 **Includes:**
 - Vendor-specific information
-- `Transaction Completed` column set to **N/A**
 
 ---
 
 ## 🎯 Rationale
 
-### Why Transaction Completed = N/A?
-
-**Current State:**
-- ✅ **Decision 6** (`purchasing_quantity`): Creates purchase **REQUESTS**
-- ✅ **Decision 7** (`vendor_selection`): Assigns preferred vendor to requests
-- ❌ **No Decision** currently determines if transactions are COMPLETED
-
-**Historical Context:**
-- The `enrich_purchase_requests` decision (Decision 6b) was previously used to enrich requests
-- This file was **deleted** (see `PER_REQUEST_PURCHASE_DECISIONS_IMPLEMENTATION.md`)
-- Without enrichment, we only have REQUESTS, not COMPLETED TRANSACTIONS
-
-**Solution:**
-- Set `transaction_completed` to `'N/A'` instead of defaulting to `1` or `True`
-- Makes it clear that this data is not currently tracked
-- Avoids misleading analysis that assumes all requests were completed
-
-### Why Separate Period and Hour?
+### Why Period Column?
 
 **User Requirements:**
 1. **Analysis by Period**: Allows filtering/grouping by specific periods
-2. **Analysis by Hour**: Allows seeing timing patterns within each period
-3. **Full Timestamp**: Provides exact date/time for precise ordering
+2. **Full Timestamp**: Provides exact date/time for precise ordering
 
 **Example:**
 ```
-Period 1, Hour 0.0-5.0   → Early adopters in first period
-Period 2, Hour 10.0-15.0 → Mid-period activity in second period
+Period 1 → Transactions in first period
+Period 2 → Transactions in second period
 ```
 
 ---

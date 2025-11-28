@@ -51,10 +51,11 @@ The Excel file includes these fields for each purchase request:
 | Customer Type | Regular, Fixed, or Discount |
 | Income Category | Income bracket |
 | Purchase Request Type | PN or Bid |
-| Date/Time of Purchase Request | "Period X, Hour Y.Z" |
+| Timestamp | Hours since simulation start (e.g., 0.5, 1.2, 3.8) |
 | Period | Period number (1, 2, 3, ...) |
 | Customer Price | Calculated price |
-| Transaction Completed | 0 or 1 |
+
+**Note:** Records are sorted by timestamp in chronological order.
 
 ## 💡 Key Features
 
@@ -173,10 +174,12 @@ If platformPrice == "BID":
 
 ### Sample Excel Row:
 
-| Agent ID | Allowance | Group | Type | Category | Purchase Type | DateTime | Period | Price | Completed |
-|----------|-----------|-------|------|----------|---------------|----------|---------|-------|-----------|
-| 5 | 3 | A | Regular | 3 | Bid | Period 1, Hour 0.8 | 1 | $95.67 | 1 |
-| 5 | 3 | A | Regular | 3 | PN | Period 1, Hour 1.2 | 1 | $110.00 | 1 |
+| Agent ID | Allowance | Group | Type | Category | Purchase Type | Timestamp | Period | Price |
+|----------|-----------|-------|------|----------|---------------|-----------|---------|-------|
+| 5 | 3 | A | Regular | 3 | Bid | 0.8 | 1 | $95.67 |
+| 5 | 3 | A | Regular | 3 | PN | 1.2 | 1 | $110.00 |
+
+**Note:** Rows are sorted by Timestamp (chronological order).
 
 ## 🎉 Success Metrics
 
@@ -199,4 +202,6 @@ For future enhancements:
 ---
 
 **Implementation Complete! The feature is ready to use. 🚀**
+
+
 
