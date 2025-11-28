@@ -321,9 +321,6 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             except (ValueError, TypeError):
                 final_donation_rate = 0.0
             
-            donation_paid = customer_price * final_donation_rate if not pd.isna(customer_price) else np.nan
-            total_paid = customer_price + donation_paid if not pd.isna(customer_price) and not pd.isna(donation_paid) else np.nan
-            
             # Build transaction record
             transaction_record = {
                 # Identification
@@ -363,8 +360,6 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 # Donation
                 'Agent Donation Default': agent_donation_default,
                 'Final Donation Rate': final_donation_rate,
-                'Donation Paid': donation_paid,
-                'Total Paid': total_paid,
             }
             
             transaction_records.append(transaction_record)
