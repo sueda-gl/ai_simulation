@@ -19,7 +19,329 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.orchestrator import Orchestrator
 from src.orchestrator_doc_mode import OrchestratorDocMode
 from src.orchestrator_depvar import OrchestratorDepVar
+from src.orchestrator_baseline import OrchestratorBaseline
+from src.trait_engine import TraitEngine
 from app.models import ALL_DECISIONS
+
+
+# =============================================================================
+# HELPER FUNCTIONS - Shared logic for mode runners
+# =============================================================================
+
+def _load_original_participants(n_agents: int, seed: int) -> pd.DataFrame:
+    """
+    Load original 280 participants with bootstrap if needed.
+    
+    Used by Research Specification and Research Baseline modes.
+    """
+    temp_orchestrator = OrchestratorBaseline()
+    if n_agents <= len(temp_orchestrator.original_data):
+        return temp_orchestrator.original_data.iloc[:n_agents].copy()
+    else:
+        # Bootstrap sample if more agents requested than available
+        rng = np.random.default_rng(seed)
+        indices = rng.choice(len(temp_orchestrator.original_data), size=n_agents, replace=True)
+        df = temp_orchestrator.original_data.iloc[indices].copy()
+        df.index = range(len(df))
+        return df
+
+
+def _apply_simulation_params(orchestrator):
+    """
+    Apply Page 1 simulation parameters to orchestrator.
+    
+    This ensures user-configured values from Page 1 take precedence over config/simulation.yaml.
+    """
+    if not hasattr(orchestrator, 'simulation_config'):
+        return
+    
+    if 'simulation' not in orchestrator.simulation_config:
+        orchestrator.simulation_config['simulation'] = {}
+    
+    sim_params = st.session_state.sim_params
+    sim_config = orchestrator.simulation_config['simulation']
+    
+    # Income distribution parameters - CRITICAL for disclose_documents eligibility
+    sim_config['income_distribution'] = sim_params.income_distribution
+    sim_config['discount_income_threshold'] = sim_params.discount_income_threshold
+    
+    # Lognormal parameters
+    sim_config['lognormal_mu'] = sim_params.lognormal_mu
+    sim_config['lognormal_sigma'] = sim_params.lognormal_sigma
+    sim_config['lognormal_min'] = sim_params.lognormal_min
+    sim_config['lognormal_max'] = sim_params.lognormal_max
+    
+    # Generalised Gamma parameters
+    sim_config['gg_k'] = sim_params.gg_k
+    sim_config['gg_c'] = sim_params.gg_c
+    sim_config['gg_lambda'] = sim_params.gg_lambda
+    sim_config['gg_min'] = sim_params.gg_min
+    sim_config['gg_max'] = sim_params.gg_max
+    
+    # Dagum parameters
+    sim_config['dagum_a'] = sim_params.dagum_a
+    sim_config['dagum_p'] = sim_params.dagum_p
+    sim_config['dagum_b'] = sim_params.dagum_b
+    sim_config['dagum_min'] = sim_params.dagum_min
+    sim_config['dagum_max'] = sim_params.dagum_max
+    
+    # Market parameters - used by bid_value and other decisions
+    sim_config['market_price'] = sim_params.market_price
+    sim_config['platform_markup'] = sim_params.platform_markup
+    sim_config['price_range'] = sim_params.price_range
+    sim_config['bidding_percentage'] = sim_params.bidding_percentage
+    sim_config['num_vendors'] = sim_params.num_vendors
+    
+    # Vendor configuration parameters
+    sim_config['vendor_config_mode'] = sim_params.vendor_config_mode
+    sim_config['vendor_price_source'] = sim_params.vendor_price_source
+    sim_config['vendor_price_min'] = sim_params.vendor_price_min
+    sim_config['vendor_price_max'] = sim_params.vendor_price_max
+    sim_config['vendor_products_min'] = sim_params.vendor_products_min
+    sim_config['vendor_products_max'] = sim_params.vendor_products_max
+    sim_config['vendor_products_avg'] = sim_params.vendor_products_avg
+    
+    # Vendor carryover parameters
+    sim_config['vendor_carryover_probability'] = sim_params.vendor_carryover_probability
+    sim_config['override_carryover'] = sim_params.override_carryover
+    sim_config['global_carryover'] = sim_params.global_carryover
+    
+    # Vendor configuration data (if uploaded via CSV)
+    if hasattr(sim_params, 'vendor_config_data') and sim_params.vendor_config_data is not None:
+        sim_config['vendor_config_data'] = sim_params.vendor_config_data
+    
+    # Legacy vendor parameters (for backward compatibility)
+    sim_config['products_per_vendor'] = sim_params.products_per_vendor
+    sim_config['carryover'] = sim_params.carryover
+    if hasattr(sim_params, 'vendor_prices') and sim_params.vendor_prices is not None:
+        sim_config['vendor_prices'] = sim_params.vendor_prices
+    
+    # Time parameters
+    sim_config['periods'] = sim_params.periods
+    sim_config['duration_hours'] = sim_params.duration_hours
+    
+    # Income categories
+    sim_config['num_discount_categories'] = sim_params.num_discount_categories
+    sim_config['num_fixed_categories'] = sim_params.num_fixed_categories
+    
+    # Consumption parameters
+    sim_config['max_purchases_per_term'] = sim_params.max_purchases_per_term
+
+
+def _apply_decision_settings(orchestrator, decision_settings: dict):
+    """
+    Apply decision settings (random probabilities, defaults, etc.) to orchestrator.
+    """
+    if decision_settings:
+        if hasattr(orchestrator, 'simulation_config'):
+            orchestrator.simulation_config['random_decisions'] = decision_settings
+            orchestrator.simulation_config['default_decisions'] = decision_settings
+        else:
+            orchestrator.simulation_config = {
+                'random_decisions': decision_settings,
+                'default_decisions': decision_settings
+            }
+    
+    # Pass purchasing limits if enabled
+    if st.session_state.sim_params.apply_purchasing_limits:
+        if hasattr(orchestrator, 'simulation_config'):
+            orchestrator.simulation_config['purchasing_limits'] = st.session_state.sim_params.purchasing_limits
+        else:
+            orchestrator.simulation_config = {
+                'purchasing_limits': st.session_state.sim_params.purchasing_limits
+            }
+    
+    # Pass information about custom vs default decisions
+    if hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
+        if not hasattr(orchestrator, 'simulation_config'):
+            orchestrator.simulation_config = {}
+        orchestrator.simulation_config['custom_decisions'] = st.session_state.custom_decisions
+        orchestrator.simulation_config['default_decisions_list'] = st.session_state.default_decisions
+
+
+def _apply_donation_config(orchestrator, pop_mode: str, inc_mode: str):
+    """
+    Apply donation-specific configuration to orchestrator.
+    
+    Handles income mode, stochastic settings, anchor weights, and coefficients.
+    """
+    if not hasattr(orchestrator, 'config') or 'donation_default' not in orchestrator.config:
+        return
+    
+    if pop_mode == "depvar":
+        return  # depvar mode doesn't use these settings
+    
+    donation_config = orchestrator.config['donation_default']
+    
+    # Set income_mode in both legacy and new locations for compatibility
+    donation_config['regression']['income_mode'] = inc_mode
+    if 'regression_coefficients' not in donation_config:
+        donation_config['regression_coefficients'] = {}
+    donation_config['regression_coefficients']['income_mode'] = inc_mode
+    
+    # Set stochastic flag for copula mode if checkbox is enabled
+    if pop_mode == "copula":
+        donation_config['stochastic']['in_copula'] = st.session_state.sigma_in_copula
+    
+    # Apply sigma value based on mode and user preferences
+    if pop_mode == "documentation" and not st.session_state.sigma_in_research:
+        # Research mode with sigma disabled - set to 0
+        donation_config['stochastic']['sigma_value'] = 0.0
+    else:
+        # Apply selected sigma value
+        donation_config['stochastic']['sigma_value'] = st.session_state.sigma_value_ui
+    
+    # Apply chosen anchor weights
+    donation_config['anchor_weights']['observed'] = st.session_state.anchor_observed_weight
+    donation_config['anchor_weights']['predicted'] = 1 - st.session_state.anchor_observed_weight
+    
+    # Apply selected donation configuration if exists
+    if hasattr(st.session_state, 'selected_donation_config'):
+        apply_selected_donation_config(orchestrator, pop_mode, inc_mode)
+    # Fallback: Apply custom regression coefficients if they exist
+    elif hasattr(st.session_state, 'custom_coefficients') and 'donation_default' in st.session_state.custom_coefficients:
+        custom_coeffs = st.session_state.custom_coefficients['donation_default']
+        if 'regression_coefficients' not in donation_config:
+            donation_config['regression_coefficients'] = {}
+        donation_config['regression_coefficients'].update(custom_coeffs)
+        donation_config['regression_coefficients']['income_mode'] = inc_mode
+    # NEW FALLBACK: Use current session state coefficients if no custom coefficients are set
+    else:
+        from app.models import load_donation_coefficients_from_yaml
+        if 'donation_coeff_intercept' not in st.session_state:
+            load_donation_coefficients_from_yaml()
+        
+        from app.pages.decision_execution import get_current_coefficients
+        current_coeffs = get_current_coefficients()
+        current_coeffs['income_mode'] = inc_mode
+        
+        if 'regression_coefficients' not in donation_config:
+            donation_config['regression_coefficients'] = {}
+        donation_config['regression_coefficients'].update(current_coeffs)
+
+
+# =============================================================================
+# MODE RUNNER FUNCTIONS - Each mode encapsulates its own agent sampling
+# =============================================================================
+
+def run_copula_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: dict,
+                    single_decision=None) -> pd.DataFrame:
+    """
+    Run simulation in Copula mode.
+    
+    - Uses synthetic agents sampled from copula
+    - Uses regular Orchestrator
+    """
+    # 1. Sample copula agents
+    trait_engine = TraitEngine()
+    agents_df = trait_engine.sample(n_agents, seed)
+    
+    # 2. Create orchestrator
+    orchestrator = Orchestrator()
+    
+    # 3. Apply configurations
+    _apply_donation_config(orchestrator, "copula", inc_mode)
+    _apply_simulation_params(orchestrator)
+    _apply_decision_settings(orchestrator, decision_settings)
+    
+    # 4. Run simulation
+    return orchestrator.run_simulation(n_agents, seed, single_decision, agents_df=agents_df)
+
+
+def run_research_spec_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: dict,
+                           single_decision=None) -> pd.DataFrame:
+    """
+    Run simulation in Research Specification mode.
+    
+    - Uses original 280 participants
+    - Uses OrchestratorDocMode (stochastic version)
+    """
+    # 1. Load original participants
+    agents_df = _load_original_participants(n_agents, seed)
+    
+    # 2. Create orchestrator
+    orchestrator = OrchestratorDocMode()
+    
+    # 3. Apply configurations
+    _apply_donation_config(orchestrator, "documentation", inc_mode)
+    _apply_simulation_params(orchestrator)
+    _apply_decision_settings(orchestrator, decision_settings)
+    
+    # 4. Run simulation
+    return orchestrator.run_simulation(n_agents, seed, single_decision, agents_df=agents_df)
+
+
+def run_research_baseline_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: dict,
+                               single_decision=None) -> pd.DataFrame:
+    """
+    Run simulation in Research Baseline mode.
+    
+    - Uses original 280 participants
+    - Uses OrchestratorBaseline (deterministic anchor)
+    """
+    # 1. Load original participants
+    agents_df = _load_original_participants(n_agents, seed)
+    
+    # 2. Create orchestrator
+    orchestrator = OrchestratorBaseline()
+    
+    # 3. Apply configurations
+    _apply_donation_config(orchestrator, "baseline", inc_mode)
+    _apply_simulation_params(orchestrator)
+    _apply_decision_settings(orchestrator, decision_settings)
+    
+    # 4. Run simulation
+    return orchestrator.run_simulation(n_agents, seed, single_decision, agents_df=agents_df)
+
+
+def run_depvar_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: dict,
+                    single_decision=None) -> pd.DataFrame:
+    """
+    Run simulation in Dependent Variable Resampling mode.
+    
+    - No agent sampling (resamples outcomes only)
+    - Uses OrchestratorDepVar
+    """
+    # 1. No agent sampling for depvar mode
+    
+    # 2. Create orchestrator
+    orchestrator = OrchestratorDepVar()
+    
+    # 3. Apply configurations (no donation config for depvar)
+    _apply_simulation_params(orchestrator)
+    _apply_decision_settings(orchestrator, decision_settings)
+    
+    # 4. Run simulation
+    return orchestrator.run_simulation(n_agents, seed, single_decision)
+
+
+# =============================================================================
+# MODE DISPATCHER - Maps mode names to runner functions
+# =============================================================================
+
+MODE_RUNNERS = {
+    "copula": run_copula_mode,
+    "documentation": run_research_spec_mode,
+    "baseline": run_research_baseline_mode,
+    "depvar": run_depvar_mode,
+}
+
+
+def get_pop_type(population_mode: str) -> str:
+    """Map UI population mode name to internal type."""
+    return {
+        "Copula (synthetic)": "copula",
+        "Research Specification": "documentation",
+        "Research Baseline": "baseline",
+        "Dependent variable resampling": "depvar",
+    }.get(population_mode, "copula")
+
+
+def get_inc_mode(income_spec_mode: str) -> str:
+    """Map UI income mode name to internal type."""
+    if "continuous" in income_spec_mode.lower():
+        return "continuous"
+    return "categorical"
 
 
 def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[str]]:
@@ -297,219 +619,60 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
 
 
 def run_simulation_from_sidebar():
-    """Run simulation using original app.py logic"""
+    """
+    Run simulation using mode runner functions.
+    
+    Each population mode (Copula, Research Spec, Research Baseline, DepVar) 
+    uses its own dedicated runner function that encapsulates:
+    - Agent sampling (mode-appropriate)
+    - Orchestrator creation
+    - Configuration application
+    
+    This ensures consistent behavior across all code paths.
+    """
     try:
-        with st.spinner("🔄 Generating synthetic agents and running simulation..."):
-            # Helper to run simulation with chosen orchestrator and income mode
-            def _run(pop_mode: str, inc_mode: str, prob_settings=None, agents_df=None):
-                # Initialize appropriate orchestrator
-                if pop_mode == "documentation":
-                    orchestrator = OrchestratorDocMode()
-                elif pop_mode == "depvar":
-                    orchestrator = OrchestratorDepVar()
-                elif pop_mode == "baseline":
-                    from src.orchestrator_baseline import OrchestratorBaseline
-                    orchestrator = OrchestratorBaseline()
-                else:  # copula
-                    orchestrator = Orchestrator()
-                
-                # Override income specification in config based on choice (not for depvar mode)
-                if hasattr(orchestrator, 'config') and 'donation_default' in orchestrator.config:
-                    if pop_mode != "depvar":  # depvar mode doesn't use these settings
-                        # Set income_mode in both legacy and new locations for compatibility
-                        orchestrator.config['donation_default']['regression']['income_mode'] = inc_mode
-                        if 'regression_coefficients' not in orchestrator.config['donation_default']:
-                            orchestrator.config['donation_default']['regression_coefficients'] = {}
-                        orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = inc_mode
-                        # Set stochastic flag for copula mode if checkbox is enabled
-                        if pop_mode == "copula":
-                            orchestrator.config['donation_default']['stochastic']['in_copula'] = st.session_state.sigma_in_copula
-                        
-                        # Apply sigma value based on mode and user preferences
-                        if pop_mode == "documentation" and not st.session_state.sigma_in_research:
-                            # Research mode with sigma disabled - set to 0
-                            orchestrator.config['donation_default']['stochastic']['sigma_value'] = 0.0
-                        else:
-                            # Apply selected sigma value
-                            orchestrator.config['donation_default']['stochastic']['sigma_value'] = st.session_state.sigma_value_ui
-                        # Apply chosen anchor weights
-                        orchestrator.config['donation_default']['anchor_weights']['observed'] = st.session_state.anchor_observed_weight
-                        orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - st.session_state.anchor_observed_weight
-                        
-                        if hasattr(st.session_state, 'selected_donation_config'):
-                            apply_selected_donation_config(orchestrator, pop_mode, inc_mode)
-                        # Fallback: Apply custom regression coefficients if they exist
-                        elif hasattr(st.session_state, 'custom_coefficients') and 'donation_default' in st.session_state.custom_coefficients:
-                            custom_coeffs = st.session_state.custom_coefficients['donation_default']
-                            # CRITICAL FIX: Update the NESTED structure, not flat keys
-                            # donation_default.py ignores flat keys when nested keys exist
-                            apply_coefficients_to_nested_config(orchestrator, custom_coeffs, inc_mode)
-                        # NEW FALLBACK: Use current session state coefficients if no custom coefficients are set
-                        else:
-                            # Ensure session state coefficients are loaded from YAML
-                            from app.models import load_donation_coefficients_from_yaml
-                            if 'donation_coeff_intercept' not in st.session_state:
-                                load_donation_coefficients_from_yaml()
-                            
-                            # Collect current coefficients from session state (loaded from YAML on app start)
-                            from app.pages.decision_execution import get_current_coefficients
-                            current_coeffs = get_current_coefficients()
-                            
-                            # CRITICAL FIX: Update the NESTED structure, not flat keys
-                            apply_coefficients_to_nested_config(orchestrator, current_coeffs, inc_mode)
-                
-                # CRITICAL: Override YAML defaults with Page 1 UI parameters
-                # This ensures user-configured values from Page 1 take precedence over config/simulation.yaml
-                if hasattr(orchestrator, 'simulation_config'):
-                    if 'simulation' not in orchestrator.simulation_config:
-                        orchestrator.simulation_config['simulation'] = {}
-                    
-                    # Copy ALL Page 1 parameters from session state to override YAML defaults
-                    sim_params = st.session_state.sim_params
-                    
-                    # Income distribution parameters - CRITICAL for disclose_documents eligibility
-                    orchestrator.simulation_config['simulation']['income_distribution'] = sim_params.income_distribution
-                    orchestrator.simulation_config['simulation']['discount_income_threshold'] = sim_params.discount_income_threshold
-                    
-                    # Lognormal parameters
-                    orchestrator.simulation_config['simulation']['lognormal_mu'] = sim_params.lognormal_mu
-                    orchestrator.simulation_config['simulation']['lognormal_sigma'] = sim_params.lognormal_sigma
-                    orchestrator.simulation_config['simulation']['lognormal_min'] = sim_params.lognormal_min
-                    orchestrator.simulation_config['simulation']['lognormal_max'] = sim_params.lognormal_max
-                    
-                    # Generalised Gamma parameters
-                    orchestrator.simulation_config['simulation']['gg_k'] = sim_params.gg_k
-                    orchestrator.simulation_config['simulation']['gg_c'] = sim_params.gg_c
-                    orchestrator.simulation_config['simulation']['gg_lambda'] = sim_params.gg_lambda
-                    orchestrator.simulation_config['simulation']['gg_min'] = sim_params.gg_min
-                    orchestrator.simulation_config['simulation']['gg_max'] = sim_params.gg_max
-                    
-                    # Dagum parameters
-                    orchestrator.simulation_config['simulation']['dagum_a'] = sim_params.dagum_a
-                    orchestrator.simulation_config['simulation']['dagum_p'] = sim_params.dagum_p
-                    orchestrator.simulation_config['simulation']['dagum_b'] = sim_params.dagum_b
-                    orchestrator.simulation_config['simulation']['dagum_min'] = sim_params.dagum_min
-                    orchestrator.simulation_config['simulation']['dagum_max'] = sim_params.dagum_max
-                    
-                    # Market parameters - used by bid_value and other decisions
-                    orchestrator.simulation_config['simulation']['market_price'] = sim_params.market_price
-                    orchestrator.simulation_config['simulation']['platform_markup'] = sim_params.platform_markup
-                    orchestrator.simulation_config['simulation']['price_range'] = sim_params.price_range
-                    orchestrator.simulation_config['simulation']['bidding_percentage'] = sim_params.bidding_percentage
-                    orchestrator.simulation_config['simulation']['num_vendors'] = sim_params.num_vendors
-                    
-                    # Vendor configuration parameters - CRITICAL for vendor generation
-                    # Without these, orchestrator falls back to YAML defaults regardless of UI settings
-                    orchestrator.simulation_config['simulation']['vendor_config_mode'] = sim_params.vendor_config_mode
-                    orchestrator.simulation_config['simulation']['vendor_price_source'] = sim_params.vendor_price_source
-                    
-                    # Vendor pricing parameters (for random generation)
-                    orchestrator.simulation_config['simulation']['vendor_price_min'] = sim_params.vendor_price_min
-                    orchestrator.simulation_config['simulation']['vendor_price_max'] = sim_params.vendor_price_max
-                    
-                    # Vendor products parameters (for random generation)
-                    # These control quantity_offered per vendor, which determines total market supply
-                    orchestrator.simulation_config['simulation']['vendor_products_min'] = sim_params.vendor_products_min
-                    orchestrator.simulation_config['simulation']['vendor_products_max'] = sim_params.vendor_products_max
-                    orchestrator.simulation_config['simulation']['vendor_products_avg'] = sim_params.vendor_products_avg
-                    
-                    # Vendor carryover parameters
-                    orchestrator.simulation_config['simulation']['vendor_carryover_probability'] = sim_params.vendor_carryover_probability
-                    orchestrator.simulation_config['simulation']['override_carryover'] = sim_params.override_carryover
-                    orchestrator.simulation_config['simulation']['global_carryover'] = sim_params.global_carryover
-                    
-                    # Vendor configuration data (if uploaded via CSV)
-                    if hasattr(sim_params, 'vendor_config_data') and sim_params.vendor_config_data is not None:
-                        orchestrator.simulation_config['simulation']['vendor_config_data'] = sim_params.vendor_config_data
-                    
-                    # Legacy vendor parameters (for backward compatibility)
-                    orchestrator.simulation_config['simulation']['products_per_vendor'] = sim_params.products_per_vendor
-                    orchestrator.simulation_config['simulation']['carryover'] = sim_params.carryover
-                    if hasattr(sim_params, 'vendor_prices') and sim_params.vendor_prices is not None:
-                        orchestrator.simulation_config['simulation']['vendor_prices'] = sim_params.vendor_prices
-                    
-                    # Time parameters
-                    orchestrator.simulation_config['simulation']['periods'] = sim_params.periods
-                    orchestrator.simulation_config['simulation']['duration_hours'] = sim_params.duration_hours
-                    
-                    # Income categories
-                    orchestrator.simulation_config['simulation']['num_discount_categories'] = sim_params.num_discount_categories
-                    orchestrator.simulation_config['simulation']['num_fixed_categories'] = sim_params.num_fixed_categories
-                    
-                    # Consumption parameters
-                    orchestrator.simulation_config['simulation']['max_purchases_per_term'] = sim_params.max_purchases_per_term
-                
-                # Ensure all orchestrators have decision settings available
-                if prob_settings:
-                    # For orchestrators with simulation_config
-                    if hasattr(orchestrator, 'simulation_config'):
-                        # Store both as 'random_decisions' (for backward compatibility) 
-                        # and 'default_decisions' (for all decision types)
-                        orchestrator.simulation_config['random_decisions'] = prob_settings
-                        orchestrator.simulation_config['default_decisions'] = prob_settings
-                    else:
-                        # For orchestrators without simulation_config, create minimal config
-                        orchestrator.simulation_config = {
-                            'random_decisions': prob_settings,
-                            'default_decisions': prob_settings
-                        }
-                
-                # Pass purchasing limits to orchestrator if enabled
-                if st.session_state.sim_params.apply_purchasing_limits:
-                    if hasattr(orchestrator, 'simulation_config'):
-                        orchestrator.simulation_config['purchasing_limits'] = st.session_state.sim_params.purchasing_limits
-                    else:
-                        orchestrator.simulation_config = {
-                            'purchasing_limits': st.session_state.sim_params.purchasing_limits
-                        }
-                
-                # Also pass information about which decisions are custom vs default
-                # This helps decision modules know whether to use custom parameters or configured defaults
-                if hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
-                    if not hasattr(orchestrator, 'simulation_config'):
-                        orchestrator.simulation_config = {}
-                    orchestrator.simulation_config['custom_decisions'] = st.session_state.custom_decisions
-                    orchestrator.simulation_config['default_decisions_list'] = st.session_state.default_decisions
-                
-                # Handle multiple decisions
-                decision_param = None if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS) else st.session_state.decision_params.selected_decisions
-                # Determine correct seed (prefer input widget value to avoid sync issues)
-                if st.session_state.sim_params.simulation_mode == "Single Run":
-                    seed_val = st.session_state.get('seed_input', st.session_state.seed)
-                else:
-                    seed_val = st.session_state.get('base_seed_input', st.session_state.base_seed)
-                
-                return orchestrator.run_simulation(
-                    n_agents=st.session_state.n_agents,
-                    seed=seed_val,
-                    single_decision=decision_param,
-                    agents_df=agents_df  # Pass pre-sampled agents for consistency
-                )
+        with st.spinner("🔄 Running simulation..."):
+            # Get common parameters
+            n_agents = st.session_state.n_agents
+            if st.session_state.sim_params.simulation_mode == "Single Run":
+                seed = st.session_state.get('seed_input', st.session_state.seed)
+            else:
+                seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
             
-            # CRITICAL FIX: Apply selected donation configuration BEFORE determining result variants
-            # This ensures we generate only the selected configuration, not all variants
+            # Determine which decisions to run
+            single_decision = None if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS) else st.session_state.decision_params.selected_decisions
+            
+            # Apply selected donation configuration BEFORE determining result variants
             if hasattr(st.session_state, 'selected_donation_config'):
                 config = st.session_state.selected_donation_config
                 
-                # Show user that we're using selected configuration
                 st.info(f"🎯 Using selected donation configuration: {config['population_mode']} + {config['income_spec_mode']}")
                 
-                # Override session state variables that control result generation
+                # CRITICAL: Use the original seed from when the config was generated
+                # This ensures identical agent sampling and RNG state
+                if 'original_seed' in config:
+                    seed = config['original_seed']
+                    st.caption(f"🔑 Using original seed: {seed}")
+                if 'original_n_agents' in config:
+                    n_agents = config['original_n_agents']
+                    st.caption(f"👥 Using original agent count: {n_agents}")
+                
+                # Store original values for restoration
                 if not hasattr(st.session_state, '_original_population_mode'):
                     st.session_state._original_population_mode = st.session_state.population_mode
                     st.session_state._original_income_spec_mode = st.session_state.income_spec_mode
                 
-                # Override to match selected configuration - this controls how many results are generated
+                # Override to match selected configuration
                 st.session_state.population_mode = config['population_mode']
                 st.session_state.income_spec_mode = config['income_spec_mode']
             
-            # Collect current decision settings for all default decisions
-            random_decision_probabilities = collect_decision_settings()
+            # Collect current decision settings
+            decision_settings = collect_decision_settings()
             
             # Debug: Show decision settings being applied
-            if random_decision_probabilities:
+            if decision_settings:
                 setting_info = []
-                for decision, settings in random_decision_probabilities.items():
+                for decision, settings in decision_settings.items():
                     decision_type = settings.get('type')
                     if decision_type == 'random_probability':
                         prob_y = settings['probability_y']
@@ -529,7 +692,6 @@ def run_simulation_from_sidebar():
                         setting_info.append(f"{decision}: {selected}")
                     elif decision_type == 'numeric':
                         value = settings.get('value', 0)
-                        # Format as percentage if it's between 0 and 1
                         try:
                             float_value = float(value)
                             if 0 <= float_value <= 1:
@@ -537,164 +699,70 @@ def run_simulation_from_sidebar():
                             else:
                                 setting_info.append(f"{decision}: {float_value}")
                         except (ValueError, TypeError):
-                            # If value can't be converted to float, just display as is
                             setting_info.append(f"{decision}: {value}")
                     elif decision_type == 'placeholder':
                         value = settings.get('value', 'default')
-                        # These are placeholder strings like "RANDOM_WITHIN_LIMIT", "NA", etc.
                         setting_info.append(f"{decision}: {value}")
                 
                 if setting_info:
                     st.success(f"🎲 Using configured defaults: {', '.join(setting_info)}")
-                    # Also print to console for debugging
-                    # print(f"[DEBUG] Decision settings: {random_decision_probabilities}")
             
-            # CRITICAL FIX: Pre-sample agents ONCE for all configurations
-            # This ensures agent alignment across different income/population modes
-            agents_df = None
-            n_agents = st.session_state.n_agents
-            seed = st.session_state.seed if st.session_state.sim_params.simulation_mode == "Single Run" else st.session_state.base_seed
-            
-            # Determine which type of agents to use based on population mode
-            if st.session_state.population_mode == "Dependent variable resampling":
-                # DepVar mode doesn't use agents (only resamples outcomes)
-                agents_df = None
-            elif st.session_state.population_mode in ["Research Specification", "Research Baseline"]:
-                # Load original 280 participants for research modes
-                from src.orchestrator_baseline import OrchestratorBaseline
-                temp_orchestrator = OrchestratorBaseline()
-                if n_agents <= len(temp_orchestrator.original_data):
-                    agents_df = temp_orchestrator.original_data.iloc[:n_agents].copy()
-                else:
-                    # Bootstrap sample if more agents requested than available
-                    rng = np.random.default_rng(seed)
-                    indices = rng.choice(len(temp_orchestrator.original_data), size=n_agents, replace=True)
-                    agents_df = temp_orchestrator.original_data.iloc[indices].copy()
-                    agents_df.index = range(len(agents_df))
-                st.info(f"📊 Using {len(agents_df)} agents from original participant data")
-            elif st.session_state.population_mode == "Compare all":
-                # For comparison mode, we need to decide: use copula or research participants?
-                # Default to copula for synthetic diversity
-                from src.trait_engine import TraitEngine
-                trait_engine = TraitEngine()
-                agents_df = trait_engine.sample(n_agents, seed)
-                st.info(f"🎲 Sampled {len(agents_df)} synthetic agents from copula for comparison")
-            else:  # Copula (synthetic)
-                # Sample from copula for single copula mode
-                from src.trait_engine import TraitEngine
-                trait_engine = TraitEngine()
-                agents_df = trait_engine.sample(n_agents, seed)
-                st.info(f"🎲 Sampled {len(agents_df)} synthetic agents from copula")
-            
-            # Run based on population and income specification modes
+            # =================================================================
+            # RUN SIMULATION USING MODE RUNNERS
+            # Each mode uses its natural agent source - no more agent mismatch!
+            # =================================================================
             results = {}
             
             if st.session_state.population_mode == "Compare all":
-                # Compare all three population modes - each uses its OWN appropriate agent source
-                # This ensures that when user selects a configuration, running it alone gives same results
+                # Compare all three population modes - each uses its natural agent source
+                st.info("🔄 Running Compare All mode - each population uses its natural agent source")
                 
-                # Pre-sample agents for each population mode
-                from src.trait_engine import TraitEngine
-                from src.orchestrator_baseline import OrchestratorBaseline
-                
-                # Copula agents
-                trait_engine = TraitEngine()
-                copula_agents = trait_engine.sample(n_agents, seed)
-                
-                # Research participants (used by both Spec and Baseline)
-                temp_orchestrator = OrchestratorBaseline()
-                if n_agents <= len(temp_orchestrator.original_data):
-                    research_agents = temp_orchestrator.original_data.iloc[:n_agents].copy()
-                else:
-                    rng = np.random.default_rng(seed)
-                    indices = rng.choice(len(temp_orchestrator.original_data), size=n_agents, replace=True)
-                    research_agents = temp_orchestrator.original_data.iloc[indices].copy()
-                    research_agents.index = range(len(research_agents))
-                
-                st.info(f"📊 Compare All: Using {len(copula_agents)} copula agents + {len(research_agents)} research participants")
-                
-                # Map population type to appropriate agents
-                agents_map = {
-                    "copula": copula_agents,
-                    "documentation": research_agents,  # Research Spec
-                    "baseline": research_agents        # Research Baseline
-                }
-                
-                for pop_name, pop_type in [("copula", "copula"), ("research_spec", "documentation"), ("research_baseline", "baseline")]:
-                    pop_agents = agents_map[pop_type]
+                for result_name, pop_type in [("copula", "copula"), ("research_spec", "documentation"), ("research_baseline", "baseline")]:
+                    runner = MODE_RUNNERS[pop_type]
+                    
                     if st.session_state.income_spec_mode == "Compare both":
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, pop_agents)
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, pop_agents)
+                        results[f"{result_name}_categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
+                        results[f"{result_name}_continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
                     elif st.session_state.income_spec_mode == "continuous only":
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, pop_agents)
+                        results[f"{result_name}_continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
                     else:  # categorical only
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, pop_agents)
+                        results[f"{result_name}_categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
+            
             elif st.session_state.population_mode == "Dependent variable resampling":
-                # Dependent variable mode - only one result regardless of income spec
-                results["depvar"] = _run("depvar", "categorical", random_decision_probabilities, agents_df)  # income mode is ignored, agents_df is None
+                # DepVar mode
+                results["depvar"] = run_depvar_mode(n_agents, seed, "categorical", decision_settings, single_decision)
+            
             else:
-                # Single population mode
-                if st.session_state.population_mode == "Research Specification":
-                    pop_type = "documentation"
-                elif st.session_state.population_mode == "Research Baseline":
-                    pop_type = "baseline"
-                else:  # Copula (synthetic)
-                    pop_type = "copula"
+                # Single population mode - use the appropriate runner
+                pop_type = get_pop_type(st.session_state.population_mode)
+                runner = MODE_RUNNERS[pop_type]
+                
+                # Show which agent source is being used
+                if pop_type == "copula":
+                    st.info(f"🎲 Using synthetic agents from copula")
+                elif pop_type in ["documentation", "baseline"]:
+                    st.info(f"📊 Using original 280 participants")
                     
                 if st.session_state.income_spec_mode == "Compare both":
-                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
-                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
+                    results["categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
+                    results["continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
                 elif st.session_state.income_spec_mode == "continuous only":
-                    results["continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
+                    results["continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
                 else:  # categorical only
-                    results["categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
+                    results["categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
             
-            # COMMENTED OUT: Auto-save to parquet file (redundant with Results page Excel export)
-            # Uncomment if needed for batch processing or programmatic access
-            # if st.session_state.save_results:
-            #     output_dir = Path("outputs")
-            #     output_dir.mkdir(exist_ok=True)
-            #     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            #     # Create decision suffix for filename
-            #     if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS):
-            #         decision_suffix = "_all"
-            #     elif len(st.session_state.decision_params.selected_decisions) == 1:
-            #         decision_suffix = f"_{st.session_state.decision_params.selected_decisions[0]}"
-            #     else:
-            #         decision_suffix = f"_{len(st.session_state.decision_params.selected_decisions)}decisions"
-            #     
-            #     for mode, df in results.items():
-            #         filename = f"enhanced_simulation_{mode}_seed{st.session_state.seed if st.session_state.sim_params.simulation_mode == 'Single Run' else st.session_state.base_seed}_agents{st.session_state.n_agents}{decision_suffix}_{timestamp}.parquet"
-            #         filepath = output_dir / filename
-            #         
-            #         # Prepare DataFrame for parquet saving
-            #         # Parquet can't handle complex nested structures, so convert purchase_requests to JSON
-            #         df_to_save = df.copy()
-            #         if 'purchase_requests' in df_to_save.columns:
-            #             import json
-            #             df_to_save['purchase_requests'] = df_to_save['purchase_requests'].apply(
-            #                 lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x)
-            #             )
-            #         
-            #         df_to_save.to_parquet(filepath, index=False)
-            #     
-            #     st.sidebar.caption(f"✅ Results saved with timestamp {timestamp}")
-            
+            # Store results
             st.session_state.simulation_results = results
             
-            # Extract and store vendor data from first DataFrame for easy access in results visualization
-            # (All DataFrames should have the same vendor data in their attrs)
+            # Extract and store vendor data from first DataFrame
             for df in results.values():
                 if hasattr(df, 'attrs') and 'vendors' in df.attrs:
                     st.session_state.vendors = df.attrs['vendors']
                     break
             
-            # Add a flag to indicate we're using selected configuration
+            # Add flag to indicate we're using selected configuration
             if hasattr(st.session_state, 'selected_donation_config'):
                 st.session_state._using_selected_config = True
-            
-            # DON'T restore session state here - we need the results page to see the selected configuration values
-            # The restoration will happen when navigating away from results
             
             st.session_state.page = 'results'
             st.rerun()
@@ -908,99 +976,17 @@ def run_simulation():
     # Simulation will be triggered on results page
 
 
-def apply_coefficients_to_nested_config(orchestrator, coeffs, inc_mode):
-    """Apply flat coefficient dictionary to the orchestrator's NESTED config structure.
-    
-    CRITICAL: donation_default.py checks for nested 'categorical'/'continuous' keys first.
-    If they exist, flat keys at the top level are IGNORED. This function ensures
-    coefficients are applied to the correct nested structure.
-    
-    Args:
-        orchestrator: The orchestrator instance
-        coeffs: Flat dictionary of coefficients from get_current_coefficients()
-        inc_mode: Income mode string (e.g., 'categorical', 'continuous')
-    """
-    if 'regression_coefficients' not in orchestrator.config['donation_default']:
-        orchestrator.config['donation_default']['regression_coefficients'] = {}
-    
-    reg_coeffs = orchestrator.config['donation_default']['regression_coefficients']
-    
-    # Check if nested structure exists (YAML format)
-    if 'categorical' in reg_coeffs and 'continuous' in reg_coeffs:
-        # Update the appropriate NESTED structure based on income mode
-        if 'continuous' in inc_mode.lower():
-            target = reg_coeffs['continuous']
-        else:
-            target = reg_coeffs['categorical']
-        
-        # Apply coefficients to the nested target
-        if 'intercept' in coeffs:
-            target['intercept'] = coeffs['intercept']
-        if 'beta_hh' in coeffs:
-            target['beta_hh'] = coeffs['beta_hh']
-        if 'beta_income_linear' in coeffs:
-            target['beta_income_linear'] = coeffs['beta_income_linear']
-        if 'beta_group' in coeffs:
-            target['beta_group'] = coeffs['beta_group']
-        if 'beta_income_q' in coeffs:
-            target['beta_income_q'] = coeffs['beta_income_q']
-        if 'beta_study' in coeffs:
-            target['beta_study'] = coeffs['beta_study']
-    else:
-        # Legacy flat structure - just update directly
-        reg_coeffs.update(coeffs)
-    
-    # Always set income_mode to ensure correct coefficient selection
-    reg_coeffs['income_mode'] = inc_mode
-
-
 def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
-    """Apply the selected donation configuration to the orchestrator
-    
-    IMPORTANT: The YAML config has a NESTED structure with 'categorical' and 'continuous' keys,
-    but the saved configuration from get_current_coefficients() is a FLAT dictionary.
-    We must update the appropriate NESTED structure (categorical or continuous) based on inc_mode,
-    not just add flat keys to the top level (which would be ignored by donation_default.py).
-    """
+    """Apply the selected donation configuration to the orchestrator"""
     
     config = st.session_state.selected_donation_config
     
-    # Override coefficients - MUST update the NESTED structure
+    # Override coefficients
     if 'regression_coefficients' not in orchestrator.config['donation_default']:
         orchestrator.config['donation_default']['regression_coefficients'] = {}
     
-    reg_coeffs = orchestrator.config['donation_default']['regression_coefficients']
-    saved_coeffs = config['coefficients']
-    
-    # Determine which nested structure to update based on income mode
-    # The YAML has 'categorical' and 'continuous' nested keys
-    if 'categorical' in reg_coeffs and 'continuous' in reg_coeffs:
-        # Update the appropriate NESTED structure based on current income mode
-        if 'continuous' in inc_mode.lower():
-            # Update continuous coefficients
-            reg_coeffs['continuous']['intercept'] = saved_coeffs.get('intercept', reg_coeffs['continuous'].get('intercept'))
-            reg_coeffs['continuous']['beta_hh'] = saved_coeffs.get('beta_hh', reg_coeffs['continuous'].get('beta_hh'))
-            reg_coeffs['continuous']['beta_income_linear'] = saved_coeffs.get('beta_income_linear', reg_coeffs['continuous'].get('beta_income_linear', 0.0))
-            if 'beta_group' in saved_coeffs:
-                reg_coeffs['continuous']['beta_group'] = saved_coeffs['beta_group']
-            if 'beta_study' in saved_coeffs:
-                reg_coeffs['continuous']['beta_study'] = saved_coeffs['beta_study']
-        else:
-            # Update categorical coefficients (default)
-            reg_coeffs['categorical']['intercept'] = saved_coeffs.get('intercept', reg_coeffs['categorical'].get('intercept'))
-            reg_coeffs['categorical']['beta_hh'] = saved_coeffs.get('beta_hh', reg_coeffs['categorical'].get('beta_hh'))
-            if 'beta_group' in saved_coeffs:
-                reg_coeffs['categorical']['beta_group'] = saved_coeffs['beta_group']
-            if 'beta_income_q' in saved_coeffs:
-                reg_coeffs['categorical']['beta_income_q'] = saved_coeffs['beta_income_q']
-            if 'beta_study' in saved_coeffs:
-                reg_coeffs['categorical']['beta_study'] = saved_coeffs['beta_study']
-    else:
-        # Fallback: flat structure (legacy format) - just update directly
-        reg_coeffs.update(saved_coeffs)
-    
-    # Always set income_mode to ensure correct coefficient selection in donation_default.py
-    reg_coeffs['income_mode'] = inc_mode
+    # Apply all coefficients from selected configuration
+    orchestrator.config['donation_default']['regression_coefficients'].update(config['coefficients'])
     
     # Set income mode to match current simulation mode (not necessarily the selected one)
     # This allows users to run different income modes with the same coefficient set

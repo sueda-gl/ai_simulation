@@ -130,6 +130,13 @@ class OrchestratorBaseline:
         # All modes use same seed here, ensuring identical agent RNG derivation
         rng_global = np.random.default_rng(seed + 1000000)
         
+        # Create decision index mapping for deterministic RNG seeding
+        # This ensures each decision gets the same RNG regardless of which decisions run
+        decision_index = {name: i for i, name in enumerate(self.decision_order)}
+        
+        # Import income utility for pre-generation
+        from src.decisions.income_utils import get_agent_income
+        
         # Process each agent
         results = []
         
@@ -142,23 +149,16 @@ class OrchestratorBaseline:
             
             agent_results = agent_state.copy()
             
-            # Run each decision in order - use per-decision RNG for consistency
-            # This ensures each decision gets the same random state regardless of
-            # which other decisions are run (critical for individual vs full simulation runs)
-            for decision_idx, decision_name in enumerate(self.decision_order):
-                # Create per-decision RNG using DETERMINISTIC seed based on:
-                # - Global seed (same for all runs with same seed)
-                # - Agent index (deterministic from data order)
-                # - Decision index (fixed position in decision_order)
-                # This ensures IDENTICAL RNG state for each decision regardless of
-                # which other decisions are run (critical for individual vs full runs)
-                deterministic_seed = seed + (idx * 100000) + (decision_idx * 1000)
-                decision_rng = np.random.default_rng(deterministic_seed)
-                
-                # Skip decisions not in the run list (decision_idx is consistent regardless)
-                if decision_name not in decisions_to_run:
-                    continue
-                
+            # Create base seed for this agent (deterministic based on agent index)
+            agent_base_seed = rng_global.integers(1e9)
+            
+            # CRITICAL FIX: Pre-generate income with a CONSISTENT RNG
+            # This ensures income is the same regardless of which decisions run
+            income_rng = np.random.default_rng(agent_base_seed + 999999)
+            get_agent_income(agent_state, self.simulation_config, income_rng)
+            
+            # Run each decision in order
+            for decision_name in decisions_to_run:
                 if decision_name in self.decision_modules:
                     decision_func = self.decision_modules[decision_name]
                     decision_params = self.config.get(decision_name, {})
@@ -172,6 +172,12 @@ class OrchestratorBaseline:
                         else:
                             decision_params_copy['stochastic'] = {'sigma_value': 0.0}
                         decision_params = decision_params_copy
+                    
+                    # CRITICAL FIX: Create decision-specific RNG
+                    # This ensures each decision sees the same RNG state regardless of
+                    # which other decisions are running
+                    decision_seed = agent_base_seed + decision_index[decision_name] * 1000
+                    decision_rng = np.random.default_rng(decision_seed)
                     
                     try:
                         # Call decision function with baseline context

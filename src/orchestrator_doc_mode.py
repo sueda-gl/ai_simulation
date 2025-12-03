@@ -133,6 +133,13 @@ class OrchestratorDocMode:
         else:
             decisions_to_run = self.decision_order
         
+        # Create decision index mapping for deterministic RNG seeding
+        # This ensures each decision gets the same RNG regardless of which decisions run
+        decision_index = {name: i for i, name in enumerate(self.decision_order)}
+        
+        # Import income utility for pre-generation
+        from src.decisions.income_utils import get_agent_income
+        
         # Process each agent
         results = []
         
@@ -146,26 +153,26 @@ class OrchestratorDocMode:
                 
                 if outcome_draws>1:
                     agent_state['draw_id']=rep+1
+                
+                # Create base seed for this agent (deterministic based on agent index and rep)
+                agent_base_seed = rng_global.integers(1e9)
+                
+                # CRITICAL FIX: Pre-generate income with a CONSISTENT RNG
+                # This ensures income is the same regardless of which decisions run
+                income_rng = np.random.default_rng(agent_base_seed + 999999)
+                get_agent_income(agent_state, self.simulation_config, income_rng)
 
-                # we postpone decision execution until after loop to capture repeats
-                # so move decision loop inside rep
-                for decision_idx, decision_name in enumerate(self.decision_order):
-                    # Create per-decision RNG using DETERMINISTIC seed based on:
-                    # - Global seed (same for all runs with same seed)
-                    # - Agent index (deterministic from data order)
-                    # - Decision index (fixed position in decision_order)
-                    # - Rep index (for outcome_draws > 1)
-                    # This ensures IDENTICAL RNG state for each decision regardless of
-                    # which other decisions are run (critical for individual vs full runs)
-                    deterministic_seed = seed + (idx * 100000) + (decision_idx * 1000) + rep
-                    decision_rng = np.random.default_rng(deterministic_seed)
-                    
-                    # Skip decisions not in the run list (decision_idx is consistent regardless)
-                    if decision_name not in decisions_to_run:
-                        continue
-                    
+                # Execute decisions with decision-specific RNGs
+                for decision_name in decisions_to_run:
                     if decision_name in self.decision_modules:
                         params = self.config.get(decision_name, {})
+                        
+                        # CRITICAL FIX: Create decision-specific RNG
+                        # This ensures each decision sees the same RNG state regardless of
+                        # which other decisions are running
+                        decision_seed = agent_base_seed + decision_index[decision_name] * 1000
+                        decision_rng = np.random.default_rng(decision_seed)
+                        
                         if decision_name == 'donation_default':
                             decision_output = self.decision_modules[decision_name](
                                 agent_state, params, decision_rng, pop_context=self.pop_context, 
