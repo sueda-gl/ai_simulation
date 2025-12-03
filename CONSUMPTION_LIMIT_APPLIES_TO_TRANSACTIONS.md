@@ -205,3 +205,5 @@ st.info(
   - Add clear documentation explaining this simplification
   - Plan for future enhancement when transaction outcomes are simulated
 
+
+

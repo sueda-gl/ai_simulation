@@ -341,13 +341,9 @@ def run_simulation_from_sidebar():
                         # Fallback: Apply custom regression coefficients if they exist
                         elif hasattr(st.session_state, 'custom_coefficients') and 'donation_default' in st.session_state.custom_coefficients:
                             custom_coeffs = st.session_state.custom_coefficients['donation_default']
-                            # Update regression_coefficients in the config
-                            if 'regression_coefficients' not in orchestrator.config['donation_default']:
-                                orchestrator.config['donation_default']['regression_coefficients'] = {}
-                            orchestrator.config['donation_default']['regression_coefficients'].update(custom_coeffs)
-                            
-                            # Ensure the income mode matches the selected specification
-                            orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = inc_mode
+                            # CRITICAL FIX: Update the NESTED structure, not flat keys
+                            # donation_default.py ignores flat keys when nested keys exist
+                            apply_coefficients_to_nested_config(orchestrator, custom_coeffs, inc_mode)
                         # NEW FALLBACK: Use current session state coefficients if no custom coefficients are set
                         else:
                             # Ensure session state coefficients are loaded from YAML
@@ -358,12 +354,9 @@ def run_simulation_from_sidebar():
                             # Collect current coefficients from session state (loaded from YAML on app start)
                             from app.pages.decision_execution import get_current_coefficients
                             current_coeffs = get_current_coefficients()
-                            current_coeffs['income_mode'] = inc_mode
                             
-                            # Update orchestrator config with current session state coefficients
-                            if 'regression_coefficients' not in orchestrator.config['donation_default']:
-                                orchestrator.config['donation_default']['regression_coefficients'] = {}
-                            orchestrator.config['donation_default']['regression_coefficients'].update(current_coeffs)
+                            # CRITICAL FIX: Update the NESTED structure, not flat keys
+                            apply_coefficients_to_nested_config(orchestrator, current_coeffs, inc_mode)
                 
                 # CRITICAL: Override YAML defaults with Page 1 UI parameters
                 # This ensures user-configured values from Page 1 take precedence over config/simulation.yaml
@@ -597,15 +590,45 @@ def run_simulation_from_sidebar():
             results = {}
             
             if st.session_state.population_mode == "Compare all":
-                # Compare all three population modes
+                # Compare all three population modes - each uses its OWN appropriate agent source
+                # This ensures that when user selects a configuration, running it alone gives same results
+                
+                # Pre-sample agents for each population mode
+                from src.trait_engine import TraitEngine
+                from src.orchestrator_baseline import OrchestratorBaseline
+                
+                # Copula agents
+                trait_engine = TraitEngine()
+                copula_agents = trait_engine.sample(n_agents, seed)
+                
+                # Research participants (used by both Spec and Baseline)
+                temp_orchestrator = OrchestratorBaseline()
+                if n_agents <= len(temp_orchestrator.original_data):
+                    research_agents = temp_orchestrator.original_data.iloc[:n_agents].copy()
+                else:
+                    rng = np.random.default_rng(seed)
+                    indices = rng.choice(len(temp_orchestrator.original_data), size=n_agents, replace=True)
+                    research_agents = temp_orchestrator.original_data.iloc[indices].copy()
+                    research_agents.index = range(len(research_agents))
+                
+                st.info(f"📊 Compare All: Using {len(copula_agents)} copula agents + {len(research_agents)} research participants")
+                
+                # Map population type to appropriate agents
+                agents_map = {
+                    "copula": copula_agents,
+                    "documentation": research_agents,  # Research Spec
+                    "baseline": research_agents        # Research Baseline
+                }
+                
                 for pop_name, pop_type in [("copula", "copula"), ("research_spec", "documentation"), ("research_baseline", "baseline")]:
+                    pop_agents = agents_map[pop_type]
                     if st.session_state.income_spec_mode == "Compare both":
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, pop_agents)
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, pop_agents)
                     elif st.session_state.income_spec_mode == "continuous only":
-                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, agents_df)
+                        results[f"{pop_name}_continuous"] = _run(pop_type, "continuous", random_decision_probabilities, pop_agents)
                     else:  # categorical only
-                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, agents_df)
+                        results[f"{pop_name}_categorical"] = _run(pop_type, "categorical", random_decision_probabilities, pop_agents)
             elif st.session_state.population_mode == "Dependent variable resampling":
                 # Dependent variable mode - only one result regardless of income spec
                 results["depvar"] = _run("depvar", "categorical", random_decision_probabilities, agents_df)  # income mode is ignored, agents_df is None
@@ -885,17 +908,99 @@ def run_simulation():
     # Simulation will be triggered on results page
 
 
-def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
-    """Apply the selected donation configuration to the orchestrator"""
+def apply_coefficients_to_nested_config(orchestrator, coeffs, inc_mode):
+    """Apply flat coefficient dictionary to the orchestrator's NESTED config structure.
     
-    config = st.session_state.selected_donation_config
+    CRITICAL: donation_default.py checks for nested 'categorical'/'continuous' keys first.
+    If they exist, flat keys at the top level are IGNORED. This function ensures
+    coefficients are applied to the correct nested structure.
     
-    # Override coefficients
+    Args:
+        orchestrator: The orchestrator instance
+        coeffs: Flat dictionary of coefficients from get_current_coefficients()
+        inc_mode: Income mode string (e.g., 'categorical', 'continuous')
+    """
     if 'regression_coefficients' not in orchestrator.config['donation_default']:
         orchestrator.config['donation_default']['regression_coefficients'] = {}
     
-    # Apply all coefficients from selected configuration
-    orchestrator.config['donation_default']['regression_coefficients'].update(config['coefficients'])
+    reg_coeffs = orchestrator.config['donation_default']['regression_coefficients']
+    
+    # Check if nested structure exists (YAML format)
+    if 'categorical' in reg_coeffs and 'continuous' in reg_coeffs:
+        # Update the appropriate NESTED structure based on income mode
+        if 'continuous' in inc_mode.lower():
+            target = reg_coeffs['continuous']
+        else:
+            target = reg_coeffs['categorical']
+        
+        # Apply coefficients to the nested target
+        if 'intercept' in coeffs:
+            target['intercept'] = coeffs['intercept']
+        if 'beta_hh' in coeffs:
+            target['beta_hh'] = coeffs['beta_hh']
+        if 'beta_income_linear' in coeffs:
+            target['beta_income_linear'] = coeffs['beta_income_linear']
+        if 'beta_group' in coeffs:
+            target['beta_group'] = coeffs['beta_group']
+        if 'beta_income_q' in coeffs:
+            target['beta_income_q'] = coeffs['beta_income_q']
+        if 'beta_study' in coeffs:
+            target['beta_study'] = coeffs['beta_study']
+    else:
+        # Legacy flat structure - just update directly
+        reg_coeffs.update(coeffs)
+    
+    # Always set income_mode to ensure correct coefficient selection
+    reg_coeffs['income_mode'] = inc_mode
+
+
+def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
+    """Apply the selected donation configuration to the orchestrator
+    
+    IMPORTANT: The YAML config has a NESTED structure with 'categorical' and 'continuous' keys,
+    but the saved configuration from get_current_coefficients() is a FLAT dictionary.
+    We must update the appropriate NESTED structure (categorical or continuous) based on inc_mode,
+    not just add flat keys to the top level (which would be ignored by donation_default.py).
+    """
+    
+    config = st.session_state.selected_donation_config
+    
+    # Override coefficients - MUST update the NESTED structure
+    if 'regression_coefficients' not in orchestrator.config['donation_default']:
+        orchestrator.config['donation_default']['regression_coefficients'] = {}
+    
+    reg_coeffs = orchestrator.config['donation_default']['regression_coefficients']
+    saved_coeffs = config['coefficients']
+    
+    # Determine which nested structure to update based on income mode
+    # The YAML has 'categorical' and 'continuous' nested keys
+    if 'categorical' in reg_coeffs and 'continuous' in reg_coeffs:
+        # Update the appropriate NESTED structure based on current income mode
+        if 'continuous' in inc_mode.lower():
+            # Update continuous coefficients
+            reg_coeffs['continuous']['intercept'] = saved_coeffs.get('intercept', reg_coeffs['continuous'].get('intercept'))
+            reg_coeffs['continuous']['beta_hh'] = saved_coeffs.get('beta_hh', reg_coeffs['continuous'].get('beta_hh'))
+            reg_coeffs['continuous']['beta_income_linear'] = saved_coeffs.get('beta_income_linear', reg_coeffs['continuous'].get('beta_income_linear', 0.0))
+            if 'beta_group' in saved_coeffs:
+                reg_coeffs['continuous']['beta_group'] = saved_coeffs['beta_group']
+            if 'beta_study' in saved_coeffs:
+                reg_coeffs['continuous']['beta_study'] = saved_coeffs['beta_study']
+        else:
+            # Update categorical coefficients (default)
+            reg_coeffs['categorical']['intercept'] = saved_coeffs.get('intercept', reg_coeffs['categorical'].get('intercept'))
+            reg_coeffs['categorical']['beta_hh'] = saved_coeffs.get('beta_hh', reg_coeffs['categorical'].get('beta_hh'))
+            if 'beta_group' in saved_coeffs:
+                reg_coeffs['categorical']['beta_group'] = saved_coeffs['beta_group']
+            if 'beta_income_q' in saved_coeffs:
+                reg_coeffs['categorical']['beta_income_q'] = saved_coeffs['beta_income_q']
+            if 'beta_study' in saved_coeffs:
+                reg_coeffs['categorical']['beta_study'] = saved_coeffs['beta_study']
+    else:
+        # Fallback: flat structure (legacy format) - just update directly
+        reg_coeffs.update(saved_coeffs)
+    
+    # Always set income_mode to ensure correct coefficient selection in donation_default.py
+    reg_coeffs['income_mode'] = inc_mode
     
     # Set income mode to match current simulation mode (not necessarily the selected one)
     # This allows users to run different income modes with the same coefficient set
@@ -905,12 +1010,10 @@ def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
     stoch_params = config['stochastic_params']
     
     # Update stochastic settings
-    # CRITICAL: The decision module uses 'in_copula' key, not 'sigma_in_copula'
-    # We must set 'in_copula' for the stochastic behavior to apply correctly
     orchestrator.config['donation_default']['stochastic'].update({
         'sigma_value': stoch_params['stochastic']['sigma_value'],
         'sigma_coefficient': stoch_params['stochastic']['sigma_coefficient'],
-        'in_copula': stoch_params['stochastic']['sigma_in_copula'],  # Map to correct key
+        'sigma_in_copula': stoch_params['stochastic']['sigma_in_copula'],
         'sigma_in_research': stoch_params['stochastic']['sigma_in_research']
     })
     
@@ -948,11 +1051,7 @@ def apply_selected_donation_config(orchestrator, pop_mode, inc_mode):
             st.session_state.donation_coeff_q2 = coeff
         elif quintile == 'Q3':
             st.session_state.donation_coeff_q3 = coeff
-        elif quintile == 'Q4':
-            st.session_state.donation_coeff_q4 = coeff
-        elif quintile == 'Q5':
-            st.session_state.donation_coeff_q5 = coeff
-        elif quintile == 'Q4_Q5':  # Legacy support
+        elif quintile == 'Q4_Q5':
             st.session_state.donation_coeff_q45 = coeff
     
     # Study programme coefficients

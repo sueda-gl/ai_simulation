@@ -205,3 +205,5 @@ The discrepancy between 11% and 7.5% is **intentional and correct**:
 The difference represents the impact of agent decision-making on final outcomes. The tooltips now clearly explain this distinction to avoid confusion.
 
 
+
+

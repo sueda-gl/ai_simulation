@@ -42,6 +42,17 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
             vendor_id = vendor.get('vendor_id')
             vendor_lookup[vendor_id] = vendor
     
+    # Get pricing parameters from session state for customer price calculation
+    platform_markup = 0.1
+    price_range = 0.25
+    if hasattr(st.session_state, 'simulation_params'):
+        sim_params = st.session_state.simulation_params.get('simulation', {})
+        platform_markup = sim_params.get('platform_markup', 0.1)
+        price_range = sim_params.get('price_range', 0.25)
+    elif hasattr(st.session_state, 'sim_params'):
+        platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
+        price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
+    
     # Iterate through each agent
     for idx, row in df.iterrows():
         # Get agent-level data
@@ -129,15 +140,30 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
                         price_max_config=price_max_config
                     )
             
-            # Get customer paid price (without donation)
-            # Try multiple field names, fallback to vendor price if available
-            customer_paid_price = request.get('pricePaid', 
-                                             request.get('price_paid', 
-                                             request.get('price', vendor_price)))
-            
-            # Determine if this is a PN request to show price
+            # Get platform price type for this request
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
-            display_customer_paid_price = customer_paid_price if platform_price == 'PN' else 'N/A'
+            bid_value = request.get('bid_value', 'N/A')
+            
+            # Calculate customer paid price based on vendor's actual price and pricing formula
+            # Formula: Customer Price (PN) = (1 + price_range) × (1 + platform_markup) × vendor_price
+            customer_paid_price = np.nan
+            if not pd.isna(vendor_price):
+                if platform_price == 'PN':
+                    # PN price: apply both platform markup and price range
+                    baseline_price = (1 + platform_markup) * vendor_price
+                    customer_paid_price = (1 + price_range) * baseline_price
+                elif platform_price == 'BID' and bid_value != 'N/A':
+                    # BID: customer pays their bid value
+                    try:
+                        customer_paid_price = float(bid_value)
+                    except (ValueError, TypeError):
+                        customer_paid_price = np.nan
+            
+            # Format for display - show 2 decimal places for both PN and BID
+            if (platform_price == 'PN' or platform_price == 'BID') and not pd.isna(customer_paid_price):
+                display_customer_paid_price = float(f"{customer_paid_price:.2f}")
+            else:
+                display_customer_paid_price = 'N/A'
             
             # Build record
             record = {

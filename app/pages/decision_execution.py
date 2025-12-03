@@ -670,13 +670,20 @@ def run_combined_simulation(selected_decisions):
 # ==================== CONFIGURATION SELECTION SYSTEM ====================
 
 def save_selected_configuration(result_key, result_df):
-    """Save the selected configuration for later use in combined simulations"""
+    """Save the selected configuration for later use in combined simulations
+    
+    IMPORTANT: When saving a configuration, we must use the coefficients that match
+    the income mode of the selected result (not the current session state mode).
+    This is critical in "Compare both" mode where multiple results exist with different
+    coefficient sets.
+    """
     
     # Extract configuration details from the result key
     config_details = extract_configuration_details(result_key)
     
-    # Get current coefficient values from session state
-    coefficients = get_current_coefficients()
+    # Get coefficient values that match the income mode of the selected result
+    # This ensures we save the RIGHT coefficients for the selected configuration
+    coefficients = get_current_coefficients(income_mode=config_details['income_spec_mode'])
     
     # Get current stochastic parameters
     stochastic_params = get_current_stochastic_params()
@@ -732,40 +739,63 @@ def extract_configuration_details(result_key):
     }
 
 
-def get_current_coefficients():
+def get_current_coefficients(income_mode=None):
     """Collect all current coefficient values from session state
     
     IMPORTANT: Ensures coefficients are loaded from YAML first.
     YAML is the SINGLE source of truth - no fallback values.
+    
+    Args:
+        income_mode: Optional income mode string (e.g., 'categorical only', 'continuous only').
+                     If provided, uses mode-specific coefficients. Otherwise uses main session state.
     """
     # Ensure coefficients are loaded from YAML
     from app.models import load_donation_coefficients_from_yaml
     if 'donation_coeff_intercept' not in st.session_state:
         load_donation_coefficients_from_yaml()
     
-    # Return coefficients from session state - NO FALLBACK VALUES
+    # Determine which coefficient set to use based on income mode
+    # Mode-specific suffixes: _cat for categorical, _cont for continuous
+    if income_mode and 'continuous' in income_mode.lower():
+        suffix = '_cont'
+    elif income_mode and 'categorical' in income_mode.lower():
+        suffix = '_cat'
+    else:
+        suffix = None  # Use main session state variables
+    
+    # Helper to get coefficient with optional suffix
+    def get_coeff(name, default=None):
+        if suffix:
+            suffixed_key = f'donation_coeff_{name}{suffix}'
+            if suffixed_key in st.session_state:
+                return st.session_state[suffixed_key]
+        # Fallback to main session state variable
+        main_key = f'donation_coeff_{name}'
+        return st.session_state.get(main_key, default)
+    
+    # Return coefficients from session state - NO FALLBACK VALUES for critical ones
     return {
-        'intercept': st.session_state.donation_coeff_intercept,
+        'intercept': get_coeff('intercept'),
         'beta_group': {
-            'MidSub': st.session_state.donation_coeff_midsub,
-            'NoSub': st.session_state.donation_coeff_nosub,
-            'FullSub': st.session_state.donation_coeff_fullsub
+            'MidSub': get_coeff('midsub'),
+            'NoSub': get_coeff('nosub'),
+            'FullSub': get_coeff('fullsub')
         },
         'beta_income_q': {
-            'Q1': st.session_state.donation_coeff_q1,
-            'Q2': st.session_state.donation_coeff_q2,
-            'Q3': st.session_state.donation_coeff_q3,
-            'Q4': st.session_state.get('donation_coeff_q4', 0.0),
-            'Q5': st.session_state.get('donation_coeff_q5', st.session_state.get('donation_coeff_q45', 0.0))  # Support both Q5 and legacy Q4_Q5
+            'Q1': get_coeff('q1', 0.0),
+            'Q2': get_coeff('q2', 0.0),
+            'Q3': get_coeff('q3', 0.0),
+            'Q4': get_coeff('q4', 0.0),
+            'Q5': get_coeff('q5', st.session_state.get('donation_coeff_q45', 0.0))  # Support both Q5 and legacy Q4_Q5
         },
-        'beta_income_linear': st.session_state.donation_coeff_linear,
+        'beta_income_linear': get_coeff('linear', 0.0),
         'beta_study': {
-            'Incoming': st.session_state.donation_coeff_incoming,
-            'Law5yr': st.session_state.donation_coeff_law,
-            'UG3yr': st.session_state.donation_coeff_ug,
-            'Grad2yr': st.session_state.donation_coeff_grad
+            'Incoming': get_coeff('incoming'),
+            'Law5yr': get_coeff('law'),
+            'UG3yr': get_coeff('ug'),
+            'Grad2yr': get_coeff('grad')
         },
-        'beta_hh': st.session_state.donation_coeff_hh
+        'beta_hh': get_coeff('hh')
     }
 
 

@@ -146,21 +146,34 @@ class OrchestratorDocMode:
                 
                 if outcome_draws>1:
                     agent_state['draw_id']=rep+1
-                agent_rng = np.random.default_rng(rng_global.integers(1e9))
 
                 # we postpone decision execution until after loop to capture repeats
                 # so move decision loop inside rep
-                for decision_name in decisions_to_run:
+                for decision_idx, decision_name in enumerate(self.decision_order):
+                    # Create per-decision RNG using DETERMINISTIC seed based on:
+                    # - Global seed (same for all runs with same seed)
+                    # - Agent index (deterministic from data order)
+                    # - Decision index (fixed position in decision_order)
+                    # - Rep index (for outcome_draws > 1)
+                    # This ensures IDENTICAL RNG state for each decision regardless of
+                    # which other decisions are run (critical for individual vs full runs)
+                    deterministic_seed = seed + (idx * 100000) + (decision_idx * 1000) + rep
+                    decision_rng = np.random.default_rng(deterministic_seed)
+                    
+                    # Skip decisions not in the run list (decision_idx is consistent regardless)
+                    if decision_name not in decisions_to_run:
+                        continue
+                    
                     if decision_name in self.decision_modules:
                         params = self.config.get(decision_name, {})
                         if decision_name == 'donation_default':
                             decision_output = self.decision_modules[decision_name](
-                                agent_state, params, agent_rng, pop_context=self.pop_context, 
+                                agent_state, params, decision_rng, pop_context=self.pop_context, 
                                 simulation_config=self.simulation_config
                             )
                         else:
                             decision_output = self.decision_modules[decision_name](
-                                agent_state, params, agent_rng, 
+                                agent_state, params, decision_rng, 
                                 simulation_config=self.simulation_config
                             )
                         agent_state.update(decision_output)

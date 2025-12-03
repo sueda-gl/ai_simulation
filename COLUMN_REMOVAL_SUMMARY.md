@@ -184,3 +184,5 @@ Users can still analyze:
 - **By Exact Time**: Using the `timestamp` column (DD/MM/YYYY HH:MM format)
 - **Chronologically**: Data is sorted by timestamp across all customers
 
+
+

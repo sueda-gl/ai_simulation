@@ -129,11 +129,23 @@ class Orchestrator:
             agent_state['index'] = idx
             agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
             
-            # Create child RNG for this agent
-            agent_rng = np.random.default_rng(rng_global.integers(1e9))
-            
-            # Execute decisions in order
-            for decision_name in decisions_to_run:
+            # Execute decisions in order - use per-decision RNG for consistency
+            # This ensures each decision gets the same random state regardless of
+            # which other decisions are run (critical for individual vs full simulation runs)
+            for decision_idx, decision_name in enumerate(self.decision_order):
+                # Create per-decision RNG using DETERMINISTIC seed based on:
+                # - Global seed (same for all runs with same seed)
+                # - Agent index (deterministic from data order)
+                # - Decision index (fixed position in decision_order)
+                # This ensures IDENTICAL RNG state for each decision regardless of
+                # which other decisions are run (critical for individual vs full runs)
+                deterministic_seed = seed + (idx * 100000) + (decision_idx * 1000)
+                decision_rng = np.random.default_rng(deterministic_seed)
+                
+                # Skip decisions not in the run list (decision_idx is consistent regardless)
+                if decision_name not in decisions_to_run:
+                    continue
+                
                 if decision_name in self.decision_modules:
                     # Get parameters for this decision
                     params = self.config.get(decision_name, {})
@@ -143,11 +155,11 @@ class Orchestrator:
                     # Pass simulation_config to all modules for global parameters
                     if decision_name == 'donation_default':
                         decision_output = self.decision_modules[decision_name](
-                            agent_state, params, agent_rng, pop_context=self.pop_context, simulation_config=self.simulation_config
+                            agent_state, params, decision_rng, pop_context=self.pop_context, simulation_config=self.simulation_config
                         )
                     else:
                         decision_output = self.decision_modules[decision_name](
-                            agent_state, params, agent_rng, simulation_config=self.simulation_config
+                            agent_state, params, decision_rng, simulation_config=self.simulation_config
                         )
                     
                     # Update agent state with decision outputs

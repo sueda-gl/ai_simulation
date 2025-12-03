@@ -142,11 +142,23 @@ class OrchestratorBaseline:
             
             agent_results = agent_state.copy()
             
-            # Create child RNG for this agent (consistent with other orchestrators)
-            agent_rng = np.random.default_rng(rng_global.integers(1e9))
-            
-            # Run each decision in order
-            for decision_name in decisions_to_run:
+            # Run each decision in order - use per-decision RNG for consistency
+            # This ensures each decision gets the same random state regardless of
+            # which other decisions are run (critical for individual vs full simulation runs)
+            for decision_idx, decision_name in enumerate(self.decision_order):
+                # Create per-decision RNG using DETERMINISTIC seed based on:
+                # - Global seed (same for all runs with same seed)
+                # - Agent index (deterministic from data order)
+                # - Decision index (fixed position in decision_order)
+                # This ensures IDENTICAL RNG state for each decision regardless of
+                # which other decisions are run (critical for individual vs full runs)
+                deterministic_seed = seed + (idx * 100000) + (decision_idx * 1000)
+                decision_rng = np.random.default_rng(deterministic_seed)
+                
+                # Skip decisions not in the run list (decision_idx is consistent regardless)
+                if decision_name not in decisions_to_run:
+                    continue
+                
                 if decision_name in self.decision_modules:
                     decision_func = self.decision_modules[decision_name]
                     decision_params = self.config.get(decision_name, {})
@@ -168,7 +180,7 @@ class OrchestratorBaseline:
                             decision_output = decision_func(
                                 agent_state, 
                                 decision_params, 
-                                agent_rng,
+                                decision_rng,
                                 simulation_config=self.simulation_config,
                                 pop_context=self.pop_context
                             )
@@ -176,7 +188,7 @@ class OrchestratorBaseline:
                             decision_output = decision_func(
                                 agent_state, 
                                 decision_params, 
-                                agent_rng,
+                                decision_rng,
                                 simulation_config=self.simulation_config
                             )
                         

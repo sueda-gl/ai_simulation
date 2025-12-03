@@ -23,7 +23,7 @@ def _build_purchase_vs_bid_export(df):
     - Purchase Request Type (PN/Bid)
     - timestamp (DD/MM/YYYY HH:MM format)
     - Period
-    - Customer Price (based on PN price or bid value)
+    - Customer Price (based on PN price or bid value, using vendor's actual price)
     
     Records are sorted by timestamp in chronological order.
     """
@@ -35,22 +35,30 @@ def _build_purchase_vs_bid_export(df):
         return transaction_records
     
     # Get pricing parameters from session state or use defaults
-    market_price = 100.0
     platform_markup = 0.1
     price_range = 0.25
     if hasattr(st.session_state, 'simulation_params'):
         sim_params = st.session_state.simulation_params.get('simulation', {})
-        market_price = sim_params.get('market_price', 100.0)
         platform_markup = sim_params.get('platform_markup', 0.1)
         price_range = sim_params.get('price_range', 0.25)
     elif hasattr(st.session_state, 'sim_params'):
-        market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
         price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
     
-    # Calculate standard prices
-    baseline_price = (1 + platform_markup) * market_price
-    pn_price = (1 + price_range) * baseline_price  # PN price = max bid price
+    # Get vendor data for price lookup
+    vendors_data = None
+    if hasattr(st.session_state, 'simulation_results') and st.session_state.simulation_results:
+        vendors_data = st.session_state.simulation_results.get('vendors_data', None)
+    if vendors_data is None and hasattr(st.session_state, 'vendors_data'):
+        vendors_data = st.session_state.vendors_data
+    
+    # Build vendor lookup dictionary for quick access
+    vendor_lookup = {}
+    if vendors_data:
+        for vendor in vendors_data:
+            vendor_id = vendor.get('vendor_id')
+            if vendor_id is not None:
+                vendor_lookup[vendor_id] = vendor
     
     # Base date for timestamp conversion (current date when simulation is run)
     base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -114,10 +122,32 @@ def _build_purchase_vs_bid_export(df):
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
             bid_value = request.get('bid_value', 'N/A')
             
+            # Get vendor price for this request's vendor
+            vendor_id = request.get('vendorID', request.get('vendor_id'))
+            vendor_price = None
+            if vendor_id is not None and vendor_id in vendor_lookup:
+                vendor_price = vendor_lookup[vendor_id].get('price')
+            
+            # Calculate customer price based on vendor's actual price
+            # Formula: Customer Price (PN) = (1 + price_range) × (1 + platform_markup) × vendor_price
+            if vendor_price is not None:
+                baseline_price = (1 + platform_markup) * vendor_price
+                pn_price = (1 + price_range) * baseline_price
+            else:
+                # Fallback to market_price if vendor price not available
+                market_price = 100.0
+                if hasattr(st.session_state, 'simulation_params'):
+                    sim_params = st.session_state.simulation_params.get('simulation', {})
+                    market_price = sim_params.get('market_price', 100.0)
+                elif hasattr(st.session_state, 'sim_params'):
+                    market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
+                baseline_price = (1 + platform_markup) * market_price
+                pn_price = (1 + price_range) * baseline_price
+            
             # Only include PN and BID for regular customers
             if platform_price == 'PN':
                 purchase_request_type = 'PN'
-                customer_price = pn_price  # PN uses max bid price
+                customer_price = pn_price  # PN uses calculated price based on vendor
             elif platform_price == 'BID' and bid_value != 'N/A':
                 purchase_request_type = 'Bid'
                 try:
@@ -128,8 +158,9 @@ def _build_purchase_vs_bid_export(df):
                 # Skip if not PN or BID
                 continue
             
-            # Only show price for PN customers, hide for others
-            display_customer_price = customer_price if purchase_request_type == 'PN' else 'N/A'
+            # Show price for both PN and BID customers
+            # Format to 2 decimal places for display
+            display_customer_price = float(f"{customer_price:.2f}")
             
             # Build record
             record = {
@@ -367,53 +398,83 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
     with col_chart:
         # Count which options appear in agents' priority lists
         from collections import Counter
-        all_options_used = []
         
+        total_agents = len(decision_data)
+        
+        # Count how many agents have each option in their priority list
+        option_agent_counts = Counter()
         for agent_list in decision_data:
             if isinstance(agent_list, list):
-                all_options_used.extend(agent_list)
+                # Count unique options per agent (not duplicates)
+                for opt in set(agent_list):
+                    option_agent_counts[opt] += 1
             else:
-                all_options_used.append(agent_list)
+                option_agent_counts[agent_list] += 1
         
-        option_counts = Counter(all_options_used)
-        
-        # Create pie chart showing which options are in the priority lists
-        if len(option_counts) > 0:
+        # Create individual charts for each option
+        if len(option_agent_counts) > 0:
             # Sort by the order in configured_template if possible
             if isinstance(configured_template, list):
-                sorted_options = [opt for opt in configured_template if opt in option_counts]
+                sorted_options = [opt for opt in configured_template if opt in option_agent_counts]
             else:
-                sorted_options = list(option_counts.keys())
+                sorted_options = list(option_agent_counts.keys())
             
-            labels = [option_numbers.get(opt, opt) for opt in sorted_options]
-            values = [option_counts[opt] for opt in sorted_options]
+            st.markdown("**Options in Priority Lists**")
+            st.caption("Each chart shows the percentage of agents that have this option in their priority list")
             
-            # Create pie chart
-            fig = px.pie(
-                values=values,
-                names=labels,
-                title="Options in Priority Lists",
-                hole=0.4,  # Donut chart
-                color_discrete_sequence=px.colors.qualitative.Set3
-            )
-            fig.update_traces(
-                textposition='inside', 
-                textinfo='percent+label',
-                hovertemplate='<b>%{label}</b><br>%{value:,} times in lists<br>%{percent}<extra></extra>'
-            )
-            fig.update_layout(
-                showlegend=True, 
-                height=450,
-                margin=dict(t=60, b=20, l=20, r=20)
-            )
-            st.plotly_chart(fig, use_container_width=True, key=f"{decision_name}_options_chart")
+            # Create a row of small donut charts - one for each option
+            if len(sorted_options) <= 3:
+                chart_cols = st.columns(len(sorted_options))
+            else:
+                chart_cols = st.columns(3)
+            
+            # Color palette for consistency
+            colors = px.colors.qualitative.Set3
+            
+            for idx, opt in enumerate(sorted_options):
+                col_idx = idx % len(chart_cols)
+                with chart_cols[col_idx]:
+                    agent_count = option_agent_counts[opt]
+                    percentage = (agent_count / total_agents) * 100
+                    option_label = option_numbers.get(opt, opt)
+                    
+                    # Create individual donut chart for this option
+                    fig = px.pie(
+                        values=[percentage, 100 - percentage],
+                        names=[option_label, ""],
+                        hole=0.6,
+                        color_discrete_sequence=[colors[idx % len(colors)], "#f0f0f0"]
+                    )
+                    fig.update_traces(
+                        textposition='inside',
+                        textinfo='percent',
+                        hovertemplate=f'<b>{option_label}</b><br>{agent_count:,} agents<br>%{{percent}}<extra></extra>',
+                        showlegend=False
+                    )
+                    # Add center text showing percentage
+                    fig.update_layout(
+                        showlegend=False,
+                        height=200,
+                        margin=dict(t=30, b=10, l=10, r=10),
+                        title=dict(text=option_label, x=0.5, font=dict(size=14)),
+                        annotations=[dict(
+                            text=f'{percentage:.0f}%',
+                            x=0.5, y=0.5,
+                            font=dict(size=20, weight='bold'),
+                            showarrow=False
+                        )]
+                    )
+                    # Hide the empty slice from tooltip
+                    fig.data[0].hoverinfo = 'skip'
+                    st.plotly_chart(fig, use_container_width=True, key=f"{decision_name}_option_{idx}_chart")
+                    st.caption(f"{agent_count:,} agents")
             
             # Show detailed breakdown
             with st.expander("📋 Detailed Breakdown"):
                 for opt in sorted_options:
-                    count = option_counts[opt]
-                    percentage = (count / len(all_options_used)) * 100
-                    st.caption(f"• {option_numbers.get(opt, opt)}: appears {count:,} times ({percentage:.1f}%)")
+                    count = option_agent_counts[opt]
+                    percentage = (count / total_agents) * 100
+                    st.caption(f"• {option_numbers.get(opt, opt)}: {count:,} agents ({percentage:.0f}%)")
     
     # Summary statistics
     st.markdown("---")
