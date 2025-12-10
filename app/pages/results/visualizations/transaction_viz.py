@@ -414,7 +414,7 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
             for i, opt in enumerate(configured_template, 1):
                 option_label = option_numbers.get(opt, opt)
                 option_desc = option_names.get(opt, opt)
-                st.markdown(f"**{i}.** {option_label}")
+                st.markdown(f"**Priority {i}.** {option_label}")
                 st.caption(f"   {option_desc}")
         else:
             st.caption("No priority template configured")

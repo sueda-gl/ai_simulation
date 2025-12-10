@@ -70,6 +70,11 @@ def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng)
         # but remain consistent across agents within the same run.
         base_seed = simulation_config.get('simulation_seed', 42) if simulation_config else 42
         
+        # DEBUG: Print seed for first agent to verify propagation
+        if agent_id == 1:
+            print(f"[PROXIMITY DEBUG] Agent 1: simulation_seed from config = {base_seed}")
+            print(f"[PROXIMITY DEBUG] simulation_config keys: {list(simulation_config.keys()) if simulation_config else 'None'}")
+        
         proximity_scores = generate_proximity_scores(agent_id, len(vendors), rng, base_seed=base_seed)
         agent_state['vendor_proximity_scores'] = proximity_scores
     else:

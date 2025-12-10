@@ -91,6 +91,10 @@ class OrchestratorDocMode:
         # Create separate RNG for setup tasks (vendors, bootstrap sampling)
         rng_setup = np.random.default_rng(seed)
         
+        # Store seed in simulation_config for access by decision modules
+        # This allows decision modules to access the global seed (e.g. for consistent vendor locations)
+        self.simulation_config['simulation_seed'] = seed
+        
         # Generate vendor attributes using setup RNG
         self._initialize_vendors(rng_setup)
         
