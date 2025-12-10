@@ -373,14 +373,12 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                     # Normalize price (inverted: lower price = higher score)
                     # Use FIXED reference bounds from configuration for consistent normalization
                     # This ensures price has the same discriminatory power as other attributes
-                    if price_max_config > 0:
+                    if price_max_config > price_min_config:
                         # Clamp price to configured bounds
                         clamped_price = max(price_min_config, min(vendor_price, price_max_config))
-                        # New Formula: 1.0 - (price - min_price) / max_price
-                        # This ensures best price gets 1.0, but worst price (max) doesn't necessarily get 0.0
-                        vendor_price_score = 1.0 - (clamped_price - price_min_config) / price_max_config
+                        vendor_price_score = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
                     else:
-                        vendor_price_score = 1.0
+                        vendor_price_score = 0.5
                     
                     # Normalize quality (1-5 scale to 0-1)
                     vendor_quality_score = (vendor_quality - 1) / 4 if vendor_quality >= 1 else 0

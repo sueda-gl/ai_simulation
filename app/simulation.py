@@ -821,7 +821,7 @@ def run_simulation_from_sidebar():
             # Assign global transaction IDs to ensure consistency across exports
             for key in results:
                 results[key] = _assign_global_transaction_ids(results[key])
-
+            
             # Store results
             st.session_state.simulation_results = results
             

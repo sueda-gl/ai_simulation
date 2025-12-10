@@ -46,7 +46,25 @@ def _build_donation_transaction_export(df, simulation_config=None):
         platform_markup = sim_params.get('platform_markup', 0.1)
         price_range = sim_params.get('price_range', 0.25)
     
-    # Calculate standard prices
+    # Get vendor data for price lookup (consistent with transaction_viz.py)
+    vendors_data = None
+    if hasattr(st.session_state, 'vendors'):
+        vendors_data = st.session_state.vendors
+    elif hasattr(st.session_state, 'vendors_data'):
+        vendors_data = st.session_state.vendors_data
+    elif hasattr(st.session_state, 'simulation_results') and isinstance(st.session_state.simulation_results, dict):
+        vendors_data = st.session_state.simulation_results.get('vendors_data', None)
+    
+    # Build vendor lookup dictionary for quick access
+    vendor_lookup = {}
+    if vendors_data:
+        for vendor in vendors_data:
+            vendor_id = vendor.get('vendor_id')
+            if vendor_id is not None:
+                vendor_lookup[vendor_id] = vendor
+                vendor_lookup[str(vendor_id)] = vendor
+
+    # Calculate standard prices (legacy fallback using market_price)
     baseline_price = (1 + platform_markup) * market_price
     pn_price = (1 + price_range) * baseline_price  # PN price = max bid price
     discount_price = market_price * 0.7  # Assume 30% discount
@@ -124,26 +142,53 @@ def _build_donation_transaction_export(df, simulation_config=None):
             # Determine Purchase Request Type and Customer Price
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
             bid_value = request.get('bid_value', 'N/A')
+            transaction_id = request.get('transaction_id')
+            
+            # Lookup specific vendor price
+            vendor_id = request.get('vendorID', request.get('vendor_id'))
+            
+            # Normalize vendor_id for lookup (handle float 1.0 -> int 1)
+            lookup_key = vendor_id
+            if isinstance(vendor_id, float) and vendor_id.is_integer():
+                lookup_key = int(vendor_id)
+                
+            vendor_price = None
+            if lookup_key is not None:
+                if lookup_key in vendor_lookup:
+                    vendor_price = vendor_lookup[lookup_key].get('price')
+                elif str(lookup_key) in vendor_lookup:
+                    vendor_price = vendor_lookup[str(lookup_key)].get('price')
+            
+            # Recalculate PN price based on actual vendor price if available
+            current_pn_price = pn_price  # Default to market-based
+            current_fixed_price = fixed_price
+            current_discount_price = discount_price
+            
+            if vendor_price is not None:
+                v_baseline = (1 + platform_markup) * vendor_price
+                current_pn_price = (1 + price_range) * v_baseline
+                current_fixed_price = vendor_price
+                current_discount_price = vendor_price * 0.7
             
             if platform_price == 'DISCOUNT' or customer_type.lower() == 'discount':
                 purchase_request_type = 'Discount'
-                customer_price = discount_price
+                customer_price = current_discount_price
             elif platform_price == 'FIXED' or customer_type.lower() == 'fixed':
                 purchase_request_type = 'Fixed'
-                customer_price = fixed_price
+                customer_price = current_fixed_price
             elif platform_price == 'PN':
                 purchase_request_type = 'PN'
-                customer_price = pn_price  # PN uses max bid price
+                customer_price = current_pn_price
             elif platform_price == 'BID' and bid_value != 'N/A':
                 purchase_request_type = 'Bid'
                 try:
                     customer_price = float(bid_value)
                 except (ValueError, TypeError):
-                    customer_price = pn_price
+                    customer_price = current_pn_price
             else:
                 # Default to PN for regular customers
                 purchase_request_type = 'PN' if customer_type.lower() == 'regular' else customer_type_display
-                customer_price = pn_price  # PN uses max bid price
+                customer_price = current_pn_price
             
             # ====================================================================
             # NEW: Get REQUEST-SPECIFIC donation rate (priority over agent-level)
@@ -173,12 +218,13 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 donation_paid = np.nan
                 total_paid = customer_price if not pd.isna(customer_price) else np.nan
             
-            # Only show price calculations for PN customers, hide for others
-            display_customer_price = customer_price if purchase_request_type == 'PN' else 'N/A'
-            display_total_paid = total_paid if purchase_request_type == 'PN' else 'N/A'
+            # Only show price calculations for PN and BID customers (updated per requirements)
+            display_customer_price = customer_price if purchase_request_type in ['PN', 'Bid'] else 'N/A'
+            display_total_paid = total_paid if purchase_request_type in ['PN', 'Bid'] else 'N/A'
             
             # Build record with separate date and time columns
             record = {
+                'Transaction ID': transaction_id,
                 'Agent ID': agent_id,
                 'Assigned Allowance Level': allowance_level,
                 'Group_experiment': group_experiment,

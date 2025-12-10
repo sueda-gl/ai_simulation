@@ -158,7 +158,7 @@ def calculate_donation_default_step_by_step(
         study_category = 'Incoming'
     elif any(prog in study_program.upper() for prog in ['LAW', 'CLMG']):
         study_category = 'Law5yr'
-    elif any(prog in study_program.upper() for prog in ['BESS', 'BIEM', 'BIG', 'BAI', 'BEMACS']):
+    elif any(prog in study_program.upper() for prog in ['BESS', 'BIEM', 'BIG', 'BAI', 'BEMACS', 'BIEF']):
         study_category = 'UG3yr'
     
     beta_study = coeffs.get('beta_study', {})
