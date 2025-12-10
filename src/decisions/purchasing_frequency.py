@@ -2,13 +2,13 @@
 """
 Decision 7: purchasing_frequency
 
-Calculates purchasing frequency (items per hour) from purchasing quantity and term duration.
+Calculates purchasing frequency (items per period) from purchasing quantity and number of periods.
 
 This is a COMPUTED decision - not random. It derives its value from:
 1. purchasing_quantity (from Decision 6)
-2. Term duration (periods × duration_hours from Page 1)
+2. Number of periods (from Page 1)
 
-Formula: purchasing_frequency = purchasing_quantity / term_duration
+Formula: purchasing_frequency = purchasing_quantity / periods
 
 When fully simulated (future):
 - More sophisticated models for temporal patterns
@@ -23,16 +23,13 @@ from src.decisions.income_utils import get_simulation_param
 def purchasing_frequency(agent_state: dict, params: dict, rng, 
                          simulation_config: dict = None, **kwargs) -> dict:
     """
-    Decision 7: Calculate purchasing frequency from quantity and term duration.
+    Decision 7: Calculate purchasing frequency from quantity and number of periods.
     
     This is a deterministic, computed decision (not stochastic).
     
     Formula:
-        frequency = purchasing_quantity / term_duration
+        frequency = purchasing_quantity / periods
         
-    Where:
-        term_duration = periods × duration_hours
-    
     Args:
         agent_state: Agent's state dict (must include 'purchasing_quantity' from Decision 6)
         params: Decision-specific parameters from decisions.yaml (not used for defaults)
@@ -41,12 +38,12 @@ def purchasing_frequency(agent_state: dict, params: dict, rng,
         
     Returns:
         Dictionary with:
-        - purchasing_frequency: Items per hour (float)
+        - purchasing_frequency: Items per period (float)
     
     Example:
         Agent has purchasing_quantity = 10 items
-        Term = 2 periods × 1 hour = 2 hours
-        Frequency = 10 / 2 = 5.0 items/hour
+        Periods = 5
+        Frequency = 10 / 5 = 2.0 items/period
     """
     
     # STEP 1: Get purchasing quantity from Decision 6
@@ -71,11 +68,13 @@ def purchasing_frequency(agent_state: dict, params: dict, rng,
     term_duration = float(periods * duration_hours)
     
     # STEP 3: Calculate frequency
-    # Frequency = quantity / term_duration (items per hour)
-    if term_duration > 0:
-        frequency = purchasing_quantity / term_duration
+    # Frequency = quantity / periods (items per period)
+    # The user requested "number of purchase requests divided by period"
+    # This represents the average number of requests per period, regardless of period duration.
+    if periods > 0:
+        frequency = purchasing_quantity / periods
     else:
-        # Safety: if term_duration is somehow 0, frequency is 0
+        # Safety: if periods is somehow 0, frequency is 0
         frequency = 0.0
     
     # Return result

@@ -458,6 +458,11 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
     # NOTE: These are REQUESTS only, not actual transactions
     # The system tracks what agents want to purchase, not transaction outcomes
     
+    # STEP 6a: Calculate preferred vendor based on scores
+    # This determines which vendor the agent wants to buy from
+    # We calculate this unconditionally so we always have proximity scores and preference
+    preferred_vendor_id = _calculate_preferred_vendor(agent_state, simulation_config, rng)
+
     purchase_requests = []
     
     if total_quantity > 0:
@@ -476,10 +481,6 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
         # Get customer type from agent_state (should be set by disclose_documents)
         from src.decisions.income_utils import get_customer_type
         customer_type = get_customer_type(agent_state, simulation_config)
-        
-        # STEP 6a: Calculate preferred vendor based on scores
-        # This determines which vendor the agent wants to buy from
-        preferred_vendor_id = _calculate_preferred_vendor(agent_state, simulation_config, rng)
         
         # Create purchase request objects with vendor preference
         for i, timestamp in enumerate(timestamps):

@@ -245,7 +245,7 @@ DEFAULT_DECISION_VALUES = {
         }
     },
     "purchasing_quantity": "RANDOM_WITHIN_LIMIT",  # Random within purchasing limit
-    "purchasing_frequency": "CALCULATED",  # Consumption quantity / Period duration
+    "purchasing_frequency": "CALCULATED",  # Consumption quantity / Number of Periods
     "vendor_selection": "deterministic",  # Deterministic based on highest weighted vendor-product score
     "purchase_vs_bid": {
         "type": "random_probability",
@@ -277,7 +277,7 @@ DEFAULT_DECISION_DESCRIPTIONS = {
     "rejected_transaction_defaults": "Selected option for handling rejected transactions will be applied to all agents",
     "vendor_choice_weights": "equal weight distribution among selected parameters (Price, Quality, Proximity, Sustainability)",
     "purchasing_quantity": "random within purchasing limit",
-    "purchasing_frequency": "Consumption quantity divided by Period duration",
+    "purchasing_frequency": "Consumption quantity divided by Number of Periods",
     "vendor_selection": "deterministic based on highest weighted vendor-product score",
     "purchase_vs_bid": "configurable probability Purchase Now/bid for REGULAR customers only (default 50% each)",
     "bid_value": "random within bidding price range (only for REGULAR customers who chose to bid)",

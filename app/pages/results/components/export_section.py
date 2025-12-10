@@ -110,7 +110,7 @@ def _is_compare_all_mode(results_dict):
     return population_count >= 2
 
 
-def _build_agent_level_dataframe(df, vendors_data=None):
+def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
     """
     Build agent-level DataFrame with one row per agent.
     
@@ -118,16 +118,52 @@ def _build_agent_level_dataframe(df, vendors_data=None):
     - Agent ID and traits
     - All agent-level decisions
     - Summary statistics from transactions
-    - Average vendor proximity (not per-vendor)
+    - Average vendor proximity, price, quality, sustainability, and score
     
     Args:
         df: Original simulation results DataFrame
         vendors_data: List of vendor dictionaries (optional)
+        simulation_params: Simulation parameters (optional)
         
     Returns:
         pd.DataFrame: Agent-level data
     """
     agent_records = []
+    
+    # Pre-calculate static vendor averages (Price, Quality, Sustainability)
+    avg_vendor_price_global = np.nan
+    avg_vendor_quality_global = np.nan
+    avg_vendor_sustainability_global = np.nan
+    
+    # Get configuration for score normalization
+    price_min_config = 50.0
+    price_max_config = 150.0
+    
+    # Try to get params from argument or session state
+    sim_params = {}
+    if simulation_params:
+        sim_params = simulation_params.get('simulation', {})
+    elif hasattr(st.session_state, 'simulation_params'):
+        sim_params = st.session_state.simulation_params.get('simulation', {})
+    elif hasattr(st.session_state, 'sim_params'):
+        # Fallback to direct object access
+        sim_params = {
+            'vendor_price_min': getattr(st.session_state.sim_params, 'vendor_price_min', 50.0),
+            'vendor_price_max': getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
+        }
+        
+    if sim_params:
+        price_min_config = sim_params.get('vendor_price_min', 50.0)
+        price_max_config = sim_params.get('vendor_price_max', 150.0)
+    
+    if vendors_data:
+        prices = [float(v.get('price', np.nan)) for v in vendors_data if v.get('price') is not None]
+        qualities = [float(v.get('quality', np.nan)) for v in vendors_data if v.get('quality') is not None]
+        susts = [float(v.get('sustainability', np.nan)) for v in vendors_data if v.get('sustainability') is not None]
+        
+        if prices: avg_vendor_price_global = np.mean(prices)
+        if qualities: avg_vendor_quality_global = np.mean(qualities)
+        if susts: avg_vendor_sustainability_global = np.mean(susts)
     
     for idx, row in df.iterrows():
         agent_id = row.get('agent_id', idx + 1)
@@ -142,6 +178,16 @@ def _build_agent_level_dataframe(df, vendors_data=None):
             'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan),
         }
         
+        # Income and Income Category (before Disclose Income)
+        # Income: Try to get from multiple sources
+        income = row.get('income', np.nan)
+        # If income is NaN or not present, try actual_allowance as fallback
+        if pd.isna(income) or income is None:
+            income = row.get('actual_allowance', np.nan)
+        
+        agent_record['income'] = income
+        agent_record['income_category'] = row.get('income_category', np.nan)
+
         # Decision 1: Disclose Income
         agent_record['disclose_income'] = row.get('disclose_income', '')
         
@@ -171,7 +217,7 @@ def _build_agent_level_dataframe(df, vendors_data=None):
             if isinstance(rejected_defaults, list) and len(rejected_defaults) >= priority_num:
                 agent_record[f'rejected_transaction_{priority_num}_choice'] = rejected_defaults[priority_num - 1]
             else:
-                agent_record[f'rejected_transaction_{priority_num}_choice'] = ''
+                agent_record[f'rejected_transaction_{priority_num}_choice'] = 'N/A'
         
         # Decision 5: Vendor Choice Weights (flatten dict to columns)
         vendor_weights = row.get('vendor_choice_weights', {})
@@ -187,19 +233,10 @@ def _build_agent_level_dataframe(df, vendors_data=None):
             agent_record['weight_sustainability'] = np.nan
         
         # Decision 6: Purchasing Quantity (agent-level)
-        # Income: Try to get from multiple sources
-        income = row.get('income', np.nan)
-        # If income is NaN or not present, try actual_allowance as fallback
-        if pd.isna(income) or income is None:
-            income = row.get('actual_allowance', np.nan)
-        
-        agent_record['income'] = income
-        agent_record['income_category'] = row.get('income_category', np.nan)
-        
         # Split purchasing_quantity into two columns
         total_requests = row.get('purchasing_quantity', 0)
         agent_record['purchase_requests'] = total_requests  # Count of requests made
-        agent_record['completed_transactions'] = 0  # Placeholder for external algorithm
+        agent_record['completed_transactions'] = total_requests  # Consistent with purchase requests
         
         # Decision 7: Purchasing Frequency
         agent_record['purchasing_frequency'] = row.get('purchasing_frequency', np.nan)
@@ -207,16 +244,141 @@ def _build_agent_level_dataframe(df, vendors_data=None):
         # Decision 8: Vendor Selection (agent-level)
         # Note: This represents the highest scored vendor on average, not a fixed choice
         # In reality, vendor selection varies by product/request
-        agent_record['highest_scored_vendor_avg'] = row.get('preferred_vendor', np.nan)
+        agent_record['most_selected_vendor'] = row.get('preferred_vendor', np.nan)
         
-        # Vendor proximity scores - Calculate AVERAGE instead of per-vendor columns
+        # Vendor proximity scores
         proximity_scores = row.get('vendor_proximity_scores', {})
-        if isinstance(proximity_scores, dict) and proximity_scores:
-            # Calculate average proximity across all vendors
-            proximities = [float(v) for v in proximity_scores.values() if not pd.isna(v)]
-            agent_record['avg_vendor_proximity'] = np.mean(proximities) if proximities else np.nan
+        if not isinstance(proximity_scores, dict):
+            proximity_scores = {}
+            
+        # Get purchase requests for weighted averages
+        purchase_requests = row.get('purchase_requests', [])
+        if not isinstance(purchase_requests, list):
+            purchase_requests = []
+            
+        # Calculate Weighted Averages based on Purchase Requests
+        # If requests exist, average is weighted by the number of requests to each vendor
+        # If no requests, fall back to the "most selected vendor" (preferred vendor)
+        
+        sum_price = 0
+        sum_quality = 0
+        sum_sust = 0
+        sum_prox = 0
+        sum_score = 0
+        count_requests = 0
+        
+        # Helper to get vendor by ID
+        def get_vendor_by_id(vid):
+            if vendors_data:
+                for v in vendors_data:
+                    if str(v.get('vendor_id')) == str(vid):
+                        return v
+            return None
+
+        # 1. Try to calculate from actual requests
+        if purchase_requests:
+            for req in purchase_requests:
+                if isinstance(req, dict):
+                    v_id = req.get('vendorID')
+                    vendor = get_vendor_by_id(v_id)
+                    
+                    if vendor:
+                        count_requests += 1
+                        
+                        # Attributes
+                        v_price = vendor.get('price', np.nan)
+                        v_quality = vendor.get('quality', np.nan)
+                        v_sust = vendor.get('sustainability', np.nan)
+                        
+                        # Proximity (specific to this agent-vendor pair)
+                        v_prox = np.nan
+                        if v_id is not None:
+                            v_prox = proximity_scores.get(str(int(v_id)), np.nan)
+                            if pd.isna(v_prox) and str(v_id) in proximity_scores:
+                                v_prox = proximity_scores[str(v_id)]
+                        
+                        # Add to sums (handle NaNs by skipping or treating as 0? skipping attribute specific sums)
+                        if not pd.isna(v_price): sum_price += v_price
+                        if not pd.isna(v_quality): sum_quality += v_quality
+                        if not pd.isna(v_sust): sum_sust += v_sust
+                        if not pd.isna(v_prox): sum_prox += float(v_prox)
+                        
+                        # Calculate Score for this specific transaction
+                        if not (pd.isna(v_price) or pd.isna(v_quality) or pd.isna(v_sust) or pd.isna(v_prox)):
+                            # Normalize
+                            if price_max_config > price_min_config:
+                                clamped_price = max(price_min_config, min(v_price, price_max_config))
+                                norm_price = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
+                            else:
+                                norm_price = 0.5
+                                
+                            norm_quality = (v_quality - 1) / 4 if v_quality >= 1 else 0
+                            norm_sust = (v_sust - 1) / 4 if v_sust >= 1 else 0
+                            norm_prox = float(v_prox) / 100
+                            
+                            score = (
+                                vendor_weights.get('price', 0.25) * norm_price +
+                                vendor_weights.get('quality', 0.25) * norm_quality +
+                                vendor_weights.get('proximity', 0.25) * norm_prox +
+                                vendor_weights.get('sustainability', 0.25) * norm_sust
+                            )
+                            sum_score += score
+
+        # 2. Assign Averages
+        if count_requests > 0:
+            agent_record['avg_vendor_proximity'] = sum_prox / count_requests
+            agent_record['avg_vendor_price'] = sum_price / count_requests
+            agent_record['avg_vendor_quality'] = sum_quality / count_requests
+            agent_record['avg_vendor_sustainability'] = sum_sust / count_requests
+            agent_record['avg_vendor_score'] = sum_score / count_requests
         else:
-            agent_record['avg_vendor_proximity'] = np.nan
+            # Fallback: Use preferred vendor (most_selected_vendor) if available
+            # This handles agents with 0 quantity who still have a preference
+            pref_vendor_id = row.get('preferred_vendor')
+            vendor = get_vendor_by_id(pref_vendor_id)
+            
+            if vendor:
+                v_price = vendor.get('price', np.nan)
+                v_quality = vendor.get('quality', np.nan)
+                v_sust = vendor.get('sustainability', np.nan)
+                
+                v_prox = np.nan
+                if pref_vendor_id is not None:
+                    v_prox = proximity_scores.get(str(int(pref_vendor_id)), np.nan)
+                
+                agent_record['avg_vendor_price'] = v_price
+                agent_record['avg_vendor_quality'] = v_quality
+                agent_record['avg_vendor_sustainability'] = v_sust
+                agent_record['avg_vendor_proximity'] = float(v_prox) if not pd.isna(v_prox) else np.nan
+                
+                # Calculate single score
+                if not (pd.isna(v_price) or pd.isna(v_quality) or pd.isna(v_sust) or pd.isna(v_prox)):
+                    if price_max_config > price_min_config:
+                        clamped_price = max(price_min_config, min(v_price, price_max_config))
+                        norm_price = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
+                    else:
+                        norm_price = 0.5
+                    
+                    norm_quality = (v_quality - 1) / 4 if v_quality >= 1 else 0
+                    norm_sust = (v_sust - 1) / 4 if v_sust >= 1 else 0
+                    norm_prox = float(v_prox) / 100
+                    
+                    score = (
+                        vendor_weights.get('price', 0.25) * norm_price +
+                        vendor_weights.get('quality', 0.25) * norm_quality +
+                        vendor_weights.get('proximity', 0.25) * norm_prox +
+                        vendor_weights.get('sustainability', 0.25) * norm_sust
+                    )
+                    agent_record['avg_vendor_score'] = score
+                else:
+                    agent_record['avg_vendor_score'] = np.nan
+            else:
+                # No requests and no preferred vendor found - set to NaN
+                agent_record['avg_vendor_proximity'] = np.nan
+                agent_record['avg_vendor_price'] = np.nan
+                agent_record['avg_vendor_quality'] = np.nan
+                agent_record['avg_vendor_sustainability'] = np.nan
+                agent_record['avg_vendor_score'] = np.nan
         
         # Decision 11: Rejected Transaction Option
         agent_record['rejected_transaction_option'] = row.get('rejected_transaction_option', '')
@@ -306,6 +468,10 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
         allowance_level = row.get('Assigned Allowance Level', np.nan)
         group_experiment = row.get('Group_experiment', '')
         customer_type = row.get('customer_type', '')
+        
+        # Get income (try 'income' first, fallback to 'actual_allowance')
+        income = row.get('income', row.get('actual_allowance', np.nan))
+        
         income_category = row.get('income_category', np.nan)
         agent_donation_default = row.get('donation_default', np.nan)
         
@@ -336,7 +502,8 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             
             # Transaction identification
             request_id = request.get('request_id', req_idx + 1)
-            transaction_id = f"A{agent_id}_R{request_id}"
+            # Use global transaction_id if available (assigned by simulation.py), otherwise fallback
+            transaction_id = request.get('transaction_id', f"A{agent_id}_R{request_id}")
             
             # Timing
             timestamp_hours = request.get('timestamp_hours', np.nan)
@@ -402,27 +569,52 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             bid_value = request.get('bid_value', 'N/A')
             
             # Determine purchase request type and customer price
+            # Customer Type can be: 'Regular', 'Fixed', or 'Bid'
+            # Note: 'PN' (Purchase Now) is treated as a sub-type of 'Regular' or 'Bid' but for high-level Customer Type
+            # we classify it based on the platform price mechanism.
+            
+            customer_type_str = 'Regular' # Default
+            
             if platform_price == 'DISCOUNT':
                 purchase_request_type = 'Discount'
                 customer_price = discount_price
+                customer_type_str = 'Regular' # Discount is a type of regular price
             elif platform_price == 'FIXED':
                 purchase_request_type = 'Fixed'
                 customer_price = fixed_price
+                customer_type_str = 'Fixed'
             elif platform_price == 'PN':
                 purchase_request_type = 'Purchase Now'
                 customer_price = pn_price
+                # PN is typically available in Bid scenarios or as a specific option, 
+                # but if it stands alone or is the chosen option, it's a fixed price purchase.
+                # However, user requested mapping: Regular, Bid, Fixed.
+                # If PN is a "buy it now" option in a bid, it might be considered 'Bid' context or 'Fixed' price execution.
+                # Let's look at how customer_type is derived in the simulation.
+                # If customer_type variable exists, use it.
+                if customer_type:
+                     customer_type_str = customer_type.capitalize()
+                else:
+                     customer_type_str = 'Regular' 
             elif platform_price == 'BID':
                 purchase_request_type = 'Bid'
+                customer_type_str = 'Bid'
                 try:
-                    customer_price = float(bid_value) if bid_value != 'N/A' else pn_price
+                    # For BID transactions, Customer Price is the bid amount if successful
+                    bid_val_numeric = float(bid_value) if bid_value != 'N/A' else pn_price
+                    customer_price = bid_val_numeric
                 except (ValueError, TypeError):
                     customer_price = pn_price
             else:
                 purchase_request_type = customer_type.capitalize() if customer_type else 'Regular'
                 customer_price = pn_price
+                customer_type_str = 'Regular'
             
-            # Display customer price only for PN, show N/A for others
-            display_customer_price = customer_price if purchase_request_type == 'Purchase Now' else 'N/A'
+            # Display customer price:
+            # - For Purchase Now: pn_price
+            # - For Bid: bid_value (if numeric)
+            # - For Discount/Fixed: N/A (unknown)
+            display_customer_price = customer_price if purchase_request_type in ['Purchase Now', 'Bid'] else 'N/A'
             
             # Donation information
             # Priority: request-level > agent-level
@@ -437,31 +629,36 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 # Identification
                 'Transaction ID': transaction_id,
                 'Agent ID': agent_id,
-                'Request ID': request_id,
                 
                 # Agent traits (for reference)
                 'Honesty_Humility': honesty_humility,
                 'Assigned Allowance Level': allowance_level,
                 'Group_experiment': group_experiment,
                 'Customer Type': customer_type.capitalize() if customer_type else '',
+                'Income': income,
                 'Income Category': income_category,
                 
                 # Timing
-                'Timestamp (hours)': timestamp_hours,
                 'Period': period,
-                'Purchase Date': purchase_date,
-                'Purchase Time': purchase_time,
+                'Purchase Timestamp': request_datetime,
                 
                 # Vendor - All scores normalized to 0-1 scale
                 'Vendor ID': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else '',
-                'Vendor Price Score': vendor_price_score,
-                'Vendor Quality Score': vendor_quality_score,
-                'Vendor Sustainability Score': vendor_sustainability_score,
-                'Vendor Proximity Score': vendor_proximity_score,
+                
+                # Original Vendor Attributes
+                'Vendor Price': vendor_price,
+                'Vendor Quality': vendor_quality,
+                'Vendor Sustainability': vendor_sustainability,
+                'Vendor Proximity': vendor_proximity,
+                
+                'Standardised Vendor Price Score': vendor_price_score,
+                'Standardised Vendor Quality Score': vendor_quality_score,
+                'Standardised Vendor Sustainability Score': vendor_sustainability_score,
+                'Standardised Vendor Proximity Score': vendor_proximity_score,
                 'Vendor Integrated Score': vendor_integrated_score,
                 
                 # Purchase Decision
-                'Platform Price': platform_price,
+                'Customer Type': customer_type_str,
                 'Purchase Request Type': purchase_request_type,
                 
                 # Pricing
@@ -477,7 +674,7 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
     
     # Sort by timestamp
     if transaction_records:
-        transaction_records.sort(key=lambda x: (x['Agent ID'], x.get('Timestamp (hours)', 0.0)))
+        transaction_records.sort(key=lambda x: (x.get('Purchase Timestamp', datetime.min)))
     
     return pd.DataFrame(transaction_records)
 
@@ -486,7 +683,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     """Render the export/download section (simplified)"""
     # Remove 'raw', 'index', 'consumption_frequency', 'actual_allowance', 'income', 'customer_type', and 'enriched_requests_count' columns before any processing
     # Use exact column name matching to avoid filtering out 'disclose_income' when we only want to exclude 'income'
-    columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'actual_allowance', 'income', 'customer_type', 'enriched_requests_count']
+    columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'enriched_requests_count']
     
     if df is not None:
         df = df[[col for col in df.columns if col not in columns_to_exclude]]
@@ -705,7 +902,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         
         try:
             # Build agent-level and transaction-level DataFrames
-            agent_df = _build_agent_level_dataframe(df, vendors_data=vendors_data)
+            agent_df = _build_agent_level_dataframe(df, vendors_data=vendors_data, simulation_params=simulation_params)
             transaction_df = _build_transaction_level_dataframe(df, vendors_data=vendors_data, simulation_params=simulation_params)
             
             # Show summary statistics
