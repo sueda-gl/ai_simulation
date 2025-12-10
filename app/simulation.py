@@ -104,8 +104,17 @@ def _load_original_participants(n_agents: int, seed: int, random_sample: bool = 
         df.index = range(len(df))
         return df
     else:
-        # Both modes: Bootstrap sample WITH replacement
-        indices = rng.choice(n_original, size=n_agents, replace=True)
+        # n_agents > 280
+        if random_sample:
+            # Research Spec: Bootstrap sample WITH replacement
+            indices = rng.choice(n_original, size=n_agents, replace=True)
+        else:
+            # Research Baseline: "Always in order" -> Deterministic wrapping
+            # [0, 1, ..., 279, 0, 1, ..., 279, 0, 1, ...]
+            full_repeats = n_agents // n_original
+            remainder = n_agents % n_original
+            indices = list(range(n_original)) * full_repeats + list(range(remainder))
+            
         df = temp_orchestrator.original_data.iloc[indices].copy()
         df.index = range(len(df))
         return df

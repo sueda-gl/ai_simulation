@@ -184,7 +184,7 @@ def _build_purchase_vs_bid_export(df):
             
             # Build record
             record = {
-                'Transaction ID': transaction_id,
+                'Purchase Request ID': transaction_id,  # Placeholder, will be updated after sorting
                 'Agent ID': agent_id,
                 'Assigned Allowance Level': allowance_level,
                 'Group_experiment': group_experiment,
@@ -205,13 +205,10 @@ def _build_purchase_vs_bid_export(df):
     if transaction_records:
         transaction_records.sort(key=lambda x: x.get('_sort_key', 0.0))
         
-        # Remove the hidden sorting column before returning
-        for record in transaction_records:
+        # Assign unique Purchase Request IDs based on sorted order
+        for idx, record in enumerate(transaction_records):
+            record['Purchase Request ID'] = idx + 1
             record.pop('_sort_key', None)
-            
-            # If Transaction ID is missing (e.g. old simulation run), generate a placeholder or sequence
-            # But since we're filtering, we can't easily regenerate global sequence here.
-            # We trust the central system. If None, it will show as empty in Excel.
     
     return transaction_records
 
@@ -340,7 +337,7 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 with col_info:
                     num_sheets = 1 + len(export_df['Period'].dropna().unique()) if 'Period' in export_df.columns else 1
                     st.caption(f"📋 Export includes {len(export_df):,} requests across {num_sheets} sheets")
-                    st.caption(f"✅ Fields: Transaction ID, Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, Vendor, Vendor Price, timestamp, Period, Customer Price")
+                    st.caption(f"✅ Fields: Purchase Request ID, Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, Vendor, Vendor Price, timestamp, Period, Customer Price")
                     st.caption(f"🔄 Sorted by: timestamp (chronological order)")
             
             except ImportError:

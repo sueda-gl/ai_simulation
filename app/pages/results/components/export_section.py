@@ -396,7 +396,7 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
     Build transaction-level DataFrame with one row per purchase request.
     
     Includes:
-    - Transaction ID and timing
+    - Purchase Request ID and timing
     - Agent reference (ID and traits)
     - Vendor selection and attributes
     - Purchase decision (PN/BID)
@@ -627,7 +627,7 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             # Build transaction record
             transaction_record = {
                 # Identification
-                'Transaction ID': transaction_id,
+                'Purchase Request ID': transaction_id,
                 'Agent ID': agent_id,
                 
                 # Agent traits (for reference)
@@ -675,6 +675,12 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
     # Sort by timestamp
     if transaction_records:
         transaction_records.sort(key=lambda x: (x.get('Purchase Timestamp', datetime.min)))
+        
+        # Assign unique Purchase Request IDs based on sorted order
+        for idx, record in enumerate(transaction_records):
+            record['Purchase Request ID'] = idx + 1
+            if 'Transaction ID' in record:
+                del record['Transaction ID']
     
     return pd.DataFrame(transaction_records)
 
