@@ -47,10 +47,14 @@ def _build_purchase_vs_bid_export(df):
     
     # Get vendor data for price lookup
     vendors_data = None
-    if hasattr(st.session_state, 'simulation_results') and st.session_state.simulation_results:
-        vendors_data = st.session_state.simulation_results.get('vendors_data', None)
-    if vendors_data is None and hasattr(st.session_state, 'vendors_data'):
+    
+    # Check session state locations in order of likelihood
+    if hasattr(st.session_state, 'vendors'):
+        vendors_data = st.session_state.vendors
+    elif hasattr(st.session_state, 'vendors_data'):
         vendors_data = st.session_state.vendors_data
+    elif hasattr(st.session_state, 'simulation_results') and isinstance(st.session_state.simulation_results, dict):
+        vendors_data = st.session_state.simulation_results.get('vendors_data', None)
     
     # Build vendor lookup dictionary for quick access
     vendor_lookup = {}
@@ -58,7 +62,9 @@ def _build_purchase_vs_bid_export(df):
         for vendor in vendors_data:
             vendor_id = vendor.get('vendor_id')
             if vendor_id is not None:
+                # Store with both int and string keys to ensure lookup works
                 vendor_lookup[vendor_id] = vendor
+                vendor_lookup[str(vendor_id)] = vendor
     
     # Base date for timestamp conversion (current date when simulation is run)
     base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -124,9 +130,23 @@ def _build_purchase_vs_bid_export(df):
             
             # Get vendor price for this request's vendor
             vendor_id = request.get('vendorID', request.get('vendor_id'))
+            
+            # Normalize vendor_id for lookup (handle float 1.0 -> int 1)
+            lookup_key = vendor_id
+            if isinstance(vendor_id, float) and vendor_id.is_integer():
+                lookup_key = int(vendor_id)
+                
             vendor_price = None
-            if vendor_id is not None and vendor_id in vendor_lookup:
-                vendor_price = vendor_lookup[vendor_id].get('price')
+            if lookup_key is not None:
+                # Try direct lookup first
+                if lookup_key in vendor_lookup:
+                    vendor_price = vendor_lookup[lookup_key].get('price')
+                # Try string lookup if not found
+                elif str(lookup_key) in vendor_lookup:
+                    vendor_price = vendor_lookup[str(lookup_key)].get('price')
+            
+            # Get Transaction ID (pre-assigned by central system)
+            transaction_id = request.get('transaction_id')
             
             # Calculate customer price based on vendor's actual price
             # Formula: Customer Price (PN) = (1 + price_range) × (1 + platform_markup) × vendor_price
@@ -164,12 +184,15 @@ def _build_purchase_vs_bid_export(df):
             
             # Build record
             record = {
+                'Transaction ID': transaction_id,
                 'Agent ID': agent_id,
                 'Assigned Allowance Level': allowance_level,
                 'Group_experiment': group_experiment,
                 'Customer Type': customer_type_display,
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
+                'Vendor': vendor_id,
+                'Vendor Price': vendor_price,
                 'timestamp': timestamp_str,
                 'Period': period,
                 'Customer Price': display_customer_price,
@@ -185,6 +208,10 @@ def _build_purchase_vs_bid_export(df):
         # Remove the hidden sorting column before returning
         for record in transaction_records:
             record.pop('_sort_key', None)
+            
+            # If Transaction ID is missing (e.g. old simulation run), generate a placeholder or sequence
+            # But since we're filtering, we can't easily regenerate global sequence here.
+            # We trust the central system. If None, it will show as empty in Excel.
     
     return transaction_records
 
@@ -313,7 +340,7 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 with col_info:
                     num_sheets = 1 + len(export_df['Period'].dropna().unique()) if 'Period' in export_df.columns else 1
                     st.caption(f"📋 Export includes {len(export_df):,} requests across {num_sheets} sheets")
-                    st.caption(f"✅ Fields: Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, timestamp, Period, Customer Price")
+                    st.caption(f"✅ Fields: Transaction ID, Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, Vendor, Vendor Price, timestamp, Period, Customer Price")
                     st.caption(f"🔄 Sorted by: timestamp (chronological order)")
             
             except ImportError:
@@ -456,7 +483,6 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
                         showlegend=False,
                         height=200,
                         margin=dict(t=30, b=10, l=10, r=10),
-                        title=dict(text=option_label, x=0.5, font=dict(size=14)),
                         annotations=[dict(
                             text=f'{percentage:.0f}%',
                             x=0.5, y=0.5,
@@ -466,6 +492,9 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
                     )
                     # Hide the empty slice from tooltip
                     fig.data[0].hoverinfo = 'skip'
+                    
+                    # Display title as markdown
+                    st.markdown(f"**{option_label}**")
                     st.plotly_chart(fig, use_container_width=True, key=f"{decision_name}_option_{idx}_chart")
                     st.caption(f"{agent_count:,} agents")
             
@@ -599,10 +628,10 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
             # Create readable labels for the chart
             readable_labels = [option_names.get(opt, opt) for opt in value_counts.index]
             
+            st.markdown("### Current Simulation Results")
             fig = px.pie(
                 values=value_counts.values,
                 names=readable_labels,
-                title="Current Simulation Results",
                 color_discrete_sequence=px.colors.qualitative.Set3
             )
             fig.update_layout(showlegend=True, height=400)

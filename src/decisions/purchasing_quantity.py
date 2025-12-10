@@ -64,7 +64,13 @@ def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng)
     if 'vendor_proximity_scores' not in agent_state:
         agent_id = agent_state.get('agent_id', agent_state.get('index', 0) + 1)
         from src.vendor_attribute_generator import generate_proximity_scores
-        proximity_scores = generate_proximity_scores(agent_id, len(vendors), rng)
+        
+        # Get base seed from simulation config (default to 42 for backward compatibility)
+        # This ensures proximity maps change when simulation seed changes,
+        # but remain consistent across agents within the same run.
+        base_seed = simulation_config.get('simulation_seed', 42) if simulation_config else 42
+        
+        proximity_scores = generate_proximity_scores(agent_id, len(vendors), rng, base_seed=base_seed)
         agent_state['vendor_proximity_scores'] = proximity_scores
     else:
         proximity_scores = agent_state['vendor_proximity_scores']
@@ -144,6 +150,17 @@ def _enrich_purchase_requests(requests: List[Dict], customer_type: str, rng: np.
     agent_baseline_rate = np.clip(agent_baseline_rate, 0.0, 1.0)
     # ========================================================================
     
+    # NEW: Prepare vendor price lookup map
+    vendor_prices = {}
+    if simulation_config and 'vendors' in simulation_config:
+        for vendor in simulation_config['vendors']:
+            v_id = vendor.get('vendor_id')
+            v_price = vendor.get('price')
+            if v_id is not None and v_price is not None:
+                vendor_prices[v_id] = v_price
+                # Add string fallback for robust lookup
+                vendor_prices[str(v_id)] = v_price
+
     enriched_requests = []
     
     for request in requests:
@@ -167,8 +184,14 @@ def _enrich_purchase_requests(requests: List[Dict], customer_type: str, rng: np.
             
             if decision == 'bid':
                 enriched_request['platformPrice'] = 'BID'
+                
+                # Get vendor price for this request
+                vendor_id = request.get('vendorID')
+                base_price = vendor_prices.get(vendor_id)
+                
                 # Generate unique bid value for this request
-                bid_amount = generate_single_bid_value(rng, simulation_config, {})
+                # NEW: Pass the specific vendor price
+                bid_amount = generate_single_bid_value(rng, simulation_config, {}, base_price=base_price)
                 enriched_request['bid_value'] = bid_amount
             else:
                 # Purchase Now

@@ -398,6 +398,12 @@ def render_checkbox_default_config(decision_name, default_value):
 def render_numeric_default_config(decision_name, default_value):
     """Render UI for numeric default decisions"""
     
+    # Special handling for final_donation_rate when donation config is selected
+    # Check both hasattr and dictionary access for robustness
+    if decision_name == "final_donation_rate" and (hasattr(st.session_state, 'selected_donation_config') or 'selected_donation_config' in st.session_state):
+        render_final_donation_rate_with_config(default_value)
+        return
+    
     # Session state key for this decision's value
     value_key = f"{decision_name}_default_value"
     
@@ -444,6 +450,58 @@ def render_numeric_default_config(decision_name, default_value):
             st.caption("⚙️ Modified")
         else:
             st.caption("✓ Default")
+
+
+def render_final_donation_rate_with_config(default_value):
+    """Render final_donation_rate UI when a donation configuration is selected.
+    
+    Shows the slider synced to the selected donation configuration's mean rate.
+    """
+    config = st.session_state.selected_donation_config
+    mean_donation = config['metrics']['mean_donation']
+    
+    # Session state key for this decision's value
+    value_key = "final_donation_rate_default_value"
+    
+    # FORCE SYNC: The selected configuration's value MUST override any stored defaults
+    # This prevents stale values (like 0.10) from persisting when a config is selected
+    current_value = mean_donation
+    st.session_state[value_key] = current_value
+    
+    # Update persistent storage too
+    if '_persistent_defaults' not in st.session_state:
+        st.session_state._persistent_defaults = {}
+    st.session_state._persistent_defaults[value_key] = current_value
+    
+    # Show that this is linked to the selected donation configuration
+    st.success(f"✅ **Linked to Selected Donation Configuration**")
+    st.caption(f"📊 Value synced from: {config['population_mode']} + {config['income_spec_mode']}")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Show slider with the config's mean donation as value
+        # We use the forced current_value here
+        value = st.slider(
+            "Default Value",
+            min_value=0.0,
+            max_value=1.0,
+            value=current_value,
+            step=0.01,
+            format="%.2f",
+            help="This value is synced from the selected donation configuration. You can adjust it if needed.",
+            key=value_key,
+            on_change=save_to_persistent_storage,
+            args=(value_key,)
+        )
+        st.caption(f"Percentage: {value:.1%}")
+    
+    with col2:
+        st.metric("From Config", f"{mean_donation:.2%}")
+        if abs(value - mean_donation) < 0.001:
+            st.caption("🔗 Synced")
+        else:
+            st.caption("⚙️ Adjusted")
 
 
 def render_placeholder_default_config(decision_name, default_value):

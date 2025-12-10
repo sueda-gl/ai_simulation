@@ -121,11 +121,11 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 # Filter out zero values for cleaner pie chart
                 pie_data = pie_data[pie_data['Purchase Requests'] > 0]
                 
+                st.markdown("### Purchase Request Distribution by Customer Type")
                 fig_pie = px.pie(
                     pie_data,
                     values='Purchase Requests',
                     names='Customer Type',
-                    title="Purchase Request Distribution by Customer Type",
                     color='Customer Type',
                     color_discrete_map={
                         'Regular': '#1f77b4',
@@ -300,16 +300,24 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             # Sort DataFrame by income_category to ensure proper ordering
             df_sorted = df.sort_values('income_category')
             
+            st.markdown("### Quantity Distribution by Income Category")
             fig_box = px.box(
                 df_sorted,
                 x='income_category',
                 y='purchasing_quantity',
-                title="Quantity Distribution by Income Category",
                 labels={
                     'income_category': 'Income Category',
                     'purchasing_quantity': 'Items per Term'
                 },
                 category_orders={"income_category": sorted(df['income_category'].unique())}
+            )
+            
+            # Ensure all income categories are shown on X axis
+            fig_box.update_layout(
+                xaxis=dict(
+                    tickmode='linear',
+                    dtick=1
+                )
             )
             st.plotly_chart(fig_box, use_container_width=True)
     
@@ -386,11 +394,11 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             })
             
             # Grouped bar chart showing both metrics side by side
+            st.markdown("### Purchase Requests and Completed Transactions per Period")
             fig_periods = px.bar(
                 period_df,
                 x='Period',
                 y=['Purchase Requests', 'Purchases Completed'],
-                title=f"Purchase Requests and Completed Transactions per Period",
                 labels={'value': 'Count', 'Period': 'Period', 'variable': 'Type'},
                 barmode='group',
                 color_discrete_sequence=['#1f77b4', '#2ca02c']
@@ -489,11 +497,11 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     })
                     
                     # Grouped bar chart for this customer type
+                    st.markdown(f"### Purchase Requests and Completed Transactions - {ctype} Customers")
                     fig_type_periods = px.bar(
                         type_period_df,
                         x='Period',
                         y=['Purchase Requests', 'Purchases Completed'],
-                        title=f"Purchase Requests and Completed Transactions - {ctype} Customers",
                         labels={'value': 'Count', 'Period': 'Period', 'variable': 'Type'},
                         barmode='group',
                         color_discrete_sequence=['#1f77b4', '#2ca02c']
@@ -617,6 +625,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                             timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
                             
                             transactions.append({
+                                'transaction_id': req.get('transaction_id'),
                                 'customer_id': req.get('customer_id', idx + 1),
                                 'vendorID': req.get('vendorID', 1),
                                 'platformProductID': req.get('platformProductID', 1),
@@ -638,8 +647,17 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     na_position='last'
                 ).reset_index(drop=True).copy()
                 
-                # Add transaction_id AFTER sorting
-                transactions_df.insert(0, 'transaction_id', range(1, len(transactions_df) + 1))
+                # Handle transaction_id
+                # If IDs were pre-assigned (central system), use them. Otherwise generate them.
+                if 'transaction_id' in transactions_df.columns and not transactions_df['transaction_id'].isnull().all():
+                    # Move transaction_id to first column
+                    cols = ['transaction_id'] + [c for c in transactions_df.columns if c != 'transaction_id']
+                    transactions_df = transactions_df[cols]
+                else:
+                    # Fallback: Generate sequential IDs if missing
+                    if 'transaction_id' in transactions_df.columns:
+                        transactions_df = transactions_df.drop(columns=['transaction_id'])
+                    transactions_df.insert(0, 'transaction_id', range(1, len(transactions_df) + 1))
                 
                 # Drop timestamp_hours column before display/export
                 transactions_df = transactions_df.drop(columns=['timestamp_hours'])
@@ -932,11 +950,11 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
     if timeline_data:
         timeline_df = pd.DataFrame(timeline_data)
         
+        st.markdown(f"### Purchase Timing for Top {len(sample_agents)} Agents (by quantity)")
         fig_timeline = px.scatter(
             timeline_df,
             x='Time',
             y='Agent',
-            title=f"Purchase Timing for Top {len(sample_agents)} Agents (by quantity)",
             labels={'Time': 'Time (hours)', 'Agent': 'Agent ID'},
             color_discrete_sequence=['#1f77b4']
         )

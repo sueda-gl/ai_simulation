@@ -183,3 +183,7 @@ cd /Users/suedagul/<sdg
 | Does this happen in all 6 modes? | **Yes** - same formula in all modes |
 | Can it be changed? | Yes - adjust anchor weights or add special case |
 
+
+
+
+

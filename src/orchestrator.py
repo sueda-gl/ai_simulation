@@ -89,6 +89,11 @@ class Orchestrator:
         
         # Create separate RNG for setup tasks (vendors, etc.)
         rng_setup = np.random.default_rng(seed)
+        
+        # Store seed in simulation_config for access by decision modules
+        # This allows decision modules to access the global seed (e.g. for consistent vendor locations)
+        self.simulation_config['simulation_seed'] = seed
+        
         self._initialize_vendors(rng_setup)
         
         # Reset vendor capacity tracking for this simulation run

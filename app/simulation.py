@@ -28,19 +28,84 @@ from app.models import ALL_DECISIONS
 # HELPER FUNCTIONS - Shared logic for mode runners
 # =============================================================================
 
-def _load_original_participants(n_agents: int, seed: int) -> pd.DataFrame:
+def _assign_global_transaction_ids(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Load original 280 participants with bootstrap if needed.
+    Assign unique, chronologically ordered transaction IDs to all purchase requests across all agents.
     
-    Used by Research Specification and Research Baseline modes.
+    This ensures that Transaction IDs are consistent across different exports (Decision 6, Decision 9).
+    
+    Logic:
+    1. Collect all requests from all agents.
+    2. Sort globally by timestamp_hours.
+    3. Assign sequential IDs (1, 2, 3...).
+    4. Write IDs back to the agent's purchase_requests structure.
+    """
+    if 'purchase_requests' not in df.columns:
+        return df
+    
+    # 1. Collect all requests with metadata to trace back
+    # We need a flat list of (timestamp, agent_idx, req_idx, request_obj)
+    all_requests = []
+    
+    for idx, row in df.iterrows():
+        requests = row.get('purchase_requests', [])
+        if isinstance(requests, list):
+            for req_idx, req in enumerate(requests):
+                if isinstance(req, dict):
+                    # Store reference to the mutable dict object so we can update it in place
+                    all_requests.append({
+                        'timestamp': req.get('timestamp_hours', 0),
+                        'request_obj': req
+                    })
+    
+    # 2. Sort globally by timestamp
+    # Use a stable sort to ensure determinism for identical timestamps
+    all_requests.sort(key=lambda x: x['timestamp'])
+    
+    # 3. Assign sequential IDs
+    for i, item in enumerate(all_requests):
+        transaction_id = i + 1
+        
+        # Update the request object IN PLACE
+        # This updates the dict inside the list inside the DataFrame
+        item['request_obj']['transaction_id'] = transaction_id
+        
+    return df
+
+def _load_original_participants(n_agents: int, seed: int, random_sample: bool = True) -> pd.DataFrame:
+    """
+    Load original 280 participants with configurable sampling.
+    
+    Args:
+        n_agents: Number of agents to load
+        seed: Random seed for reproducibility
+        random_sample: 
+            True (Research Spec) → Random sampling for n≤280
+            False (Research Baseline) → Sequential selection for n≤280
+    
+    Behavior:
+        n_agents > 280:  Both modes → Bootstrap (random WITH replacement)
+        n_agents <= 280:
+            random_sample=True  → Random WITHOUT replacement (Research Spec)
+            random_sample=False → Sequential [0, 1, 2, ..., n-1] (Research Baseline)
     """
     temp_orchestrator = OrchestratorBaseline()
-    if n_agents <= len(temp_orchestrator.original_data):
-        return temp_orchestrator.original_data.iloc[:n_agents].copy()
+    n_original = len(temp_orchestrator.original_data)
+    rng = np.random.default_rng(seed)
+    
+    if n_agents <= n_original:
+        if random_sample:
+            # Research Spec: Random sample WITHOUT replacement
+            indices = rng.choice(n_original, size=n_agents, replace=False)
+        else:
+            # Research Baseline: Sequential/in-order selection
+            indices = list(range(n_agents))
+        df = temp_orchestrator.original_data.iloc[indices].copy()
+        df.index = range(len(df))
+        return df
     else:
-        # Bootstrap sample if more agents requested than available
-        rng = np.random.default_rng(seed)
-        indices = rng.choice(len(temp_orchestrator.original_data), size=n_agents, replace=True)
+        # Both modes: Bootstrap sample WITH replacement
+        indices = rng.choice(n_original, size=n_agents, replace=True)
         df = temp_orchestrator.original_data.iloc[indices].copy()
         df.index = range(len(df))
         return df
@@ -255,9 +320,10 @@ def run_research_spec_mode(n_agents: int, seed: int, inc_mode: str, decision_set
     
     - Uses original 280 participants
     - Uses OrchestratorDocMode (stochastic version)
+    - Random sampling for n≤280 (without replacement)
     """
-    # 1. Load original participants
-    agents_df = _load_original_participants(n_agents, seed)
+    # 1. Load original participants (random sampling)
+    agents_df = _load_original_participants(n_agents, seed, random_sample=True)
     
     # 2. Create orchestrator
     orchestrator = OrchestratorDocMode()
@@ -278,9 +344,10 @@ def run_research_baseline_mode(n_agents: int, seed: int, inc_mode: str, decision
     
     - Uses original 280 participants
     - Uses OrchestratorBaseline (deterministic anchor)
+    - Sequential selection for n≤280 (agents 0, 1, 2, ..., n-1)
     """
-    # 1. Load original participants
-    agents_df = _load_original_participants(n_agents, seed)
+    # 1. Load original participants (sequential selection)
+    agents_df = _load_original_participants(n_agents, seed, random_sample=False)
     
     # 2. Create orchestrator
     orchestrator = OrchestratorBaseline()
@@ -751,6 +818,10 @@ def run_simulation_from_sidebar():
                 else:  # categorical only
                     results["categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
             
+            # Assign global transaction IDs to ensure consistency across exports
+            for key in results:
+                results[key] = _assign_global_transaction_ids(results[key])
+
             # Store results
             st.session_state.simulation_results = results
             

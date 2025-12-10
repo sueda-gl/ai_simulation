@@ -17,7 +17,7 @@ import numpy as np
 from src.decisions.income_utils import get_simulation_param
 
 
-def generate_single_bid_value(rng, simulation_config: dict = None, params: dict = None) -> float:
+def generate_single_bid_value(rng, simulation_config: dict = None, params: dict = None, base_price: float = None) -> float:
     """
     Generate a single random bid value within the bidding range.
     
@@ -34,12 +34,17 @@ def generate_single_bid_value(rng, simulation_config: dict = None, params: dict 
         rng: Random number generator
         simulation_config: Global simulation configuration with pricing parameters
         params: Decision-specific parameters (unused currently)
+        base_price: Optional specific vendor price to use. If None, uses global market_price.
         
     Returns:
         float: Random bid amount (rounded to 2 decimal places)
     """
     # Get pricing parameters from Page 1 using centralized helper
-    vendor_price = get_simulation_param(simulation_config, 'market_price', 100.0)
+    if base_price is not None:
+        vendor_price = float(base_price)
+    else:
+        vendor_price = get_simulation_param(simulation_config, 'market_price', 100.0)
+        
     platform_markup = get_simulation_param(simulation_config, 'platform_markup', 0.1)
     price_range = get_simulation_param(simulation_config, 'price_range', 0.25)
     

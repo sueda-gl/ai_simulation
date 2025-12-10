@@ -120,10 +120,10 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
             # Filter out NA for the pie chart
             qualified_counts = {k: v for k, v in value_counts.items() if k != 'NA'}
             if len(qualified_counts) > 0:
+                st.markdown(f"### {decision_title} - Qualified Agents Only")
                 fig = px.pie(
                     values=list(qualified_counts.values()),
                     names=list(qualified_counts.keys()),
-                    title=f"{decision_title} - Qualified Agents Only",
                     color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
                 )
                 st.plotly_chart(fig, use_container_width=True)
@@ -224,10 +224,10 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
                 ]
             }
             
+            st.markdown(f"### Customer Type Breakdown ({customer_stats['total']:,} total agents)")
             fig = px.pie(
                 values=customer_types_data['Count'],
                 names=customer_types_data['Customer Type'],
-                title=f"Customer Type Breakdown ({customer_stats['total']:,} total agents)",
                 hole=0.4,  # Donut chart
                 color_discrete_map={
                     'Regular Customers': '#2196F3',  # Blue

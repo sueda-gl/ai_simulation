@@ -709,6 +709,16 @@ def save_selected_configuration(result_key, result_df):
     # Store in session state
     st.session_state.selected_donation_config = config
     
+    # Sync final_donation_rate_default_value with selected config's mean donation
+    # This ensures the slider on Page 2 reflects the selected configuration
+    mean_donation = metrics['mean_donation']
+    st.session_state.final_donation_rate_default_value = mean_donation
+    
+    # Also update persistent storage for navigation persistence
+    if '_persistent_defaults' not in st.session_state:
+        st.session_state._persistent_defaults = {}
+    st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
+    
     return config
 
 
@@ -848,3 +858,8 @@ def clear_selected_configuration():
     
     if hasattr(st.session_state, 'selected_donation_config'):
         del st.session_state.selected_donation_config
+    
+    # Reset final_donation_rate_default_value back to system default (10%)
+    st.session_state.final_donation_rate_default_value = 0.10
+    if '_persistent_defaults' in st.session_state:
+        st.session_state._persistent_defaults['final_donation_rate_default_value'] = 0.10
