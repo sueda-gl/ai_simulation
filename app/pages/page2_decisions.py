@@ -181,6 +181,20 @@ def initialize_page2_widget_keys():
             value_key = f"{decision_name}_default_value"
             if value_key not in st.session_state:
                 st.session_state[value_key] = default_value
+    
+    # Sync final_donation_rate from selected_donation_config if available
+    # This ensures the slider reflects the selected configuration's mean donation rate
+    if hasattr(st.session_state, 'selected_donation_config'):
+        config = st.session_state.selected_donation_config
+        mean_donation = config['metrics']['mean_donation']
+        
+        # Update the final_donation_rate default to match selected config
+        st.session_state.final_donation_rate_default_value = mean_donation
+        
+        # Also update persistent storage for consistency
+        if '_persistent_defaults' not in st.session_state:
+            st.session_state._persistent_defaults = {}
+        st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
 
 
 def format_decision_title(decision_name, include_number=False):
@@ -388,16 +402,19 @@ def render_page2():
 def render_selected_donation_config_display():
     """Display the selected donation configuration in the overview tab"""
     
+    # Common header for the section
+    st.markdown('<h3 class="section-header">🎯 Selected Decision Parameters</h3>', unsafe_allow_html=True)
+    
     if not hasattr(st.session_state, 'selected_donation_config'):
         # No configuration selected yet
-        st.markdown('<h3 class="section-header">🎯 Donation Configuration</h3>', unsafe_allow_html=True)
+        st.markdown("#### 3. Donation Default")
         st.info("💡 **No donation configuration selected yet**")
         st.caption("Run the donation decision individually first, then select your preferred configuration from the results.")
         return
     
     config = st.session_state.selected_donation_config
     
-    st.markdown('<h3 class="section-header">🎯 Selected Donation Configuration</h3>', unsafe_allow_html=True)
+    st.markdown("#### 3. Donation Default")
     
     # Main configuration display
     with st.container():
