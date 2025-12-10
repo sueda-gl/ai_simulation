@@ -98,7 +98,8 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
 
 
 def generate_proximity_scores(agent_id: int, num_vendors: int, 
-                              rng: np.random.Generator) -> Dict[str, float]:
+                              rng: np.random.Generator,
+                              base_seed: int = 42) -> Dict[str, float]:
     """
     Generate proximity scores for a specific customer-vendor dyad.
     
@@ -116,6 +117,8 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
         agent_id: Customer/agent ID
         num_vendors: Number of vendors
         rng: Random number generator for this agent
+        base_seed: Base seed for deterministic shuffling of vendor locations (default: 42)
+                   Should be the same for all agents in a run, but change across runs.
         
     Returns:
         Dictionary mapping vendor_id (as STRING) to proximity score [0, 100]
@@ -149,10 +152,10 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
     # SHUFFLE the means deterministically so Vendor ID != Location Quality
     # Use a fixed seed so all agents agree on which vendor is "urban" vs "rural"
     # (e.g. Vendor 3 is always the urban one in this run, regardless of agent)
-    # We use a fixed seed (42) combined with num_vendors to ensure reproducibility
+    # We use base_seed combined with num_vendors to ensure reproducibility
     # while breaking the linear correlation between Vendor ID and proximity score.
     import random
-    shuffle_rng = random.Random(42 + num_vendors)
+    shuffle_rng = random.Random(base_seed + num_vendors)
     shuffle_rng.shuffle(vendor_means)
     
     for vendor_id in range(1, num_vendors + 1):
@@ -230,13 +233,14 @@ def calculate_vendor_composite_score(vendor: Dict, weights: Dict,
         min_price = min(all_prices)
         max_price = max(all_prices)
     
-    if max_price > min_price:
-        # Normalize to [0, 1] then invert
-        # Clamp vendor_price to bounds to avoid scores outside [0, 1]
+    if max_price > 0:
+        # Normalize: Best price (min_price) -> 1.0
+        # Other prices -> 1 - (price - min_price) / max_price
+        # This ensures max score is 1, but min score is not necessarily 0
         clamped_price = max(min_price, min(vendor_price, max_price))
-        norm_price = 1.0 - (clamped_price - min_price) / (max_price - min_price)
+        norm_price = 1.0 - (clamped_price - min_price) / max_price
     else:
-        # All prices are the same (or invalid range)
+        # All prices are 0 or invalid
         norm_price = 1.0
     
     # 1b. Quality normalization (1-5 scale)

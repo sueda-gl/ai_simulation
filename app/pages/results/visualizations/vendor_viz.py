@@ -232,12 +232,14 @@ def _calculate_vendor_score(vendor, weights, proximity, all_vendors,
         min_price = 0
         max_price = 1
     
-    if max_price > min_price:
-        # Clamp price to bounds to avoid scores outside [0, 1]
+    if max_price > 0:
+        # Normalize: Best price (min_price) -> 1.0
+        # Other prices -> 1 - (price - min_price) / max_price
+        # This ensures max score is 1, but min score is not necessarily 0
         clamped_price = max(min_price, min(price, max_price))
-        norm_price = 1 - ((clamped_price - min_price) / (max_price - min_price))
+        norm_price = 1.0 - (clamped_price - min_price) / max_price
     else:
-        norm_price = 0.5
+        norm_price = 1.0
     
     # Quality: [1, 5] -> [0, 1]
     norm_quality = (quality - 1) / 4 if quality >= 1 else 0
@@ -379,10 +381,10 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
             # Create pie chart showing weight distribution
             weight_per_param = 1.0 / len(selected_params)
             
+            st.markdown("### Vendor Choice Weight Distribution")
             fig = px.pie(
                 values=[weight_per_param] * len(selected_params),
                 names=[param_names[param] for param in selected_params],
-                title="Vendor Choice Weight Distribution",
                 color_discrete_sequence=px.colors.qualitative.Set3
             )
             fig.update_layout(showlegend=True, height=400)
@@ -576,9 +578,13 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     st.markdown("---")
     st.markdown("**📊 Vendor Selection Distribution:**")
     
-    if len(vendor_counts) > 0:
+    # Check if we have any data to show (selections or configured vendors)
+    has_vendor_data = len(vendor_counts) > 0 or (vendors_data and len(vendors_data) > 0)
+    
+    if has_vendor_data:
         # Sort vendor_counts by vendor ID (index) instead of by count
-        vendor_counts_sorted = vendor_counts.sort_index()
+        if len(vendor_counts) > 0:
+            vendor_counts_sorted = vendor_counts.sort_index()
         
         # Count purchase requests and transactions per vendor
         vendor_purchase_requests = {}
@@ -604,29 +610,70 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         total_vendor_purchase_requests = sum(vendor_purchase_requests.values()) if vendor_purchase_requests else 0
         total_vendor_transactions = sum(vendor_transactions.values()) if vendor_transactions else 0
         
-        # Bar chart showing vendor distribution (sorted by vendor ID)
-        st.markdown("**Number of Agents Selecting Each Vendor**")
-        fig = px.bar(
-            x=[f"Vendor {int(vid)}" for vid in vendor_counts_sorted.index],
-            y=vendor_counts_sorted.values,
-            labels={'x': 'Vendor', 'y': 'Number of Agents'}
-        )
-        fig.update_layout(
-            showlegend=False,
-            xaxis_title="Vendor",
-            yaxis_title="Number of Agents"
-        )
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
+        # Get all relevant vendor IDs
+        all_vendor_ids = set()
+        if vendors_data:
+            all_vendor_ids = {int(v.get('vendor_id')) for v in vendors_data}
+        
+        # Add any vendors that were selected (in case configuration doesn't match results)
+        if len(vendor_counts) > 0:
+            all_vendor_ids.update([int(vid) for vid in vendor_counts.index])
+        
+        sorted_vendor_ids = sorted(list(all_vendor_ids))
+        
+        # Bar chart showing vendor distribution
+        if len(vendor_counts) > 0:
+            st.markdown("**Number of Agents Selecting Each Vendor**")
+            
+            # Prepare data for chart (include 0s for unselected vendors)
+            chart_x = []
+            chart_y = []
+            
+            for vid in sorted_vendor_ids:
+                chart_x.append(f"Vendor {vid}")
+                
+                # Get count
+                count = 0
+                if vid in vendor_counts.index:
+                    count = vendor_counts[vid]
+                elif float(vid) in vendor_counts.index:
+                    count = vendor_counts[float(vid)]
+                chart_y.append(count)
+                
+            fig = px.bar(
+                x=chart_x,
+                y=chart_y,
+                labels={'x': 'Vendor', 'y': 'Number of Agents'}
+            )
+            fig.update_layout(
+                showlegend=False,
+                xaxis_title="Vendor",
+                yaxis_title="Number of Agents"
+            )
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
         
         # Selection breakdown table below the graph
         st.markdown("**📈 Selection Breakdown:**")
         
         # Build detailed breakdown data
         breakdown_data = []
-        for vid in vendor_counts_sorted.index:
-            agent_count = vendor_counts_sorted[vid]
+        for vid in sorted_vendor_ids:
+            # Get agent count
+            agent_count = 0
+            if vid in vendor_counts.index:
+                agent_count = vendor_counts[vid]
+            elif float(vid) in vendor_counts.index:
+                agent_count = vendor_counts[float(vid)]
+            
+            # Get request count
             pr_count = vendor_purchase_requests.get(vid, 0)
+            if pr_count == 0:
+                pr_count = vendor_purchase_requests.get(float(vid), 0)
+                
+            # Get transaction count
             tx_count = vendor_transactions.get(vid, 0)
+            if tx_count == 0:
+                tx_count = vendor_transactions.get(float(vid), 0)
             
             # Calculate completion rate for this vendor (% of requests completed)
             completion_rate = f"{(tx_count/pr_count)*100:.1f}%" if pr_count > 0 else "0.0%"
@@ -634,7 +681,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             breakdown_data.append({
                 'Vendor': f"Vendor {int(vid)}",
                 'Agents': int(agent_count),
-                '% Agents': f"{(agent_count/agents_with_selection)*100:.1f}%",
+                '% Agents': f"{(agent_count/agents_with_selection)*100:.1f}%" if agents_with_selection > 0 else "0.0%",
                 'Purchase Requests': int(pr_count),
                 '% Requests': f"{(pr_count/total_vendor_purchase_requests)*100:.1f}%" if total_vendor_purchase_requests > 0 else "0.0%",
                 'Transactions': int(tx_count),
@@ -650,7 +697,15 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     st.markdown("---")
     st.markdown("**📅 Vendor Selection Breakdown by Period:**")
     
-    if 'purchase_requests' in df.columns and len(vendor_counts) > 0:
+    # Breakdown by Period
+    st.markdown("---")
+    st.markdown("**📅 Vendor Selection Breakdown by Period:**")
+    
+    # Check if we have data (requests + vendors)
+    has_purchase_requests = 'purchase_requests' in df.columns
+    has_any_vendor_data = (len(vendor_counts) > 0) or (vendors_data and len(vendors_data) > 0)
+    
+    if has_purchase_requests and has_any_vendor_data:
         # Get duration_hours from simulation config
         if hasattr(st.session_state, 'sim_params'):
             duration_hours = st.session_state.sim_params.duration_hours
@@ -678,28 +733,35 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                             period = req.get('period', np.nan)
                         
                         if not pd.isna(vendor_id) and not pd.isna(period):
+                            # Normalize vendor_id and period
+                            try:
+                                vendor_id_key = int(vendor_id)
+                                period_key = int(period)
+                            except (ValueError, TypeError):
+                                continue
+                                
                             # Initialize period if not exists
-                            if period not in period_data:
-                                period_data[period] = {}
+                            if period_key not in period_data:
+                                period_data[period_key] = {}
                             
                             # Initialize vendor if not exists for this period
-                            if vendor_id not in period_data[period]:
-                                period_data[period][vendor_id] = {
+                            if vendor_id_key not in period_data[period_key]:
+                                period_data[period_key][vendor_id_key] = {
                                     'agents': set(),
                                     'requests': 0,
                                     'transactions': 0
                                 }
                             
                             # Add agent to set (for unique count)
-                            period_data[period][vendor_id]['agents'].add(agent_id)
+                            period_data[period_key][vendor_id_key]['agents'].add(agent_id)
                             
                             # Count purchase request
-                            period_data[period][vendor_id]['requests'] += 1
+                            period_data[period_key][vendor_id_key]['requests'] += 1
                             
                             # Count transaction if completed
                             completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
                             if completed or completed == 1:
-                                period_data[period][vendor_id]['transactions'] += 1
+                                period_data[period_key][vendor_id_key]['transactions'] += 1
         
         if period_data:
             # Sort periods
@@ -730,28 +792,43 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             # Build combined breakdown data for all periods with Period column
             all_periods_breakdown_data = []
             
+            # Get all relevant vendor IDs
+            all_vendor_ids = set()
+            if vendors_data:
+                all_vendor_ids = {int(v.get('vendor_id')) for v in vendors_data}
+            if len(vendor_counts) > 0:
+                all_vendor_ids.update([int(vid) for vid in vendor_counts.index])
+            sorted_vendor_ids = sorted(list(all_vendor_ids))
+            
             for period in sorted_periods:
-                # Get all vendors that appeared in this period
+                # Get vendors for this period (already normalized to int keys)
                 period_vendors = period_data[period]
                 
                 # Calculate totals for this period (for percentage calculations)
+                # Only sum up ACTUAL data from period_vendors
                 total_agents_period = len(set().union(*[v['agents'] for v in period_vendors.values()]))
                 total_requests_period = sum(v['requests'] for v in period_vendors.values())
-                total_transactions_period = sum(v['transactions'] for v in period_vendors.values())
                 
-                # Build breakdown data for this period (sorted by vendor ID)
-                for vid in sorted(period_vendors.keys()):
-                    vendor_stats = period_vendors[vid]
-                    agent_count = len(vendor_stats['agents'])
-                    request_count = vendor_stats['requests']
-                    transaction_count = vendor_stats['transactions']
+                # Iterate through ALL vendors (including those with 0 selections)
+                for vid in sorted_vendor_ids:
+                    # Check if vendor exists in this period's data
+                    if vid in period_vendors:
+                        vendor_stats = period_vendors[vid]
+                        agent_count = len(vendor_stats['agents'])
+                        request_count = vendor_stats['requests']
+                        transaction_count = vendor_stats['transactions']
+                    else:
+                        # Zero values for unselected vendor
+                        agent_count = 0
+                        request_count = 0
+                        transaction_count = 0
                     
                     # Calculate completion rate for this vendor in this period (% of requests completed)
                     period_completion_rate = f"{(transaction_count/request_count)*100:.1f}%" if request_count > 0 else "0.0%"
                     
                     all_periods_breakdown_data.append({
                         'Period': int(period),
-                        'Vendor': f"Vendor {int(vid)}",
+                        'Vendor': f"Vendor {vid}",
                         'Agents': int(agent_count),
                         '% Agents': f"{(agent_count/total_agents_period)*100:.1f}%" if total_agents_period > 0 else "0.0%",
                         'Purchase Requests': int(request_count),
@@ -964,9 +1041,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     total_quantity = sum(quantity_per_period.values())
                     # Show average quantity (calculated from per-period values)
                     avg_quantity = vendor.get('quantity_offered', 100)
-                    # Create a display string with period breakdown
-                    period_values = [f"P{p}:{q}" for p, q in sorted(quantity_per_period.items())]
-                    quantity_display = f"{avg_quantity} avg ({', '.join(period_values)})"
+                    # Show ONLY the average quantity (clean display)
+                    quantity_display = str(avg_quantity)
                     total_quantity_display = total_quantity
                 else:
                     # Legacy: single quantity value (assume 1 period)
@@ -976,7 +1052,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 vendor_table_data.append({
                     'Vendor ID': f"Vendor {vendor_id}",
                     'Price ($)': f"${vendor.get('price', 0):.2f}",
-                    'Average Qty Per Period': quantity_display,
+                    'Average Quantity Per Period': quantity_display,
                     'Total Quantity': total_quantity_display,
                     'Quality': vendor.get('quality', 'N/A'),
                     'Sustainability': vendor.get('sustainability', 'N/A'),
@@ -994,6 +1070,66 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             
             st.markdown("**📋 Vendor Attributes & Selection Results:**")
             st.dataframe(vendor_df, use_container_width=True, hide_index=True)
+
+            # NEW: Excel Export for Period-Level Vendor Data
+            vendor_period_data = []
+            
+            for vendor in vendors_data:
+                vendor_id = vendor.get('vendor_id')
+                price = vendor.get('price', 0)
+                quality = vendor.get('quality', 0)
+                sustainability = vendor.get('sustainability', 0)
+                
+                # Get metrics
+                avg_prox = avg_proximity_per_vendor.get(vendor_id, np.nan)
+                int_score = vendor_integrated_scores.get(vendor_id, np.nan)
+                
+                # Get periods
+                quantity_per_period = vendor.get('quantity_offered_per_period', {})
+                if quantity_per_period and isinstance(quantity_per_period, dict):
+                    for period, qty in sorted(quantity_per_period.items()):
+                        vendor_period_data.append({
+                            'Vendor ID': f"Vendor {vendor_id}",
+                            'Period': int(period),
+                            'Quantity Offered': qty,
+                            'Price': price,
+                            'Quality': quality,
+                            'Sustainability': sustainability,
+                            'Average Proximity': avg_prox,
+                            'Integrated Score': int_score
+                        })
+                else:
+                    # Single period default (Period 1)
+                    qty = vendor.get('quantity_offered', 100)
+                    vendor_period_data.append({
+                        'Vendor ID': f"Vendor {vendor_id}",
+                        'Period': 1,
+                        'Quantity Offered': qty,
+                        'Price': price,
+                        'Quality': quality,
+                        'Sustainability': sustainability,
+                        'Average Proximity': avg_prox,
+                        'Integrated Score': int_score
+                    })
+            
+            if vendor_period_data:
+                try:
+                    vendor_period_df = pd.DataFrame(vendor_period_data)
+                    
+                    buffer = BytesIO()
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        vendor_period_df.to_excel(writer, index=False, sheet_name='Vendor Details Per Period')
+                    
+                    st.download_button(
+                        label="📥 Download Vendor Details (Per Period)",
+                        data=buffer.getvalue(),
+                        file_name=f"vendor_details_per_period_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Download detailed vendor attributes including quantity offered for each period"
+                    )
+                except Exception as e:
+                    # Silent fail or log if needed, but keeping it simple as per style
+                    pass
             
             # Score comparison visualization
             st.markdown("**📊 Vendor Attribute Comparison:**")
@@ -1014,11 +1150,11 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 else:
                     price_scores = [50.0] * len(prices)  # All same price
                 
+                st.markdown("**Price Score (0-100) (Higher = Lower Price)**")
                 price_fig = px.bar(
                     vendor_df,
                     x='Vendor ID',
                     y=price_scores,
-                    title="Price Score (0-100) (Higher = Lower Price)",
                     labels={'y': 'Score', 'x': ''}
                 )
                 price_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 100]))
@@ -1027,27 +1163,27 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             with col_quality:
                 # Quality comparison
                 quality_vals = [v if isinstance(v, int) else 0 for v in vendor_df['Quality']]
+                st.markdown("**Quality Score (1-5)**")
                 qual_fig = px.bar(
                     vendor_df,
                     x='Vendor ID',
                     y=quality_vals,
-                    title="Quality Score (1-5)",
                     labels={'y': 'Quality', 'x': ''}
                 )
-                qual_fig.update_layout(showlegend=False, height=250)
+                qual_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[1, 5], dtick=1))
                 st.plotly_chart(qual_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
             
             with col_sust:
                 # Sustainability comparison
                 sust_vals = [v if isinstance(v, int) else 0 for v in vendor_df['Sustainability']]
+                st.markdown("**Sustainability Score (1-5)**")
                 sust_fig = px.bar(
                     vendor_df,
                     x='Vendor ID',
                     y=sust_vals,
-                    title="Sustainability Score (1-5)",
                     labels={'y': 'Sustainability', 'x': ''}
                 )
-                sust_fig.update_layout(showlegend=False, height=250)
+                sust_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[1, 5], dtick=1))
                 st.plotly_chart(sust_fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
             
             with col_integrated:
@@ -1059,11 +1195,11 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     else:
                         integrated_vals.append(0.0)
                 
+                st.markdown("**Integrated Score (0-1)**")
                 int_fig = px.bar(
                     vendor_df,
                     x='Vendor ID',
                     y=integrated_vals,
-                    title="Integrated Score (0-1)",
                     labels={'y': 'Score', 'x': ''}
                 )
                 int_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 1]))
@@ -1081,11 +1217,11 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     else:
                         proximity_vals.append(0.0)
                 
+                st.markdown("**Average Proximity Score (0-100) (Higher = Closer)**")
                 prox_fig = px.bar(
                     vendor_df,
                     x='Vendor ID',
                     y=proximity_vals,
-                    title="Average Proximity Score (0-100) (Higher = Closer)",
                     labels={'y': 'Proximity', 'x': ''}
                 )
                 prox_fig.update_layout(showlegend=False, height=250, yaxis=dict(range=[0, 100]))
@@ -1125,7 +1261,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         prices = [v.get('price', 0) for v in vendors_data]
                         min_price = min(prices)
                         max_price = max(prices)
-                        norm_price = 1 - ((price - min_price) / (max_price - min_price)) if max_price > min_price else 0.5
+                        clamped_price = max(min_price, min(price, max_price))
+                        norm_price = 1.0 - (clamped_price - min_price) / max_price if max_price > 0 else 1.0
                         norm_quality = (quality - 1) / 4 if quality >= 1 else 0
                         norm_sustainability = (sustainability - 1) / 4 if sustainability >= 1 else 0
                         norm_proximity = avg_proximity / 100 if avg_proximity >= 0 else 0
@@ -1280,7 +1417,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
            - Example: {price: 0.5, quality: 0.5, proximity: 0.0, sustainability: 0.0}
         
         3. **Standardize Attributes** to [0, 1]:
-           - Price: Normalized and **inverted** (lower price = higher score)
+           - Price: Normalized using **fixed reference formula** where best price = 1
+             `norm_price = 1.0 - (price - min_price) / max_price`
            - Quality: (value - 1) / 4
            - Sustainability: (value - 1) / 4
            - Proximity: value / 100
@@ -1325,10 +1463,10 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             with col2:
                 # Show pie chart if multiple weights
                 if len(active_weights) > 1:
+                    st.markdown("### Weight Distribution")
                     fig = px.pie(
                         values=list(active_weights.values()),
-                        names=[k.title() for k in active_weights.keys()],
-                        title="Weight Distribution"
+                        names=[k.title() for k in active_weights.keys()]
                     )
                     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': True, 'displaylogo': False})
                 elif len(active_weights) == 1:

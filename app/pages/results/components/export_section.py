@@ -6,6 +6,110 @@ from io import BytesIO
 from app.models import initialize_session_state
 
 
+def _build_compare_all_wide_format(results_dict, trait_columns):
+    """
+    Build a wide-format DataFrame for "Compare all" mode where each population mode
+    has its own set of columns with correct agent traits and donation rates.
+    
+    Structure:
+    | Copula_Agent_ID | Copula_HH | ... | Copula_donation_Cat | Copula_donation_Cont | ResSpec_Agent_ID | ResSpec_HH | ... |
+    
+    Each row contains data for 3 DIFFERENT agents (one from each population mode),
+    but each agent's traits correctly match their donation rates.
+    
+    Args:
+        results_dict: Dictionary with keys like 'copula_categorical', 'research_spec_continuous', etc.
+        trait_columns: List of trait column names to include
+        
+    Returns:
+        pd.DataFrame: Wide-format DataFrame with all population modes side-by-side
+    """
+    # Define population modes and their prefixes
+    population_modes = [
+        ('copula', 'Copula'),
+        ('research_spec', 'ResSpec'),
+        ('research_baseline', 'ResBase')
+    ]
+    
+    income_modes = ['categorical', 'continuous']
+    
+    # Build a DataFrame for each population mode
+    population_dfs = []
+    
+    for pop_key, pop_prefix in population_modes:
+        # Find the DataFrames for this population mode
+        cat_key = f"{pop_key}_categorical"
+        cont_key = f"{pop_key}_continuous"
+        
+        cat_df = results_dict.get(cat_key)
+        cont_df = results_dict.get(cont_key)
+        
+        # Use whichever DataFrame is available for traits (they have the same agents)
+        base_df = cat_df if cat_df is not None else cont_df
+        
+        if base_df is None or base_df.empty:
+            continue
+        
+        # Create DataFrame for this population mode
+        pop_data = {}
+        
+        # Add Agent ID with prefix
+        if 'agent_id' in base_df.columns:
+            pop_data[f'{pop_prefix}_Agent_ID'] = base_df['agent_id'].values
+        else:
+            pop_data[f'{pop_prefix}_Agent_ID'] = list(range(1, len(base_df) + 1))
+        
+        # Add trait columns with prefix
+        for trait in trait_columns:
+            if trait in base_df.columns:
+                # Use shorter column names for readability
+                short_trait = trait.replace('Assigned Allowance Level', 'Income_Level')
+                short_trait = short_trait.replace('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 'TWT_Sospeso')
+                short_trait = short_trait.replace('Group_experiment', 'Group')
+                short_trait = short_trait.replace('Study Program', 'Study_Program')
+                pop_data[f'{pop_prefix}_{short_trait}'] = base_df[trait].values
+        
+        # Add donation columns for each income mode
+        if cat_df is not None and not cat_df.empty and 'donation_default' in cat_df.columns:
+            pop_data[f'{pop_prefix}_donation_Categorical'] = cat_df['donation_default'].values
+        
+        if cont_df is not None and not cont_df.empty and 'donation_default' in cont_df.columns:
+            pop_data[f'{pop_prefix}_donation_Continuous'] = cont_df['donation_default'].values
+        
+        # Create DataFrame for this population mode
+        pop_df = pd.DataFrame(pop_data)
+        population_dfs.append(pop_df)
+    
+    # Combine all population DataFrames horizontally (side-by-side)
+    if population_dfs:
+        combined_df = pd.concat(population_dfs, axis=1)
+    else:
+        combined_df = pd.DataFrame()
+    
+    return combined_df
+
+
+def _is_compare_all_mode(results_dict):
+    """
+    Check if results_dict contains configurations from multiple population modes.
+    
+    Returns True if we have configurations from different population types
+    (copula, research_spec, research_baseline).
+    """
+    if results_dict is None or len(results_dict) <= 1:
+        return False
+    
+    keys = list(results_dict.keys())
+    
+    has_copula = any(k.startswith('copula') for k in keys)
+    has_research_spec = any(k.startswith('research_spec') for k in keys)
+    has_research_baseline = any(k.startswith('research_baseline') for k in keys)
+    
+    # It's "Compare all" if we have configurations from at least 2 different population modes
+    population_count = sum([has_copula, has_research_spec, has_research_baseline])
+    return population_count >= 2
+
+
 def _build_agent_level_dataframe(df, vendors_data=None):
     """
     Build agent-level DataFrame with one row per agent.
@@ -269,12 +373,14 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                     # Normalize price (inverted: lower price = higher score)
                     # Use FIXED reference bounds from configuration for consistent normalization
                     # This ensures price has the same discriminatory power as other attributes
-                    if price_max_config > price_min_config:
+                    if price_max_config > 0:
                         # Clamp price to configured bounds
                         clamped_price = max(price_min_config, min(vendor_price, price_max_config))
-                        vendor_price_score = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
+                        # New Formula: 1.0 - (price - min_price) / max_price
+                        # This ensures best price gets 1.0, but worst price (max) doesn't necessarily get 0.0
+                        vendor_price_score = 1.0 - (clamped_price - price_min_config) / price_max_config
                     else:
-                        vendor_price_score = 0.5
+                        vendor_price_score = 1.0
                     
                     # Normalize quality (1-5 scale to 0-1)
                     vendor_quality_score = (vendor_quality - 1) / 4 if vendor_quality >= 1 else 0
@@ -423,7 +529,17 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         # Check if we have multiple configurations to compare
         export_all_configs = results_dict is not None and len(results_dict) > 1 and not using_selected_config
         
-        if export_all_configs:
+        # Check if this is "Compare all" mode (different population modes with different agents)
+        is_compare_all = _is_compare_all_mode(results_dict)
+        
+        if export_all_configs and is_compare_all:
+            st.markdown(f"""
+            **Donation Default Results Export (Compare All Mode - {len(results_dict)} Configurations):**
+            - Each population mode (Copula, Research Spec, Research Baseline) has its own columns
+            - Agent ID, traits, and donation rates for Categorical and Continuous income modes
+            - **Note:** Each row contains 3 different agents (one per population mode), each with their correct traits
+            """)
+        elif export_all_configs:
             st.markdown(f"""
             **Donation Default Results Export (All {len(results_dict)} Configurations):**
             - Agent ID, trait columns, and donation_default rate for each configuration
@@ -438,8 +554,63 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         try:
             buffer = BytesIO()
             
-            if export_all_configs:
-                # MULTI-CONFIG: Combine all configurations in one Excel for comparison
+            if export_all_configs and is_compare_all:
+                # COMPARE ALL MODE: Wide format with each population mode having its own columns
+                # This ensures each agent's traits correctly match their donation rates
+                combined_df = _build_compare_all_wide_format(results_dict, trait_columns)
+                
+                if combined_df.empty:
+                    st.warning("⚠️ No data available for export")
+                    return
+                
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    combined_df.to_excel(writer, index=False, sheet_name='Compare All Modes')
+                
+                # Show metrics
+                n_agents = len(combined_df)
+                n_columns = len(combined_df.columns)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Rows (Agents per Mode)", n_agents)
+                with col2:
+                    st.metric("Total Columns", n_columns)
+                
+                excel_label = f"📊 Download Donation Excel (Compare All - {len(results_dict)} Configs)"
+                excel_filename = f"donation_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                
+                st.download_button(
+                    label=excel_label,
+                    data=buffer.getvalue(),
+                    file_name=excel_filename,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Each population mode has its own columns with correct agent traits and donation rates"
+                )
+                
+                # Show preview with explanation
+                with st.expander("📋 Preview Donation Data (first 5 rows)"):
+                    st.info("""
+                    **Column Structure:**
+                    - **Copula_*** columns: Synthetic agents generated from copula
+                    - **ResSpec_*** columns: Original 280 participants (random sample)
+                    - **ResBase_*** columns: Original 280 participants (sequential order)
+                    
+                    Each row contains 3 different agents, but each agent's traits match their donation rates.
+                    """)
+                    st.dataframe(combined_df.head(), use_container_width=True)
+                    
+                    # Show column groups
+                    copula_cols = [c for c in combined_df.columns if c.startswith('Copula_')]
+                    resspec_cols = [c for c in combined_df.columns if c.startswith('ResSpec_')]
+                    resbase_cols = [c for c in combined_df.columns if c.startswith('ResBase_')]
+                    
+                    st.caption(f"**Copula columns ({len(copula_cols)})**: {', '.join(copula_cols)}")
+                    st.caption(f"**ResSpec columns ({len(resspec_cols)})**: {', '.join(resspec_cols)}")
+                    st.caption(f"**ResBase columns ({len(resbase_cols)})**: {', '.join(resbase_cols)}")
+            
+            elif export_all_configs:
+                # SAME POPULATION MODE: Multiple income modes with same agents
+                # Safe to combine by row since agents are identical
                 first_config_df = next(iter(results_dict.values()))
                 available_traits = [col for col in trait_columns if col in first_config_df.columns]
                 combined_df = first_config_df[available_traits].copy()

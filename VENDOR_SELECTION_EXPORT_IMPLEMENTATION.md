@@ -97,7 +97,7 @@ score = w_price × norm_price + w_quality × norm_quality +
 All attributes are normalized using their **theoretical/configured ranges** to ensure equal discriminatory power. This prevents any single attribute from having artificially more weight than its configured percentage.
 
 - **Price:** Fixed-reference normalization using configured bounds (lower price = higher score)
-  - `norm_price = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))`
+  - `norm_price = 1.0 - (clamped_price - min_price) / max_price`
   - Uses `vendor_price_min` and `vendor_price_max` from simulation configuration
   - Price values are clamped to configured bounds to keep scores in [0, 1]
   - **Note:** This approach ensures price normalization is consistent with other attributes (quality, sustainability, proximity) which all use fixed theoretical ranges. Previously, min-max normalization on actual vendor prices gave price artificially more discriminatory power.
