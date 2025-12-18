@@ -399,8 +399,8 @@ def render_numeric_default_config(decision_name, default_value):
     """Render UI for numeric default decisions"""
     
     # Special handling for final_donation_rate when donation config is selected
-    # Check both hasattr and dictionary access for robustness
-    if decision_name == "final_donation_rate" and (hasattr(st.session_state, 'selected_donation_config') or 'selected_donation_config' in st.session_state):
+    # Check that key exists AND value is not None
+    if decision_name == "final_donation_rate" and st.session_state.get('selected_donation_config') is not None:
         render_final_donation_rate_with_config(default_value)
         return
     
@@ -415,6 +415,16 @@ def render_numeric_default_config(decision_name, default_value):
     with col1:
         # Determine if this is a percentage (between 0 and 1)
         if 0 <= default_value <= 1:
+            # Use finer step for final_donation_rate to show precise values like 10.19%
+            if decision_name == "final_donation_rate":
+                step_size = 0.0001  # 0.01% increments
+                format_str = "%.4f"
+                caption_format = f"Percentage: {st.session_state[value_key]:.2%}"
+            else:
+                step_size = 0.01
+                format_str = "%.2f"
+                caption_format = f"Percentage: {st.session_state[value_key]:.1%}"
+            
             # Widget reads from session state
             # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
             value = st.slider(
@@ -422,14 +432,14 @@ def render_numeric_default_config(decision_name, default_value):
                 min_value=0.0,
                 max_value=1.0,
                 value=st.session_state[value_key],  # Read directly from key (no fallback)
-                step=0.01,
-                format="%.2f",
+                step=step_size,
+                format=format_str,
                 help="Set the default value for this decision",
                 key=value_key,  # Streamlit manages value automatically via session state
                 on_change=save_to_persistent_storage,
                 args=(value_key,)
             )
-            st.caption(f"Percentage: {value:.1%}")
+            st.caption(f"Percentage: {value:.2%}" if decision_name == "final_donation_rate" else f"Percentage: {value:.1%}")
         else:
             # Widget reads from session state
             # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
@@ -482,19 +492,20 @@ def render_final_donation_rate_with_config(default_value):
     with col1:
         # Show slider with the config's mean donation as value
         # We use the forced current_value here
+        # Step of 0.0001 allows 0.01% increments (e.g., 10.19% = 0.1019)
         value = st.slider(
             "Default Value",
             min_value=0.0,
             max_value=1.0,
             value=current_value,
-            step=0.01,
-            format="%.2f",
+            step=0.0001,
+            format="%.4f",
             help="This value is synced from the selected donation configuration. You can adjust it if needed.",
             key=value_key,
             on_change=save_to_persistent_storage,
             args=(value_key,)
         )
-        st.caption(f"Percentage: {value:.1%}")
+        st.caption(f"Percentage: {value:.2%}")
     
     with col2:
         st.metric("From Config", f"{mean_donation:.2%}")

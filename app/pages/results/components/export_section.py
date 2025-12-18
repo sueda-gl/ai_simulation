@@ -4,6 +4,53 @@ import numpy as np
 from datetime import datetime, timedelta
 from io import BytesIO
 from app.models import initialize_session_state
+from app.utils.timestamp_utils import TimestampConverter, get_duration_hours
+
+
+def _apply_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
+    """
+    Apply Excel number formatting to price-related columns to display 2 decimal places.
+    
+    This formats the DISPLAY only - the underlying values retain full precision.
+    
+    Args:
+        writer: ExcelWriter object
+        sheet_name: Name of the sheet to format
+        df: DataFrame being written (to identify column positions)
+    """
+    from openpyxl.styles import numbers
+    
+    # Define columns that should display with 2 decimal places
+    price_columns = [
+        # Vendor attributes
+        'Vendor Price', 'avg_vendor_price', 'price',
+        # Customer prices
+        'Customer Price', 'customer_price',
+        # Bid values
+        'Bid Value', 'bid_value',
+        # Scores (normalized 0-1, but show 2 decimals for clarity)
+        'Standardised Vendor Price Score', 'Standardised Vendor Quality Score',
+        'Standardised Vendor Sustainability Score', 'Standardised Vendor Proximity Score',
+        'Vendor Integrated Score', 'avg_vendor_score',
+        # Donation rates
+        'donation_default', 'Agent Donation Default', 'Final Donation Rate',
+        'final_donation_rate', 'avg_vendor_quality', 'avg_vendor_sustainability',
+        'avg_vendor_proximity', 'Vendor Proximity', 'Vendor Quality', 'Vendor Sustainability',
+        # Income
+        'income', 'Income',
+    ]
+    
+    workbook = writer.book
+    worksheet = workbook[sheet_name]
+    
+    # Get column indices for price columns
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        if col_name in price_columns:
+            # Apply number format to entire column (skip header row)
+            for row_idx in range(2, len(df) + 2):  # Start from row 2 (after header)
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if isinstance(cell.value, (int, float)) and cell.value is not None:
+                    cell.number_format = '0.00'
 
 
 def _build_compare_all_wide_format(results_dict, trait_columns):
@@ -458,14 +505,15 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             vendor_id = vendor.get('vendor_id')
             vendor_lookup[vendor_id] = vendor
     
-    # Simulation start time for timestamp conversion
-    simulation_start_time = datetime.now()
+    # Use centralized timestamp converter for consistent handling
+    ts_converter = TimestampConverter()
     
     for idx, row in df.iterrows():
         # Get agent-level data
         agent_id = row.get('agent_id', idx + 1)
         honesty_humility = row.get('Honesty_Humility', np.nan)
         allowance_level = row.get('Assigned Allowance Level', np.nan)
+        study_program = row.get('Study Program', '')
         group_experiment = row.get('Group_experiment', '')
         customer_type = row.get('customer_type', '')
         
@@ -505,18 +553,13 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             # Use global transaction_id if available (assigned by simulation.py), otherwise fallback
             transaction_id = request.get('transaction_id', f"A{agent_id}_R{request_id}")
             
-            # Timing
+            # Timing - use centralized timestamp converter
             timestamp_hours = request.get('timestamp_hours', np.nan)
-            if not pd.isna(timestamp_hours):
-                period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
-                request_datetime = simulation_start_time + timedelta(hours=float(timestamp_hours))
-                purchase_date = request_datetime.date()
-                purchase_time = request_datetime.time()
-            else:
-                period = request.get('period', 1)
-                request_datetime = simulation_start_time
-                purchase_date = request_datetime.date()
-                purchase_time = request_datetime.time()
+            ts_result = ts_converter.convert(timestamp_hours)
+            period = ts_result['period']
+            request_datetime = ts_result['datetime']
+            purchase_date = ts_result['date']
+            purchase_time = ts_result['time']
             
             # Vendor information
             vendor_id = request.get('vendorID', np.nan)
@@ -633,6 +676,7 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 # Agent traits (for reference)
                 'Honesty_Humility': honesty_humility,
                 'Assigned Allowance Level': allowance_level,
+                'Study Program': study_program,
                 'Group_experiment': group_experiment,
                 'Customer Type': customer_type.capitalize() if customer_type else '',
                 'Income': income,
@@ -640,7 +684,8 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 
                 # Timing
                 'Period': period,
-                'Purchase Timestamp': request_datetime,
+                'Purchase Timestamp': ts_result['formatted'],
+                '_sort_datetime': request_datetime,  # Hidden sort key
                 
                 # Vendor - All scores normalized to 0-1 scale
                 'Vendor ID': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else '',
@@ -674,11 +719,12 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
     
     # Sort by timestamp
     if transaction_records:
-        transaction_records.sort(key=lambda x: (x.get('Purchase Timestamp', datetime.min)))
+        transaction_records.sort(key=lambda x: x.get('_sort_datetime', datetime.min))
         
-        # Assign unique Purchase Request IDs based on sorted order
+        # Assign unique Purchase Request IDs based on sorted order and remove sort key
         for idx, record in enumerate(transaction_records):
             record['Purchase Request ID'] = idx + 1
+            record.pop('_sort_datetime', None)  # Remove hidden sort key
             if 'Transaction ID' in record:
                 del record['Transaction ID']
     
@@ -756,28 +802,87 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             buffer = BytesIO()
             
             if export_all_configs and is_compare_all:
-                # COMPARE ALL MODE: Wide format with each population mode having its own columns
-                # This ensures each agent's traits correctly match their donation rates
-                combined_df = _build_compare_all_wide_format(results_dict, trait_columns)
+                # COMPARE ALL MODE: Each population mode gets its own sheet
+                # Each sheet contains traits + both categorical and continuous donation columns
                 
-                if combined_df.empty:
+                population_modes = [
+                    ('copula', 'Copula'),
+                    ('research_spec', 'ResSpec'),
+                    ('research_baseline', 'ResBase')
+                ]
+                
+                sheets_data = {}  # Store DataFrames for each sheet
+                
+                for pop_key, pop_prefix in population_modes:
+                    # Find the DataFrames for this population mode
+                    cat_key = f"{pop_key}_categorical"
+                    cont_key = f"{pop_key}_continuous"
+                    
+                    cat_df = results_dict.get(cat_key)
+                    cont_df = results_dict.get(cont_key)
+                    
+                    # Use whichever DataFrame is available for traits (they have the same agents)
+                    base_df = cat_df if cat_df is not None and not cat_df.empty else cont_df
+                    
+                    if base_df is None or base_df.empty:
+                        continue
+                    
+                    # Build DataFrame for this population mode
+                    sheet_data = {}
+                    
+                    # Add Agent ID
+                    if 'agent_id' in base_df.columns:
+                        sheet_data['Agent_ID'] = base_df['agent_id'].values
+                    else:
+                        sheet_data['Agent_ID'] = list(range(1, len(base_df) + 1))
+                    
+                    # Add trait columns
+                    for trait in trait_columns:
+                        if trait in base_df.columns:
+                            # Use shorter column names for readability
+                            short_trait = trait.replace('Assigned Allowance Level', 'Income_Level')
+                            short_trait = short_trait.replace('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 'TWT_Sospeso')
+                            short_trait = short_trait.replace('Group_experiment', 'Group')
+                            short_trait = short_trait.replace('Study Program', 'Study_Program')
+                            sheet_data[short_trait] = base_df[trait].values
+                    
+                    # Add donation columns for each income mode
+                    if cat_df is not None and not cat_df.empty and 'donation_default' in cat_df.columns:
+                        sheet_data['donation_Categorical'] = cat_df['donation_default'].values
+                    
+                    if cont_df is not None and not cont_df.empty and 'donation_default' in cont_df.columns:
+                        sheet_data['donation_Continuous'] = cont_df['donation_default'].values
+                    
+                    # Create DataFrame for this sheet
+                    sheet_df = pd.DataFrame(sheet_data)
+                    sheets_data[pop_prefix] = sheet_df
+                
+                if not sheets_data:
                     st.warning("⚠️ No data available for export")
                     return
                 
+                # Write each population mode to its own sheet
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    combined_df.to_excel(writer, index=False, sheet_name='Compare All Modes')
+                    for sheet_name, sheet_df in sheets_data.items():
+                        sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                        # Apply 2-decimal formatting to price/rate columns
+                        _apply_price_formatting(writer, sheet_name, sheet_df)
                 
                 # Show metrics
-                n_agents = len(combined_df)
-                n_columns = len(combined_df.columns)
+                total_sheets = len(sheets_data)
+                first_sheet_df = next(iter(sheets_data.values()))
+                n_agents = len(first_sheet_df)
+                n_columns = len(first_sheet_df.columns)
                 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Rows (Agents per Mode)", n_agents)
+                    st.metric("Sheets", total_sheets)
                 with col2:
-                    st.metric("Total Columns", n_columns)
+                    st.metric("Agents per Sheet", n_agents)
+                with col3:
+                    st.metric("Columns per Sheet", n_columns)
                 
-                excel_label = f"📊 Download Donation Excel (Compare All - {len(results_dict)} Configs)"
+                excel_label = f"📊 Download Donation Excel ({total_sheets} Sheets)"
                 excel_filename = f"donation_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
                 
                 st.download_button(
@@ -785,29 +890,24 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     data=buffer.getvalue(),
                     file_name=excel_filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Each population mode has its own columns with correct agent traits and donation rates"
+                    help="Each population mode has its own sheet with traits and donation rates for both income modes"
                 )
                 
                 # Show preview with explanation
-                with st.expander("📋 Preview Donation Data (first 5 rows)"):
+                with st.expander("📋 Preview Donation Data (first 5 rows per sheet)"):
                     st.info("""
-                    **Column Structure:**
-                    - **Copula_*** columns: Synthetic agents generated from copula
-                    - **ResSpec_*** columns: Original 280 participants (random sample)
-                    - **ResBase_*** columns: Original 280 participants (sequential order)
+                    **Sheet Structure:**
+                    - **Copula**: Synthetic agents generated from copula
+                    - **ResSpec**: Original 280 participants (random sample)
+                    - **ResBase**: Original 280 participants (sequential order)
                     
-                    Each row contains 3 different agents, but each agent's traits match their donation rates.
+                    Each sheet contains Agent ID, traits, and donation rates for both Categorical and Continuous income modes.
                     """)
-                    st.dataframe(combined_df.head(), use_container_width=True)
                     
-                    # Show column groups
-                    copula_cols = [c for c in combined_df.columns if c.startswith('Copula_')]
-                    resspec_cols = [c for c in combined_df.columns if c.startswith('ResSpec_')]
-                    resbase_cols = [c for c in combined_df.columns if c.startswith('ResBase_')]
-                    
-                    st.caption(f"**Copula columns ({len(copula_cols)})**: {', '.join(copula_cols)}")
-                    st.caption(f"**ResSpec columns ({len(resspec_cols)})**: {', '.join(resspec_cols)}")
-                    st.caption(f"**ResBase columns ({len(resbase_cols)})**: {', '.join(resbase_cols)}")
+                    for sheet_name, sheet_df in sheets_data.items():
+                        st.markdown(f"**{sheet_name} Sheet:**")
+                        st.dataframe(sheet_df.head(), use_container_width=True)
+                        st.caption(f"Columns: {', '.join(sheet_df.columns)}")
             
             elif export_all_configs:
                 # SAME POPULATION MODE: Multiple income modes with same agents
@@ -834,6 +934,8 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     combined_df.to_excel(writer, index=False, sheet_name='All Configurations')
+                    # Apply 2-decimal formatting to price/rate columns
+                    _apply_price_formatting(writer, 'All Configurations', combined_df)
                 
                 st.metric("Total Agents", len(combined_df))
                 
@@ -868,6 +970,8 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     df_export.to_excel(writer, index=False, sheet_name='Donation Results')
+                    # Apply 2-decimal formatting to price/rate columns
+                    _apply_price_formatting(writer, 'Donation Results', df_export)
                 
                 st.metric("Total Agents", len(df_export))
                 
@@ -927,11 +1031,15 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             agent_buffer = BytesIO()
             with pd.ExcelWriter(agent_buffer, engine='openpyxl') as writer:
                 agent_df.to_excel(writer, index=False, sheet_name='Agent Level')
+                # Apply 2-decimal formatting to price columns
+                _apply_price_formatting(writer, 'Agent Level', agent_df)
             
             # Transaction-Level Excel
             transaction_buffer = BytesIO()
             with pd.ExcelWriter(transaction_buffer, engine='openpyxl') as writer:
                 transaction_df.to_excel(writer, index=False, sheet_name='Transaction Level')
+                # Apply 2-decimal formatting to price columns
+                _apply_price_formatting(writer, 'Transaction Level', transaction_df)
             
             # Download buttons for separate files
             st.markdown("### 📥 Download Files")

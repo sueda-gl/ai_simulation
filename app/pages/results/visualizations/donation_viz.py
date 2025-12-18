@@ -9,6 +9,38 @@ import numpy as np
 import plotly.express as px
 from datetime import datetime, timedelta
 from io import BytesIO
+from app.utils.timestamp_utils import TimestampConverter
+
+
+def _apply_price_formatting_donation(writer, sheet_name: str, df: pd.DataFrame):
+    """
+    Apply Excel number formatting to price-related columns to display 2 decimal places.
+    
+    This formats the DISPLAY only - the underlying values retain full precision.
+    """
+    from openpyxl.styles import numbers
+    
+    # Define columns that should display with 2 decimal places
+    # Note: 'Donation Paid' and 'Total Paid by Customer' columns were removed
+    # because actual price is unknown for Fixed/Discount customers
+    price_columns = [
+        'Customer Price', 'customer_price',
+        'Default Donation Rate', 'Final Donation Rate',
+        'donation_default', 'final_donation_rate',
+        'Honesty_Humility', 'income', 'Income',
+    ]
+    
+    workbook = writer.book
+    worksheet = workbook[sheet_name]
+    
+    # Get column indices for price columns
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        if col_name in price_columns:
+            # Apply number format to entire column (skip header row)
+            for row_idx in range(2, len(df) + 2):  # Start from row 2 (after header)
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if isinstance(cell.value, (int, float)) and cell.value is not None:
+                    cell.number_format = '0.00'
 
 
 def _build_donation_transaction_export(df, simulation_config=None):
@@ -16,20 +48,22 @@ def _build_donation_transaction_export(df, simulation_config=None):
     Build transaction-level data for all customer types with donation information.
     
     Returns a list of transaction records with fields:
+    - Transaction ID
     - Agent ID
     - Assigned Allowance Level
     - Group_experiment
     - Customer Type (Regular, Fixed, Discount)
     - Income Category
     - Purchase Request Type (PN/Bid/Fixed/Discount)
-    - Purchase Date
-    - Purchase Time
+    - Purchase Timestamp (DD/MM/YYYY HH:MM format)
     - Period
-    - Customer Price (based on PN price, bid value, Fixed price or Discount price)
-    - Default donation rate
-    - Final donation rate
-    - Donation paid
-    - Total paid by customer
+    - Customer Price (PN/Bid only, 'N/A' for Fixed/Discount since actual price is unknown)
+    - Default Donation Rate
+    - Final Donation Rate
+    
+    Note: 'Donation Paid' and 'Total Paid by Customer' columns were removed because
+    the actual price is unknown for Fixed/Discount customers, making these calculations
+    misleading. The donation rate (percentage) is the meaningful decision output.
     """
     transaction_records = []
     
@@ -70,9 +104,8 @@ def _build_donation_transaction_export(df, simulation_config=None):
     discount_price = market_price * 0.7  # Assume 30% discount
     fixed_price = market_price  # Fixed price = market price
     
-    # Get simulation start time for timestamp conversion
-    from datetime import datetime, timedelta
-    simulation_start_time = datetime.now()
+    # Use centralized timestamp converter for consistent handling
+    ts_converter = TimestampConverter()
     
     for idx, row in df.iterrows():
         # Get agent information
@@ -113,31 +146,14 @@ def _build_donation_transaction_export(df, simulation_config=None):
             else:
                 customer_type_display = 'Regular'
             
-            # Get timestamp and convert to Period and DateTime
+            # Get timestamp and convert using centralized utilities
             timestamp_hours = request.get('timestamp_hours', np.nan)
-            if not pd.isna(timestamp_hours):
-                # Get periods and duration from session state or use defaults
-                periods = 1
-                duration_hours = 1.0
-                if hasattr(st.session_state, 'simulation_params'):
-                    sim_params = st.session_state.simulation_params.get('simulation', {})
-                    periods = sim_params.get('periods', 1)
-                    duration_hours = sim_params.get('duration_hours', 1.0)
-                
-                # Calculate period (each period has duration_hours hours)
-                period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
-                
-                # Convert timestamp_hours to actual datetime
-                # Add hours as timedelta to simulation start time
-                request_datetime = simulation_start_time + timedelta(hours=float(timestamp_hours))
-                purchase_date = request_datetime.date()
-                purchase_time = request_datetime.time()
-            else:
-                # Fallback if timestamp_hours not available
-                request_datetime = simulation_start_time
-                purchase_date = request_datetime.date()
-                purchase_time = request_datetime.time()
-                period = request.get('period', 1)
+            ts_result = ts_converter.convert(timestamp_hours)
+            
+            period = ts_result['period']
+            request_datetime = ts_result['datetime']
+            purchase_date = ts_result['date']
+            purchase_time = ts_result['time']
             
             # Determine Purchase Request Type and Customer Price
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
@@ -210,19 +226,18 @@ def _build_donation_transaction_export(df, simulation_config=None):
             final_donation_rate = np.clip(final_donation_rate, 0.0, 1.0) if not pd.isna(final_donation_rate) else agent_final_rate
             # ====================================================================
             
-            # Calculate donation and total paid
-            if not pd.isna(final_donation_rate) and not pd.isna(customer_price):
-                donation_paid = customer_price * final_donation_rate
-                total_paid = customer_price + donation_paid
+            # Only show price for PN and BID customers (we don't know actual price for Fixed/Discount)
+            # Excel formatting will handle 2-decimal display (no rounding of actual values)
+            if purchase_request_type in ['PN', 'Bid']:
+                display_customer_price = customer_price
             else:
-                donation_paid = np.nan
-                total_paid = customer_price if not pd.isna(customer_price) else np.nan
+                display_customer_price = 'N/A'
             
-            # Only show price calculations for PN and BID customers (updated per requirements)
-            display_customer_price = customer_price if purchase_request_type in ['PN', 'Bid'] else 'N/A'
-            display_total_paid = total_paid if purchase_request_type in ['PN', 'Bid'] else 'N/A'
-            
-            # Build record with separate date and time columns
+            # Build record with standardized timestamp column
+            # NOTE: Removed 'Donation Paid' and 'Total Paid by Customer' columns because:
+            # - For Fixed/Discount customers, we don't know the actual price paid
+            # - Donation rate (percentage) is the meaningful decision output
+            # - Actual monetary values would be misleading without knowing the true price
             record = {
                 'Transaction ID': transaction_id,
                 'Agent ID': agent_id,
@@ -231,14 +246,11 @@ def _build_donation_transaction_export(df, simulation_config=None):
                 'Customer Type': customer_type_display,
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
-                'Purchase Date': purchase_date,
-                'Purchase Time': purchase_time,
+                'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,
                 'Customer Price': display_customer_price,
                 'Default Donation Rate': agent_default_rate,
                 'Final Donation Rate': final_donation_rate,
-                'Donation Paid': donation_paid,
-                'Total Paid by Customer': display_total_paid,
                 '_sort_datetime': request_datetime  # Hidden column for sorting
             }
             
@@ -340,6 +352,8 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
                         buffer = BytesIO()
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                             export_df.to_excel(writer, index=False, sheet_name='Donation Results')
+                            # Apply 2-decimal formatting to price/rate columns
+                            _apply_price_formatting_donation(writer, 'Donation Results', export_df)
                         
                         col_download, col_info = st.columns([1, 2])
                         
@@ -531,6 +545,8 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                 with pd.ExcelWriter(buffer_transactions, engine='openpyxl') as writer:
                     # Sheet 1: Total (all periods combined)
                     transactions_df.to_excel(writer, index=False, sheet_name='Total')
+                    # Apply 2-decimal formatting
+                    _apply_price_formatting_donation(writer, 'Total', transactions_df)
                     
                     # Additional sheets: One per Period
                     periods = sorted(transactions_df['Period'].dropna().unique())
@@ -538,6 +554,8 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                         period_df = transactions_df[transactions_df['Period'] == period_val]
                         sheet_name = f'Period {int(period_val)}'
                         period_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                        # Apply 2-decimal formatting to each period sheet
+                        _apply_price_formatting_donation(writer, sheet_name, period_df)
                 
                 # Download button
                 transaction_filename = f"donation_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"

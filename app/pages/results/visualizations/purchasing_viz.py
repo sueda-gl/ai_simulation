@@ -8,6 +8,27 @@ import pandas as pd
 import plotly.express as px
 from io import BytesIO
 from datetime import datetime, timedelta
+from app.utils.timestamp_utils import TimestampConverter, get_duration_hours, get_periods
+
+
+def _apply_price_formatting_purchasing(writer, sheet_name: str, df: pd.DataFrame):
+    """
+    Apply Excel number formatting to price-related columns to display 2 decimal places.
+    """
+    price_columns = [
+        'purchasing_frequency', 'Purchasing Frequency',
+        'Customer Price', 'customer_price',
+    ]
+    
+    workbook = writer.book
+    worksheet = workbook[sheet_name]
+    
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        if col_name in price_columns:
+            for row_idx in range(2, len(df) + 2):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if isinstance(cell.value, (int, float)) and cell.value is not None:
+                    cell.number_format = '0.00'
 
 
 def render_purchasing_quantity(df, decision_name, decision_title, decision_data):
@@ -273,53 +294,68 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         
         # Clarification about income category assignment
         st.info(
-            "ℹ️ **Note:** Income categories are assigned only to Discount and Fixed customers "
+            "ℹ️ **Note:** Income categories are assigned only to **Discount and Fixed customers** "
             "(who disclosed their income). Regular customers (who did not disclose income) are not "
-            "assigned to income categories and instead use the maximum consumption limit."
+            "assigned to income categories and instead use the maximum consumption limit.\n\n"
+            "**Category Order:** Category 1 = Lowest Income → Higher Categories = Higher Income"
         )
         
-        category_stats = df.groupby('income_category')['purchasing_quantity'].agg([
-            ('count', 'count'),
-            ('mean', 'mean'),
-            ('std', 'std'),
-            ('min', 'min'),
-            ('max', 'max')
-        ]).reset_index()
+        # Filter out rows with None/NaN income_category (Regular customers)
+        df_with_category = df[df['income_category'].notna()].copy()
         
-        category_stats.columns = ['Category', 'Agents', 'Mean Qty', 'Std Dev', 'Min', 'Max']
-        category_stats['Mean Qty'] = category_stats['Mean Qty'].round(2)
-        category_stats['Std Dev'] = category_stats['Std Dev'].round(2)
-        
-        col_table, col_chart = st.columns([1, 2])
-        
-        with col_table:
-            st.dataframe(category_stats, use_container_width=True, hide_index=True)
-        
-        with col_chart:
-            # Box plot by category (sorted properly)
-            # Sort DataFrame by income_category to ensure proper ordering
-            df_sorted = df.sort_values('income_category')
+        if len(df_with_category) > 0:
+            category_stats = df_with_category.groupby('income_category')['purchasing_quantity'].agg([
+                ('count', 'count'),
+                ('mean', 'mean'),
+                ('std', 'std'),
+                ('min', 'min'),
+                ('max', 'max')
+            ]).reset_index()
             
-            st.markdown("### Quantity Distribution by Income Category")
-            fig_box = px.box(
-                df_sorted,
-                x='income_category',
-                y='purchasing_quantity',
-                labels={
-                    'income_category': 'Income Category',
-                    'purchasing_quantity': 'Items per Term'
-                },
-                category_orders={"income_category": sorted(df['income_category'].unique())}
-            )
+            # Sort by category number (ascending = lowest income first)
+            category_stats = category_stats.sort_values('income_category')
             
-            # Ensure all income categories are shown on X axis
-            fig_box.update_layout(
-                xaxis=dict(
-                    tickmode='linear',
-                    dtick=1
+            category_stats.columns = ['Category', 'Agents', 'Mean Qty', 'Std Dev', 'Min', 'Max']
+            category_stats['Mean Qty'] = category_stats['Mean Qty'].round(2)
+            category_stats['Std Dev'] = category_stats['Std Dev'].round(2)
+            
+            # Show count of agents with/without income categories
+            agents_with_category = len(df_with_category)
+            agents_without_category = len(df) - agents_with_category
+            st.caption(f"📊 {agents_with_category} agents with income categories (Discount + Fixed), {agents_without_category} Regular customers (no income category)")
+            
+            col_table, col_chart = st.columns([1, 2])
+            
+            with col_table:
+                st.dataframe(category_stats, use_container_width=True, hide_index=True)
+            
+            with col_chart:
+                # Box plot by category (sorted properly - ascending = lowest income first)
+                df_sorted = df_with_category.sort_values('income_category')
+                
+                st.markdown("### Quantity Distribution by Income Category")
+                st.caption("Category 1 = Lowest Income, Higher Categories = Higher Income")
+                fig_box = px.box(
+                    df_sorted,
+                    x='income_category',
+                    y='purchasing_quantity',
+                    labels={
+                        'income_category': 'Income Category (1=Lowest Income)',
+                        'purchasing_quantity': 'Items per Term'
+                    },
+                    category_orders={"income_category": sorted(df_with_category['income_category'].unique())}
                 )
-            )
-            st.plotly_chart(fig_box, use_container_width=True)
+                
+                # Ensure all income categories are shown on X axis
+                fig_box.update_layout(
+                    xaxis=dict(
+                        tickmode='linear',
+                        dtick=1
+                    )
+                )
+                st.plotly_chart(fig_box, use_container_width=True)
+        else:
+            st.info("No agents with income categories found. This can happen if all agents are Regular customers.")
     
     # Purchase request timing analysis if available
     if 'purchase_requests' in df.columns:
@@ -557,15 +593,20 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         st.markdown("""
         **Purchasing Quantity Default Logic:**
         
-        1. **Income Category Assignment**: Agents who disclosed their income are assigned to an income category (1 to NFIC) based on:
+        1. **Income Category Assignment**: 
            - The income range is split into NFIC equal intervals
+           - **Category 1 = Lowest Income** → **Category N = Highest Income**
            - **Discount and Fixed customers** (who disclosed income) are assigned to categories based on their income level
            - **Regular customers** (who did not disclose income) are NOT assigned to income categories
-           - Example: If NFIC=10 and range is [$0-$100k], Category 1 = [$0-$10k], Category 2 = [$10k-$20k], etc.
+           - Example: If NFIC=10 and range is [$0-$100k]:
+             - Category 1 = [$0-$10k] (Lowest income)
+             - Category 2 = [$10k-$20k]
+             - ...
+             - Category 10 = [$90k-$100k] (Highest income)
         
         2. **Purchasing Limit**: 
-           - **Discount customers**: Use purchasing limit from Category 1 (lowest)
-           - **Regular customers**: Use purchasing limit from Category 10 (highest)
+           - **Discount customers**: Use purchasing limit from **Category 1** (lowest income category)
+           - **Regular customers**: Use purchasing limit from **Category N** (highest income category)
            - **Fixed customers**: Use purchasing limit from their actual income category
            - If limits disabled: Uses `max_purchases_per_term` fallback
         
@@ -597,32 +638,20 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         try:
             # Flatten purchase_requests to transaction-level DataFrame
             transactions = []
-            # Base date for timestamp conversion (current date when simulation is run)
-            base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            # Use centralized timestamp converter for consistent handling
+            ts_converter = TimestampConverter()
             
             for idx, row in df.iterrows():
                 purchase_requests = row.get('purchase_requests', [])
                 if isinstance(purchase_requests, list):
                     for req in purchase_requests:
                         if isinstance(req, dict):
-                            # Get timestamp_hours
+                            # Get timestamp_hours and convert using centralized utilities
                             timestamp_hours = req.get('timestamp_hours', 0.0)
+                            ts_result = ts_converter.convert(timestamp_hours)
                             
-                            # Calculate Period and Hour within period
-                            periods = 1
-                            duration_hours = 1.0
-                            if hasattr(st.session_state, 'simulation_params'):
-                                sim_params = st.session_state.simulation_params.get('simulation', {})
-                                periods = sim_params.get('periods', 1)
-                                duration_hours = sim_params.get('duration_hours', 1.0)
-                            
-                            # Calculate which period this request falls into
-                            period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
-                            hour_in_period = timestamp_hours % duration_hours if timestamp_hours >= 0 else 0
-                            
-                            # Convert timestamp_hours to datetime format
-                            timestamp_dt = base_date + timedelta(hours=float(timestamp_hours))
-                            timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
+                            period = ts_result['period']
+                            timestamp_str = ts_result['formatted']
                             
                             transactions.append({
                                 'transaction_id': req.get('transaction_id'),
@@ -631,8 +660,8 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                                 'platformProductID': req.get('platformProductID', 1),
                                 'purchase type': req.get('platformPrice', 'N/A'),
                                 'purchase_bid_value': req.get('bid_value', 'N/A'),
-                                'timestamp': timestamp_str,
-                                'period': period,
+                                'Purchase Timestamp': timestamp_str,
+                                'Period': period,
                                 'timestamp_hours': timestamp_hours  # Keep for sorting
                             })
             
@@ -668,6 +697,8 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     buffer = BytesIO()
                     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                         transactions_df.to_excel(writer, index=False, sheet_name='Transactions')
+                        # Apply 2-decimal formatting
+                        _apply_price_formatting_purchasing(writer, 'Transactions', transactions_df)
                     
                     st.download_button(
                         label="📊 Download Transactions Excel",
@@ -711,6 +742,9 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 allowance_level = row.get('Assigned Allowance Level', '')
                 group_experiment = row.get('Group_experiment', '')
                 income_category = row.get('income_category', '')
+                # Handle None/NaN - display as 'N/A' for Regular customers who don't have income categories
+                if pd.isna(income_category) or income_category is None:
+                    income_category = 'N/A'
                 
                 # Get customer type - try direct column first, then purchase_requests as fallback
                 customer_type = ''
@@ -789,6 +823,8 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     # Sheet 1: Total (all agents, total across all periods)
                     total_df = agent_df[agent_df['Period'] == 'Total'].drop(columns=['Period'])
                     total_df.to_excel(writer, index=False, sheet_name='Total')
+                    # Apply 2-decimal formatting
+                    _apply_price_formatting_purchasing(writer, 'Total', total_df)
                     
                     # Additional sheets: One per Period
                     period_labels = [f"P{i+1}" for i in range(periods)]
@@ -796,6 +832,8 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                         period_df = agent_df[agent_df['Period'] == period_label].drop(columns=['Period'])
                         if len(period_df) > 0:
                             period_df.to_excel(writer, index=False, sheet_name=period_label)
+                            # Apply 2-decimal formatting to each period sheet
+                            _apply_price_formatting_purchasing(writer, period_label, period_df)
                 
                 col_download_agent, col_info_agent = st.columns([1, 2])
                 

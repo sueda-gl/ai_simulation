@@ -8,6 +8,27 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 from collections import Counter
+from app.utils.timestamp_utils import TimestampConverter
+
+
+def _apply_price_formatting_transaction(writer, sheet_name: str, df: pd.DataFrame):
+    """
+    Apply Excel number formatting to price-related columns to display 2 decimal places.
+    """
+    price_columns = [
+        'Customer Price', 'customer_price', 'Bid Value', 'bid_value',
+        'Final Donation Rate', 'final_donation_rate',
+    ]
+    
+    workbook = writer.book
+    worksheet = workbook[sheet_name]
+    
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        if col_name in price_columns:
+            for row_idx in range(2, len(df) + 2):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if isinstance(cell.value, (int, float)) and cell.value is not None:
+                    cell.number_format = '0.00'
 
 
 def _build_purchase_vs_bid_export(df):
@@ -66,8 +87,8 @@ def _build_purchase_vs_bid_export(df):
                 vendor_lookup[vendor_id] = vendor
                 vendor_lookup[str(vendor_id)] = vendor
     
-    # Base date for timestamp conversion (current date when simulation is run)
-    base_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    # Use centralized timestamp converter for consistent handling
+    ts_converter = TimestampConverter()
     
     for idx, row in df.iterrows():
         # Get agent information
@@ -97,32 +118,13 @@ def _build_purchase_vs_bid_export(df):
             if customer_type.lower() != 'regular':
                 continue
             
-            # Get timestamp and convert to Period and formatted timestamp
+            # Get timestamp and convert using centralized utilities
             timestamp_hours = request.get('timestamp_hours', np.nan)
-            if not pd.isna(timestamp_hours):
-                # Get periods and duration from session state or use defaults
-                periods = 1
-                duration_hours = 1.0
-                if hasattr(st.session_state, 'simulation_params'):
-                    sim_params = st.session_state.simulation_params.get('simulation', {})
-                    periods = sim_params.get('periods', 1)
-                    duration_hours = sim_params.get('duration_hours', 1.0)
-                elif hasattr(st.session_state, 'sim_params'):
-                    periods = getattr(st.session_state.sim_params, 'periods', 1)
-                    duration_hours = getattr(st.session_state.sim_params, 'duration_hours', 1.0)
-                
-                # Calculate period (each period has duration_hours hours)
-                period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else 1
-                
-                # Convert timestamp_hours to datetime format
-                timestamp_dt = base_date + timedelta(hours=float(timestamp_hours))
-                timestamp_str = timestamp_dt.strftime('%d/%m/%Y %H:%M')
-                sort_key = timestamp_hours  # Use numeric timestamp for sorting
-            else:
-                # Fallback if timestamp_hours not available
-                timestamp_str = base_date.strftime('%d/%m/%Y %H:%M')
-                period = request.get('period', 1)
-                sort_key = 0.0
+            ts_result = ts_converter.convert(timestamp_hours)
+            
+            period = ts_result['period']
+            timestamp_str = ts_result['formatted']
+            sort_key = ts_result['timestamp_hours'] if not pd.isna(ts_result['timestamp_hours']) else 0.0
             
             # Determine Purchase Request Type and Customer Price
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
@@ -193,7 +195,7 @@ def _build_purchase_vs_bid_export(df):
                 'Purchase Request Type': purchase_request_type,
                 'Vendor': vendor_id,
                 'Vendor Price': vendor_price,
-                'timestamp': timestamp_str,
+                'Purchase Timestamp': timestamp_str,
                 'Period': period,
                 'Customer Price': display_customer_price,
                 '_sort_key': sort_key  # Hidden column for sorting
@@ -314,6 +316,8 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     # Sheet 1: Total (all data)
                     export_df.to_excel(writer, index=False, sheet_name='Total')
+                    # Apply 2-decimal formatting
+                    _apply_price_formatting_transaction(writer, 'Total', export_df)
                     
                     # Additional sheets by Period
                     if 'Period' in export_df.columns:
@@ -322,6 +326,8 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                             period_df = export_df[export_df['Period'] == period]
                             sheet_name = f'Period {int(period)}'
                             period_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                            # Apply 2-decimal formatting to each period sheet
+                            _apply_price_formatting_transaction(writer, sheet_name, period_df)
                 
                 col_download, col_info = st.columns([1, 2])
                 
@@ -541,6 +547,8 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             export_df.to_excel(writer, index=False, sheet_name='Priority Lists')
+            # Apply 2-decimal formatting (for any numeric columns that may exist)
+            _apply_price_formatting_transaction(writer, 'Priority Lists', export_df)
         
         st.download_button(
             label="📊 Download Priority Lists Excel",

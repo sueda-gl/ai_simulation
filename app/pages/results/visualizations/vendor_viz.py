@@ -6,9 +6,35 @@ Handles vendor_choice_weights and vendor_selection decisions.
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 import numpy as np
+from app.utils.timestamp_utils import TimestampConverter
+
+
+def _apply_price_formatting_vendor(writer, sheet_name: str, df: pd.DataFrame):
+    """
+    Apply Excel number formatting to price-related columns to display 2 decimal places.
+    """
+    price_columns = [
+        'Vendor Price', 'price', 'Customer Paid Price', 'Customer Price',
+        'Bid Value', 'bid_value', 'Vendor Score', 'Integrated Score',
+        'Price Score', 'Quality Score', 'Sustainability Score', 'Proximity Score',
+        'Price (Normalized)', 'Quality (Normalized)', 'Sustainability (Normalized)', 'Proximity (Normalized)',
+        'Weight_Price', 'Weight_Quality', 'Weight_Proximity', 'Weight_Sustainability',
+        'weight_price', 'weight_quality', 'weight_proximity', 'weight_sustainability',
+        'Proximity', 'Quality', 'Sustainability',
+    ]
+    
+    workbook = writer.book
+    worksheet = workbook[sheet_name]
+    
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        if col_name in price_columns:
+            for row_idx in range(2, len(df) + 2):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if isinstance(cell.value, (int, float)) and cell.value is not None:
+                    cell.number_format = '0.00'
 
 
 def _build_purchase_request_export(df, vendors_data, price_min_config=None, price_max_config=None):
@@ -24,16 +50,14 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
     Returns:
         List of dicts with purchase request level data
     """
-    from datetime import datetime, timedelta
-    
     purchase_request_records = []
     
     # Check if we have purchase_requests column
     if 'purchase_requests' not in df.columns:
         return []
     
-    # Get simulation start time (use current time as base)
-    simulation_start_time = datetime.now()
+    # Use centralized timestamp converter for consistent handling
+    ts_converter = TimestampConverter()
     
     # Build vendor lookup dictionary for quick access
     vendor_lookup = {}
@@ -86,28 +110,16 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
                 continue
             
             # Extract request data
-            transaction_id = request.get('transactionID', request.get('request_id', f"T{agent_id}_{req_idx+1}"))
+            # Use global transaction_id assigned by simulation.py (snake_case), with fallback
+            transaction_id = request.get('transaction_id', request.get('transactionID', request.get('request_id', f"T{agent_id}_{req_idx+1}")))
             vendor_id = request.get('vendorID', np.nan)
             
-            # Get timestamp and convert to actual datetime
+            # Get timestamp and convert using centralized utilities
             timestamp_hours = request.get('timestamp_hours', np.nan)
-            if not pd.isna(timestamp_hours):
-                # Get duration_hours from simulation config
-                if hasattr(st.session_state, 'sim_params'):
-                    duration_hours = st.session_state.sim_params.duration_hours
-                else:
-                    duration_hours = 2.0  # Default fallback
-                
-                # Calculate period number
-                period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else np.nan
-                
-                # Convert timestamp_hours to actual datetime
-                # Add hours as timedelta to simulation start time
-                request_datetime = simulation_start_time + timedelta(hours=float(timestamp_hours))
-            else:
-                # Fallback if timestamp_hours not available
-                request_datetime = simulation_start_time
-                period = request.get('period', np.nan)
+            ts_result = ts_converter.convert(timestamp_hours)
+            
+            period = ts_result['period']
+            request_datetime = ts_result['datetime']
             
             # Determine customer type from request or agent
             customer_type = request.get('customer_type', request.get('customerType', 'Regular'))
@@ -165,14 +177,28 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
             else:
                 display_customer_paid_price = 'N/A'
             
-            # Build record
+            # Determine Purchase Type (PN, Bid, Fixed, Discount)
+            if platform_price == 'PN':
+                purchase_type = 'PN'
+            elif platform_price == 'BID':
+                purchase_type = 'Bid'
+            elif platform_price == 'FIXED' or customer_type.lower() == 'fixed':
+                purchase_type = 'Fixed'
+            elif platform_price == 'DISCOUNT' or customer_type.lower() == 'discount':
+                purchase_type = 'Discount'
+            else:
+                # Fallback based on customer type
+                purchase_type = customer_type if customer_type else 'Unknown'
+            
+            # Build record (include hidden sort key)
             record = {
-                'Transaction ID': transaction_id,
+                'Purchase Request ID': transaction_id,  # Will be reassigned after sorting
                 'Agent ID': agent_id,
                 'Assigned Allowance Level': allowance_level,
                 'Group_experiment': group_experiment,
                 'Customer Type': customer_type,
-                'Request Date & Time': request_datetime,
+                'Purchase Type': purchase_type,
+                'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,
                 'Selected Vendor': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else np.nan,
                 'Vendor Price': vendor_price,
@@ -180,14 +206,21 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
                 'Sustainability': vendor_sustainability,
                 'Proximity': vendor_proximity,
                 'Vendor Integrated Score': vendor_integrated_score,
-                'Customer Paid Price': display_customer_paid_price
+                'Customer Paid Price': display_customer_paid_price,
+                '_sort_datetime': request_datetime  # Hidden sort key
             }
             
             purchase_request_records.append(record)
     
-    # Sort records by Request Date & Time (timestamp) in chronological order
+    # Sort records by timestamp in chronological order
     if purchase_request_records:
-        purchase_request_records.sort(key=lambda x: x['Request Date & Time'] if isinstance(x['Request Date & Time'], datetime) else datetime.min)
+        purchase_request_records.sort(key=lambda x: x.get('_sort_datetime', datetime.min))
+        
+        # Assign unique Purchase Request IDs (1, 2, 3, ...) based on chronological order
+        # This ensures each request has a unique ID that reflects its position in the timeline
+        for idx, record in enumerate(purchase_request_records):
+            record['Purchase Request ID'] = idx + 1
+            record.pop('_sort_datetime', None)  # Remove temporary sorting column
     
     return purchase_request_records
 
@@ -456,6 +489,8 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
             buffer = BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 export_df.to_excel(writer, index=False, sheet_name='Vendor Choice Weights')
+                # Apply 2-decimal formatting
+                _apply_price_formatting_vendor(writer, 'Vendor Choice Weights', export_df)
             
             col_download, col_info = st.columns([1, 2])
             
@@ -513,25 +548,56 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     vendor_counts = decision_data.dropna().value_counts()
     num_vendors_selected = len(vendor_counts)
     
-    # Calculate purchase request and transaction shares
+    # Calculate purchase request and transaction shares per vendor
     total_purchase_requests = 0
     total_transactions_completed = 0
+    vendor_pr_counts = {}  # Purchase requests per vendor
+    vendor_tx_counts = {}  # Transactions per vendor
     
     if 'purchase_requests' in df.columns:
         for idx, row in df.iterrows():
             requests = row.get('purchase_requests', [])
             if isinstance(requests, list):
                 total_purchase_requests += len(requests)
-                # Count completed transactions
+                # Count completed transactions per vendor
                 for req in requests:
                     if isinstance(req, dict):
-                        completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
-                        if completed or completed == 1:
-                            total_transactions_completed += 1
+                        vendor_id = req.get('vendorID')
+                        if not pd.isna(vendor_id):
+                            # Count purchase request per vendor
+                            vendor_pr_counts[vendor_id] = vendor_pr_counts.get(vendor_id, 0) + 1
+                            
+                            # Count transaction if completed
+                            completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
+                            if completed or completed == 1:
+                                total_transactions_completed += 1
+                                vendor_tx_counts[vendor_id] = vendor_tx_counts.get(vendor_id, 0) + 1
     
-    # Calculate average shares
-    avg_purchase_request_share = (100.0 / num_vendors_selected) if num_vendors_selected > 0 else 0
-    avg_transaction_share = (100.0 / num_vendors_selected) if num_vendors_selected > 0 else 0
+    # Calculate ACTUAL dominant share (maximum share held by any single vendor)
+    agents_with_selection = decision_data.notna().sum()
+    
+    # Find dominant vendor for agents
+    if len(vendor_counts) > 0 and agents_with_selection > 0:
+        max_agent_count = vendor_counts.max()
+        max_agent_share = (max_agent_count / agents_with_selection) * 100
+        dominant_agent_vendor = vendor_counts.idxmax()
+    else:
+        max_agent_share = 0
+        dominant_agent_vendor = None
+    
+    # Find dominant vendor for purchase requests
+    if vendor_pr_counts and total_purchase_requests > 0:
+        max_pr_count = max(vendor_pr_counts.values())
+        max_pr_share = (max_pr_count / total_purchase_requests) * 100
+    else:
+        max_pr_share = 0
+    
+    # Find dominant vendor for transactions
+    if vendor_tx_counts and total_transactions_completed > 0:
+        max_tx_count = max(vendor_tx_counts.values())
+        max_tx_share = (max_tx_count / total_transactions_completed) * 100
+    else:
+        max_tx_share = 0
     
     # Overview metrics - 6 columns
     col1, col2, col3, col4, col5, col6 = st.columns(6)
@@ -548,18 +614,18 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                  help="Number of vendors that were actually chosen by at least one agent")
     
     with col4:
-        agents_with_selection = decision_data.notna().sum()
-        avg_agents_share = (100.0 / num_vendors_selected) if num_vendors_selected > 0 else 0
-        st.metric("Average Agents Share", f"{avg_agents_share:.1f}%",
-                 help="Average share of agents per vendor (100% ÷ vendors selected)")
+        # Show actual dominant share instead of theoretical average
+        dominant_label = f"Vendor {int(dominant_agent_vendor)}" if dominant_agent_vendor is not None else "N/A"
+        st.metric("Max Agent Share", f"{max_agent_share:.1f}%",
+                 help=f"Highest share of agents selecting any single vendor ({dominant_label})")
     
     with col5:
-        st.metric("Average Purchase Requests Share", f"{avg_purchase_request_share:.1f}%",
-                 help="Average share of purchase requests per vendor (100% ÷ vendors selected)")
+        st.metric("Max Request Share", f"{max_pr_share:.1f}%",
+                 help="Highest share of purchase requests going to any single vendor")
     
     with col6:
-        st.metric("Average Transaction Share", f"{avg_transaction_share:.1f}%",
-                 help="Average share of completed transactions per vendor (100% ÷ vendors selected)")
+        st.metric("Max Transaction Share", f"{max_tx_share:.1f}%",
+                 help="Highest share of completed transactions at any single vendor")
     
     # Check if only 1 vendor exists
     if num_vendors_selected == 1 and len(vendor_counts) == 1:
@@ -706,11 +772,9 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     has_any_vendor_data = (len(vendor_counts) > 0) or (vendors_data and len(vendors_data) > 0)
     
     if has_purchase_requests and has_any_vendor_data:
-        # Get duration_hours from simulation config
-        if hasattr(st.session_state, 'sim_params'):
-            duration_hours = st.session_state.sim_params.duration_hours
-        else:
-            duration_hours = 2.0  # Default fallback
+        # Get duration_hours using centralized utility
+        from app.utils.timestamp_utils import get_duration_hours
+        duration_hours = get_duration_hours()
         
         # Collect data by period
         period_data = {}  # {period: {vendor_id: {'agents': set(), 'requests': count, 'transactions': count}}}
@@ -848,6 +912,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                 buffer = BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                     combined_breakdown_df.to_excel(writer, index=False, sheet_name='Vendor Breakdown')
+                    # Apply 2-decimal formatting
+                    _apply_price_formatting_vendor(writer, 'Vendor Breakdown', combined_breakdown_df)
                 
                 st.download_button(
                     label="📥 Download Period Breakdown Excel",
@@ -909,6 +975,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 # Sheet 1: Total (all data)
                 pr_df.to_excel(writer, index=False, sheet_name='Total')
+                # Apply 2-decimal formatting
+                _apply_price_formatting_vendor(writer, 'Total', pr_df)
                 
                 # Additional sheets by Period
                 if 'Period' in pr_df.columns:
@@ -917,6 +985,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         period_df = pr_df[pr_df['Period'] == period]
                         sheet_name = f'Period {period}'
                         period_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                        # Apply 2-decimal formatting to each period sheet
+                        _apply_price_formatting_vendor(writer, sheet_name, period_df)
             
             col_download, col_info = st.columns([1, 2])
             
@@ -1119,6 +1189,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                     buffer = BytesIO()
                     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                         vendor_period_df.to_excel(writer, index=False, sheet_name='Vendor Details Per Period')
+                        # Apply 2-decimal formatting
+                        _apply_price_formatting_vendor(writer, 'Vendor Details Per Period', vendor_period_df)
                     
                     st.download_button(
                         label="📥 Download Vendor Details (Per Period)",
@@ -1309,6 +1381,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                             buffer = BytesIO()
                             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                                 score_df.to_excel(writer, index=False, sheet_name='Vendor Score Breakdown')
+                                # Apply 2-decimal formatting
+                                _apply_price_formatting_vendor(writer, 'Vendor Score Breakdown', score_df)
                             
                             st.download_button(
                                 label="📥 Download Vendor Score Breakdown Excel",
@@ -1373,6 +1447,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         buffer = BytesIO()
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                             proximity_df.to_excel(writer, index=False, sheet_name='Agent-Vendor Proximity')
+                            # Apply 2-decimal formatting
+                            _apply_price_formatting_vendor(writer, 'Agent-Vendor Proximity', proximity_df)
                         
                         col_download, col_info = st.columns([1, 2])
                         

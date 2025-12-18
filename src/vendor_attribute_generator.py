@@ -103,22 +103,17 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
     """
     Generate proximity scores for a specific customer-vendor dyad.
     
-    Vendors have different "location characteristics" (urban/suburban/rural):
-    - Urban vendors: Closer to most customers (higher average proximity ~75)
-    - Suburban vendors: Medium distance to customers (average proximity ~50)
-    - Rural vendors: Farther from most customers (lower average proximity ~25)
-    
-    Within each vendor's location distribution, there's customer-specific variation:
+    Each agent-vendor proximity is generated randomly and independently:
+    - Uniformly distributed in [0, 100] range
     - Same agent always gets same proximity to same vendor (fixed dyad)
     - Different agents get different proximities to same vendor
-    - But vendors maintain meaningfully different average proximity values
+    - No predefined vendor "location types" - purely random
     
     Args:
         agent_id: Customer/agent ID
         num_vendors: Number of vendors
         rng: Random number generator for this agent
-        base_seed: Base seed for deterministic shuffling of vendor locations (default: 42)
-                   Should be the same for all agents in a run, but change across runs.
+        base_seed: Base seed (kept for API compatibility, not used)
         
     Returns:
         Dictionary mapping vendor_id (as STRING) to proximity score [0, 100]
@@ -126,48 +121,10 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
     """
     proximity_scores = {}
     
-    # Assign each vendor a distinct "location characteristic"
-    # This ensures vendors have different average proximity values
-    # Distribute vendors across the proximity spectrum
-    
-    if num_vendors == 1:
-        # Single vendor: medium proximity
-        vendor_means = [50.0]
-    elif num_vendors == 2:
-        # Two vendors: one urban (close), one rural (far)
-        vendor_means = [70.0, 30.0]
-    elif num_vendors == 3:
-        # Three vendors: urban, suburban, rural
-        vendor_means = [75.0, 50.0, 25.0]
-    elif num_vendors == 4:
-        # Four vendors: distribute across spectrum
-        vendor_means = [80.0, 60.0, 40.0, 20.0]
-    elif num_vendors == 5:
-        # Five vendors: distribute evenly
-        vendor_means = [85.0, 65.0, 50.0, 35.0, 15.0]
-    else:
-        # Many vendors: distribute evenly across 15-85 range
-        vendor_means = [15 + (70 * i / (num_vendors - 1)) for i in range(num_vendors)]
-    
-    # SHUFFLE the means deterministically so Vendor ID != Location Quality
-    # Use a fixed seed so all agents agree on which vendor is "urban" vs "rural"
-    # (e.g. Vendor 3 is always the urban one in this run, regardless of agent)
-    # We use base_seed combined with num_vendors to ensure reproducibility
-    # while breaking the linear correlation between Vendor ID and proximity score.
-    import random
-    shuffle_rng = random.Random(base_seed + num_vendors)
-    shuffle_rng.shuffle(vendor_means)
-    
     for vendor_id in range(1, num_vendors + 1):
-        vendor_idx = vendor_id - 1
-        mean_proximity = vendor_means[vendor_idx]
-        
-        # Generate proximity using normal distribution centered at vendor's location
-        # Standard deviation of 20 creates customer-specific variation
-        proximity = float(rng.normal(mean_proximity, 20))
-        
-        # Clip to [0, 100] range
-        proximity = np.clip(proximity, 0.0, 100.0)
+        # Generate purely random proximity for each agent-vendor pair
+        # Uniform distribution in [0, 100]
+        proximity = float(rng.uniform(0.0, 100.0))
         
         # Use STRING key for Parquet compatibility
         proximity_scores[str(vendor_id)] = proximity

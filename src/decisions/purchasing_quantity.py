@@ -395,18 +395,26 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
     # If not, get_agent_income will generate it using Page 1 parameters
     income = get_agent_income(agent_state, simulation_config, rng)
     
-    # STEP 2: Assign agent to income category (1 to NFIC)
-    income_category = _assign_income_category(income, simulation_config)
-    
-    # STEP 3: Determine customer type (discount, fixed, or regular)
+    # STEP 2: Determine customer type (discount, fixed, or regular)
+    # Must determine customer type BEFORE income category assignment
     from src.decisions.income_utils import get_customer_type
     customer_type = get_customer_type(agent_state, simulation_config)
     
+    # STEP 3: Assign income category ONLY to Discount and Fixed customers
+    # Regular customers (who did not disclose income) are NOT assigned to income categories
+    # They use the maximum consumption limit (Category N) instead
+    if customer_type in ("discount", "fixed"):
+        income_category = _assign_income_category(income, simulation_config)
+    else:
+        # Regular customers: No income category (they didn't disclose income)
+        income_category = None
+    
     # STEP 4: Get purchasing limit based on CUSTOMER TYPE
     # According to professor's specification:
-    # - Discount customers: Use Category 1 limit (lowest)
-    # - Regular customers: Use Category N limit (highest)
+    # - Discount customers: Use Category 1 limit (lowest income)
+    # - Regular customers: Use Category N limit (highest income) - they don't have income categories
     # - Fixed customers: Use their actual income category limit
+    # NOTE: Category 1 = Lowest Income, Category N = Highest Income
     
     # Check if purchasing limits are enabled and configured
     purchasing_limits = {}
@@ -516,7 +524,7 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
     return {
         "purchasing_quantity": int(total_quantity),
         "purchase_requests": purchase_requests,
-        "income_category": int(income_category),
+        "income_category": int(income_category) if income_category is not None else None,
         "income": float(income)  # Store/update income for consistency
     }
 

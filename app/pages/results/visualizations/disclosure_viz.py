@@ -8,6 +8,25 @@ import pandas as pd
 import plotly.express as px
 
 
+def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame):
+    """
+    Apply Excel number formatting to price-related columns to display 2 decimal places.
+    """
+    price_columns = [
+        'income', 'Income', 'Honesty_Humility',
+    ]
+    
+    workbook = writer.book
+    worksheet = workbook[sheet_name]
+    
+    for col_idx, col_name in enumerate(df.columns, start=1):
+        if col_name in price_columns:
+            for row_idx in range(2, len(df) + 2):
+                cell = worksheet.cell(row=row_idx, column=col_idx)
+                if isinstance(cell.value, (int, float)) and cell.value is not None:
+                    cell.number_format = '0.00'
+
+
 def render_disclose_income(df, decision_name, decision_title, decision_data):
     """Visualization for disclose_income - binary Y/N choice"""
     
@@ -147,15 +166,6 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
     else:
         st.warning("⚠️ No agents qualified for discount (all agents have income ≥ threshold)")
     
-    # Show full breakdown including NA
-    st.markdown("### Complete Breakdown (All Agents)")
-    full_breakdown = pd.DataFrame({
-        'Status': value_counts.index,
-        'Count': value_counts.values,
-        'Percentage': [f"{(count/total_agents)*100:.1f}%" for count in value_counts.values]
-    })
-    st.dataframe(full_breakdown, use_container_width=True, hide_index=True)
-    
     # CUSTOMER TYPE DISTRIBUTION - Comprehensive visualization
     st.markdown("---")
     st.markdown("### 👥 Customer Type Distribution")
@@ -281,6 +291,8 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 excel_data.to_excel(writer, index=False, sheet_name='Agent Disclosure Data')
+                # Apply 2-decimal formatting
+                _apply_price_formatting_disclosure(writer, 'Agent Disclosure Data', excel_data)
             excel_bytes = output.getvalue()
             
             # Download button
