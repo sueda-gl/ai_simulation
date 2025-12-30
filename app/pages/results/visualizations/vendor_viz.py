@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 import numpy as np
 from app.utils.timestamp_utils import TimestampConverter
+from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
 
 
 def _apply_price_formatting_vendor(writer, sheet_name: str, df: pd.DataFrame):
@@ -230,6 +231,9 @@ def _calculate_vendor_score(vendor, weights, proximity, all_vendors,
     """
     Calculate vendor integrated composite score.
     
+    This is a thin wrapper around the centralized calculate_vendor_score_with_breakdown()
+    function from vendor_attribute_generator.py. All scoring logic is maintained in one place.
+    
     Args:
         vendor: Vendor dict with attributes
         weights: Dict of weights for each attribute
@@ -240,61 +244,16 @@ def _calculate_vendor_score(vendor, weights, proximity, all_vendors,
     
     Returns:
         float: Composite score
-    
-    NOTE: Price normalization uses fixed reference bounds (price_min_config, price_max_config)
-    to ensure equal discriminatory power across all attributes. This is consistent with how
-    quality, sustainability, and proximity are normalized using their theoretical ranges.
     """
-    # Get vendor attributes
-    price = vendor.get('price', 0)
-    quality = vendor.get('quality', 3)
-    sustainability = vendor.get('sustainability', 3)
-    
-    # Normalize attributes to [0, 1]
-    # Price: inverted normalization (lower price = higher score)
-    # Use FIXED reference bounds from configuration for consistent normalization
-    if price_min_config is not None and price_max_config is not None:
-        min_price = price_min_config
-        max_price = price_max_config
-    elif all_vendors and len(all_vendors) > 0:
-        # Fallback: use actual vendor price range (legacy behavior)
-        prices = [v.get('price', 0) for v in all_vendors]
-        min_price = min(prices)
-        max_price = max(prices)
-    else:
-        min_price = 0
-        max_price = 1
-    
-    if max_price > 0:
-        # Normalize: Best price (min_price) -> 1.0
-        # Other prices -> 1 - (price - min_price) / max_price
-        # This ensures max score is 1, but min score is not necessarily 0
-        clamped_price = max(min_price, min(price, max_price))
-        norm_price = 1.0 - (clamped_price - min_price) / max_price
-    else:
-        norm_price = 1.0
-    
-    # Quality: [1, 5] -> [0, 1]
-    norm_quality = (quality - 1) / 4 if quality >= 1 else 0
-    
-    # Sustainability: [1, 5] -> [0, 1]
-    norm_sustainability = (sustainability - 1) / 4 if sustainability >= 1 else 0
-    
-    # Proximity: [0, 100] -> [0, 1]
-    norm_proximity = proximity / 100 if proximity >= 0 else 0
-    
-    # Calculate weighted composite score
-    w_price = weights.get('price', 0.25)
-    w_quality = weights.get('quality', 0.25)
-    w_proximity = weights.get('proximity', 0.25)
-    w_sustainability = weights.get('sustainability', 0.25)
-    
-    score = (w_price * norm_price + 
-             w_quality * norm_quality + 
-             w_proximity * norm_proximity + 
-             w_sustainability * norm_sustainability)
-    
-    return score
+    result = calculate_vendor_score_with_breakdown(
+        vendor=vendor,
+        weights=weights,
+        proximity=proximity,
+        all_vendors=all_vendors,
+        price_min_config=price_min_config,
+        price_max_config=price_max_config
+    )
+    return result['integrated_score']
 
 
 def render_vendor_choice_weights(df, decision_name, decision_title, decision_data):
@@ -1308,7 +1267,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
             st.markdown("**🔍 Vendor Score Breakdown (Average Across All Agents)**")
             st.caption("Shows how each vendor's score is calculated from normalized attributes and weights")
             
-            # Build score breakdown table
+            # Build score breakdown table using centralized scoring function
             if 'vendor_choice_weights' in df.columns and 'vendor_proximity_scores' in df.columns:
                 score_breakdown_data = []
                 
@@ -1329,44 +1288,35 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
                         sustainability = vendor.get('sustainability', 3)
                         avg_proximity = avg_proximity_per_vendor.get(vendor_id, 50.0)
                         
-                        # Calculate normalized values
-                        prices = [v.get('price', 0) for v in vendors_data]
-                        min_price = min(prices)
-                        max_price = max(prices)
-                        clamped_price = max(min_price, min(price, max_price))
-                        norm_price = 1.0 - (clamped_price - min_price) / max_price if max_price > 0 else 1.0
-                        norm_quality = (quality - 1) / 4 if quality >= 1 else 0
-                        norm_sustainability = (sustainability - 1) / 4 if sustainability >= 1 else 0
-                        norm_proximity = avg_proximity / 100 if avg_proximity >= 0 else 0
-                        
-                        # Calculate weighted components
-                        w_price_component = avg_weights['price'] * norm_price
-                        w_quality_component = avg_weights['quality'] * norm_quality
-                        w_proximity_component = avg_weights['proximity'] * norm_proximity
-                        w_sustainability_component = avg_weights['sustainability'] * norm_sustainability
-                        
-                        # Final score
-                        final_score = w_price_component + w_quality_component + w_proximity_component + w_sustainability_component
+                        # Use centralized scoring function for consistency
+                        score_result = calculate_vendor_score_with_breakdown(
+                            vendor=vendor,
+                            weights=avg_weights,
+                            proximity=avg_proximity,
+                            all_vendors=vendors_data,
+                            price_min_config=price_min_config,
+                            price_max_config=price_max_config
+                        )
                         
                         score_breakdown_data.append({
                             'Vendor': f"Vendor {vendor_id}",
                             'Price ($)': f"${price:.2f}",
-                            'Norm Price': f"{norm_price:.3f}",
-                            'Price Weight': f"{avg_weights['price']:.2f}",
-                            'Price Component': f"{w_price_component:.3f}",
+                            'Norm Price': f"{score_result['norm_price']:.3f}",
+                            'Price Weight': f"{score_result['weight_price']:.2f}",
+                            'Price Component': f"{score_result['weighted_price']:.3f}",
                             'Quality (1-5)': quality,
-                            'Norm Quality': f"{norm_quality:.3f}",
-                            'Quality Weight': f"{avg_weights['quality']:.2f}",
-                            'Quality Component': f"{w_quality_component:.3f}",
+                            'Norm Quality': f"{score_result['norm_quality']:.3f}",
+                            'Quality Weight': f"{score_result['weight_quality']:.2f}",
+                            'Quality Component': f"{score_result['weighted_quality']:.3f}",
                             'Sustainability (1-5)': sustainability,
-                            'Norm Sustain': f"{norm_sustainability:.3f}",
-                            'Sustain Weight': f"{avg_weights['sustainability']:.2f}",
-                            'Sustain Component': f"{w_sustainability_component:.3f}",
+                            'Norm Sustain': f"{score_result['norm_sustainability']:.3f}",
+                            'Sustain Weight': f"{score_result['weight_sustainability']:.2f}",
+                            'Sustain Component': f"{score_result['weighted_sustainability']:.3f}",
                             'Avg Proximity': f"{avg_proximity:.1f}",
-                            'Norm Proximity': f"{norm_proximity:.3f}",
-                            'Proximity Weight': f"{avg_weights['proximity']:.2f}",
-                            'Proximity Component': f"{w_proximity_component:.3f}",
-                            'Final Score': f"{final_score:.3f}"
+                            'Norm Proximity': f"{score_result['norm_proximity']:.3f}",
+                            'Proximity Weight': f"{score_result['weight_proximity']:.2f}",
+                            'Proximity Component': f"{score_result['weighted_proximity']:.3f}",
+                            'Final Score': f"{score_result['integrated_score']:.3f}"
                         })
                     
                     if score_breakdown_data:
@@ -1493,8 +1443,8 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
            - Example: {price: 0.5, quality: 0.5, proximity: 0.0, sustainability: 0.0}
         
         3. **Standardize Attributes** to [0, 1]:
-           - Price: Normalized using **fixed reference formula** where best price = 1
-             `norm_price = 1.0 - (price - min_price) / max_price`
+           - Price: Normalized using **min-max normalization** where best price = 1, worst price = 0
+             `norm_price = 1.0 - (price - min_price) / (max_price - min_price)`
            - Quality: (value - 1) / 4
            - Sustainability: (value - 1) / 4
            - Proximity: value / 100

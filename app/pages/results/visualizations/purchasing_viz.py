@@ -76,11 +76,50 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         st.markdown("**📈 Statistics**")
         stats = decision_data.describe()
         
-        # Get number of periods from simulation config
+        # Get number of periods and duration from simulation config
         if hasattr(st.session_state, 'sim_params'):
             periods = st.session_state.sim_params.periods
+            duration_hours = st.session_state.sim_params.duration_hours
         else:
             periods = 15  # default
+            duration_hours = 2.0
+        
+        # Calculate ACTUAL per-period statistics (not just dividing term stats by periods)
+        # This properly computes statistics over actual per-agent-per-period purchase counts
+        per_period_counts = []
+        
+        if 'purchase_requests' in df.columns:
+            for idx, row in df.iterrows():
+                purchase_requests = row.get('purchase_requests', [])
+                if isinstance(purchase_requests, list):
+                    # Initialize period counts for this agent
+                    agent_period_counts = {i: 0 for i in range(periods)}
+                    
+                    for req in purchase_requests:
+                        if isinstance(req, dict) and 'timestamp_hours' in req:
+                            timestamp = req['timestamp_hours']
+                            period_idx = int(timestamp // duration_hours)
+                            if 0 <= period_idx < periods:
+                                agent_period_counts[period_idx] += 1
+                    
+                    # Add all period counts for this agent to the list
+                    per_period_counts.extend(agent_period_counts.values())
+        
+        # Compute statistics on actual per-period values
+        if per_period_counts:
+            per_period_series = pd.Series(per_period_counts)
+            per_period_stats = per_period_series.describe()
+        else:
+            # Fallback: divide by periods if no purchase_requests data available
+            per_period_stats = pd.Series({
+                'mean': stats['mean'] / periods,
+                'std': stats['std'] / periods,
+                'min': stats['min'] / periods,
+                'max': stats['max'] / periods,
+                '25%': stats['25%'] / periods,
+                '50%': stats['50%'] / periods,
+                '75%': stats['75%'] / periods
+            })
         
         stats_df = pd.DataFrame({
             'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
@@ -94,13 +133,13 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 f"{stats['75%']:.2f}"
             ],
             'Purchase Requests per Period': [
-                f"{stats['mean']/periods:.2f}",
-                f"{stats['std']/periods:.2f}",
-                f"{int(stats['min'])/periods:.2f}",
-                f"{int(stats['max'])/periods:.2f}",
-                f"{stats['50%']/periods:.2f}",
-                f"{stats['25%']/periods:.2f}",
-                f"{stats['75%']/periods:.2f}"
+                f"{per_period_stats['mean']:.2f}",
+                f"{per_period_stats['std']:.2f}",
+                f"{int(per_period_stats['min'])}",
+                f"{int(per_period_stats['max'])}",
+                f"{per_period_stats['50%']:.2f}",
+                f"{per_period_stats['25%']:.2f}",
+                f"{per_period_stats['75%']:.2f}"
             ]
         })
         st.dataframe(stats_df, use_container_width=True, hide_index=True)
@@ -188,8 +227,10 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             # Get number of periods for per-period calculations
             if hasattr(st.session_state, 'sim_params'):
                 periods = st.session_state.sim_params.periods
+                duration_hours = st.session_state.sim_params.duration_hours
             else:
                 periods = 15  # default
+                duration_hours = 2.0
             
             # Helper function to get purchasing quantities for a specific customer type
             def get_quantities_by_customer_type(df, target_type):
@@ -219,6 +260,57 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                         quantities.append(qty)
                 
                 return pd.Series(quantities) if quantities else pd.Series([0])
+            
+            # Helper function to compute ACTUAL per-period statistics for a customer type
+            def get_per_period_stats_by_customer_type(df, target_type, periods, duration_hours):
+                """
+                Calculate actual per-period statistics for a specific customer type.
+                Returns statistics computed on actual per-agent-per-period purchase counts.
+                """
+                per_period_counts = []
+                
+                for idx, row in df.iterrows():
+                    # Get customer type for this agent
+                    customer_type = ''
+                    
+                    if 'customer_type' in row and pd.notna(row['customer_type']) and str(row['customer_type']).strip():
+                        customer_type = str(row['customer_type']).capitalize()
+                    else:
+                        purchase_requests = row.get('purchase_requests', [])
+                        if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
+                            first_req = purchase_requests[0]
+                            if isinstance(first_req, dict):
+                                customer_type = first_req.get('customer_type', 'regular')
+                                if isinstance(customer_type, str):
+                                    customer_type = customer_type.capitalize()
+                    
+                    # Only process agents of the target customer type
+                    if customer_type == target_type:
+                        purchase_requests = row.get('purchase_requests', [])
+                        if isinstance(purchase_requests, list):
+                            # Initialize period counts for this agent
+                            agent_period_counts = {i: 0 for i in range(periods)}
+                            
+                            for req in purchase_requests:
+                                if isinstance(req, dict) and 'timestamp_hours' in req:
+                                    timestamp = req['timestamp_hours']
+                                    period_idx = int(timestamp // duration_hours)
+                                    if 0 <= period_idx < periods:
+                                        agent_period_counts[period_idx] += 1
+                            
+                            # Add all period counts for this agent
+                            per_period_counts.extend(agent_period_counts.values())
+                
+                # Compute statistics on actual per-period values
+                if per_period_counts:
+                    per_period_series = pd.Series(per_period_counts)
+                    return per_period_series.describe()
+                else:
+                    # Return zero stats if no data
+                    return pd.Series({
+                        'mean': 0, 'std': 0, 'min': 0, 'max': 0,
+                        '25%': 0, '50%': 0, '75%': 0
+                    })
             
             # Create three sub-sections
             customer_types_to_analyze = ['Regular', 'Fixed', 'Discount']
@@ -257,6 +349,11 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                             st.markdown("**📈 Statistics**")
                             type_stats_desc = type_quantities.describe()
                             
+                            # Get ACTUAL per-period statistics for this customer type
+                            type_per_period_stats = get_per_period_stats_by_customer_type(
+                                df, ctype, periods, duration_hours
+                            )
+                            
                             type_stats_table = pd.DataFrame({
                                 'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
                                 'Purchase Requests per Term': [
@@ -269,13 +366,13 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                                     f"{type_stats_desc['75%']:.2f}"
                                 ],
                                 'Purchase Requests per Period': [
-                                    f"{type_stats_desc['mean']/periods:.2f}",
-                                    f"{type_stats_desc['std']/periods:.2f}",
-                                    f"{int(type_stats_desc['min'])/periods:.2f}",
-                                    f"{int(type_stats_desc['max'])/periods:.2f}",
-                                    f"{type_stats_desc['50%']/periods:.2f}",
-                                    f"{type_stats_desc['25%']/periods:.2f}",
-                                    f"{type_stats_desc['75%']/periods:.2f}"
+                                    f"{type_per_period_stats['mean']:.2f}",
+                                    f"{type_per_period_stats['std']:.2f}",
+                                    f"{int(type_per_period_stats['min'])}",
+                                    f"{int(type_per_period_stats['max'])}",
+                                    f"{type_per_period_stats['50%']:.2f}",
+                                    f"{type_per_period_stats['25%']:.2f}",
+                                    f"{type_per_period_stats['75%']:.2f}"
                                 ]
                             })
                             st.dataframe(type_stats_table, use_container_width=True, hide_index=True)

@@ -417,7 +417,7 @@ def render_numeric_default_config(decision_name, default_value):
         if 0 <= default_value <= 1:
             # Use finer step for final_donation_rate to show precise values like 10.19%
             if decision_name == "final_donation_rate":
-                step_size = 0.0001  # 0.01% increments
+                step_size = 0.01  # 1% increments, but display 4 decimal places
                 format_str = "%.4f"
                 caption_format = f"Percentage: {st.session_state[value_key]:.2%}"
             else:
@@ -473,15 +473,17 @@ def render_final_donation_rate_with_config(default_value):
     # Session state key for this decision's value
     value_key = "final_donation_rate_default_value"
     
-    # FORCE SYNC: The selected configuration's value MUST override any stored defaults
-    # This prevents stale values (like 0.10) from persisting when a config is selected
-    current_value = mean_donation
-    st.session_state[value_key] = current_value
+    # CRITICAL FIX: Do NOT force overwrite on every render!
+    # The value is synced ONCE when config is selected (in save_selected_configuration or auto_populate).
+    # After that, we must respect the user's manual adjustments in session state.
     
-    # Update persistent storage too
+    # Initialize if missing
+    if value_key not in st.session_state:
+        st.session_state[value_key] = mean_donation
+    
+    # Ensure persistent storage is initialized
     if '_persistent_defaults' not in st.session_state:
         st.session_state._persistent_defaults = {}
-    st.session_state._persistent_defaults[value_key] = current_value
     
     # Show that this is linked to the selected donation configuration
     st.success(f"✅ **Linked to Selected Donation Configuration**")
@@ -490,15 +492,14 @@ def render_final_donation_rate_with_config(default_value):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Show slider with the config's mean donation as value
-        # We use the forced current_value here
-        # Step of 0.0001 allows 0.01% increments (e.g., 10.19% = 0.1019)
+        # Show slider with the config's mean donation as initial value, but allow changes
+        # Step of 0.01 allows 1% increments, display shows 4 decimal places
         value = st.slider(
             "Default Value",
             min_value=0.0,
             max_value=1.0,
-            value=current_value,
-            step=0.0001,
+            value=st.session_state[value_key],  # Read from session state (user modified)
+            step=0.01,
             format="%.4f",
             help="This value is synced from the selected donation configuration. You can adjust it if needed.",
             key=value_key,

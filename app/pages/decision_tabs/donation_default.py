@@ -45,8 +45,34 @@ def get_coefficient_for_input(name):
         return get_coefficient(name, 'cat')  # Default to categorical for "compare both" and "categorical only"
 
 
+def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
+    """Restore a widget key from storage dictionary before widget renders.
+    
+    This ensures widget keys persist across navigation by:
+    1. Checking storage dict for the value
+    2. Restoring to session state so widget finds it
+    """
+    # Priority 1: Use value from storage dict
+    if storage_dict and storage_key in storage_dict:
+        val = storage_dict[storage_key]
+        st.session_state[widget_key] = val
+        return val
+    
+    # Priority 2: Use existing session state value if present
+    if widget_key in st.session_state:
+        return st.session_state[widget_key]
+    
+    # Priority 3: Use default value
+    st.session_state[widget_key] = default_value
+    return default_value
+
+
 def initialize_donation_widget_keys():
     """Initialize widget keys for donation_default tab to preserve values across navigation"""
+    
+    # Initialize persistence storage if missing
+    if "donation_tab_persistence" not in st.session_state:
+        st.session_state.donation_tab_persistence = {}
     
     # Initialize checkbox widget keys
     if "tab_sigma_in_copula" not in st.session_state:
@@ -73,6 +99,20 @@ def initialize_donation_widget_keys():
     
     if "tab_anchor_weight" not in st.session_state:
         st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
+
+
+def save_to_donation_storage(widget_key, storage_key):
+    """Save a widget value to donation storage.
+    
+    Args:
+        widget_key: The session state key of the widget
+        storage_key: The key to use in the storage dictionary
+    """
+    if "donation_tab_persistence" not in st.session_state:
+        st.session_state.donation_tab_persistence = {}
+    
+    if widget_key in st.session_state:
+        st.session_state.donation_tab_persistence[storage_key] = st.session_state[widget_key]
 
 
 def render_donation_default_tab():
@@ -107,11 +147,25 @@ def render_donation_default_tab():
             def on_income_spec_mode_change():
                 """Handle income spec mode changes"""
                 setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
+                save_to_donation_storage('page2_tab_income_spec_mode', 'income_spec_mode')
                 reload_coefficients_for_income_mode()
                 clear_input_field_cache()
                 # Clear selected config since mode change may invalidate it
                 if hasattr(st.session_state, 'selected_donation_config'):
                     delattr(st.session_state, 'selected_donation_config')
+            
+            # Restore income spec mode
+            income_val = restore_widget_from_storage(
+                'page2_tab_income_spec_mode',
+                st.session_state.donation_tab_persistence,
+                'income_spec_mode',
+                'categorical only'
+            )
+            
+            # Ensure index matches logic if needed, but for radio string value is enough if in options
+            # If value not in options, default to categorical
+            if income_val not in ["categorical only", "continuous only", "Compare both"]:
+                income_val = "categorical only"
             
             income_spec_mode = st.radio(
                 "Income Mode for Donation Model",
@@ -120,6 +174,8 @@ def render_donation_default_tab():
                 key="page2_tab_income_spec_mode",
                 on_change=on_income_spec_mode_change
             )
+            # Ensure session state is synced if we just restored a value
+            st.session_state.income_spec_mode = income_spec_mode
         else:
             st.session_state.income_spec_mode = "categorical only"
     
@@ -129,25 +185,45 @@ def render_donation_default_tab():
         
         if population_mode == "Copula (synthetic)":
             # Show only Copula controls
+            
+            # Restore widget value
+            copula_val = restore_widget_from_storage(
+                'tab_sigma_in_copula',
+                st.session_state.donation_tab_persistence,
+                'sigma_in_copula',
+                False
+            )
+            
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
-                value=st.session_state.tab_sigma_in_copula,  # Read from widget key
+                value=copula_val,
                 help="When enabled, Copula mode will also use the stochastic component",
-                key="tab_sigma_in_copula"
+                key="tab_sigma_in_copula",
+                on_change=lambda: save_to_donation_storage('tab_sigma_in_copula', 'sigma_in_copula')
             )
             st.session_state.sigma_in_copula = sigma_in_copula
             st.session_state.sigma_in_research = True  # Default for research mode
             
             # Show static sigma value and coefficient slider
             st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
+            
+            # Restore coefficient widget value
+            coeff_val = restore_widget_from_storage(
+                'tab_sigma_coefficient',
+                st.session_state.donation_tab_persistence,
+                'sigma_coefficient',
+                1.0
+            )
+            
             sigma_coefficient = st.slider(
                 "σ Coefficient (multiplier)",
                 min_value=0.0,
                 max_value=2.0,
-                value=st.session_state.tab_sigma_coefficient,  # Read from widget key
+                value=float(coeff_val),
                 step=0.01,
                 help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
-                key="tab_sigma_coefficient"
+                key="tab_sigma_coefficient",
+                on_change=lambda: save_to_donation_storage('tab_sigma_coefficient', 'sigma_coefficient')
             )
             st.session_state.sigma_coefficient = sigma_coefficient
             effective_sigma = 9.8995 * sigma_coefficient
@@ -157,11 +233,21 @@ def render_donation_default_tab():
             
         elif population_mode == "Research Specification":
             # Show only Research controls
+            
+            # Restore research checkbox
+            res_val = restore_widget_from_storage(
+                'tab_sigma_in_research',
+                st.session_state.donation_tab_persistence,
+                'sigma_in_research',
+                True
+            )
+            
             sigma_in_research = st.checkbox(
                 "Use Normal(anchor, σ) draw in Research mode",
-                value=st.session_state.tab_sigma_in_research,  # Read from widget key
+                value=res_val,
                 help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
-                key="tab_sigma_in_research"
+                key="tab_sigma_in_research",
+                on_change=lambda: save_to_donation_storage('tab_sigma_in_research', 'sigma_in_research')
             )
             st.session_state.sigma_in_research = sigma_in_research
             st.session_state.sigma_in_copula = False  # Not applicable
@@ -169,14 +255,24 @@ def render_donation_default_tab():
             # Show sigma coefficient slider only if stochastic component is enabled
             if sigma_in_research:
                 st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
+                
+                # Restore research coefficient
+                coeff_res_val = restore_widget_from_storage(
+                    'tab_sigma_coefficient_research',
+                    st.session_state.donation_tab_persistence,
+                    'sigma_coefficient_research',
+                    1.0
+                )
+                
                 sigma_coefficient = st.slider(
                     "σ Coefficient (multiplier)",
                     min_value=0.0,
                     max_value=2.0,
-                    value=st.session_state.tab_sigma_coefficient_research,  # Read from widget key
+                    value=float(coeff_res_val),
                     step=0.01,
                     help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
-                    key="tab_sigma_coefficient_research"
+                    key="tab_sigma_coefficient_research",
+                    on_change=lambda: save_to_donation_storage('tab_sigma_coefficient_research', 'sigma_coefficient_research')
                 )
                 st.session_state.sigma_coefficient = sigma_coefficient
                 effective_sigma = 9.8995 * sigma_coefficient
@@ -202,20 +298,40 @@ def render_donation_default_tab():
         else:  # Compare all
             # Show controls for all three modes
             st.markdown("**Copula Mode Controls:**")
+            
+            # Restore copula checkbox for compare
+            copula_comp_val = restore_widget_from_storage(
+                'tab_sigma_in_copula_compare',
+                st.session_state.donation_tab_persistence,
+                'sigma_in_copula_compare',
+                False
+            )
+            
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
-                value=st.session_state.tab_sigma_in_copula_compare,  # Read from widget key
+                value=copula_comp_val,
                 help="When enabled, Copula mode will also use the stochastic component",
-                key="tab_sigma_in_copula_compare"
+                key="tab_sigma_in_copula_compare",
+                on_change=lambda: save_to_donation_storage('tab_sigma_in_copula_compare', 'sigma_in_copula_compare')
             )
             st.session_state.sigma_in_copula = sigma_in_copula
             
             st.markdown("**Research Specification Controls:**")
+            
+            # Restore research checkbox for compare
+            res_comp_val = restore_widget_from_storage(
+                'tab_sigma_in_research_compare',
+                st.session_state.donation_tab_persistence,
+                'sigma_in_research_compare',
+                True
+            )
+            
             sigma_in_research = st.checkbox(
                 "Use Normal(anchor, σ) draw in Research Specification mode",
-                value=st.session_state.tab_sigma_in_research_compare,  # Read from widget key
+                value=res_comp_val,
                 help="When enabled, Research Specification mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
-                key="tab_sigma_in_research_compare"
+                key="tab_sigma_in_research_compare",
+                on_change=lambda: save_to_donation_storage('tab_sigma_in_research_compare', 'sigma_in_research_compare')
             )
             st.session_state.sigma_in_research = sigma_in_research
             
@@ -225,14 +341,24 @@ def render_donation_default_tab():
             # Show sigma coefficient slider if either mode has stochastic enabled
             if sigma_in_copula or sigma_in_research:
                 st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
+                
+                # Restore coefficient for compare
+                coeff_comp_val = restore_widget_from_storage(
+                    'tab_sigma_coefficient_compare',
+                    st.session_state.donation_tab_persistence,
+                    'sigma_coefficient_compare',
+                    1.0
+                )
+                
                 sigma_coefficient = st.slider(
                     "σ Coefficient (multiplier)",
                     min_value=0.0,
                     max_value=2.0,
-                    value=st.session_state.tab_sigma_coefficient_compare,  # Read from widget key
+                    value=float(coeff_comp_val),
                     step=0.01,
                     help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
-                    key="tab_sigma_coefficient_compare"
+                    key="tab_sigma_coefficient_compare",
+                    on_change=lambda: save_to_donation_storage('tab_sigma_coefficient_compare', 'sigma_coefficient_compare')
                 )
                 st.session_state.sigma_coefficient = sigma_coefficient
                 effective_sigma = 9.8995 * sigma_coefficient
@@ -247,14 +373,24 @@ def render_donation_default_tab():
         # Anchor weights
         if population_mode != "Dependent variable resampling":
             st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
+            
+            # Restore anchor weight
+            anchor_val = restore_widget_from_storage(
+                'tab_anchor_weight',
+                st.session_state.donation_tab_persistence,
+                'anchor_weight',
+                0.75
+            )
+            
             anchor_observed_weight = st.slider(
                 "Weight for observed vs modeled prosocial behavior",
                 min_value=0.0,
                 max_value=1.0,
-                value=st.session_state.tab_anchor_weight,  # Read from widget key
+                value=float(anchor_val),
                 step=0.01,
                 help="Anchor = w × Observed + (1-w) × Predicted",
-                key="tab_anchor_weight"
+                key="tab_anchor_weight",
+                on_change=lambda: save_to_donation_storage('tab_anchor_weight', 'anchor_weight')
             )
             st.session_state.anchor_observed_weight = anchor_observed_weight
             st.caption(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
@@ -731,9 +867,18 @@ def render_intercept_override_section():
             # Override input fields based on income mode
             if income_mode == "Compare both":
                 # Show both categorical and continuous
+                
+                # Restore categorical widget key
+                cat_val = restore_widget_from_storage(
+                    'override_categorical_intercept',
+                    st.session_state.intercept_override_values,
+                    'categorical',
+                    current_yaml_values['categorical']
+                )
+                
                 new_cat_intercept = st.number_input(
                     "Categorical",
-                    value=st.session_state.intercept_override_values.get('categorical', current_yaml_values['categorical']),
+                    value=cat_val,
                     step=0.001,
                     format="%.6f",
                     help="Override value for categorical income specification",
@@ -742,9 +887,17 @@ def render_intercept_override_section():
                 )
                 st.session_state.intercept_override_values['categorical'] = new_cat_intercept
                 
+                # Restore continuous widget key
+                cont_val = restore_widget_from_storage(
+                    'override_continuous_intercept',
+                    st.session_state.intercept_override_values,
+                    'continuous',
+                    current_yaml_values['continuous']
+                )
+                
                 new_cont_intercept = st.number_input(
                     "Continuous", 
-                    value=st.session_state.intercept_override_values.get('continuous', current_yaml_values['continuous']),
+                    value=cont_val,
                     step=0.001,
                     format="%.6f",
                     help="Override value for continuous income specification",
@@ -755,9 +908,18 @@ def render_intercept_override_section():
                     
             elif "continuous" in income_mode.lower():
                 # Show only continuous
+                
+                # Restore continuous widget key
+                cont_val = restore_widget_from_storage(
+                    'override_continuous_intercept',
+                    st.session_state.intercept_override_values,
+                    'continuous',
+                    current_yaml_values['continuous']
+                )
+                
                 new_cont_intercept = st.number_input(
                     "Continuous",
-                    value=st.session_state.intercept_override_values.get('continuous', current_yaml_values['continuous']),
+                    value=cont_val,
                     step=0.001,
                     format="%.6f", 
                     help="Override value for continuous income specification",
@@ -768,9 +930,18 @@ def render_intercept_override_section():
                 
             else:
                 # Show only categorical (default)
+                
+                # Restore categorical widget key
+                cat_val = restore_widget_from_storage(
+                    'override_categorical_intercept',
+                    st.session_state.intercept_override_values,
+                    'categorical',
+                    current_yaml_values['categorical']
+                )
+                
                 new_cat_intercept = st.number_input(
                     "Categorical",
-                    value=st.session_state.intercept_override_values.get('categorical', current_yaml_values['categorical']),
+                    value=cat_val,
                     step=0.001,
                     format="%.6f",
                     help="Override value for categorical income specification", 
@@ -900,10 +1071,19 @@ def render_adjustment_override_section():
         
         with col2:
             st.markdown("**✏️ Override Value**")
+            
+            # Restore adjustment widget key
+            adj_val = restore_widget_from_storage(
+                'override_adjustment_shift',
+                st.session_state.adjustment_override_values,
+                'shift_value',
+                current_yaml_values['shift_value']
+            )
+            
             # Adjustment input field
             new_adjustment = st.number_input(
                 "Distribution Shift Value",
-                value=float(st.session_state.adjustment_override_values.get('shift_value', current_yaml_values['shift_value'])),
+                value=float(adj_val),
                 step=0.1,
                 format="%.3f",
                 help="Shift the distribution up (positive) or down (negative) on 0-100 scale before stochastic component",

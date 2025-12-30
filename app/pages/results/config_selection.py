@@ -43,8 +43,63 @@ def render_configuration_selection_ui(results_dict):
     if not is_individual_donation_run:
         return
     
-    # Only show "Run Complete Simulation" section if a configuration is already selected
-    if hasattr(st.session_state, 'selected_donation_config'):
+    # Check if config is already selected
+    has_selected_config = (
+        'selected_donation_config' in st.session_state and 
+        st.session_state.selected_donation_config is not None
+    )
+    
+    # SINGLE CONFIG SCENARIO: Show save button when only one config exists and not yet saved
+    if len(results_dict) == 1 and not has_selected_config:
+        st.markdown("---")
+        st.markdown('<h3 class="section-header">💾 Save Configuration</h3>', unsafe_allow_html=True)
+        
+        # Get the single result
+        result_key = next(iter(results_dict.keys()))
+        result_df = results_dict[result_key]
+        
+        if not result_df.empty and 'donation_default' in result_df.columns:
+            # Calculate metrics for display
+            donation_col = 'donation_default'
+            mean_donation = result_df[donation_col].mean()
+            std_donation = result_df[donation_col].std()
+            median_donation = result_df[donation_col].median()
+            
+            # Get population and income mode for display
+            population_mode = st.session_state.get('population_mode', 'Unknown')
+            income_spec_mode = st.session_state.get('income_spec_mode', 'Unknown')
+            
+            with st.container():
+                st.info(f"📊 **{population_mode}** + **{income_spec_mode}**")
+                
+                # Show key metrics
+                metric_cols = st.columns(4)
+                with metric_cols[0]:
+                    st.metric("Mean", f"{mean_donation:.2%}")
+                with metric_cols[1]:
+                    st.metric("Std Dev", f"{std_donation:.2%}")
+                with metric_cols[2]:
+                    st.metric("Median", f"{median_donation:.2%}")
+                with metric_cols[3]:
+                    st.metric("Agents", f"{len(result_df):,}")
+                
+                st.caption("💡 Save this configuration to use it in the complete simulation and link it to final_donation_rate")
+                
+                # Save button
+                if st.button(
+                    "💾 Save This Configuration",
+                    type="primary",
+                    use_container_width=True,
+                    key="save_single_config",
+                    help="Save this configuration for use in combined simulations"
+                ):
+                    save_selected_configuration(result_key, result_df)
+                    st.success(f"✅ Configuration saved: {population_mode} + {income_spec_mode}")
+                    st.rerun()
+        return
+    
+    # MULTIPLE CONFIGS or ALREADY SAVED: Show selected config and "Run Complete Simulation"
+    if has_selected_config:
         st.markdown("---")
         config = st.session_state.selected_donation_config
         with st.container():

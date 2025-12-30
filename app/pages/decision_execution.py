@@ -85,6 +85,161 @@ def can_run_complete_simulation():
         return (False, f"Multiple donation configurations ({total_configs}) detected - please select one first", total_configs)
 
 
+def get_implied_single_configuration():
+    """
+    Returns the implied configuration when only one exists, otherwise None.
+    
+    This allows the system to auto-populate selected_donation_config when the user
+    has configured a single population mode + income mode combination, without
+    requiring them to explicitly run donation_default first.
+    
+    Returns:
+        dict: Configuration object if only one config exists, None otherwise
+    """
+    try:
+        # Check configuration count
+        can_run, reason, config_count = can_run_complete_simulation()
+        
+        # Only return implied config when exactly one configuration exists
+        if config_count != 1:
+            return None
+        
+        # Get current mode settings from session state
+        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
+        
+        # Try to get current coefficient values (may fail if not loaded yet)
+        try:
+            coefficients = get_current_coefficients()
+        except Exception:
+            # Fallback: create minimal coefficients structure
+            coefficients = {
+                'intercept': 0.0,
+                'beta_group': {'MidSub': 0.0, 'NoSub': 0.0, 'FullSub': 0.0},
+                'beta_income_q': {'Q1': 0.0, 'Q2': 0.0, 'Q3': 0.0, 'Q4': 0.0, 'Q5': 0.0},
+                'beta_income_linear': 0.0,
+                'beta_study': {'Incoming': 0.0, 'Law5yr': 0.0, 'UG3yr': 0.0, 'Grad2yr': 0.0},
+                'beta_hh': 0.0
+            }
+        
+        # Try to get current stochastic parameters  
+        try:
+            stochastic_params = get_current_stochastic_params()
+        except Exception:
+            # Fallback: create minimal stochastic structure
+            stochastic_params = {
+                'stochastic': {
+                    'sigma_value': 9.8995,
+                    'sigma_coefficient': 1.0,
+                    'sigma_in_copula': False,
+                    'sigma_in_research': True
+                },
+                'anchor_weights': {
+                    'observed': 0.75,
+                    'predicted': 0.25
+                }
+            }
+        
+        # Build implied configuration (without metrics since simulation hasn't run)
+        config = {
+            'result_key': f"implied_{population_mode.lower().replace(' ', '_').replace('(', '').replace(')', '')}_{income_spec_mode.replace(' ', '_')}",
+            'population_mode': population_mode,
+            'income_spec_mode': income_spec_mode,
+            'coefficients': coefficients,
+            'stochastic_params': stochastic_params,
+            'metrics': {
+                'mean_donation': st.session_state.get('final_donation_rate_default_value', 0.10),
+                'std_donation': None,
+                'median_donation': None,
+                'min_donation': None,
+                'max_donation': None,
+                'q25_donation': None,
+                'q75_donation': None,
+                'donation_column_used': 'donation_default'
+            },
+            'selected_timestamp': datetime.now(),
+            'total_agents': st.session_state.get('n_agents', 1000),
+            'source': 'auto_implied_single_config',
+            'original_seed': st.session_state.get('seed_input', st.session_state.get('seed', 42)),
+            'original_n_agents': st.session_state.get('n_agents', 1000)
+        }
+        
+        return config
+    except Exception:
+        # If anything fails, return None (don't auto-populate)
+        return None
+
+
+def auto_populate_single_donation_config():
+    """
+    Auto-populate selected_donation_config when only one configuration exists.
+    
+    This should be called during page initialization to ensure the Overview tab
+    shows the current configuration settings without requiring explicit selection.
+    
+    Returns:
+        bool: True if config was auto-populated, False otherwise
+    """
+    try:
+        # Check if already has a configuration (use 'in' for Streamlit session state)
+        has_existing = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
+        
+        if has_existing:
+            # Check if the existing config matches current settings
+            current_pop = st.session_state.get('population_mode', 'Copula (synthetic)')
+            current_income = st.session_state.get('income_spec_mode', 'categorical only')
+            existing = st.session_state.selected_donation_config
+            
+            # If modes changed, clear the old config so we can re-evaluate
+            if existing.get('population_mode') != current_pop or existing.get('income_spec_mode') != current_income:
+                # Modes have changed - check if we should update
+                can_run, reason, config_count = can_run_complete_simulation()
+                if config_count == 1:
+                    # Single config now - update to match current settings
+                    implied_config = get_implied_single_configuration()
+                    if implied_config:
+                        st.session_state.selected_donation_config = implied_config
+                        
+                        # Sync final_donation_rate_default_value with implied config's mean donation
+                        # This happens only ONCE when the config is auto-populated/updated
+                        mean_donation = implied_config['metrics']['mean_donation']
+                        st.session_state.final_donation_rate_default_value = mean_donation
+                        
+                        if '_persistent_defaults' not in st.session_state:
+                            st.session_state._persistent_defaults = {}
+                        st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
+                        
+                        return True
+                else:
+                    # Multiple configs now - clear the old single-config selection
+                    if existing.get('source') == 'auto_implied_single_config':
+                        del st.session_state.selected_donation_config
+            return False
+        
+        # No existing config - try to get implied single configuration
+        implied_config = get_implied_single_configuration()
+        
+        if implied_config:
+            # Auto-populate with the single implied configuration
+            st.session_state.selected_donation_config = implied_config
+            
+            # Sync final_donation_rate_default_value with implied config's mean donation
+            # This happens only ONCE when the config is auto-populated
+            mean_donation = implied_config['metrics']['mean_donation']
+            st.session_state.final_donation_rate_default_value = mean_donation
+            
+            if '_persistent_defaults' not in st.session_state:
+                st.session_state._persistent_defaults = {}
+            st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
+            
+            return True
+        
+        return False
+    except Exception:
+        # If anything fails, don't crash - just return False
+        return False
+
+
 def render_simulation_buttons(decision_name, selected_decisions):
     """
     Render both individual and complete simulation buttons for a decision tab.

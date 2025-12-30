@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from app.models import initialize_session_state
 from app.utils.timestamp_utils import TimestampConverter, get_duration_hours
+from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
 
 
 def _apply_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
@@ -561,7 +562,7 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             purchase_date = ts_result['date']
             purchase_time = ts_result['time']
             
-            # Vendor information
+            # Vendor information - use centralized scoring function
             vendor_id = request.get('vendorID', np.nan)
             vendor_price_score = np.nan
             vendor_quality_score = np.nan
@@ -576,36 +577,24 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 vendor_sustainability = vendor.get('sustainability', np.nan)
                 vendor_proximity = proximity_scores.get(str(int(vendor_id)), np.nan)
                 
-                # Calculate normalized scores (0-1 scale)
+                # Use centralized scoring function for consistency
                 if not pd.isna(vendor_price) and not pd.isna(vendor_quality) and \
                    not pd.isna(vendor_sustainability) and not pd.isna(vendor_proximity):
                     
-                    # Normalize price (inverted: lower price = higher score)
-                    # Use FIXED reference bounds from configuration for consistent normalization
-                    # This ensures price has the same discriminatory power as other attributes
-                    if price_max_config > price_min_config:
-                        # Clamp price to configured bounds
-                        clamped_price = max(price_min_config, min(vendor_price, price_max_config))
-                        vendor_price_score = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
-                    else:
-                        vendor_price_score = 0.5
-                    
-                    # Normalize quality (1-5 scale to 0-1)
-                    vendor_quality_score = (vendor_quality - 1) / 4 if vendor_quality >= 1 else 0
-                    
-                    # Normalize sustainability (1-5 scale to 0-1)
-                    vendor_sustainability_score = (vendor_sustainability - 1) / 4 if vendor_sustainability >= 1 else 0
-                    
-                    # Normalize proximity (0-100 scale to 0-1)
-                    vendor_proximity_score = vendor_proximity / 100 if not pd.isna(vendor_proximity) else 0
-                    
-                    # Calculate integrated score (weighted average)
-                    vendor_integrated_score = (
-                        vendor_weights.get('price', 0.25) * vendor_price_score +
-                        vendor_weights.get('quality', 0.25) * vendor_quality_score +
-                        vendor_weights.get('proximity', 0.25) * vendor_proximity_score +
-                        vendor_weights.get('sustainability', 0.25) * vendor_sustainability_score
+                    score_result = calculate_vendor_score_with_breakdown(
+                        vendor=vendor,
+                        weights=vendor_weights,
+                        proximity=vendor_proximity,
+                        all_vendors=list(vendor_lookup.values()),
+                        price_min_config=price_min_config,
+                        price_max_config=price_max_config
                     )
+                    
+                    vendor_price_score = score_result['norm_price']
+                    vendor_quality_score = score_result['norm_quality']
+                    vendor_sustainability_score = score_result['norm_sustainability']
+                    vendor_proximity_score = score_result['norm_proximity']
+                    vendor_integrated_score = score_result['integrated_score']
             
             # Purchase decision and pricing
             platform_price = request.get('platformPrice', '')

@@ -8,7 +8,7 @@ from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation
+from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, auto_populate_single_donation_config
 
 
 def initialize_page2_widget_keys():
@@ -182,19 +182,10 @@ def initialize_page2_widget_keys():
             if value_key not in st.session_state:
                 st.session_state[value_key] = default_value
     
-    # Sync final_donation_rate from selected_donation_config if available
-    # This ensures the slider reflects the selected configuration's mean donation rate
-    if hasattr(st.session_state, 'selected_donation_config'):
-        config = st.session_state.selected_donation_config
-        mean_donation = config['metrics']['mean_donation']
-        
-        # Update the final_donation_rate default to match selected config
-        st.session_state.final_donation_rate_default_value = mean_donation
-        
-        # Also update persistent storage for consistency
-        if '_persistent_defaults' not in st.session_state:
-            st.session_state._persistent_defaults = {}
-        st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
+    # Auto-populate selected_donation_config when only one configuration exists
+    # This ensures the Overview tab shows the current config without requiring explicit selection
+    # NOTE: The sync of final_donation_rate happens INSIDE this function if it populates/updates
+    auto_populate_single_donation_config()
 
 
 def format_decision_title(decision_name, include_number=False):
@@ -405,35 +396,59 @@ def render_selected_donation_config_display():
     # Common header for the section
     st.markdown('<h3 class="section-header">🎯 Selected Decision Parameters</h3>', unsafe_allow_html=True)
     
-    if not hasattr(st.session_state, 'selected_donation_config'):
-        # No configuration selected yet
+    # Check if config exists (use 'in' operator for Streamlit session state)
+    has_config = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
+    
+    if not has_config:
+        # No configuration - try auto-populate one more time
+        auto_populate_single_donation_config()
+        # Re-check after auto-populate attempt
+        has_config = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
+    
+    if not has_config:
+        # Still no config - show the "not selected" message
         st.markdown("#### 3. Donation Default")
         st.info("💡 **No donation configuration selected yet**")
         st.caption("Run the donation decision individually first, then select your preferred configuration from the results.")
         return
     
     config = st.session_state.selected_donation_config
+    is_auto_implied = config.get('source') == 'auto_implied_single_config'
     
     st.markdown("#### 3. Donation Default")
     
     # Main configuration display
     with st.container():
-        st.success(f"✅ **Configuration Selected**: {config['population_mode']} + {config['income_spec_mode']}")
+        st.success(f"✅ **Configuration**: {config['population_mode']} + {config['income_spec_mode']}")
         
         # Metrics and details in columns
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("Population Mode", config['population_mode'])
-        
-        with col2:
-            st.metric("Income Mode", config['income_spec_mode'])
-        
-        with col3:
-            st.metric("Avg Donation Rate", f"{config['metrics']['mean_donation']:.2%}")
-        
-        with col4:
-            st.metric("Total Agents", f"{config['total_agents']:,}")
+        if is_auto_implied:
+            # For auto-implied configs, show only mode info (no simulation metrics yet)
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Population Mode", config['population_mode'])
+            
+            with col2:
+                st.metric("Income Mode", config['income_spec_mode'])
+            
+            with col3:
+                st.metric("Agents", f"{config['total_agents']:,}")
+        else:
+            # For explicitly selected configs, show full metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("Population Mode", config['population_mode'])
+            
+            with col2:
+                st.metric("Income Mode", config['income_spec_mode'])
+            
+            with col3:
+                st.metric("Avg Donation Rate", f"{config['metrics']['mean_donation']:.2%}")
+            
+            with col4:
+                st.metric("Total Agents", f"{config['total_agents']:,}")
         
         # Additional details in expandable section
         with st.expander("📊 Configuration Details", expanded=False):
@@ -482,18 +497,27 @@ def render_selected_donation_config_display():
                 st.metric("Predicted Weight", f"{stoch['anchor_weights']['predicted']:.2f}")
             
             # Selection metadata
-            st.markdown("**ℹ️ Selection Info:**")
-            st.caption(f"Selected at: {config['selected_timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
-            st.caption(f"Source: {config['source']}")
+            st.markdown("**ℹ️ Configuration Info:**")
+            if is_auto_implied:
+                st.caption("Source: Auto-detected (single configuration)")
+                st.caption("💡 This configuration was automatically detected from your Page 1 and Donation Default tab settings")
+            else:
+                st.caption(f"Selected at: {config['selected_timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+                st.caption(f"Source: {config['source']}")
         
         # Action buttons
         action_col1, action_col2 = st.columns([3, 1])
         
         with action_col1:
-            st.caption("This configuration will be used for the donation decision in complete simulations")
+            if is_auto_implied:
+                st.caption("This single configuration will be used for the donation decision in complete simulations")
+            else:
+                st.caption("This selected configuration will be used for the donation decision in complete simulations")
         
         with action_col2:
-            if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_donation_config"):
-                from app.pages.decision_execution import clear_selected_configuration
-                clear_selected_configuration()
-                st.rerun()
+            # Only show Clear button for explicitly selected configs (not auto-implied)
+            if not is_auto_implied:
+                if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_donation_config"):
+                    from app.pages.decision_execution import clear_selected_configuration
+                    clear_selected_configuration()
+                    st.rerun()

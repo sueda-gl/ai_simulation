@@ -132,6 +132,115 @@ def generate_proximity_scores(agent_id: int, num_vendors: int,
     return proximity_scores
 
 
+def calculate_vendor_score_with_breakdown(vendor: Dict, weights: Dict, 
+                                          proximity: float,
+                                          all_vendors: List[Dict] = None,
+                                          price_min_config: float = None,
+                                          price_max_config: float = None) -> Dict:
+    """
+    Calculate vendor integrated score with full breakdown of normalized and weighted components.
+    
+    THIS IS THE SINGLE SOURCE OF TRUTH for all vendor score calculations.
+    All other code should import and use this function instead of re-implementing the logic.
+    
+    Normalization formulas:
+    - Price: 1.0 - (clamped_price - min_price) / (max_price - min_price)  [inverted, lower=better]
+    - Quality: (value - 1) / 4  [maps 1-5 to 0-1]
+    - Sustainability: (value - 1) / 4  [maps 1-5 to 0-1]
+    - Proximity: value / 100  [maps 0-100 to 0-1]
+    
+    Args:
+        vendor: Vendor dict with 'price', 'quality', 'sustainability' keys
+        weights: Weight dict with 'price', 'quality', 'proximity', 'sustainability' keys
+        proximity: Proximity score for this customer-vendor dyad [0-100]
+        all_vendors: List of all vendors (for fallback price bounds if config not provided)
+        price_min_config: Configured minimum price bound (from vendor_price_min)
+        price_max_config: Configured maximum price bound (from vendor_price_max)
+        
+    Returns:
+        dict: {
+            'integrated_score': float,      # Final weighted score
+            'norm_price': float,            # Normalized price [0,1]
+            'norm_quality': float,          # Normalized quality [0,1]
+            'norm_sustainability': float,   # Normalized sustainability [0,1]
+            'norm_proximity': float,        # Normalized proximity [0,1]
+            'weighted_price': float,        # weight_price * norm_price
+            'weighted_quality': float,      # weight_quality * norm_quality
+            'weighted_sustainability': float,  # weight_sustainability * norm_sustainability
+            'weighted_proximity': float,    # weight_proximity * norm_proximity
+            'weight_price': float,          # The price weight used
+            'weight_quality': float,        # The quality weight used
+            'weight_sustainability': float, # The sustainability weight used
+            'weight_proximity': float       # The proximity weight used
+        }
+    """
+    # Extract vendor attributes with safe defaults
+    vendor_price = vendor.get('price', 0)
+    vendor_quality = vendor.get('quality', 3)
+    vendor_sustainability = vendor.get('sustainability', 3)
+    
+    # Determine price bounds for normalization
+    if price_min_config is not None and price_max_config is not None:
+        min_price = price_min_config
+        max_price = price_max_config
+    elif all_vendors and len(all_vendors) > 0:
+        all_prices = [v.get('price', 0) for v in all_vendors]
+        min_price = min(all_prices)
+        max_price = max(all_prices)
+    else:
+        min_price = 0
+        max_price = 1
+    
+    # === NORMALIZE EACH ATTRIBUTE TO [0, 1] ===
+    
+    # Price normalization (INVERTED - lower price is better)
+    if max_price > min_price:
+        clamped_price = max(min_price, min(vendor_price, max_price))
+        norm_price = 1.0 - (clamped_price - min_price) / (max_price - min_price)
+    else:
+        norm_price = 1.0
+    
+    # Quality normalization: [1, 5] → [0, 1]
+    norm_quality = (vendor_quality - 1) / 4.0 if vendor_quality >= 1 else 0.0
+    
+    # Sustainability normalization: [1, 5] → [0, 1]
+    norm_sustainability = (vendor_sustainability - 1) / 4.0 if vendor_sustainability >= 1 else 0.0
+    
+    # Proximity normalization: [0, 100] → [0, 1]
+    norm_proximity = proximity / 100.0 if proximity >= 0 else 0.0
+    
+    # === GET WEIGHTS ===
+    weight_price = weights.get('price', 0.0)
+    weight_quality = weights.get('quality', 0.0)
+    weight_proximity = weights.get('proximity', 0.0)
+    weight_sustainability = weights.get('sustainability', 0.0)
+    
+    # === CALCULATE WEIGHTED COMPONENTS ===
+    weighted_price = weight_price * norm_price
+    weighted_quality = weight_quality * norm_quality
+    weighted_proximity = weight_proximity * norm_proximity
+    weighted_sustainability = weight_sustainability * norm_sustainability
+    
+    # === CALCULATE INTEGRATED SCORE ===
+    integrated_score = weighted_price + weighted_quality + weighted_proximity + weighted_sustainability
+    
+    return {
+        'integrated_score': integrated_score,
+        'norm_price': norm_price,
+        'norm_quality': norm_quality,
+        'norm_sustainability': norm_sustainability,
+        'norm_proximity': norm_proximity,
+        'weighted_price': weighted_price,
+        'weighted_quality': weighted_quality,
+        'weighted_sustainability': weighted_sustainability,
+        'weighted_proximity': weighted_proximity,
+        'weight_price': weight_price,
+        'weight_quality': weight_quality,
+        'weight_sustainability': weight_sustainability,
+        'weight_proximity': weight_proximity
+    }
+
+
 def calculate_vendor_composite_score(vendor: Dict, weights: Dict, 
                                      proximity: float,
                                      all_vendors: List[Dict],
@@ -140,23 +249,8 @@ def calculate_vendor_composite_score(vendor: Dict, weights: Dict,
     """
     Calculate weighted composite score for a vendor.
     
-    Steps:
-    1. Standardize each attribute to [0, 1] range:
-       - Price: Normalized using FIXED reference bounds (lower price = higher score)
-         Uses configured price_min and price_max as the reference scale, NOT the
-         actual min/max of vendor prices. This ensures price normalization is
-         consistent with how other attributes are normalized (using theoretical ranges).
-       - Quality: (quality - 1) / (5 - 1) = [0, 1]
-       - Sustainability: (sustainability - 1) / (5 - 1) = [0, 1]
-       - Proximity: proximity / 100 = [0, 1]
-    
-    2. Calculate weighted sum:
-       score = w_price × norm_price + w_quality × norm_quality + 
-               w_proximity × norm_proximity + w_sustainability × norm_sustainability
-    
-    NOTE: Price normalization now uses fixed reference bounds (price_min_config, price_max_config)
-    to ensure equal discriminatory power across all attributes. Previously, min-max normalization
-    on actual prices gave price artificially more weight than the configured percentage.
+    This is a convenience wrapper around calculate_vendor_score_with_breakdown()
+    that returns only the final score. Use this when you don't need the breakdown.
     
     Args:
         vendor: Vendor dict with price, quality, sustainability
@@ -169,55 +263,15 @@ def calculate_vendor_composite_score(vendor: Dict, weights: Dict,
     Returns:
         Composite score (float)
     """
-    
-    # Extract vendor attributes
-    vendor_price = vendor['price']
-    vendor_quality = vendor['quality']
-    vendor_sustainability = vendor['sustainability']
-    
-    # STEP 1: Standardize each attribute to [0, 1]
-    
-    # 1a. Price normalization (INVERTED - lower price is better)
-    # Use FIXED reference bounds from configuration for consistent normalization
-    # This ensures price has the same discriminatory power as other attributes
-    if price_min_config is not None and price_max_config is not None:
-        # Use configured bounds as fixed reference (consistent with other attributes)
-        min_price = price_min_config
-        max_price = price_max_config
-    else:
-        # Fallback: use actual vendor price range (legacy behavior)
-        all_prices = [v['price'] for v in all_vendors]
-        min_price = min(all_prices)
-        max_price = max(all_prices)
-    
-    if max_price > 0:
-        # Normalize: Best price (min_price) -> 1.0
-        # Other prices -> 1 - (price - min_price) / max_price
-        # This ensures max score is 1, but min score is not necessarily 0
-        clamped_price = max(min_price, min(vendor_price, max_price))
-        norm_price = 1.0 - (clamped_price - min_price) / max_price
-    else:
-        # All prices are 0 or invalid
-        norm_price = 1.0
-    
-    # 1b. Quality normalization (1-5 scale)
-    norm_quality = (vendor_quality - 1) / 4.0  # Maps [1, 5] → [0, 1]
-    
-    # 1c. Sustainability normalization (1-5 scale)
-    norm_sustainability = (vendor_sustainability - 1) / 4.0  # Maps [1, 5] → [0, 1]
-    
-    # 1d. Proximity normalization (0-100 scale)
-    norm_proximity = proximity / 100.0  # Maps [0, 100] → [0, 1]
-    
-    # STEP 2: Calculate weighted composite score
-    composite_score = (
-        weights.get('price', 0.0) * norm_price +
-        weights.get('quality', 0.0) * norm_quality +
-        weights.get('proximity', 0.0) * norm_proximity +
-        weights.get('sustainability', 0.0) * norm_sustainability
+    result = calculate_vendor_score_with_breakdown(
+        vendor=vendor,
+        weights=weights,
+        proximity=proximity,
+        all_vendors=all_vendors,
+        price_min_config=price_min_config,
+        price_max_config=price_max_config
     )
-    
-    return composite_score
+    return result['integrated_score']
 
 
 def select_best_vendor(vendors: List[Dict], weights: Dict, 
