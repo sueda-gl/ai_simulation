@@ -430,7 +430,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 # Box plot by category (sorted properly - ascending = lowest income first)
                 df_sorted = df_with_category.sort_values('income_category')
                 
-                st.markdown("### Quantity Distribution by Income Category")
+                st.markdown("### Purchase Requests Distribution by Income Category")
                 st.caption("Category 1 = Lowest Income, Higher Categories = Higher Income")
                 fig_box = px.box(
                     df_sorted,
