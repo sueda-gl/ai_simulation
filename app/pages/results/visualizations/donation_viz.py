@@ -228,10 +228,11 @@ def _build_donation_transaction_export(df, simulation_config=None):
             
             # Only show price for PN and BID customers (we don't know actual price for Fixed/Discount)
             # Excel formatting will handle 2-decimal display (no rounding of actual values)
+            # Use np.nan instead of 'N/A' string to avoid mixed types in the column (Arrow compatibility)
             if purchase_request_type in ['PN', 'Bid']:
                 display_customer_price = customer_price
             else:
-                display_customer_price = 'N/A'
+                display_customer_price = np.nan
             
             # Build record with standardized timestamp column
             # NOTE: Removed 'Donation Paid' and 'Total Paid by Customer' columns because:

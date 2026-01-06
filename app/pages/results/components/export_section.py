@@ -30,8 +30,8 @@ def _apply_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
         # Bid values
         'Bid Value', 'bid_value',
         # Scores (normalized 0-1, but show 2 decimals for clarity)
-        'Standardised Vendor Price Score', 'Standardised Vendor Quality Score',
-        'Standardised Vendor Sustainability Score', 'Standardised Vendor Proximity Score',
+        'Standardized Vendor Price Score', 'Standardized Vendor Quality Score',
+        'Standardized Vendor Sustainability Score', 'Standardized Vendor Proximity Score',
         'Vendor Integrated Score', 'avg_vendor_score',
         # Donation rates
         'donation_default', 'Agent Donation Default', 'Final Donation Rate',
@@ -39,6 +39,8 @@ def _apply_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
         'avg_vendor_proximity', 'Vendor Proximity', 'Vendor Quality', 'Vendor Sustainability',
         # Income
         'income', 'Income',
+        # Vendor choice weights
+        'weight_price', 'weight_quality', 'weight_proximity', 'weight_sustainability',
     ]
     
     workbook = writer.book
@@ -233,14 +235,16 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
         if pd.isna(income) or income is None:
             income = row.get('actual_allowance', np.nan)
         
-        agent_record['income'] = income
+        agent_record['income'] = round(income, 2) if not pd.isna(income) else np.nan
         agent_record['income_category'] = row.get('income_category', np.nan)
 
-        # Decision 1: Disclose Income
-        agent_record['disclose_income'] = row.get('disclose_income', '')
+        # Decision 1: Disclose Income (convert Y/N to 1/0 for consistency)
+        disclose_income_raw = row.get('disclose_income', '')
+        agent_record['disclose_income'] = 1 if disclose_income_raw == 'Y' else 0
         
-        # Decision 2: Disclose Documents & Customer Type
-        agent_record['disclose_documents'] = row.get('disclose_documents', '')
+        # Decision 2: Disclose Documents & Customer Type (convert Y/N to 1/0 for consistency)
+        disclose_documents_raw = row.get('disclose_documents', '')
+        agent_record['disclose_documents'] = 1 if disclose_documents_raw == 'Y' else 0
         agent_record['customer_type'] = row.get('customer_type', '')
         
         # Decision 3: Donation Default (exclude raw/intermediate columns)
@@ -516,13 +520,53 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
         allowance_level = row.get('Assigned Allowance Level', np.nan)
         study_program = row.get('Study Program', '')
         group_experiment = row.get('Group_experiment', '')
+        twt_sospeso = row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan)
         customer_type = row.get('customer_type', '')
-        
+
         # Get income (try 'income' first, fallback to 'actual_allowance')
         income = row.get('income', row.get('actual_allowance', np.nan))
-        
+
         income_category = row.get('income_category', np.nan)
         agent_donation_default = row.get('donation_default', np.nan)
+
+        # Decision 1: Income disclosed (convert Y/N to 1/0)
+        disclose_income_raw = row.get('disclose_income', '')
+        income_disclosed = 1 if disclose_income_raw == 'Y' else 0
+
+        # Decision 2: Documents disclosed (convert Y/N/NA to 1/0)
+        disclose_documents_raw = row.get('disclose_documents', '')
+        documents_disclosed = 1 if disclose_documents_raw == 'Y' else 0
+
+        # Decision 4: Rejected Transaction Defaults - 5 priority columns
+        rejected_defaults = row.get('rejected_transaction_defaults', '')
+        if isinstance(rejected_defaults, str) and rejected_defaults.startswith('['):
+            try:
+                import ast
+                rejected_defaults = ast.literal_eval(rejected_defaults)
+            except:
+                rejected_defaults = []
+        elif not isinstance(rejected_defaults, list):
+            rejected_defaults = [rejected_defaults] if rejected_defaults else []
+
+        # Create 5 priority values
+        priority_choices = []
+        for priority_num in range(1, 6):
+            if isinstance(rejected_defaults, list) and len(rejected_defaults) >= priority_num:
+                priority_choices.append(rejected_defaults[priority_num - 1])
+            else:
+                priority_choices.append('N/A')
+
+        # Decision 5: Vendor Choice Weights
+        vendor_weights = row.get('vendor_choice_weights', {})
+        if not isinstance(vendor_weights, dict):
+            vendor_weights = {'price': 0.25, 'quality': 0.25, 'proximity': 0.25, 'sustainability': 0.25}
+        weight_price = vendor_weights.get('price', np.nan)
+        weight_quality = vendor_weights.get('quality', np.nan)
+        weight_proximity = vendor_weights.get('proximity', np.nan)
+        weight_sustainability = vendor_weights.get('sustainability', np.nan)
+
+        # Decision 11: Rejected Transaction Option
+        rejected_transaction_option = row.get('rejected_transaction_option', '')
         
         # Get vendor proximity scores for this agent
         proximity_scores = row.get('vendor_proximity_scores', {})
@@ -564,12 +608,16 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             
             # Vendor information - use centralized scoring function
             vendor_id = request.get('vendorID', np.nan)
+            vendor_price = np.nan
+            vendor_quality = np.nan
+            vendor_sustainability = np.nan
+            vendor_proximity = np.nan
             vendor_price_score = np.nan
             vendor_quality_score = np.nan
             vendor_sustainability_score = np.nan
             vendor_proximity_score = np.nan
             vendor_integrated_score = np.nan
-            
+
             if not pd.isna(vendor_id) and vendor_id in vendor_lookup:
                 vendor = vendor_lookup[vendor_id]
                 vendor_price = vendor.get('price', np.nan)
@@ -645,8 +693,8 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             # Display customer price:
             # - For Purchase Now: pn_price
             # - For Bid: bid_value (if numeric)
-            # - For Discount/Fixed: N/A (unknown)
-            display_customer_price = customer_price if purchase_request_type in ['Purchase Now', 'Bid'] else 'N/A'
+            # - For Discount/Fixed: np.nan (unknown) - use np.nan instead of 'N/A' for Arrow compatibility
+            display_customer_price = customer_price if purchase_request_type in ['Purchase Now', 'Bid'] else np.nan
             
             # Donation information
             # Priority: request-level > agent-level
@@ -656,52 +704,79 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             except (ValueError, TypeError):
                 final_donation_rate = 0.0
             
-            # Build transaction record
+            # Build transaction record - organized by decision sequence
+            # Column names standardized to match Agent-Level export
             transaction_record = {
-                # Identification
+                # ===== IDENTIFICATION =====
                 'Purchase Request ID': transaction_id,
                 'Agent ID': agent_id,
-                
-                # Agent traits (for reference)
+
+                # ===== AGENT TRAITS =====
                 'Honesty_Humility': honesty_humility,
                 'Assigned Allowance Level': allowance_level,
                 'Study Program': study_program,
                 'Group_experiment': group_experiment,
-                'Customer Type': customer_type.capitalize() if customer_type else '',
-                'Income': income,
-                'Income Category': income_category,
-                
-                # Timing
+                'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
+
+                # ===== INCOME & CUSTOMER INFO (matched to Agent-Level names) =====
+                'income': round(income, 2) if not pd.isna(income) else np.nan,
+                'income_category': income_category,
+                'customer_type': customer_type.capitalize() if customer_type else '',
+
+                # ===== DECISION 1: Disclose Income (1/0 format, matched to Agent-Level) =====
+                'disclose_income': income_disclosed,
+
+                # ===== DECISION 2: Disclose Documents (1/0 format, matched to Agent-Level) =====
+                'disclose_documents': documents_disclosed,
+
+                # ===== DECISION 3: Donation Default (matched to Agent-Level name) =====
+                'donation_default': agent_donation_default,
+
+                # ===== DECISION 4: Rejected Transaction Defaults (5 Priority Options) =====
+                'rejected_transaction_1_choice': priority_choices[0],
+                'rejected_transaction_2_choice': priority_choices[1],
+                'rejected_transaction_3_choice': priority_choices[2],
+                'rejected_transaction_4_choice': priority_choices[3],
+                'rejected_transaction_5_choice': priority_choices[4],
+
+                # ===== DECISION 5: Vendor Choice Weights =====
+                'weight_price': weight_price,
+                'weight_quality': weight_quality,
+                'weight_proximity': weight_proximity,
+                'weight_sustainability': weight_sustainability,
+
+                # ===== DECISION 6 & 7: Timing =====
                 'Period': period,
                 'Purchase Timestamp': ts_result['formatted'],
                 '_sort_datetime': request_datetime,  # Hidden sort key
-                
-                # Vendor - All scores normalized to 0-1 scale
+
+                # ===== DECISION 8: Vendor Selection =====
                 'Vendor ID': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else '',
-                
-                # Original Vendor Attributes
                 'Vendor Price': vendor_price,
                 'Vendor Quality': vendor_quality,
                 'Vendor Sustainability': vendor_sustainability,
                 'Vendor Proximity': vendor_proximity,
-                
-                'Standardised Vendor Price Score': vendor_price_score,
-                'Standardised Vendor Quality Score': vendor_quality_score,
-                'Standardised Vendor Sustainability Score': vendor_sustainability_score,
-                'Standardised Vendor Proximity Score': vendor_proximity_score,
+
+                # ===== Standardized Vendor Scores =====
+                'Standardized Vendor Price Score': vendor_price_score,
+                'Standardized Vendor Quality Score': vendor_quality_score,
+                'Standardized Vendor Sustainability Score': vendor_sustainability_score,
+                'Standardized Vendor Proximity Score': vendor_proximity_score,
                 'Vendor Integrated Score': vendor_integrated_score,
-                
-                # Purchase Decision
-                'Customer Type': customer_type_str,
+
+                # ===== DECISION 9 & 10: Purchase Decision & Pricing =====
                 'Purchase Request Type': purchase_request_type,
-                
-                # Pricing
-                'Bid Value': bid_value if purchase_request_type == 'Bid' else 'N/A',
-                'Customer Price': display_customer_price,  # Only show for PN, N/A for others
-                
-                # Donation
-                'Agent Donation Default': agent_donation_default,
-                'Final Donation Rate': final_donation_rate,
+                'Bid Value': bid_value if purchase_request_type == 'Bid' else np.nan,  # Use np.nan for Arrow compatibility
+                'Customer Price': display_customer_price,
+
+                # ===== DECISION 11: Rejected Transaction Option =====
+                'rejected_transaction_option': rejected_transaction_option,
+
+                # ===== TRANSACTION OUTCOME =====
+                'Transaction completed': 1,  # All requests are completed by default
+
+                # ===== DECISION 13: Final Donation Rate (matched to Agent-Level name) =====
+                'final_donation_rate': final_donation_rate,
             }
             
             transaction_records.append(transaction_record)

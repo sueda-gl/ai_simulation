@@ -14,6 +14,8 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
     """
     price_columns = [
         'income', 'Income', 'Honesty_Humility',
+        'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
+        'Assigned income from the distribution',
     ]
     
     workbook = writer.book
@@ -79,6 +81,39 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         
         breakdown_df = pd.DataFrame(ordered_data)
         st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+    
+    # Excel download section
+    st.markdown("---")
+    st.markdown("### 📥 Download Agent Disclose Income Data")
+    
+    # Prepare Excel data
+    excel_data = _prepare_disclose_income_excel_data(df)
+    
+    if excel_data is not None:
+        # Convert to Excel bytes
+        from io import BytesIO
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            excel_data.to_excel(writer, index=False, sheet_name='Agent Disclose Income Data')
+            # Apply 2-decimal formatting
+            _apply_price_formatting_disclosure(writer, 'Agent Disclose Income Data', excel_data)
+        excel_bytes = output.getvalue()
+        
+        # Download button
+        st.download_button(
+            label="📥 Download Agent Disclose Income Data (Excel)",
+            data=excel_bytes,
+            file_name="agent_disclose_income_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Download detailed agent data including traits and disclose income decision"
+        )
+        
+        # Show preview of the Excel data
+        with st.expander("📋 Preview Excel Data (first 10 rows)"):
+            st.dataframe(excel_data.head(10), use_container_width=True)
+            st.caption(f"**Columns**: {', '.join(excel_data.columns)}")
+    else:
+        st.warning("⚠️ Unable to prepare Excel data. Some required columns may be missing.")
 
 
 def render_disclose_documents(df, decision_name, decision_title, decision_data):
@@ -309,6 +344,86 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
         st.warning("⚠️ Customer type information not available in results data")
 
 
+def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare disclose income data for Excel export.
+    
+    Includes all agent traits and the disclose income decision indicator.
+    
+    Args:
+        df: Results dataframe with agent data
+        
+    Returns:
+        DataFrame formatted for Excel export, or None if required columns missing
+    """
+    # Check required column
+    if 'disclose_income' not in df.columns:
+        return None
+    
+    # Create export dataframe
+    export_df = pd.DataFrame()
+    
+    # Agent ID - try multiple possible column names
+    if 'agent_id' in df.columns:
+        export_df['Agent ID'] = df['agent_id']
+    elif 'index' in df.columns:
+        export_df['Agent ID'] = df['index'] + 1  # Convert 0-based to 1-based
+    else:
+        export_df['Agent ID'] = range(1, len(df) + 1)
+    
+    # Agent Traits
+    # Honesty_Humility
+    if 'Honesty_Humility' in df.columns:
+        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(2)
+    else:
+        export_df['Honesty_Humility'] = ''
+    
+    # Assigned Allowance Level (income category)
+    if 'Assigned Allowance Level' in df.columns:
+        export_df['Assigned Allowance Level'] = df['Assigned Allowance Level']
+    elif 'income_category' in df.columns:
+        export_df['Assigned Allowance Level'] = df['income_category']
+    else:
+        export_df['Assigned Allowance Level'] = ''
+    
+    # Study Program
+    if 'Study Program' in df.columns:
+        export_df['Study Program'] = df['Study Program']
+    else:
+        export_df['Study Program'] = ''
+    
+    # Group_experiment
+    if 'Group_experiment' in df.columns:
+        export_df['Group_experiment'] = df['Group_experiment']
+    elif 'group' in df.columns:
+        export_df['Group_experiment'] = df['group']
+    elif 'group_experiment' in df.columns:
+        export_df['Group_experiment'] = df['group_experiment']
+    else:
+        export_df['Group_experiment'] = ''
+    
+    # TWT+Sospeso
+    if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
+        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(2)
+    else:
+        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
+    
+    # Income
+    if 'income' in df.columns:
+        export_df['income'] = df['income'].round(2)
+    elif 'actual_allowance' in df.columns:
+        export_df['income'] = df['actual_allowance'].round(2)
+    else:
+        export_df['income'] = ''
+    
+    # disclose_income (Y/N to 1/0)
+    export_df['disclose_income'] = df['disclose_income'].apply(
+        lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
+    )
+    
+    return export_df
+
+
 def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare disclosure and customer type data for Excel export.
@@ -353,27 +468,27 @@ def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         export_df['Group_experiment'] = ''
     
-    # Assigned income from the distribution
+    # Income
     if 'income' in df.columns:
-        export_df['Assigned income from the distribution'] = df['income'].round(2)
+        export_df['income'] = df['income'].round(2)
     else:
-        export_df['Assigned income from the distribution'] = ''
+        export_df['income'] = ''
     
-    # Disclosed income (Y/N to 1/0)
+    # disclose_income (Y/N to 1/0)
     if 'disclose_income' in df.columns:
-        export_df['Disclosed income'] = df['disclose_income'].apply(
+        export_df['disclose_income'] = df['disclose_income'].apply(
             lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
         )
     else:
-        export_df['Disclosed income'] = ''
+        export_df['disclose_income'] = ''
     
-    # Disclosed documents (Y/N/NA to 1/0/N/A)
+    # disclose_documents (Y/N/NA to 1/0/N/A)
     if 'disclose_documents' in df.columns:
-        export_df['Disclosed documents'] = df['disclose_documents'].apply(
+        export_df['disclose_documents'] = df['disclose_documents'].apply(
             lambda x: 1 if x == 'Y' else (0 if x == 'N' else 'N/A')
         )
     else:
-        export_df['Disclosed documents'] = ''
+        export_df['disclose_documents'] = ''
     
     # Customer type indicator columns
     if 'customer_type' in df.columns:

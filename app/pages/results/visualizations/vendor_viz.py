@@ -173,10 +173,11 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
                         customer_paid_price = np.nan
             
             # Format for display - show 2 decimal places for both PN and BID
+            # Use np.nan instead of 'N/A' for Arrow compatibility in dataframe display
             if (platform_price == 'PN' or platform_price == 'BID') and not pd.isna(customer_paid_price):
                 display_customer_paid_price = float(f"{customer_paid_price:.2f}")
             else:
-                display_customer_paid_price = 'N/A'
+                display_customer_paid_price = np.nan
             
             # Determine Purchase Type (PN, Bid, Fixed, Discount)
             if platform_price == 'PN':
@@ -1432,12 +1433,11 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
            - **Quantity Offered**: Random integer in [vendor_products_min, vendor_products_max] per period
            - **Quality**: Random integer in [1, 5] (generated once per vendor)
            - **Sustainability**: Random integer in [1, 5] (generated once per vendor)
-           - **Proximity**: Location-based score [0, 100] per customer-vendor dyad
-             - Each vendor has a distinct location (urban/suburban/rural)
-             - Urban vendors average ~75 (closer to most customers)
-             - Suburban vendors average ~50 (medium distance)
-             - Rural vendors average ~25 (farther from most customers)
-             - Individual customers have variation (±20) around vendor's location
+           - **Proximity**: Random score [0, 100] per customer-vendor dyad
+             - Uniformly distributed in [0, 100] range
+             - Each agent-vendor pair gets a unique proximity value (fixed per dyad)
+             - Different agents have different proximities to the same vendor
+             - No predefined vendor location types (purely random)
         
         2. **Get Weights**: From vendor_choice_weights decision (configured on Page 2 Overview)
            - Example: {price: 0.5, quality: 0.5, proximity: 0.0, sustainability: 0.0}

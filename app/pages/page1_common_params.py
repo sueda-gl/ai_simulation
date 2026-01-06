@@ -1361,7 +1361,6 @@ BUDGET_SHOP,5.25,50,0""")
             uniform_limit = st.number_input(
                 "Maximum number of Items Purchased per Term",
                 min_value=0,
-                max_value=1000,
                 value=st.session_state.uniform_purchasing_limit,
                 help=f"Set a uniform purchasing limit for all income categories. This will update the default values below, which you can then adjust individually per category. Term = {term_hours}h total.",
                 key="uniform_purchasing_limit_input",
@@ -1397,7 +1396,6 @@ BUDGET_SHOP,5.25,50,0""")
                     limit = st.number_input(
                         label,
                         min_value=0,
-                        max_value=1000,
                         value=st.session_state[key],
                         key=key,
                         help=f"Max purchasing for fixed income category {i+1} over entire term ({term_hours}h total). Cat 1 = lowest income (discount customers).",
@@ -1425,7 +1423,6 @@ BUDGET_SHOP,5.25,50,0""")
             artificial_limit = st.number_input(
                 "Max Purchases per Term (All Agents)",
                 min_value=1,
-                max_value=1000,
                 value=st.session_state.artificial_limit_input,  # Read from widget key
                 help=f"Maximum number of items any agent can purchase over the entire term ({term_hours}h total). This represents a practical constraint based on customer budget preferences and assumed purchasing patterns.",
                 key="artificial_limit_input",
