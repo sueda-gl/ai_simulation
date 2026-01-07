@@ -378,11 +378,14 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         export_df['Honesty_Humility'] = ''
     
-    # Assigned Allowance Level (income category)
+    # Assigned Allowance Level - use the actual allowance column which exists for ALL agents
+    # Priority: 'Assigned Allowance Level' > 'actual_allowance' > 'income' (not income_category which is only for Discount/Fixed)
     if 'Assigned Allowance Level' in df.columns:
         export_df['Assigned Allowance Level'] = df['Assigned Allowance Level']
-    elif 'income_category' in df.columns:
-        export_df['Assigned Allowance Level'] = df['income_category']
+    elif 'actual_allowance' in df.columns:
+        export_df['Assigned Allowance Level'] = df['actual_allowance']
+    elif 'income' in df.columns:
+        export_df['Assigned Allowance Level'] = df['income']
     else:
         export_df['Assigned Allowance Level'] = ''
     
@@ -452,11 +455,32 @@ def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         export_df['Agent ID'] = range(1, len(df) + 1)
     
-    # Assigned Allowance Level (income category)
-    if 'income_category' in df.columns:
-        export_df['Assigned Allowance Level'] = df['income_category']
+    # ====================================================================
+    # AGENT TRAITS: Full agent trait columns (consistent with Disclose Income)
+    # ====================================================================
+    
+    # Honesty_Humility
+    if 'Honesty_Humility' in df.columns:
+        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(2)
+    else:
+        export_df['Honesty_Humility'] = ''
+    
+    # Assigned Allowance Level - use the actual allowance column which exists for ALL agents
+    # Priority: 'Assigned Allowance Level' > 'actual_allowance' > 'income' (not income_category which is only for Discount/Fixed)
+    if 'Assigned Allowance Level' in df.columns:
+        export_df['Assigned Allowance Level'] = df['Assigned Allowance Level']
+    elif 'actual_allowance' in df.columns:
+        export_df['Assigned Allowance Level'] = df['actual_allowance']
+    elif 'income' in df.columns:
+        export_df['Assigned Allowance Level'] = df['income']
     else:
         export_df['Assigned Allowance Level'] = ''
+    
+    # Study Program
+    if 'Study Program' in df.columns:
+        export_df['Study Program'] = df['Study Program']
+    else:
+        export_df['Study Program'] = ''
     
     # Group_experiment (check for various possible column names, case-insensitive)
     if 'Group_experiment' in df.columns:
@@ -468,11 +492,21 @@ def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         export_df['Group_experiment'] = ''
     
+    # TWT+Sospeso
+    if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
+        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(2)
+    else:
+        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
+    
     # Income
     if 'income' in df.columns:
         export_df['income'] = df['income'].round(2)
+    elif 'actual_allowance' in df.columns:
+        export_df['income'] = df['actual_allowance'].round(2)
     else:
         export_df['income'] = ''
+    
+    # ====================================================================
     
     # disclose_income (Y/N to 1/0)
     if 'disclose_income' in df.columns:

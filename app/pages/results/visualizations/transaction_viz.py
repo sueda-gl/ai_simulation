@@ -93,9 +93,46 @@ def _build_purchase_vs_bid_export(df):
     for idx, row in df.iterrows():
         # Get agent information
         agent_id = row.get('agent_id', idx + 1)
+        
+        # Agent Traits (matching disclose income export)
+        # Honesty_Humility
+        honesty_humility = ''
+        if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
+            honesty_humility = round(row['Honesty_Humility'], 2)
+        
         allowance_level = row.get('Assigned Allowance Level', np.nan)
-        group_experiment = row.get('Group_experiment', '')
-        income_category = row.get('income_category', np.nan)
+        
+        # Study Program
+        study_program = row.get('Study Program', '')
+        
+        # Group_experiment (with fallbacks)
+        group_experiment = ''
+        if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
+            group_experiment = row['Group_experiment']
+        elif 'group' in row and pd.notna(row['group']):
+            group_experiment = row['group']
+        elif 'group_experiment' in row and pd.notna(row['group_experiment']):
+            group_experiment = row['group_experiment']
+        
+        # TWT+Sospeso
+        twt_sospeso = ''
+        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
+            twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
+        
+        # Income
+        income = ''
+        if 'income' in row and pd.notna(row['income']):
+            income = round(row['income'], 2)
+        elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
+            income = round(row['actual_allowance'], 2)
+        
+        # Income category - Regular customers don't have this (assigned in Decision 6 only for Discount/Fixed)
+        income_category_raw = row.get('income_category', np.nan)
+        # Use 'N/A' for empty/missing income_category (e.g., regular customers who didn't disclose income)
+        if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
+            income_category = 'N/A'
+        else:
+            income_category = income_category_raw
         
         # Get purchase requests
         purchase_requests = row.get('purchase_requests', [])
@@ -188,8 +225,12 @@ def _build_purchase_vs_bid_export(df):
             record = {
                 'Purchase Request ID': transaction_id,  # Placeholder, will be updated after sorting
                 'Agent ID': agent_id,
+                'Honesty_Humility': honesty_humility,
                 'Assigned Allowance Level': allowance_level,
+                'Study Program': study_program,
                 'Group_experiment': group_experiment,
+                'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
+                'income': income,
                 'Customer Type': customer_type_display,
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
@@ -297,7 +338,7 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
         
         # Excel Export Section
         st.markdown("---")
-        st.markdown("**📥 Export Purchase vs Bid Decision Data**")
+        st.markdown("**📥 Export Purchase Now vs Bid Decision Data**")
         st.caption("Download detailed request-level data for all regular customers with pricing and transaction information")
         
         # Build transaction records
@@ -333,9 +374,9 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 
                 with col_download:
                     st.download_button(
-                        label="📊 Download Purchase vs Bid Excel",
+                        label="📊 Download Purchase Now vs Bid Excel",
                         data=buffer.getvalue(),
-                        file_name=f"purchase_vs_bid_decisions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        file_name=f"purchase_now_vs_bid_decisions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Download request-level data for regular customers with purchase decisions"
                     )
@@ -343,7 +384,7 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
                 with col_info:
                     num_sheets = 1 + len(export_df['Period'].dropna().unique()) if 'Period' in export_df.columns else 1
                     st.caption(f"📋 Export includes {len(export_df):,} requests across {num_sheets} sheets")
-                    st.caption(f"✅ Fields: Purchase Request ID, Agent ID, Allowance Level, Group, Customer Type, Income Category, Purchase Type, Vendor, Vendor Price, timestamp, Period, Customer Price")
+                    st.caption(f"✅ Fields: Purchase Request ID, Agent ID, Honesty_Humility, Assigned Allowance Level, Study Program, Group_experiment, TWT+Sospeso, income, Customer Type, Income Category, Purchase Type, Vendor, Vendor Price, timestamp, Period, Customer Price")
                     st.caption(f"🔄 Sorted by: timestamp (chronological order)")
             
             except ImportError:
@@ -649,10 +690,11 @@ def _prepare_priority_lists_export(df: pd.DataFrame, decision_data) -> pd.DataFr
     """
     Prepare rejected transaction defaults priority lists for Excel export.
     
-    Creates columns: Agent ID, Assigned Allowance Level, Group_experiment, 
+    Creates columns: Agent ID, Honesty_Humility, Assigned Allowance Level, Study Program,
+    Group_experiment, TWT+Sospeso [=AW2+AX2]{Periods 1+2}, income,
     Priority 1, Priority 2, Priority 3, Priority 4, Priority 5
     
-    Priority columns contain option numbers (1, 2, 3, 4, 5) or blank.
+    Priority columns contain option numbers (1, 2, 3, 4, 5) or N/A if not selected.
     
     Args:
         df: Full results DataFrame with agent data
@@ -681,6 +723,12 @@ def _prepare_priority_lists_export(df: pd.DataFrame, decision_data) -> pd.DataFr
     else:
         export_df['Agent ID'] = range(1, len(df) + 1)
     
+    # Honesty_Humility
+    if 'Honesty_Humility' in df.columns:
+        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(2)
+    else:
+        export_df['Honesty_Humility'] = ''
+    
     # Assigned Allowance Level
     if 'Assigned Allowance Level' in df.columns:
         export_df['Assigned Allowance Level'] = df['Assigned Allowance Level']
@@ -689,13 +737,35 @@ def _prepare_priority_lists_export(df: pd.DataFrame, decision_data) -> pd.DataFr
     else:
         export_df['Assigned Allowance Level'] = ''
     
+    # Study Program
+    if 'Study Program' in df.columns:
+        export_df['Study Program'] = df['Study Program']
+    else:
+        export_df['Study Program'] = ''
+    
     # Group_experiment
     if 'Group_experiment' in df.columns:
         export_df['Group_experiment'] = df['Group_experiment']
     elif 'group' in df.columns:
         export_df['Group_experiment'] = df['group']
+    elif 'group_experiment' in df.columns:
+        export_df['Group_experiment'] = df['group_experiment']
     else:
         export_df['Group_experiment'] = ''
+    
+    # TWT+Sospeso
+    if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
+        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(2)
+    else:
+        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
+    
+    # Income
+    if 'income' in df.columns:
+        export_df['income'] = df['income'].round(2)
+    elif 'actual_allowance' in df.columns:
+        export_df['income'] = df['actual_allowance'].round(2)
+    else:
+        export_df['income'] = ''
     
     # Priority columns (1-5)
     for priority_pos in range(1, 6):
@@ -707,18 +777,18 @@ def _prepare_priority_lists_export(df: pd.DataFrame, decision_data) -> pd.DataFr
                 # Check if agent has this priority position
                 if len(agent_list) >= priority_pos:
                     option_code = agent_list[priority_pos - 1]
-                    option_number = option_to_number.get(option_code, '')
+                    option_number = option_to_number.get(option_code, 'N/A')
                     priority_values.append(option_number)
                 else:
                     # Agent doesn't have this many priorities
-                    priority_values.append('')
+                    priority_values.append('N/A')
             else:
                 # Single value (legacy format) - only for priority 1
                 if priority_pos == 1:
-                    option_number = option_to_number.get(agent_list, '')
+                    option_number = option_to_number.get(agent_list, 'N/A')
                     priority_values.append(option_number)
                 else:
-                    priority_values.append('')
+                    priority_values.append('N/A')
         
         export_df[column_name] = priority_values
     

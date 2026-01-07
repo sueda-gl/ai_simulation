@@ -635,7 +635,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                             
                             transactions.append({
                                 'transaction_id': req.get('transaction_id'),
-                                'customer_id': req.get('customer_id', idx + 1),
+                                'Agent ID': req.get('customer_id', idx + 1),
                                 'vendorID': req.get('vendorID', 1),
                                 'platformProductID': req.get('platformProductID', 1),
                                 'purchase type': req.get('platformPrice', 'N/A'),
@@ -717,12 +717,45 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             
             for idx, row in df.iterrows():
                 agent_id = row.get('agent_id', idx + 1)
+                
+                # Agent Traits (matching disclose income export)
+                # Honesty_Humility
+                honesty_humility = ''
+                if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
+                    honesty_humility = round(row['Honesty_Humility'], 2)
+                
                 allowance_level = row.get('Assigned Allowance Level', '')
-                group_experiment = row.get('Group_experiment', '')
-                income_category = row.get('income_category', '')
-                # Handle None/NaN - display as 'N/A' for Regular customers who don't have income categories
-                if pd.isna(income_category) or income_category is None:
+                
+                # Study Program
+                study_program = row.get('Study Program', '')
+                
+                # Group_experiment (with fallbacks)
+                group_experiment = ''
+                if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
+                    group_experiment = row['Group_experiment']
+                elif 'group' in row and pd.notna(row['group']):
+                    group_experiment = row['group']
+                elif 'group_experiment' in row and pd.notna(row['group_experiment']):
+                    group_experiment = row['group_experiment']
+                
+                # TWT+Sospeso
+                twt_sospeso = ''
+                if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
+                    twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
+                
+                # Income
+                income = ''
+                if 'income' in row and pd.notna(row['income']):
+                    income = round(row['income'], 2)
+                elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
+                    income = round(row['actual_allowance'], 2)
+                
+                income_category_raw = row.get('income_category', '')
+                # Handle None/NaN/empty - display as 'N/A' for Regular customers who don't have income categories
+                if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
                     income_category = 'N/A'
+                else:
+                    income_category = income_category_raw
                 
                 # Get customer type - try direct column first, then purchase_requests as fallback
                 customer_type = ''
@@ -751,8 +784,12 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 # Add overall record
                 agent_level_data.append({
                     'Agent ID': agent_id,
+                    'Honesty_Humility': honesty_humility,
                     'Assigned Allowance Level': allowance_level,
+                    'Study Program': study_program,
                     'Group_experiment': group_experiment,
+                    'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
+                    'income': income,
                     'Customer Type': customer_type,
                     'Income Category': income_category,
                     'Count of Purchase Requests': total_requests,
@@ -782,8 +819,12 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                         
                         agent_level_data.append({
                             'Agent ID': agent_id,
+                            'Honesty_Humility': honesty_humility,
                             'Assigned Allowance Level': allowance_level,
+                            'Study Program': study_program,
                             'Group_experiment': group_experiment,
+                            'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
+                            'income': income,
                             'Customer Type': customer_type,
                             'Income Category': income_category,
                             'Count of Purchase Requests': count,
@@ -823,7 +864,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 with col_info_agent:
                     num_sheets = 1 + periods
                     st.caption(f"📋 {len(df):,} agents across {num_sheets} sheets (Total + {periods} Periods)")
-                    st.caption("✅ Each sheet contains: Agent ID, Allowance Level, Group, Customer Type, Income Category, Requests, Completed, % Completed")
+                    st.caption("✅ Each sheet contains: Agent ID, Honesty_Humility, Assigned Allowance Level, Study Program, Group_experiment, TWT+Sospeso, income, Customer Type, Income Category, Requests, Completed, % Completed")
             else:
                 st.info("No agent data to export")
         

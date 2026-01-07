@@ -82,8 +82,38 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
     for idx, row in df.iterrows():
         # Get agent-level data
         agent_id = row.get('agent_id', idx + 1)
+        
+        # Agent Traits (matching disclose income export)
+        # Honesty_Humility
+        honesty_humility = ''
+        if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
+            honesty_humility = round(row['Honesty_Humility'], 2)
+        
         allowance_level = row.get('Assigned Allowance Level', np.nan)
-        group_experiment = row.get('Group_experiment', np.nan)
+        
+        # Study Program
+        study_program = row.get('Study Program', '')
+        
+        # Group_experiment (with fallbacks)
+        group_experiment = ''
+        if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
+            group_experiment = row['Group_experiment']
+        elif 'group' in row and pd.notna(row['group']):
+            group_experiment = row['group']
+        elif 'group_experiment' in row and pd.notna(row['group_experiment']):
+            group_experiment = row['group_experiment']
+        
+        # TWT+Sospeso
+        twt_sospeso = ''
+        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
+            twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
+        
+        # Income
+        income = ''
+        if 'income' in row and pd.notna(row['income']):
+            income = round(row['income'], 2)
+        elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
+            income = round(row['actual_allowance'], 2)
         
         # Get vendor proximity scores for this agent
         proximity_scores = row.get('vendor_proximity_scores', {})
@@ -173,11 +203,12 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
                         customer_paid_price = np.nan
             
             # Format for display - show 2 decimal places for both PN and BID
-            # Use np.nan instead of 'N/A' for Arrow compatibility in dataframe display
+            # For Fixed/Discount customers, show 'N/A' as their pricing uses a different mechanism
             if (platform_price == 'PN' or platform_price == 'BID') and not pd.isna(customer_paid_price):
                 display_customer_paid_price = float(f"{customer_paid_price:.2f}")
             else:
-                display_customer_paid_price = np.nan
+                # N/A for Fixed/Discount customers (income-based pricing not calculated here)
+                display_customer_paid_price = 'N/A'
             
             # Determine Purchase Type (PN, Bid, Fixed, Discount)
             if platform_price == 'PN':
@@ -196,8 +227,12 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
             record = {
                 'Purchase Request ID': transaction_id,  # Will be reassigned after sorting
                 'Agent ID': agent_id,
+                'Honesty_Humility': honesty_humility,
                 'Assigned Allowance Level': allowance_level,
+                'Study Program': study_program,
                 'Group_experiment': group_experiment,
+                'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
+                'income': income,
                 'Customer Type': customer_type,
                 'Purchase Type': purchase_type,
                 'Purchase Timestamp': ts_result['formatted'],
@@ -414,14 +449,52 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
         # Add Agent ID
         if 'agent_id' in df.columns:
             row_data['Agent ID'] = row['agent_id']
+        else:
+            row_data['Agent ID'] = idx + 1
+        
+        # Add Honesty_Humility
+        if 'Honesty_Humility' in df.columns:
+            row_data['Honesty_Humility'] = round(row['Honesty_Humility'], 2) if pd.notna(row['Honesty_Humility']) else ''
+        else:
+            row_data['Honesty_Humility'] = ''
         
         # Add Assigned Allowance Level
         if 'Assigned Allowance Level' in df.columns:
             row_data['Assigned Allowance Level'] = row['Assigned Allowance Level']
+        elif 'income_category' in df.columns:
+            row_data['Assigned Allowance Level'] = row['income_category']
+        else:
+            row_data['Assigned Allowance Level'] = ''
+        
+        # Add Study Program
+        if 'Study Program' in df.columns:
+            row_data['Study Program'] = row['Study Program']
+        else:
+            row_data['Study Program'] = ''
         
         # Add Group_experiment
         if 'Group_experiment' in df.columns:
             row_data['Group_experiment'] = row['Group_experiment']
+        elif 'group' in df.columns:
+            row_data['Group_experiment'] = row['group']
+        elif 'group_experiment' in df.columns:
+            row_data['Group_experiment'] = row['group_experiment']
+        else:
+            row_data['Group_experiment'] = ''
+        
+        # Add TWT+Sospeso
+        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
+            row_data['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2) if pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']) else ''
+        else:
+            row_data['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
+        
+        # Add income
+        if 'income' in df.columns:
+            row_data['income'] = round(row['income'], 2) if pd.notna(row['income']) else ''
+        elif 'actual_allowance' in df.columns:
+            row_data['income'] = round(row['actual_allowance'], 2) if pd.notna(row['actual_allowance']) else ''
+        else:
+            row_data['income'] = ''
         
         # Extract weights from the decision_data (which is a dict)
         weights = decision_data.iloc[idx]
@@ -465,7 +538,7 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
             
             with col_info:
                 st.caption(f"📋 Export includes {len(export_df):,} agents with {len(export_df.columns)} columns")
-                st.caption(f"✅ Fields: Agent ID, Assigned Allowance Level, Group_experiment, Price, Quality, Proximity, Sustainability")
+                st.caption(f"✅ Fields: Agent ID, Honesty_Humility, Assigned Allowance Level, Study Program, Group_experiment, TWT+Sospeso, income, Price, Quality, Proximity, Sustainability")
         
         except ImportError:
             st.warning("⚠️ Excel export requires openpyxl package")

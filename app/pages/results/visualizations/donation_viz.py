@@ -50,14 +50,18 @@ def _build_donation_transaction_export(df, simulation_config=None):
     Returns a list of transaction records with fields:
     - Transaction ID
     - Agent ID
+    - Honesty_Humility (agent trait)
     - Assigned Allowance Level
+    - Study Program (agent trait)
     - Group_experiment
+    - TWT+Sospeso [=AW2+AX2]{Periods 1+2} (agent trait)
+    - income (agent trait)
     - Customer Type (Regular, Fixed, Discount)
     - Income Category
     - Purchase Request Type (PN/Bid/Fixed/Discount)
     - Purchase Timestamp (DD/MM/YYYY HH:MM format)
     - Period
-    - Customer Price (PN/Bid only, 'N/A' for Fixed/Discount since actual price is unknown)
+    - Customer Price (PN/Bid only, N/A for Fixed/Discount since actual price is unknown)
     - Default Donation Rate
     - Final Donation Rate
     
@@ -111,8 +115,31 @@ def _build_donation_transaction_export(df, simulation_config=None):
         # Get agent information
         agent_id = row.get('agent_id', idx + 1)
         allowance_level = row.get('Assigned Allowance Level', np.nan)
+        
+        # ====================================================================
+        # AGENT TRAITS: Extract standard trait columns (consistent with Disclose Income)
+        # ====================================================================
+        honesty_humility = row.get('Honesty_Humility', np.nan)
+        study_program = row.get('Study Program', np.nan)
+        twt_sospeso = row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan)
+        income_value = row.get('income', np.nan)
+        
+        # Group_experiment with fallbacks (handle various column naming conventions)
         group_experiment = row.get('Group_experiment', '')
-        income_category = row.get('income_category', np.nan)
+        if group_experiment == '' or pd.isna(group_experiment):
+            group_experiment = row.get('group', '')
+        if group_experiment == '' or pd.isna(group_experiment):
+            group_experiment = row.get('group_experiment', '')
+        if pd.isna(group_experiment):
+            group_experiment = ''
+        # ====================================================================
+        
+        income_category_raw = row.get('income_category', np.nan)
+        # Use 'N/A' for empty/missing income_category (e.g., regular customers who didn't disclose income)
+        if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
+            income_category = 'N/A'
+        else:
+            income_category = income_category_raw
         
         # Get AGENT-LEVEL donation rates (used as fallback only)
         agent_default_rate = row.get('donation_default', np.nan)
@@ -242,8 +269,12 @@ def _build_donation_transaction_export(df, simulation_config=None):
             record = {
                 'Transaction ID': transaction_id,
                 'Agent ID': agent_id,
+                'Honesty_Humility': honesty_humility,
                 'Assigned Allowance Level': allowance_level,
+                'Study Program': study_program,
                 'Group_experiment': group_experiment,
+                'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
+                'income': income_value,
                 'Customer Type': customer_type_display,
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,

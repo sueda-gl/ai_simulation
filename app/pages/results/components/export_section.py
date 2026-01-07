@@ -236,7 +236,9 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
             income = row.get('actual_allowance', np.nan)
         
         agent_record['income'] = round(income, 2) if not pd.isna(income) else np.nan
-        agent_record['income_category'] = row.get('income_category', np.nan)
+        # Income category - use 'N/A' for empty/missing values (e.g., regular customers who didn't disclose income)
+        income_category_raw = row.get('income_category', np.nan)
+        agent_record['income_category'] = 'N/A' if (pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None) else income_category_raw
 
         # Decision 1: Disclose Income (convert Y/N to 1/0 for consistency)
         disclose_income_raw = row.get('disclose_income', '')
@@ -526,7 +528,9 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
         # Get income (try 'income' first, fallback to 'actual_allowance')
         income = row.get('income', row.get('actual_allowance', np.nan))
 
-        income_category = row.get('income_category', np.nan)
+        # Income category - use 'N/A' for empty/missing values (e.g., regular customers who didn't disclose income)
+        income_category_raw = row.get('income_category', np.nan)
+        income_category = 'N/A' if (pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None) else income_category_raw
         agent_donation_default = row.get('donation_default', np.nan)
 
         # Decision 1: Income disclosed (convert Y/N to 1/0)
@@ -693,8 +697,8 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
             # Display customer price:
             # - For Purchase Now: pn_price
             # - For Bid: bid_value (if numeric)
-            # - For Discount/Fixed: np.nan (unknown) - use np.nan instead of 'N/A' for Arrow compatibility
-            display_customer_price = customer_price if purchase_request_type in ['Purchase Now', 'Bid'] else np.nan
+            # - For Discount/Fixed: 'N/A' (actual price calculated by separate algorithm)
+            display_customer_price = customer_price if purchase_request_type in ['Purchase Now', 'Bid'] else 'N/A'
             
             # Donation information
             # Priority: request-level > agent-level
@@ -766,7 +770,7 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
 
                 # ===== DECISION 9 & 10: Purchase Decision & Pricing =====
                 'Purchase Request Type': purchase_request_type,
-                'Bid Value': bid_value if purchase_request_type == 'Bid' else np.nan,  # Use np.nan for Arrow compatibility
+                'Bid Value': bid_value if purchase_request_type == 'Bid' else 'N/A',  # N/A for non-Bid transactions
                 'Customer Price': display_customer_price,
 
                 # ===== DECISION 11: Rejected Transaction Option =====
