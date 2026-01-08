@@ -725,13 +725,15 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
                 # ===== INCOME & CUSTOMER INFO (matched to Agent-Level names) =====
                 'income': round(income, 2) if not pd.isna(income) else np.nan,
                 'income_category': income_category,
-                'customer_type': customer_type.capitalize() if customer_type else '',
 
                 # ===== DECISION 1: Disclose Income (1/0 format, matched to Agent-Level) =====
                 'disclose_income': income_disclosed,
 
                 # ===== DECISION 2: Disclose Documents (1/0 format, matched to Agent-Level) =====
                 'disclose_documents': documents_disclosed,
+
+                # ===== CUSTOMER TYPE (after disclosure decisions) =====
+                'customer_type': customer_type.capitalize() if customer_type else '',
 
                 # ===== DECISION 3: Donation Default (matched to Agent-Level name) =====
                 'donation_default': agent_donation_default,
