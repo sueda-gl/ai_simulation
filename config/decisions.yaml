@@ -74,9 +74,68 @@ donation_default:
     shift_value: -4.0
 disclose_income:
   uses_global_parameters: []
-  placeholder: true
+  placeholder: false
   output_field: disclose_income
   default_value: NA
+  equation1_coefficients:
+    agreeable: 0.023776
+    openness: 0.016537
+    honesty_humility: 0.0295482
+    religious: 0.0677157
+  equation2_coefficients:
+    extraversion: 0.00674934
+    neuroticism: 0.0173732
+    honesty_humility: 0.0163905
+    income: -0.008988
+  anchor_weights:
+    observed_prosocial: 0.25
+    prosocial_weight: 0.5
+  intercept: 0.1
+  z_scoring:
+    Agreeable:
+      mean: 3.464286
+      sd: 0.603221
+    Honesty_Humility:
+      mean: 3.392143
+      sd: 0.558719
+    ExtraversionBig5:
+      mean: 3.478571
+      sd: 0.821108
+    NeuroticismBig5:
+      mean: 2.714286
+      sd: 0.800036
+    OpennessBig5:
+      mean: 3.507143
+      sd: 0.615553
+    religious_composite:
+      mean: 0.297024
+      sd: 0.277665
+    TWT_Sospeso:
+      mean: 9.139286
+      sd: 9.899547
+  religiosity:
+    service_min: 0
+    service_max: 4
+  stochastic:
+    sigma_strategy: overall
+    sigma_overall: 9.899547
+    sigma_quintile:
+      '1': 5.705052
+      '2': 3.069326
+      '3': 3.532226
+      '4': 12.219622
+      '5': 16.854622
+    sigma_value: 9.899547
+    scale_factor: 0.1
+  income_mode: categorical
+  # Level-specific intercepts for categorical mode (from regression in documentation)
+  # These replace the income coefficient in categorical mode
+  categorical_intercepts:
+    level_1: 0.0089094
+    level_2: 0.0055403
+    level_3: 0.0023140
+    level_4: -0.0032145
+    level_5: -0.0145579
 disclose_documents:
   uses_global_parameters: []
   placeholder: true

@@ -141,10 +141,83 @@ class OrchestratorBaseline:
         # Import income utility for pre-generation
         from src.decisions.income_utils import get_agent_income
         
-        # Process each agent
-        results = []
+        # ============================================================================
+        # TWO-PASS APPROACH FOR INCOME MEDIAN COMPUTATION
+        # Pass 1: Generate all incomes first to compute population median
+        # Pass 2: Run decisions (which can now access the median for continuous mode)
+        # ============================================================================
+        
+        # PASS 1: Generate all agent incomes and compute population median
+        rng_pass1 = np.random.default_rng(seed + 1000000)
+        all_incomes = []
+        agent_base_seeds = []  # Store seeds for reuse in Pass 2
         
         for idx, row in agents_df.iterrows():
+            # Generate the same base seed that will be used in Pass 2
+            agent_base_seed = rng_pass1.integers(1e9)
+            agent_base_seeds.append(agent_base_seed)
+            
+            # Create temporary agent state for income generation
+            temp_state = row.to_dict()
+            income_rng = np.random.default_rng(agent_base_seed + 999999)
+            income = get_agent_income(temp_state, self.simulation_config, income_rng)
+            all_incomes.append(income)
+        
+        # Compute and store population median for continuous income mode
+        self.simulation_config['income_median'] = float(np.median(all_incomes))
+        print(f"[Baseline] Computed income median: ${self.simulation_config['income_median']:,.2f}")
+        
+        # ============================================================================
+        # TWO-PASS APPROACH FOR DISCLOSE_INCOME POPULATION STATISTICS
+        # Pass 1b: Compute raw values for all agents to get population mean/SD
+        # ============================================================================
+        
+        if 'disclose_income' in decisions_to_run and 'disclose_income' in self.decision_modules:
+            from src.decisions.disclose_income_stochastic import compute_disclose_income_raw_values
+            
+            disclose_income_params = self.config.get('disclose_income', {})
+            raw_values_list = []
+            
+            # Compute raw values for each agent
+            for idx, row in agents_df.iterrows():
+                agent_state = row.to_dict()
+                raw_values = compute_disclose_income_raw_values(
+                    agent_state, 
+                    disclose_income_params,
+                    self.simulation_config
+                )
+                raw_values_list.append(raw_values)
+            
+            # Calculate population statistics
+            if raw_values_list:
+                weighted_prosocials = [r['weighted_prosocial'] for r in raw_values_list]
+                anchored_pbs = [r['anchored_pb'] for r in raw_values_list]
+                direct_effects = [r['direct_effect'] for r in raw_values_list]
+                
+                self.simulation_config['disclose_income_population_stats'] = {
+                    'weighted_prosocial': {
+                        'mean': float(np.mean(weighted_prosocials)),
+                        'sd': float(np.std(weighted_prosocials))
+                    },
+                    'anchored_pb': {
+                        'mean': float(np.mean(anchored_pbs)),
+                        'sd': float(np.std(anchored_pbs))
+                    },
+                    'direct_effect': {
+                        'mean': float(np.mean(direct_effects)),
+                        'sd': float(np.std(direct_effects))
+                    }
+                }
+                
+                print(f"[Baseline] Computed disclose_income population stats:")
+                print(f"  - weighted_prosocial: mean={np.mean(weighted_prosocials):.6f}, sd={np.std(weighted_prosocials):.6f}")
+                print(f"  - anchored_pb: mean={np.mean(anchored_pbs):.6f}, sd={np.std(anchored_pbs):.6f}")
+                print(f"  - direct_effect: mean={np.mean(direct_effects):.6f}, sd={np.std(direct_effects):.6f}")
+        
+        # PASS 2: Process agents and run decisions
+        results = []
+        
+        for list_idx, (idx, row) in enumerate(agents_df.iterrows()):
             agent_state = row.to_dict()
             
             # Add agent ID and index to agent_state (CRITICAL for customer_id in purchase_requests)
@@ -153,11 +226,10 @@ class OrchestratorBaseline:
             
             agent_results = agent_state.copy()
             
-            # Create base seed for this agent (deterministic based on agent index)
-            agent_base_seed = rng_global.integers(1e9)
+            # Use the same base seed from Pass 1
+            agent_base_seed = agent_base_seeds[list_idx]
             
-            # CRITICAL FIX: Pre-generate income with a CONSISTENT RNG
-            # This ensures income is the same regardless of which decisions run
+            # Pre-generate income with the SAME RNG as Pass 1 (ensures consistency)
             income_rng = np.random.default_rng(agent_base_seed + 999999)
             get_agent_income(agent_state, self.simulation_config, income_rng)
             

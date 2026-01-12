@@ -294,6 +294,60 @@ def _apply_donation_config(orchestrator, pop_mode: str, inc_mode: str):
         donation_config['regression_coefficients'].update(current_coeffs)
 
 
+def _apply_disclose_income_config(orchestrator, pop_mode: str):
+    """
+    Apply disclose_income-specific configuration to orchestrator.
+    
+    Handles income mode, stochastic settings, and anchor weights for disclose_income.
+    """
+    if not hasattr(orchestrator, 'config') or 'disclose_income' not in orchestrator.config:
+        return
+    
+    if pop_mode == "depvar":
+        return  # depvar mode doesn't use these settings
+    
+    di_config = orchestrator.config['disclose_income']
+    
+    # Apply income mode from session state if available
+    if hasattr(st.session_state, 'di_income_mode'):
+        di_config['income_mode'] = st.session_state.di_income_mode
+    
+    # Apply intercept from session state if available
+    if hasattr(st.session_state, 'di_intercept'):
+        di_config['intercept'] = st.session_state.di_intercept
+    
+    # Apply anchor weights from session state if available
+    if 'anchor_weights' not in di_config:
+        di_config['anchor_weights'] = {}
+    
+    if hasattr(st.session_state, 'di_wopb'):
+        di_config['anchor_weights']['observed_prosocial'] = st.session_state.di_wopb
+    
+    if hasattr(st.session_state, 'di_wpb'):
+        di_config['anchor_weights']['prosocial_weight'] = st.session_state.di_wpb
+    
+    # Apply stochastic settings from session state if available
+    if 'stochastic' not in di_config:
+        di_config['stochastic'] = {}
+    
+    # Check if stochastic is enabled via UI
+    sigma_enabled = getattr(st.session_state, 'di_sigma_enabled', False)
+    
+    if pop_mode == "baseline":
+        # Baseline mode: no stochastic component
+        di_config['stochastic']['sigma_value'] = 0.0
+    elif sigma_enabled:
+        # Stochastic enabled - use overall sigma
+        di_config['stochastic']['sigma_value'] = 9.899547
+        if hasattr(st.session_state, 'di_sigma_strategy'):
+            di_config['stochastic']['sigma_strategy'] = st.session_state.di_sigma_strategy
+        if hasattr(st.session_state, 'di_scale_factor'):
+            di_config['stochastic']['scale_factor'] = st.session_state.di_scale_factor
+    else:
+        # Stochastic disabled
+        di_config['stochastic']['sigma_value'] = 0.0
+
+
 # =============================================================================
 # MODE RUNNER FUNCTIONS - Each mode encapsulates its own agent sampling
 # =============================================================================
@@ -315,6 +369,7 @@ def run_copula_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: 
     
     # 3. Apply configurations
     _apply_donation_config(orchestrator, "copula", inc_mode)
+    _apply_disclose_income_config(orchestrator, "copula")
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
@@ -339,6 +394,7 @@ def run_research_spec_mode(n_agents: int, seed: int, inc_mode: str, decision_set
     
     # 3. Apply configurations
     _apply_donation_config(orchestrator, "documentation", inc_mode)
+    _apply_disclose_income_config(orchestrator, "documentation")
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
@@ -363,6 +419,7 @@ def run_research_baseline_mode(n_agents: int, seed: int, inc_mode: str, decision
     
     # 3. Apply configurations
     _apply_donation_config(orchestrator, "baseline", inc_mode)
+    _apply_disclose_income_config(orchestrator, "baseline")
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
