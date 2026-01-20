@@ -150,6 +150,16 @@ def render_single_run_results():
                                     render_all_modes_comparison(results_dict)
                                 elif st.session_state.income_spec_mode == "Compare both":
                                     render_income_comparison(results_dict)
+                            elif is_comparison_mode and decision == "disclose_income":
+                                # For disclose_income: show results if a config was selected
+                                has_selected_di_config = (
+                                    hasattr(st.session_state, 'selected_disclose_income_config') and 
+                                    st.session_state.selected_disclose_income_config is not None
+                                )
+                                if has_selected_di_config:
+                                    render_decision_results(df, decision, decision_title)
+                                else:
+                                    st.info("📊 Custom decision results are shown in the comparison grids below")
                             elif is_comparison_mode:
                                 st.info("📊 Custom decision results are shown in the comparison grids below")
                             else:
@@ -170,6 +180,17 @@ def render_single_run_results():
                                 render_all_modes_comparison(results_dict)
                             elif st.session_state.income_spec_mode == "Compare both":
                                 render_income_comparison(results_dict)
+                        elif is_comparison_mode and decision == "disclose_income":
+                            # For disclose_income: show results if a config was selected, otherwise show comparison message
+                            has_selected_di_config = (
+                                hasattr(st.session_state, 'selected_disclose_income_config') and 
+                                st.session_state.selected_disclose_income_config is not None
+                            )
+                            if has_selected_di_config:
+                                # Show the actual results with pie chart since config was selected
+                                render_decision_results(df, decision, decision_title)
+                            else:
+                                st.info("📊 Custom decision results are shown in the comparison grids below")
                         elif is_comparison_mode:
                             st.info("📊 Custom decision results are shown in the comparison grids below")
                         else:

@@ -57,93 +57,108 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
     has_raw_values = 'disclose_income_raw' in df.columns
     
     if has_raw_values:
-        # Show raw DI value histogram (distribution before Y/N classification)
-        st.markdown("### 📊 Raw Disclosure Intention Distribution")
-        st.caption("Distribution of raw DI values before classification (>0 → Y, ≤0 → N)")
+        # Show raw DI value histogram and pie chart side by side
+        st.markdown("### 📊 Disclosure Analysis")
         
         raw_values = df['disclose_income_raw'].dropna()
         mean_val = raw_values.mean()
         
-        # Create histogram with vertical line at 0
-        fig = go.Figure()
+        # Histogram and Pie Chart side by side
+        col_hist, col_pie = st.columns(2)
         
-        # Add histogram
-        fig.add_trace(go.Histogram(
-            x=raw_values,
-            nbinsx=40,
-            name='DI Raw Values',
-            marker_color='steelblue',
-            opacity=0.7
-        ))
-        
-        # Add vertical line at 0 (decision boundary)
-        fig.add_vline(
-            x=0,
-            line_dash="solid",
-            line_color="red",
-            line_width=3,
-            annotation_text="Boundary (0)",
-            annotation_position="top",
-            annotation_font_color="red"
-        )
-        
-        # Add vertical line at mean
-        fig.add_vline(
-            x=mean_val,
-            line_dash="dash",
-            line_color="green",
-            line_width=2,
-            annotation_text=f"Mean: {mean_val:.3f}",
-            annotation_position="bottom",
-            annotation_font_color="green"
-        )
-        
-        fig.update_layout(
-            title="Raw DI Value Distribution",
-            xaxis_title="Raw DI Value (>0 → Y, ≤0 → N)",
-            yaxis_title="Number of Agents",
-            showlegend=False,
-            height=350,
-            xaxis=dict(zeroline=True, zerolinecolor='red', zerolinewidth=2)
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Statistics and pie chart side by side
-        col_stats, col_pie = st.columns(2)
-        
-        with col_stats:
-            st.markdown("**📈 Raw Value Statistics**")
-            stats_df = pd.DataFrame({
-                'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
-                'Value': [
-                    f"{mean_val:.4f}",
-                    f"{raw_values.std():.4f}",
-                    f"{raw_values.median():.4f}",
-                    f"{raw_values.min():.4f}",
-                    f"{raw_values.max():.4f}"
-                ]
-            })
-            st.dataframe(stats_df, hide_index=True, use_container_width=True)
+        with col_hist:
+            st.markdown("**Raw DI Value Distribution**")
+            st.caption("Before classification (>0 → Y, ≤0 → N)")
             
-            # Show insight
-            if mean_val > 0:
-                st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")
-            elif mean_val < 0:
-                st.warning(f"⚠️ Mean ({mean_val:.4f}) < 0: Distribution favors non-disclosure")
-            else:
-                st.info("ℹ️ Mean ≈ 0: Distribution is balanced")
+            # Create histogram with vertical line at 0
+            fig = go.Figure()
+            
+            # Add histogram
+            fig.add_trace(go.Histogram(
+                x=raw_values,
+                nbinsx=40,
+                name='DI Raw Values',
+                marker_color='steelblue',
+                opacity=0.7
+            ))
+            
+            # Add vertical line at 0 (decision boundary)
+            fig.add_vline(
+                x=0,
+                line_dash="solid",
+                line_color="red",
+                line_width=3,
+                annotation_text="Boundary (0)",
+                annotation_position="top",
+                annotation_font_color="red"
+            )
+            
+            # Add vertical line at mean
+            fig.add_vline(
+                x=mean_val,
+                line_dash="dash",
+                line_color="green",
+                line_width=2,
+                annotation_text=f"Mean: {mean_val:.3f}",
+                annotation_position="bottom",
+                annotation_font_color="green"
+            )
+            
+            fig.update_layout(
+                xaxis_title="Raw DI Value",
+                yaxis_title="Agents",
+                showlegend=False,
+                height=350,
+                margin=dict(t=30, b=40, l=50, r=20),
+                xaxis=dict(zeroline=True, zerolinecolor='red', zerolinewidth=2)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
         
         with col_pie:
-            st.markdown("**📊 Final Classification (Pie Chart)**")
+            st.markdown("**Final Classification (Y/N)**")
+            st.caption("After applying threshold at 0")
+            
             if len(value_counts) > 0:
                 fig_pie = px.pie(
                     values=value_counts.values,
                     names=value_counts.index,
                     color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
                 )
-                fig_pie.update_layout(height=300, margin=dict(t=20, b=20, l=20, r=20))
+                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+                fig_pie.update_layout(
+                    height=350,
+                    margin=dict(t=30, b=20, l=20, r=20),
+                    showlegend=True
+                )
                 st.plotly_chart(fig_pie, use_container_width=True)
+        
+        # Statistics below the charts
+        st.markdown("**📈 Statistics**")
+        col_stats1, col_stats2, col_insight = st.columns([1, 1, 2])
+        
+        with col_stats1:
+            stats_df = pd.DataFrame({
+                'Metric': ['Mean', 'Std Dev', 'Median'],
+                'Value': [f"{mean_val:.4f}", f"{raw_values.std():.4f}", f"{raw_values.median():.4f}"]
+            })
+            st.dataframe(stats_df, hide_index=True, use_container_width=True)
+        
+        with col_stats2:
+            class_df = pd.DataFrame({
+                'Choice': ['Y', 'N'],
+                'Count': [value_counts.get('Y', 0), value_counts.get('N', 0)],
+                '%': [f"{(value_counts.get('Y', 0)/total)*100:.1f}%", f"{(value_counts.get('N', 0)/total)*100:.1f}%"]
+            })
+            st.dataframe(class_df, hide_index=True, use_container_width=True)
+        
+        with col_insight:
+            if mean_val > 0:
+                st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")
+            elif mean_val < 0:
+                st.warning(f"⚠️ Mean ({mean_val:.4f}) < 0: Distribution favors non-disclosure")
+            else:
+                st.info("ℹ️ Mean ≈ 0: Distribution is balanced")
     else:
         # Basic visualization - pie chart only (no raw values available)
         col_plot, col_stats = st.columns([2, 1])
