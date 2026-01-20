@@ -137,12 +137,12 @@ def render_donation_default_tab():
             # Initialize the widget key if it doesn't exist
             if "page2_tab_income_spec_mode" not in st.session_state:
                 # Map current income_spec_mode to radio button options
-                if st.session_state.income_spec_mode in ["categorical only", "continuous only", "Compare both"]:
+                if st.session_state.income_spec_mode in ["Categorical only", "Continuous only", "Compare both"]:
                     st.session_state.page2_tab_income_spec_mode = st.session_state.income_spec_mode
                 elif st.session_state.income_spec_mode in ["compare both", "compare side-by-side"]:
                     st.session_state.page2_tab_income_spec_mode = "Compare both"
                 else:
-                    st.session_state.page2_tab_income_spec_mode = "categorical only"
+                    st.session_state.page2_tab_income_spec_mode = "Categorical only"
             
             def on_income_spec_mode_change():
                 """Handle income spec mode changes"""

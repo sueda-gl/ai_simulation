@@ -85,12 +85,12 @@ disclose_income:
   equation2_coefficients:
     extraversion: 0.00674934
     neuroticism: 0.0173732
-    honesty_humility: 0.0163905
+    honesty_humility: 0.0295482
     income: -0.008988
   anchor_weights:
     observed_prosocial: 0.25
     prosocial_weight: 0.5
-  intercept: 0.1
+  intercept: 0.75
   z_scoring:
     Agreeable:
       mean: 3.464286
@@ -125,15 +125,19 @@ disclose_income:
       '3': 3.532226
       '4': 12.219622
       '5': 16.854622
-    sigma_value: 9.899547
+    sigma_value: 9.8995
     scale_factor: 0.1
-  income_mode: categorical
-  # Level-specific intercepts for categorical mode (from regression in documentation)
-  # These replace the income coefficient in categorical mode
+    quintile_scale_factors:
+      '1': 1.0
+      '2': 1.0
+      '3': 1.0
+      '4': 1.0
+      '5': 1.0
+  income_mode: Compare both
   categorical_intercepts:
     level_1: 0.0089094
     level_2: 0.0055403
-    level_3: 0.0023140
+    level_3: 0.002314
     level_4: -0.0032145
     level_5: -0.0145579
 disclose_documents:

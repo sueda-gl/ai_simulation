@@ -63,10 +63,20 @@ def render_results_page():
 def render_single_run_results():
     """Render single run simulation results"""
     
-    # Check if we're using a selected configuration (don't clear flag yet - needed later)
+    # Check if we're using a selected donation configuration
+    # NOTE: This only affects donation_default - other decisions use their own settings
     if hasattr(st.session_state, '_using_selected_config') and st.session_state._using_selected_config:
         config = st.session_state.selected_donation_config
-        st.info(f"🎯 **Results using selected donation configuration:** {config['population_mode']} + {config['income_spec_mode']}")
+        # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
+        donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
+        st.info(f"🎯 **Donation Default used saved configuration:** {donation_income_mode}")
+        
+        # Also show disclose_income mode if it was run
+        if hasattr(st.session_state, 'custom_decisions'):
+            all_decisions_run = st.session_state.custom_decisions + st.session_state.get('default_decisions', [])
+            if 'disclose_income' in all_decisions_run:
+                di_mode = st.session_state.get('di_income_mode', 'Categorical only')
+                st.info(f"📋 **Disclose Income used:** {di_mode}")
     
     # Show decision configuration summary when we have both custom and default decisions (combined simulation)
     # OR when in single mode (not comparison modes)

@@ -7,6 +7,7 @@ Uses a two-stage mediation model when specified (research spec mode).
 """
 import streamlit as st
 import yaml
+import pandas as pd
 from pathlib import Path
 
 
@@ -25,11 +26,11 @@ def save_disclose_income_config(updates: dict):
     try:
         with open(CONFIG_PATH, 'r') as f:
             config = yaml.safe_load(f)
-        
+
         # Update disclose_income section
         if 'disclose_income' not in config:
             config['disclose_income'] = {}
-        
+
         for key, value in updates.items():
             if '.' in key:
                 # Handle nested keys like 'anchor_weights.observed_prosocial'
@@ -42,10 +43,10 @@ def save_disclose_income_config(updates: dict):
                 target[parts[-1]] = value
             else:
                 config['disclose_income'][key] = value
-        
+
         with open(CONFIG_PATH, 'w') as f:
             yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-        
+
         return True
     except Exception as e:
         st.error(f"Error saving configuration: {e}")
@@ -55,100 +56,344 @@ def save_disclose_income_config(updates: dict):
 def initialize_disclose_income_session_state():
     """Initialize session state for disclose_income tab."""
     config = load_disclose_income_config()
-    
+
     # Initialize storage for persistence
     if 'disclose_income_tab_persistence' not in st.session_state:
         st.session_state.disclose_income_tab_persistence = {}
-    
+
     # Initialize model parameters from config
     anchor_weights = config.get('anchor_weights', {})
     stochastic = config.get('stochastic', {})
-    
+
     defaults = {
-        'di_intercept': config.get('intercept', 0.1),
+        'di_intercept': config.get('intercept', 0.75),
         'di_wopb': anchor_weights.get('observed_prosocial', 0.25),
         'di_wpb': anchor_weights.get('prosocial_weight', 0.50),
         'di_sigma_enabled': stochastic.get('sigma_value', 0) > 0,
+        'di_scale_factor': stochastic.get('scale_factor', 1.0),
         'di_sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
-        'di_scale_factor': stochastic.get('scale_factor', 0.1),
         'di_income_mode': config.get('income_mode', 'categorical'),
     }
-    
+
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
+    
+    # Initialize quintile scale factors
+    if 'di_quintile_scale_factors' not in st.session_state:
+        default_scale = stochastic.get('scale_factor', 1.0)
+        quintile_scales = stochastic.get('quintile_scale_factors', {
+            '1': default_scale, '2': default_scale, '3': default_scale,
+            '4': default_scale, '5': default_scale
+        })
+        st.session_state.di_quintile_scale_factors = quintile_scales
+
+
+def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
+    """Restore a widget key from storage dictionary before widget renders."""
+    # Priority 1: Use value from storage dict
+    if storage_dict and storage_key in storage_dict:
+        val = storage_dict[storage_key]
+        st.session_state[widget_key] = val
+        return val
+
+    # Priority 2: Use existing session state value if present
+    if widget_key in st.session_state:
+        return st.session_state[widget_key]
+
+    # Priority 3: Use default value
+    st.session_state[widget_key] = default_value
+    return default_value
+
+
+def save_to_disclose_income_storage(widget_key, storage_key):
+    """Save a widget value to disclose income storage."""
+    if "disclose_income_tab_persistence" not in st.session_state:
+        st.session_state.disclose_income_tab_persistence = {}
+
+    if widget_key in st.session_state:
+        st.session_state.disclose_income_tab_persistence[storage_key] = st.session_state[widget_key]
 
 
 def render_disclose_income_tab():
     """Render disclose_income specific configuration."""
     initialize_disclose_income_session_state()
     config = load_disclose_income_config()
-    
-    st.markdown('<h3 class="section-header">📋 Disclose Income Configuration</h3>', unsafe_allow_html=True)
-    
-    st.info("""
-    **Decision 1: Disclose Income** uses a two-stage mediation model:
-    - **Equation 1**: Prosocial Behavior (PB) from personality traits
-    - **Equation 2**: Disclosure Intention (DI) from PB and direct effects
-    
-    Output: "Y" if DI > 0 after stochastic draw, "N" otherwise.
-    """)
-    
+
+    st.markdown('<h3 class="section-header">Disclose Income Configuration</h3>', unsafe_allow_html=True)
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
-        # Income Mode
-        st.markdown('<h4 class="subsection-header">Income Mode</h4>', unsafe_allow_html=True)
+        # Income Specification
+        st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
+
+        # Initialize the widget key if it doesn't exist
+        if "di_tab_income_mode" not in st.session_state:
+            current_mode = st.session_state.get('di_income_mode', 'Categorical only')
+            valid_modes = ["Categorical only", "Continuous only", "Compare both"]
+            
+            # Try exact match first
+            if current_mode in valid_modes:
+                st.session_state.di_tab_income_mode = current_mode
+            else:
+                # Try case-insensitive match
+                match_found = False
+                for m in valid_modes:
+                    if m.lower() == str(current_mode).lower():
+                        st.session_state.di_tab_income_mode = m
+                        match_found = True
+                        break
+                
+                if not match_found:
+                    st.session_state.di_tab_income_mode = "Categorical only"
+
+        def on_di_income_mode_change():
+            """Handle income spec mode changes for disclose income."""
+            new_mode = st.session_state.di_tab_income_mode
+            st.session_state.di_income_mode = new_mode
+            save_to_disclose_income_storage('di_tab_income_mode', 'income_mode')
+            save_disclose_income_config({'income_mode': new_mode})
+            st.toast(f"Income specification set to: {new_mode}", icon="💾")
+
+        # Restore income mode from storage
+        income_val = restore_widget_from_storage(
+            'di_tab_income_mode',
+            st.session_state.disclose_income_tab_persistence,
+            'income_mode',
+            'Categorical only'
+        )
+
+        # Ensure value is valid (handling case sensitivity)
+        mode_options = ["Categorical only", "Continuous only", "Compare both"]
         
-        current_mode = st.session_state.get('di_income_mode', 'categorical')
-        mode_options = ["categorical", "continuous"]
-        mode_index = mode_options.index(current_mode) if current_mode in mode_options else 0
-        
+        # Try to find a matching option (case-insensitive)
+        if income_val not in mode_options:
+            match_found = False
+            for opt in mode_options:
+                if str(income_val).lower() == opt.lower():
+                    income_val = opt
+                    match_found = True
+                    break
+            
+            if match_found:
+                # Update session state to match normalized value (critical for st.radio)
+                st.session_state.di_tab_income_mode = income_val
+            else:
+                income_val = "Categorical only"
+                st.session_state.di_tab_income_mode = income_val
+
         income_mode = st.radio(
-            "Income Mode for Disclosure Model",
+            "Income Specification for Disclosure Model",
             mode_options,
-            index=mode_index,
             help="""
-            **Categorical**: income_high = 1 if Assigned Allowance Level > 3
-            **Continuous**: income_high = 1 if agent's income > population median
+            **Categorical only**: Uses level-specific intercepts based on income categories (5 levels)
+            **Continuous only**: Uses single β₀ with income coefficient based on actual income
+            **Compare both**: Run both specifications for comparison
             """,
-            key="di_income_mode_widget"
+            key="di_tab_income_mode",
+            on_change=on_di_income_mode_change
         )
-        
-        if income_mode != st.session_state.get('di_income_mode'):
-            st.session_state.di_income_mode = income_mode
-            save_disclose_income_config({'income_mode': income_mode})
-            st.toast(f"✅ Income mode set to: {income_mode}", icon="💾")
-        
-        # Intercept (β0)
-        st.markdown('<h4 class="subsection-header">Intercept (β₀)</h4>', unsafe_allow_html=True)
-        
-        current_intercept = config.get('intercept', 0.1)
-        
-        new_intercept = st.number_input(
-            "Baseline disclosure tendency",
-            min_value=-1.0,
-            max_value=1.0,
-            value=float(current_intercept),
-            step=0.01,
-            format="%.3f",
-            help="β₀ in the disclosure intention equation. Default: 0.1",
-            key="di_intercept_widget"
-        )
-        
-        if abs(new_intercept - current_intercept) > 0.001:
-            st.session_state.di_intercept = new_intercept
-            save_disclose_income_config({'intercept': float(new_intercept)})
-            st.toast(f"✅ Intercept set to: {new_intercept:.3f}", icon="💾")
-    
+        # Sync session state
+        st.session_state.di_income_mode = income_mode
+
     with col2:
-        # Anchor Weights
-        st.markdown('<h4 class="subsection-header">Anchor Weights</h4>', unsafe_allow_html=True)
+        # Stochastic Component
+        st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
+
+        stochastic = config.get('stochastic', {})
+        current_sigma_enabled = stochastic.get('sigma_value', 0) > 0
+        current_scale = stochastic.get('scale_factor', 1.0)
+        current_strategy = stochastic.get('sigma_strategy', 'overall')
         
+        # Get quintile-specific scale factors from config (default to same as overall)
+        current_quintile_scales = stochastic.get('quintile_scale_factors', {
+            '1': current_scale, '2': current_scale, '3': current_scale,
+            '4': current_scale, '5': current_scale
+        })
+
+        # Restore sigma enabled checkbox
+        sigma_val = restore_widget_from_storage(
+            'di_tab_sigma_enabled',
+            st.session_state.disclose_income_tab_persistence,
+            'sigma_enabled',
+            current_sigma_enabled
+        )
+
+        sigma_enabled = st.checkbox(
+            "Use Normal(anchor, σ) draw in Research mode",
+            value=sigma_val,
+            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
+            key="di_tab_sigma_enabled",
+            on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled', 'sigma_enabled')
+        )
+        st.session_state.di_sigma_enabled = sigma_enabled
+
+        if sigma_enabled:
+            # Strategy selection: Overall vs Quintiles
+            st.markdown("**Sigma Strategy**")
+            
+            # Restore strategy from storage
+            strategy_val = restore_widget_from_storage(
+                'di_tab_sigma_strategy',
+                st.session_state.disclose_income_tab_persistence,
+                'sigma_strategy',
+                current_strategy
+            )
+            
+            # Normalize strategy value
+            if 'quintile' in str(strategy_val).lower():
+                strategy_val = 'quintile'
+            else:
+                strategy_val = 'overall'
+            
+            def on_strategy_change():
+                """Handle sigma strategy changes."""
+                new_strategy = st.session_state.di_tab_sigma_strategy
+                save_to_disclose_income_storage('di_tab_sigma_strategy', 'sigma_strategy')
+                save_disclose_income_config({'stochastic.sigma_strategy': new_strategy})
+                st.session_state.di_sigma_strategy = new_strategy
+                st.toast(f"Sigma strategy set to: {new_strategy}", icon="💾")
+            
+            sigma_strategy = st.radio(
+                "Apply sigma uniformly or per income level?",
+                options=['overall', 'quintile'],
+                format_func=lambda x: 'Overall (single σ for all)' if x == 'overall' else 'Quintiles (per budget level)',
+                index=0 if strategy_val == 'overall' else 1,
+                key="di_tab_sigma_strategy",
+                on_change=on_strategy_change,
+                horizontal=True
+            )
+            st.session_state.di_sigma_strategy = sigma_strategy
+            
+            st.markdown("---")
+            
+            if sigma_strategy == 'overall':
+                # OVERALL MODE: Single slider
+                st.caption("Base σ = 9.8995 (empirical from 280 participants)")
+
+                # Restore coefficient widget value
+                coeff_val = restore_widget_from_storage(
+                    'di_tab_sigma_coefficient',
+                    st.session_state.disclose_income_tab_persistence,
+                    'sigma_coefficient',
+                    current_scale
+                )
+                
+                # Clamp value to valid range [0, 1]
+                coeff_val = max(0.0, min(float(coeff_val), 1.0))
+                
+                if 'di_tab_sigma_coefficient' in st.session_state:
+                    if st.session_state.di_tab_sigma_coefficient > 1.0:
+                        st.session_state.di_tab_sigma_coefficient = 1.0
+                    elif st.session_state.di_tab_sigma_coefficient < 0.0:
+                        st.session_state.di_tab_sigma_coefficient = 0.0
+
+                sigma_coefficient = st.slider(
+                    "σ Coefficient (multiplier)",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=coeff_val,
+                    step=0.01,
+                    help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+                    key="di_tab_sigma_coefficient",
+                    on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_coefficient', 'sigma_coefficient')
+                )
+                st.session_state.di_scale_factor = sigma_coefficient
+
+                effective_sigma = 9.8995 * sigma_coefficient
+                st.caption(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
+
+                if abs(sigma_coefficient - current_scale) > 0.001:
+                    save_disclose_income_config({'stochastic.scale_factor': float(sigma_coefficient)})
+                    save_disclose_income_config({'stochastic.sigma_value': 9.8995})
+                    st.toast(f"σ coefficient set to: {sigma_coefficient:.2f}", icon="💾")
+            
+            else:
+                # QUINTILE MODE: 5 sliders (one per income level)
+                st.markdown("**Per-Quintile σ Coefficients**")
+                st.caption("Each level has its own base σ from empirical data:")
+                
+                # Base sigma values per quintile (from Stata output)
+                base_sigmas = {
+                    '1': 5.705052,  # Level 1 (€16)
+                    '2': 3.069326,  # Level 2 (€32)
+                    '3': 3.532226,  # Level 3 (€72)
+                    '4': 12.21962,  # Level 4 (€128)
+                    '5': 16.85462,  # Level 5 (€200)
+                }
+                
+                level_labels = {
+                    '1': 'Level 1 (€16)',
+                    '2': 'Level 2 (€32)',
+                    '3': 'Level 3 (€72)',
+                    '4': 'Level 4 (€128)',
+                    '5': 'Level 5 (€200)',
+                }
+                
+                quintile_coefficients = {}
+                
+                for level in ['1', '2', '3', '4', '5']:
+                    # Get current value for this level
+                    level_scale = current_quintile_scales.get(level, current_scale)
+                    level_scale = max(0.0, min(float(level_scale), 1.0))
+                    
+                    # Restore from storage
+                    storage_key = f'sigma_quintile_{level}'
+                    widget_key = f'di_tab_sigma_q{level}'
+                    
+                    q_val = restore_widget_from_storage(
+                        widget_key,
+                        st.session_state.disclose_income_tab_persistence,
+                        storage_key,
+                        level_scale
+                    )
+                    q_val = max(0.0, min(float(q_val), 1.0))
+                    
+                    base_sigma = base_sigmas[level]
+                    
+                    col_slider, col_result = st.columns([3, 1])
+                    with col_slider:
+                        q_coeff = st.slider(
+                            f"{level_labels[level]} (base σ={base_sigma:.2f})",
+                            min_value=0.0,
+                            max_value=1.0,
+                            value=q_val,
+                            step=0.01,
+                            key=widget_key,
+                            on_change=lambda l=level: save_to_disclose_income_storage(f'di_tab_sigma_q{l}', f'sigma_quintile_{l}')
+                        )
+                    with col_result:
+                        effective = base_sigma * q_coeff
+                        st.metric("Effective σ", f"{effective:.2f}")
+                    
+                    quintile_coefficients[level] = q_coeff
+                
+                # Save quintile scale factors to config
+                st.session_state.di_quintile_scale_factors = quintile_coefficients
+                
+                # Check if any changed and save
+                for level, coeff in quintile_coefficients.items():
+                    old_val = current_quintile_scales.get(level, current_scale)
+                    if abs(coeff - float(old_val)) > 0.001:
+                        save_disclose_income_config({f'stochastic.quintile_scale_factors.{level}': float(coeff)})
+                
+                # Also ensure sigma_value is set so stochastic is recognized as enabled
+                save_disclose_income_config({'stochastic.sigma_value': 9.8995})
+                
+        else:
+            st.info("Stochastic component disabled - using anchor values directly")
+            st.session_state.di_scale_factor = 0.0
+            if current_sigma_enabled:
+                save_disclose_income_config({'stochastic.sigma_value': 0})
+
+        # Anchor Mix
+        st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
+
         anchor_weights = config.get('anchor_weights', {})
         current_wopb = anchor_weights.get('observed_prosocial', 0.25)
         current_wpb = anchor_weights.get('prosocial_weight', 0.50)
-        
+
         # WOPB - Weight for observed vs calculated prosocial behavior
         new_wopb = st.slider(
             "W_OPB: Observed vs Calculated PB weight",
@@ -159,16 +404,16 @@ def render_disclose_income_tab():
             help="anchored_PB = WOPB × observed_PB + (1-WOPB) × calculated_PB. Default: 0.25",
             key="di_wopb_widget"
         )
-        st.caption(f"Calculated PB weight: {1 - new_wopb:.2f}")
-        
+        st.caption(f"Observed PB weight: {new_wopb:.2f}")
+
         if abs(new_wopb - current_wopb) > 0.001:
             st.session_state.di_wopb = new_wopb
             save_disclose_income_config({'anchor_weights.observed_prosocial': float(new_wopb)})
-            st.toast(f"✅ WOPB set to: {new_wopb:.2f}", icon="💾")
-        
+            st.toast(f"WOPB set to: {new_wopb:.2f}", icon="💾")
+
         # WPB - Weight for prosocial effect in disclosure equation
         new_wpb = st.slider(
-            "W_PB: Prosocial behavior effect weight",
+            "W_PB: Prosocial behavior (Equation 1) effect weight",
             min_value=0.0,
             max_value=1.0,
             value=float(current_wpb),
@@ -176,89 +421,26 @@ def render_disclose_income_tab():
             help="DI = β₀ + (1-WPB)×direct_effects + WPB×(PB×income_high). Default: 0.50",
             key="di_wpb_widget"
         )
-        st.caption(f"Direct effects weight: {1 - new_wpb:.2f}")
-        
+        st.caption(f"PB weight: {new_wpb:.2f}")
+
         if abs(new_wpb - current_wpb) > 0.001:
             st.session_state.di_wpb = new_wpb
             save_disclose_income_config({'anchor_weights.prosocial_weight': float(new_wpb)})
-            st.toast(f"✅ WPB set to: {new_wpb:.2f}", icon="💾")
-    
-    # Stochastic Component Section
-    st.markdown("---")
-    st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
-    
-    stochastic = config.get('stochastic', {})
-    current_sigma_value = stochastic.get('sigma_value', 0)
-    current_strategy = stochastic.get('sigma_strategy', 'overall')
-    current_scale = stochastic.get('scale_factor', 0.1)
-    
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        # Enable/disable stochastic
-        sigma_enabled = st.checkbox(
-            "Enable stochastic component",
-            value=current_sigma_value > 0,
-            help="When enabled, adds Normal(DI, σ×scale) noise to disclosure intention",
-            key="di_sigma_enabled_widget"
-        )
-        
-        if sigma_enabled:
-            # Sigma strategy
-            strategy_options = ["overall", "quintile"]
-            strategy_index = strategy_options.index(current_strategy) if current_strategy in strategy_options else 0
-            
-            sigma_strategy = st.radio(
-                "σ Strategy",
-                strategy_options,
-                index=strategy_index,
-                help="""
-                **overall**: Use overall SD from 280 participants (σ = 9.90)
-                **quintile**: Use income-quintile-specific SD
-                """,
-                key="di_sigma_strategy_widget"
-            )
-            
-            if sigma_strategy != current_strategy:
-                save_disclose_income_config({'stochastic.sigma_strategy': sigma_strategy})
-                st.toast(f"✅ σ strategy set to: {sigma_strategy}", icon="💾")
-    
-    with col4:
-        if sigma_enabled:
-            # Scale factor
-            new_scale = st.slider(
-                "σ Scale Factor",
-                min_value=0.01,
-                max_value=0.5,
-                value=float(current_scale),
-                step=0.01,
-                help="Scales raw σ to match DI range. Effective σ = raw_σ × scale_factor",
-                key="di_scale_factor_widget"
-            )
-            
-            # Show effective sigma
-            raw_sigma = 9.899547  # Overall SD
-            effective_sigma = raw_sigma * new_scale
-            st.metric("Effective σ", f"{effective_sigma:.4f}")
-            
-            if abs(new_scale - current_scale) > 0.001:
-                save_disclose_income_config({'stochastic.scale_factor': float(new_scale)})
-                st.toast(f"✅ Scale factor set to: {new_scale:.2f}", icon="💾")
-            
-            # Update sigma_value based on enabled state
-            if current_sigma_value == 0:
-                save_disclose_income_config({'stochastic.sigma_value': raw_sigma})
-        else:
-            st.info("ℹ️ Stochastic disabled - using deterministic DI values")
-            if current_sigma_value > 0:
-                save_disclose_income_config({'stochastic.sigma_value': 0})
-    
-    # Model Formula Display
-    st.markdown("---")
+            st.toast(f"WPB set to: {new_wpb:.2f}", icon="💾")
+
+    # Mathematical Model Formula Section
+    st.markdown('<h4 class="subsection-header">Mathematical Model Formula</h4>', unsafe_allow_html=True)
     render_formula_display(config)
-    
+
+    # Intercept Override Section
+    st.markdown('<h4 class="subsection-header">Intercept Override</h4>', unsafe_allow_html=True)
+    render_intercept_override_section(config)
+
+    # Actions & Management Section
+    st.markdown('<h4 class="subsection-header">Actions & Management</h4>', unsafe_allow_html=True)
+    render_actions_and_management_section(config)
+
     # Simulation buttons
-    st.markdown("---")
     try:
         from app.pages.decision_execution import render_simulation_buttons
         selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])
@@ -271,48 +453,337 @@ def render_disclose_income_tab():
 
 
 def render_formula_display(config):
-    """Render the mathematical model formula."""
-    with st.expander("📐 Mathematical Model", expanded=False):
-        st.markdown("### Equation 1: Prosocial Behavior (PB_i)")
-        st.latex(r"""
-        PB_i = 0.0238 \times z_{Agreeable} + 0.0165 \times z_{Openness} + 0.0295 \times z_{HH} + 0.0677 \times z_{Religious}
-        """)
-        
-        st.markdown("### Anchoring with Observed Behavior")
-        wopb = config.get('anchor_weights', {}).get('observed_prosocial', 0.25)
-        st.latex(f"""
-        anchored\_PB = {wopb:.2f} \\times z_{{obs\_PB}} + {1-wopb:.2f} \\times PB_i
-        """)
-        
-        st.markdown("### Equation 2: Disclosure Intention (DI_i)")
-        wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
-        beta0 = config.get('intercept', 0.1)
-        st.latex(f"""
-        DI_i = {beta0:.2f} + {1-wpb:.2f} \\times [direct\_effects] + {wpb:.2f} \\times (anchored\_PB \\times I_{{high}})
-        """)
-        
-        st.markdown("**Direct Effects:**")
-        st.latex(r"""
-        0.0067 \times z_E + 0.0174 \times z_N + 0.0164 \times z_{HH} - 0.0090 \times z_I
-        """)
-        
+    """Render the mathematical model formula based on selected income mode."""
+    # Get current income mode
+    income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+    
+    with st.expander("Current Model Equation", expanded=True):
+        # Show mode-specific description
+        if income_mode == "Categorical only":
+            st.markdown("""
+            **Decision 1: Disclose Income** uses a two-stage mediation model:
+            - **Equation 1**: Calculated Prosocial Behavior (calc_PB) based on Agreeableness, Openness, Honesty-Humility, and Religiosity
+            - **Equation 2**: Disclosure Intention using **level-specific intercepts** (NO income coefficient)
+            
+            Output: "Y" if DI > 0 after stochastic draw, "N" otherwise.
+            """)
+            render_equation1_and_combining(config)
+            render_categorical_di_formula(config)
+            
+        elif income_mode == "Continuous only":
+            st.markdown("""
+            **Decision 1: Disclose Income** uses a two-stage mediation model:
+            - **Equation 1**: Calculated Prosocial Behavior (calc_PB) based on Agreeableness, Openness, Honesty-Humility, and Religiosity
+            - **Equation 2**: Disclosure Intention using **single β₀ intercept with income coefficient**
+            
+            Output: "Y" if DI > 0 after stochastic draw, "N" otherwise.
+            """)
+            render_equation1_and_combining(config)
+            render_continuous_di_formula(config)
+            
+        else:  # Compare both
+            st.markdown("""
+            **Decision 1: Disclose Income** uses a two-stage mediation model:
+            - **Equation 1**: Calculated Prosocial Behavior (calc_PB) - same for both modes
+            - **Equation 2**: Disclosure Intention - **different for categorical vs continuous**
+            
+            Output: "Y" if DI > 0 after stochastic draw, "N" otherwise.
+            """)
+            render_equation1_and_combining(config)
+            
+            st.markdown("---")
+            st.markdown("### Categorical Income Specification")
+            render_categorical_di_formula(config)
+            
+            st.markdown("---")
+            st.markdown("### Continuous Income Specification")
+            render_continuous_di_formula(config)
+
+        # Final decision (same for all modes)
         st.markdown("### Final Decision")
         st.markdown("""
-        - If stochastic enabled: `draw ~ Normal(DI_i, σ × scale_factor)`
+        - If stochastic enabled: `draw ~ Normal(DI_i, σ × coefficient)`
         - **disclose_income = "Y"** if draw > 0, else **"N"**
         """)
-        
-        st.markdown("### Variable Definitions")
+
+    with st.expander("Variable Definitions", expanded=False):
+        render_variable_definitions(income_mode)
+
+
+def render_equation1_and_combining(config):
+    """Render Equation 1 (Prosocial Behavior) and Combining section - same for all modes."""
+    st.markdown("### Equation 1: Calculated Prosocial Behavior (calc_PB_i)")
+    st.latex(r"""
+    calc\_PB_i = 0.023776 \times z_{Agreeable_i} + 0.016537 \times z_{Openness_i} + 0.0295482 \times z_{HH_i} + 0.0677157 \times z_{Religious_i}
+    """)
+
+    st.markdown("### Combining with Observed Behavior")
+    wopb = config.get('anchor_weights', {}).get('observed_prosocial', 0.25)
+    st.latex(f"""
+    PB_i = {wopb:.2f} \\times z_{{obs\_PB_i}} + {1-wopb:.2f} \\times z_{{calc\_PB_i}}
+    """)
+    st.caption("Note: Both observed and calculated PB are standardized (z-scored) before combining.")
+
+
+def render_categorical_di_formula(config):
+    """Render Equation 2 for CATEGORICAL income mode."""
+    st.markdown("### Equation 2: Disclosure Intention (Categorical)")
+    
+    wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
+    
+    # Show full expanded formula (per professor's specification - no separate "direct effects" line)
+    st.latex(f"""
+    DiscloseIncome_i = \\beta_{{level}} + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0295482 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
+    """)
+    
+    # Show level-specific intercepts table
+    st.markdown("**Level-Specific Intercepts (β_level):**")
+    intercept_data = {
+        'Level': ['1 (€16)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
+        'Intercept': [
+            '0.0089094',
+            '0.0055403',
+            '0.0023140',
+            '-0.0032145',
+            '-0.0145579'
+        ]
+    }
+    intercept_df = pd.DataFrame(intercept_data)
+    st.dataframe(intercept_df, hide_index=True, use_container_width=True)
+    
+    st.caption("β_level: Level-specific intercepts based on agent's income category (Levels 1-5)")
+
+
+def render_continuous_di_formula(config):
+    """Render Equation 2 for CONTINUOUS income mode."""
+    st.markdown("### Equation 2: Disclosure Intention (Continuous)")
+    
+    wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
+    beta0 = config.get('intercept', 0.75)
+    
+    # Show full expanded formula only (per professor's specification)
+    st.latex(f"""
+    DiscloseIncome_i = [\\beta_0 = {beta0}] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0295482 \\times z_{{HH_i}} - 0.008988 \\times z_{{I_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
+    """)
+    st.caption("z_I: Z-scored actual income of the agent (continuous)")
+
+
+def render_variable_definitions(income_mode):
+    """Render variable definitions based on income mode."""
+    st.markdown("""
+    | Variable | Definition |
+    |----------|------------|
+    | z_Agreeable | Z-scored Agreeableness |
+    | z_Openness | Z-scored Openness to Experience |
+    | z_HH | Z-scored Honesty-Humility |
+    | z_Religious | Z-scored religiosity composite |
+    | z_E | Z-scored Extraversion |
+    | z_N | Z-scored Neuroticism |
+    | obs_PB | Observed prosocial behavior (TWT+Sospeso) |
+    """)
+    
+    # Mode-specific definitions
+    if income_mode == "Continuous only":
         st.markdown("""
-        | Variable | Definition |
-        |----------|------------|
-        | z_Agreeable | Z-scored Agreeableness |
-        | z_Openness | Z-scored Openness to Experience |
-        | z_HH | Z-scored Honesty-Humility |
-        | z_Religious | Z-scored religiosity composite |
-        | z_E | Z-scored Extraversion |
-        | z_N | Z-scored Neuroticism |
-        | z_I | Z-scored income |
-        | I_high | 1 if income > median, 0 otherwise |
-        | obs_PB | Observed prosocial behavior (TWT+Sospeso) |
+        | z_I | Z-scored actual income of the agent (continuous) |
         """)
+    elif income_mode == "Categorical only":
+        st.markdown("""
+        | β_level | Level-specific intercept based on income category (5 levels: €16, €32, €72, €128, €200) |
+        """)
+    else:  # Compare both
+        st.markdown("""
+        **Categorical mode:**
+        | β_level | Level-specific intercept based on income category (5 levels: €16, €32, €72, €128, €200) |
+        
+        **Continuous mode:**
+        | z_I | Z-scored actual income of the agent (continuous) |
+        """)
+
+
+def get_current_yaml_intercept():
+    """Get current intercept value from YAML config."""
+    config = load_disclose_income_config()
+    return config.get('intercept', 0.75)
+
+
+def render_intercept_override_section(config):
+    """Render the intercept override section with ability to modify the intercept value."""
+
+    # Initialize override values if not present
+    if 'di_intercept_override_values' not in st.session_state:
+        st.session_state.di_intercept_override_values = {}
+
+    # Show current configuration values for reference
+    try:
+        current_yaml_value = get_current_yaml_intercept()
+
+        # Use 3 columns: Current Value, Override Value, Impact Preview
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("**Current YAML Value**")
+            st.metric("Intercept (β₀)", f"{current_yaml_value:.6f}")
+
+        with col2:
+            st.markdown("**Override Value**")
+
+            # Restore intercept widget key
+            int_val = restore_widget_from_storage(
+                'di_override_intercept',
+                st.session_state.di_intercept_override_values,
+                'intercept',
+                current_yaml_value
+            )
+
+            new_intercept = st.number_input(
+                "Baseline disclosure tendency",
+                min_value=0.0,
+                max_value=5.0,
+                value=float(int_val),
+                step=0.01,
+                format="%.6f",
+                help="β₀ in the disclosure intention equation. Higher values increase baseline probability of disclosure.",
+                key="di_override_intercept",
+                on_change=lambda: auto_save_intercept(st.session_state.di_override_intercept)
+            )
+            st.session_state.di_intercept_override_values['intercept'] = new_intercept
+
+        with col3:
+            st.markdown("**Impact Preview**")
+            change = new_intercept - current_yaml_value
+            if abs(change) > 0.0001:
+                impact = "Higher baseline" if change > 0 else "Lower baseline"
+                st.metric("Change", f"{change:+.6f}", delta=impact)
+            else:
+                st.metric("Change", "No change")
+
+    except Exception as e:
+        st.error(f"Error loading configuration values: {e}")
+
+
+def auto_save_intercept(new_value):
+    """Auto-save intercept changes to YAML config."""
+    try:
+        # Update the override values
+        if 'di_intercept_override_values' not in st.session_state:
+            st.session_state.di_intercept_override_values = {}
+
+        st.session_state.di_intercept_override_values['intercept'] = new_value
+        st.session_state.di_intercept = new_value
+
+        # Save to YAML immediately
+        success = save_disclose_income_config({'intercept': float(new_value)})
+
+        if success:
+            st.toast(f"Intercept auto-saved: {new_value:.6f}", icon="💾")
+        else:
+            st.toast("Failed to save intercept", icon="⚠️")
+
+    except Exception as e:
+        st.toast(f"Auto-save error: {str(e)}", icon="⚠️")
+
+
+def reset_to_defaults():
+    """Reset all configuration values to their defaults."""
+    default_config = {
+        'intercept': 0.75,
+        'income_mode': 'Categorical only',
+        'anchor_weights.observed_prosocial': 0.25,
+        'anchor_weights.prosocial_weight': 0.50,
+        'stochastic.sigma_value': 0,
+        'stochastic.scale_factor': 1.0,
+        'stochastic.sigma_strategy': 'overall',
+        'stochastic.quintile_scale_factors.1': 1.0,
+        'stochastic.quintile_scale_factors.2': 1.0,
+        'stochastic.quintile_scale_factors.3': 1.0,
+        'stochastic.quintile_scale_factors.4': 1.0,
+        'stochastic.quintile_scale_factors.5': 1.0,
+    }
+
+    success = True
+    for key, value in default_config.items():
+        if not save_disclose_income_config({key: value}):
+            success = False
+
+    if success:
+        # Clear session state overrides
+        st.session_state.di_intercept_override_values = {}
+        st.session_state.di_intercept = 0.75
+        st.session_state.di_wopb = 0.25
+        st.session_state.di_wpb = 0.50
+        st.session_state.di_sigma_enabled = False
+        st.session_state.di_scale_factor = 1.0
+        st.session_state.di_sigma_strategy = 'overall'
+        st.session_state.di_income_mode = 'Categorical only'
+        st.session_state.di_quintile_scale_factors = {
+            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0
+        }
+        # Clear persistence storage
+        st.session_state.disclose_income_tab_persistence = {}
+
+    return success
+
+
+def render_actions_and_management_section(config):
+    """Render the combined actions and management section."""
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("**Reset Configuration**")
+        if st.button("Reset to Default Values", type="secondary", use_container_width=True,
+                     help="Reset all disclose income values to research defaults",
+                     key="di_reset_btn"):
+            success = reset_to_defaults()
+            if success:
+                st.toast("Configuration reset to defaults", icon="🔄")
+                st.rerun()
+            else:
+                st.toast("Failed to reset configuration", icon="⚠️")
+
+    with col2:
+        st.markdown("**Reload from YAML**")
+        if st.button("Reload Configuration", type="secondary", use_container_width=True,
+                     help="Reload values from YAML configuration file",
+                     key="di_reload_btn"):
+            # Clear session state to force reload
+            keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
+            for key in keys_to_clear:
+                del st.session_state[key]
+            st.toast("Configuration reloaded from YAML", icon="🔄")
+            st.rerun()
+
+    # Debug expander below the buttons
+    with st.expander("Debug: Current Session State Values", expanded=False):
+        st.write("**Current values in session state:**")
+        st.write(f"- Intercept (di_intercept): {st.session_state.get('di_intercept', 'NOT SET')}")
+        st.write(f"- Income Mode (di_income_mode): {st.session_state.get('di_income_mode', 'NOT SET')}")
+        st.write(f"- WOPB (di_wopb): {st.session_state.get('di_wopb', 'NOT SET')}")
+        st.write(f"- WPB (di_wpb): {st.session_state.get('di_wpb', 'NOT SET')}")
+        st.write(f"- Sigma Enabled (di_sigma_enabled): {st.session_state.get('di_sigma_enabled', 'NOT SET')}")
+        st.write(f"- Sigma Strategy (di_sigma_strategy): {st.session_state.get('di_sigma_strategy', 'NOT SET')}")
+        st.write(f"- σ Coefficient (di_scale_factor): {st.session_state.get('di_scale_factor', 'NOT SET')}")
+        st.write(f"- Quintile Scale Factors: {st.session_state.get('di_quintile_scale_factors', 'NOT SET')}")
+
+        # Load current YAML values for comparison
+        try:
+            yaml_config = load_disclose_income_config()
+
+            st.write("**Current YAML configuration values:**")
+            st.write(f"- YAML intercept: {yaml_config.get('intercept', 'NOT SET')}")
+            st.write(f"- YAML income_mode: {yaml_config.get('income_mode', 'NOT SET')}")
+            st.write(f"- YAML anchor_weights: {yaml_config.get('anchor_weights', 'NOT SET')}")
+            st.write(f"- YAML stochastic: {yaml_config.get('stochastic', 'NOT SET')}")
+
+            # Check if they match
+            yaml_intercept = yaml_config.get('intercept', 0.75)
+            session_intercept = st.session_state.get('di_intercept', 0.75)
+
+            if abs(yaml_intercept - session_intercept) > 0.0001:
+                st.error("Session state doesn't match YAML! Click 'Reload Configuration' button.")
+            else:
+                st.success("Session state matches YAML configuration values")
+
+        except Exception as e:
+            st.error(f"Error reading YAML configuration: {e}")

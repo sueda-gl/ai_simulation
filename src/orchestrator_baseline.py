@@ -27,9 +27,11 @@ class OrchestratorBaseline:
     
     Key differences from OrchestratorDocMode:
     - Uses original 280 participants (same as DocMode)
-    - NO stochastic component - returns anchor values directly
-    - Uses regular decision modules (not stochastic versions)
-    - Sigma is forced to 0 to disable any stochastic draws
+    - NO stochastic component - returns anchor/model values directly
+    - Uses research models but without stochastic draws:
+      * disclose_income: Uses two-stage mediation model, DI value directly (no Normal draw)
+      * donation_default: Uses regression model, anchor value directly (no Normal draw)
+    - Sigma is forced to 0 / pop_context='baseline' to disable stochastic draws
     """
     
     def __init__(self):
@@ -67,12 +69,18 @@ class OrchestratorBaseline:
             'final_donation_rate'        # 13
         ]
         
-        # Load decision modules - use regular versions (no stochastic)
+        # Load decision modules - use regular versions (no stochastic) EXCEPT for disclose_income
+        # disclose_income uses stochastic module with pop_context='baseline' to get research model without stochastic draw
         self.decision_modules = {}
         for decision_name in self.decision_order:
             try:
-                module = importlib.import_module(f'src.decisions.{decision_name}')
-                self.decision_modules[decision_name] = getattr(module, decision_name)
+                if decision_name == 'disclose_income':
+                    # Use stochastic version for disclose_income (it handles baseline mode via pop_context)
+                    module = importlib.import_module(f'src.decisions.{decision_name}_stochastic')
+                    self.decision_modules[decision_name] = getattr(module, f'{decision_name}_stochastic')
+                else:
+                    module = importlib.import_module(f'src.decisions.{decision_name}')
+                    self.decision_modules[decision_name] = getattr(module, decision_name)
             except (ImportError, AttributeError) as e:
                 print(f"Warning: Could not load decision module {decision_name}: {e}")
     
@@ -163,58 +171,103 @@ class OrchestratorBaseline:
             income = get_agent_income(temp_state, self.simulation_config, income_rng)
             all_incomes.append(income)
         
-        # Compute and store population median for continuous income mode
+        # Compute and store population statistics for continuous income mode
         self.simulation_config['income_median'] = float(np.median(all_incomes))
+        self.simulation_config['income_stats'] = {
+            'mean': float(np.mean(all_incomes)),
+            'sd': float(np.std(all_incomes))
+        }
         print(f"[Baseline] Computed income median: ${self.simulation_config['income_median']:,.2f}")
+        print(f"[Baseline] Computed income stats: mean=${self.simulation_config['income_stats']['mean']:,.2f}, sd=${self.simulation_config['income_stats']['sd']:,.2f}")
         
         # ============================================================================
-        # TWO-PASS APPROACH FOR DISCLOSE_INCOME POPULATION STATISTICS
-        # Pass 1b: Compute raw values for all agents to get population mean/SD
+        # THREE-PASS APPROACH FOR DISCLOSE_INCOME POPULATION STATISTICS
+        # Pass 1: Compute weighted_prosocial and direct_effect for all agents
+        # Pass 2: Use weighted_prosocial stats to compute anchored_pb correctly
+        # Pass 3: Execute decisions using all population stats and cached values
         # ============================================================================
         
         if 'disclose_income' in decisions_to_run and 'disclose_income' in self.decision_modules:
-            from src.decisions.disclose_income_stochastic import compute_disclose_income_raw_values
+            from src.decisions.disclose_income_stochastic import (
+                compute_pass1_values,
+                compute_pass2_anchored_pb
+            )
             
             disclose_income_params = self.config.get('disclose_income', {})
-            raw_values_list = []
+            di_income_mode = disclose_income_params.get('income_mode', 'categorical')
+            print(f"[Baseline] Computing disclose_income population stats (three-pass) with income_mode: {di_income_mode}")
             
-            # Compute raw values for each agent
-            for idx, row in agents_df.iterrows():
+            # Initialize cache for storing intermediate values
+            self.simulation_config['disclose_income_cache'] = {}
+            
+            # ========== PASS 1: Compute weighted_prosocial and direct_effect ==========
+            pass1_values_list = []
+            
+            for cache_idx, (idx, row) in enumerate(agents_df.iterrows()):
                 agent_state = row.to_dict()
-                raw_values = compute_disclose_income_raw_values(
+                # Add income from income pass - required for continuous income mode
+                agent_state['income'] = all_incomes[cache_idx]
+                
+                pass1_values = compute_pass1_values(
                     agent_state, 
                     disclose_income_params,
                     self.simulation_config
                 )
-                raw_values_list.append(raw_values)
+                pass1_values_list.append(pass1_values)
+                
+                # Cache Pass 1 values keyed by cache_idx
+                self.simulation_config['disclose_income_cache'][cache_idx] = pass1_values.copy()
             
-            # Calculate population statistics
-            if raw_values_list:
-                weighted_prosocials = [r['weighted_prosocial'] for r in raw_values_list]
-                anchored_pbs = [r['anchored_pb'] for r in raw_values_list]
-                direct_effects = [r['direct_effect'] for r in raw_values_list]
+            # Compute Pass 1 statistics
+            wp_values = [v['weighted_prosocial'] for v in pass1_values_list]
+            de_values = [v['direct_effect'] for v in pass1_values_list]
+            
+            wp_stats = {'mean': float(np.mean(wp_values)), 'sd': float(np.std(wp_values))}
+            de_stats = {'mean': float(np.mean(de_values)), 'sd': float(np.std(de_values))}
+            
+            print(f"[Baseline] Pass 1 complete:")
+            print(f"  - weighted_prosocial: mean={wp_stats['mean']:.6f}, sd={wp_stats['sd']:.6f}")
+            print(f"  - direct_effect: mean={de_stats['mean']:.6f}, sd={de_stats['sd']:.6f}")
+            
+            # ========== PASS 2: Compute anchored_pb using correct z_weighted_prosocial ==========
+            anchored_pb_values = []
+            
+            for cache_idx in range(len(pass1_values_list)):
+                pass1_values = self.simulation_config['disclose_income_cache'][cache_idx]
                 
-                self.simulation_config['disclose_income_population_stats'] = {
-                    'weighted_prosocial': {
-                        'mean': float(np.mean(weighted_prosocials)),
-                        'sd': float(np.std(weighted_prosocials))
-                    },
-                    'anchored_pb': {
-                        'mean': float(np.mean(anchored_pbs)),
-                        'sd': float(np.std(anchored_pbs))
-                    },
-                    'direct_effect': {
-                        'mean': float(np.mean(direct_effects)),
-                        'sd': float(np.std(direct_effects))
-                    }
-                }
+                # Compute anchored_pb using population-standardized weighted_prosocial
+                anchored_pb = compute_pass2_anchored_pb(pass1_values, wp_stats, disclose_income_params)
+                anchored_pb_values.append(anchored_pb)
                 
-                print(f"[Baseline] Computed disclose_income population stats:")
-                print(f"  - weighted_prosocial: mean={np.mean(weighted_prosocials):.6f}, sd={np.std(weighted_prosocials):.6f}")
-                print(f"  - anchored_pb: mean={np.mean(anchored_pbs):.6f}, sd={np.std(anchored_pbs):.6f}")
-                print(f"  - direct_effect: mean={np.mean(direct_effects):.6f}, sd={np.std(direct_effects):.6f}")
+                # Update cache with anchored_pb
+                self.simulation_config['disclose_income_cache'][cache_idx]['anchored_pb'] = anchored_pb
+            
+            # Compute Pass 2 statistics
+            ap_stats = {'mean': float(np.mean(anchored_pb_values)), 'sd': float(np.std(anchored_pb_values))}
+            
+            print(f"[Baseline] Pass 2 complete:")
+            print(f"  - anchored_pb: mean={ap_stats['mean']:.6f}, sd={ap_stats['sd']:.6f}")
+            
+            # ========== Store all population stats ==========
+            self.simulation_config['disclose_income_population_stats'] = {
+                'weighted_prosocial': wp_stats,
+                'direct_effect': de_stats,
+                'anchored_pb': ap_stats  # NOW COMPUTED CORRECTLY from Pass 2!
+            }
+            
+            # ========== VERIFICATION: Check z-scored values have mean≈0, sd≈1 ==========
+            # This confirms the three-pass approach is working correctly
+            z_wp_values = [(v - wp_stats['mean']) / wp_stats['sd'] if wp_stats['sd'] > 0 else v for v in wp_values]
+            z_ap_values = [(v - ap_stats['mean']) / ap_stats['sd'] if ap_stats['sd'] > 0 else v for v in anchored_pb_values]
+            z_de_values = [(v - de_stats['mean']) / de_stats['sd'] if de_stats['sd'] > 0 else v for v in de_values]
+            
+            print(f"[Baseline] Three-pass VERIFICATION (z-scored values should have mean≈0, sd≈1):")
+            print(f"  - z_weighted_prosocial: mean={np.mean(z_wp_values):.6f}, sd={np.std(z_wp_values):.6f}")
+            print(f"  - z_anchored_pb: mean={np.mean(z_ap_values):.6f}, sd={np.std(z_ap_values):.6f}")
+            print(f"  - z_direct_effect: mean={np.mean(z_de_values):.6f}, sd={np.std(z_de_values):.6f}")
+            print(f"[Baseline] Three-pass disclose_income population stats complete")
         
-        # PASS 2: Process agents and run decisions
+        # PASS 3: Process agents and run decisions
         results = []
         
         for list_idx, (idx, row) in enumerate(agents_df.iterrows()):
@@ -223,6 +276,9 @@ class OrchestratorBaseline:
             # Add agent ID and index to agent_state (CRITICAL for customer_id in purchase_requests)
             agent_state['index'] = idx
             agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
+            
+            # Add cache index for disclose_income to retrieve cached values
+            agent_state['_cache_index'] = list_idx
             
             agent_results = agent_state.copy()
             
@@ -257,8 +313,8 @@ class OrchestratorBaseline:
                     
                     try:
                         # Call decision function with baseline context
-                        # Only pass pop_context to donation_default (which expects it)
-                        if decision_name == 'donation_default':
+                        # Pass pop_context to decisions that support it (donation_default, disclose_income)
+                        if decision_name in ('donation_default', 'disclose_income'):
                             decision_output = decision_func(
                                 agent_state, 
                                 decision_params, 

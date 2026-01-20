@@ -5,9 +5,10 @@ Decision 1: Disclose Income - Research Specification Mode
 Implements the two-stage mediation model for income disclosure intention with
 proper population-level standardization as specified in the documentation.
 
-TWO-PASS APPROACH:
-- Pass 1: compute_disclose_income_raw_values() computes raw values for all agents
-- Pass 2: disclose_income_stochastic() uses population stats for proper z-scoring
+THREE-PASS APPROACH (corrected implementation):
+- Pass 1: compute_pass1_values() computes weighted_prosocial and direct_effect
+- Pass 2: compute_pass2_anchored_pb() uses weighted_prosocial stats to compute anchored_pb
+- Pass 3: disclose_income_stochastic() uses all population stats for proper z-scoring
 
 Equation 1: Prosocial Behavior (PB_i) - Mediating Variable
     weighted_prosocial = 0.023776*A + 0.016537*O + 0.0295482*HH + 0.0677157*R
@@ -15,10 +16,10 @@ Equation 1: Prosocial Behavior (PB_i) - Mediating Variable
 
 Equation 2: Disclosure Intention (DI_i) - Dependent Variable
     For CONTINUOUS mode:
-        direct_effect = 0.00674934*E + 0.0173732*N + 0.0163905*HH - 0.008988*I
+        direct_effect = 0.00674934*E + 0.0173732*N + 0.0295482*HH - 0.008988*I
     
     For CATEGORICAL mode (level-specific intercepts, NO income coefficient):
-        direct_effect = intercept[level] + 0.00674934*E + 0.0173732*N + 0.0163905*HH
+        direct_effect = intercept[level] + 0.00674934*E + 0.0173732*N + 0.0295482*HH
     
     z_direct_effect = std(direct_effect)  # Population standardization
     
@@ -82,17 +83,20 @@ def _compute_religiosity_composite(agent_state: Dict, params: Dict, z_params: Di
     return _z_score_trait(religious_composite_raw, 'religious_composite', z_params)
 
 
-def compute_disclose_income_raw_values(
+def compute_pass1_values(
     agent_state: Dict[str, Any],
     params: Dict[str, Any],
     simulation_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, float]:
     """
-    Pass 1: Compute raw values for population statistics.
+    Pass 1: Compute weighted_prosocial and direct_effect for population statistics.
     
-    This function computes the intermediate values BEFORE population-level
-    standardization. These values are collected across all agents to compute
-    population mean/SD, which are then used in Pass 2.
+    This function computes the intermediate values that do NOT depend on any
+    population-level statistics (only on pre-defined trait z-scoring parameters).
+    These values are collected across all agents to compute population mean/SD.
+    
+    NOTE: This does NOT compute anchored_pb - that requires z_weighted_prosocial
+    which needs population stats from Pass 1.
     
     Args:
         agent_state: Agent's trait values and current state
@@ -101,10 +105,11 @@ def compute_disclose_income_raw_values(
         
     Returns:
         dict with:
-            - weighted_prosocial: Raw Equation 1 output (before population std)
-            - anchored_pb: Anchored prosocial behavior (before population std)
+            - weighted_prosocial: Equation 1 output (before population std)
             - direct_effect: Direct effect component (before population std)
             - income_high: Binary indicator (1 if above median)
+            - z_obs_PB: Z-scored observed prosocial behavior
+            - z_* traits: All z-scored traits for later use
     """
     z_params = params.get('z_scoring', {})
     
@@ -133,13 +138,9 @@ def compute_disclose_income_raw_values(
     )
     
     # ========================================================================
-    # ANCHOR: Compute anchored_pb (raw, before population std)
+    # Z-SCORE OBSERVED PROSOCIAL BEHAVIOR
     # ========================================================================
     
-    anchor_weights = params.get('anchor_weights', {})
-    WOPB = anchor_weights.get('observed_prosocial', 0.25)
-    
-    # Get observed prosocial from experiment and z-score it
     obs_PB = agent_state.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 0)
     twt_params = z_params.get('TWT_Sospeso', {})
     twt_mean = twt_params.get('mean', 9.139286)
@@ -149,15 +150,6 @@ def compute_disclose_income_raw_values(
         z_obs_PB = (obs_PB - twt_mean) / twt_sd
     else:
         z_obs_PB = 0.0
-    
-    # NOTE: In Pass 1, we use weighted_prosocial directly (not yet population-standardized)
-    # The documentation shows: anchored_pb = WOPB * z_obs_PB + (1-WOPB) * z_weighted_prosocial
-    # But z_weighted_prosocial requires population stats, so we compute a preliminary anchored_pb
-    # This will be properly computed in Pass 2 after we have population stats for weighted_prosocial
-    
-    # For Pass 1, we compute anchored_pb with the raw weighted_prosocial
-    # This gives us the distribution to compute population stats
-    anchored_pb = WOPB * z_obs_PB + (1 - WOPB) * weighted_prosocial
     
     # ========================================================================
     # INCOME MODE AND INCOME_HIGH INDICATOR
@@ -206,35 +198,87 @@ def compute_disclose_income_raw_values(
             intercept +
             eq2_coeffs.get('extraversion', 0.00674934) * z_extraversion +
             eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
-            eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility
+            eq2_coeffs.get('honesty_humility', 0.0295482) * z_honesty_humility
             # NO income coefficient in categorical mode!
         )
     else:
-        # CONTINUOUS MODE: Include income coefficient
-        level = agent_state.get('Assigned Allowance Level', 3)
-        z_income = (level - 3) / 1.41  # Z-score based on 1-5 scale
+        # CONTINUOUS MODE: Use actual income z-scored against population
+        # Per documentation: I_i = Income (standardized z-score)
+        # egen z_net_income = std(income)
+        agent_income = agent_state.get('income', 0)
+        income_stats = simulation_config.get('income_stats', {}) if simulation_config else {}
+        income_mean = income_stats.get('mean', 0)
+        income_sd = income_stats.get('sd', 1)
+        
+        if income_sd > 0:
+            z_income = (agent_income - income_mean) / income_sd
+        else:
+            z_income = 0.0
         
         direct_effect = (
             eq2_coeffs.get('extraversion', 0.00674934) * z_extraversion +
             eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
-            eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility +
+            eq2_coeffs.get('honesty_humility', 0.0295482) * z_honesty_humility +
             eq2_coeffs.get('income', -0.008988) * z_income
         )
     
     return {
         'weighted_prosocial': weighted_prosocial,
-        'anchored_pb': anchored_pb,
         'direct_effect': direct_effect,
         'income_high': income_high,
-        # Also return z-scored traits for Pass 2 (avoid recomputation)
+        'z_obs_PB': z_obs_PB,
+        # Also return z-scored traits (avoid recomputation in Pass 3)
         'z_agreeable': z_agreeable,
         'z_openness': z_openness,
         'z_honesty_humility': z_honesty_humility,
         'z_extraversion': z_extraversion,
         'z_neuroticism': z_neuroticism,
         'z_religious': z_religious,
-        'z_obs_PB': z_obs_PB,
     }
+
+
+def compute_pass2_anchored_pb(
+    pass1_values: Dict[str, float],
+    weighted_prosocial_stats: Dict[str, float],
+    params: Dict[str, Any]
+) -> float:
+    """
+    Pass 2: Compute anchored_pb using population-standardized weighted_prosocial.
+    
+    This function takes the Pass 1 values and the population statistics for
+    weighted_prosocial, then computes anchored_pb using the correct formula:
+    
+        z_weighted_prosocial = (weighted_prosocial - μ_wp) / σ_wp
+        anchored_pb = WOPB * z_obs_PB + (1-WOPB) * z_weighted_prosocial
+    
+    Args:
+        pass1_values: Dict from compute_pass1_values() with weighted_prosocial, z_obs_PB
+        weighted_prosocial_stats: {'mean': float, 'sd': float} from Pass 1 population
+        params: Configuration from decisions.yaml
+        
+    Returns:
+        anchored_pb: The correctly computed anchored prosocial behavior value
+    """
+    weighted_prosocial = pass1_values['weighted_prosocial']
+    z_obs_PB = pass1_values['z_obs_PB']
+    
+    # Get anchor weight
+    anchor_weights = params.get('anchor_weights', {})
+    WOPB = anchor_weights.get('observed_prosocial', 0.25)
+    
+    # Z-score weighted_prosocial using population statistics
+    wp_mean = weighted_prosocial_stats.get('mean', 0)
+    wp_sd = weighted_prosocial_stats.get('sd', 1)
+    
+    if wp_sd > 0:
+        z_weighted_prosocial = (weighted_prosocial - wp_mean) / wp_sd
+    else:
+        z_weighted_prosocial = weighted_prosocial
+    
+    # Compute anchored_pb with the correctly z-scored weighted_prosocial
+    anchored_pb = WOPB * z_obs_PB + (1 - WOPB) * z_weighted_prosocial
+    
+    return anchored_pb
 
 
 def disclose_income_stochastic(
@@ -248,17 +292,26 @@ def disclose_income_stochastic(
     Decision 1: Disclose income using two-stage mediation model with proper
     population-level standardization.
     
-    REQUIRES: simulation_config must contain 'disclose_income_population_stats'
-    with mean/sd for: weighted_prosocial, anchored_pb, direct_effect
+    Supports multiple population modes:
+    - 'documentation' (Research Specification): Uses stochastic Normal(DI, σ) draw
+    - 'baseline' (Research Baseline): Uses DI value directly (no stochastic component)
+    - 'copula': Reserved for future implementation
     
-    These stats are computed by the orchestrator in Pass 1 using
-    compute_disclose_income_raw_values() across all agents.
+    REQUIRES: simulation_config must contain:
+    - 'disclose_income_population_stats' with mean/sd for: weighted_prosocial, anchored_pb, direct_effect
+    - 'disclose_income_cache' with cached values keyed by agent index (optional but recommended)
+    
+    The three-pass approach ensures that:
+    - anchored_pb stats are computed from the correct formula using z_weighted_prosocial
+    - All z-scored values have proper mean≈0, sd≈1 across the population
     
     Args:
         agent_state: Agent's trait values and current state
         params: Configuration from decisions.yaml (coefficients, weights, etc.)
         rng: Random number generator for stochastic component
-        simulation_config: Global simulation config with population stats
+        simulation_config: Global simulation config with population stats and cache
+        **kwargs: Additional arguments including:
+            - pop_context: Population mode ('documentation', 'baseline', 'copula')
         
     Returns:
         dict: {"disclose_income": "Y" or "N"}
@@ -280,16 +333,40 @@ def disclose_income_stochastic(
                     return {"disclose_income": str(default_config)}
     
     # ========================================================================
-    # GET RAW VALUES (recompute or use cached from Pass 1)
+    # POPULATION CONTEXT: Determine if stochastic component should be used
     # ========================================================================
     
-    raw_values = compute_disclose_income_raw_values(agent_state, params, simulation_config)
+    pop_context = kwargs.get('pop_context', 'documentation')
     
-    weighted_prosocial = raw_values['weighted_prosocial']
-    anchored_pb_raw = raw_values['anchored_pb']
-    direct_effect_raw = raw_values['direct_effect']
-    income_high = raw_values['income_high']
-    z_obs_PB = raw_values['z_obs_PB']
+    # ========================================================================
+    # GET CACHED VALUES OR RECOMPUTE
+    # ========================================================================
+    
+    cache = simulation_config.get('disclose_income_cache', {}) if simulation_config else {}
+    cache_index = agent_state.get('_cache_index')
+    cached_values = cache.get(cache_index) if cache_index is not None else None
+    
+    if cached_values:
+        # Use cached values from Pass 1 and Pass 2
+        weighted_prosocial = cached_values['weighted_prosocial']
+        direct_effect = cached_values['direct_effect']
+        income_high = cached_values['income_high']
+        z_obs_PB = cached_values['z_obs_PB']
+        anchored_pb = cached_values['anchored_pb']  # From Pass 2 (correctly computed)
+    else:
+        # Fallback: recompute values (this path should not be used with proper orchestration)
+        pass1_values = compute_pass1_values(agent_state, params, simulation_config)
+        weighted_prosocial = pass1_values['weighted_prosocial']
+        direct_effect = pass1_values['direct_effect']
+        income_high = pass1_values['income_high']
+        z_obs_PB = pass1_values['z_obs_PB']
+        
+        # Get population stats
+        pop_stats = simulation_config.get('disclose_income_population_stats', {}) if simulation_config else {}
+        wp_stats = pop_stats.get('weighted_prosocial', {'mean': 0, 'sd': 1})
+        
+        # Compute anchored_pb using Pass 2 function
+        anchored_pb = compute_pass2_anchored_pb(pass1_values, wp_stats, params)
     
     # ========================================================================
     # GET POPULATION STATISTICS FROM SIMULATION CONFIG
@@ -298,27 +375,10 @@ def disclose_income_stochastic(
     pop_stats = simulation_config.get('disclose_income_population_stats', {}) if simulation_config else {}
     
     # ========================================================================
-    # POPULATION-LEVEL STANDARDIZATION (as per documentation)
+    # POPULATION-LEVEL STANDARDIZATION (Pass 3)
     # ========================================================================
     
-    anchor_weights = params.get('anchor_weights', {})
-    WOPB = anchor_weights.get('observed_prosocial', 0.25)
-    
-    # Step 1: z_weighted_prosocial = std(weighted_prosocial)
-    wp_stats = pop_stats.get('weighted_prosocial', {})
-    wp_mean = wp_stats.get('mean', 0)
-    wp_sd = wp_stats.get('sd', 1)
-    
-    if wp_sd > 0:
-        z_weighted_prosocial = (weighted_prosocial - wp_mean) / wp_sd
-    else:
-        z_weighted_prosocial = weighted_prosocial
-    
-    # Step 2: Recompute anchored_pb with standardized weighted_prosocial
-    # anchored_pb = WOPB * z_obs_PB + (1-WOPB) * z_weighted_prosocial
-    anchored_pb = WOPB * z_obs_PB + (1 - WOPB) * z_weighted_prosocial
-    
-    # Step 3: z_anchored_pb = std(anchored_pb)
+    # z_anchored_pb = std(anchored_pb) - using correctly computed stats from Pass 2
     ap_stats = pop_stats.get('anchored_pb', {})
     ap_mean = ap_stats.get('mean', 0)
     ap_sd = ap_stats.get('sd', 1)
@@ -328,20 +388,21 @@ def disclose_income_stochastic(
     else:
         z_anchored_pb = anchored_pb
     
-    # Step 4: z_direct_effect = std(direct_effect)
+    # z_direct_effect = std(direct_effect)
     de_stats = pop_stats.get('direct_effect', {})
     de_mean = de_stats.get('mean', 0)
     de_sd = de_stats.get('sd', 1)
     
     if de_sd > 0:
-        z_direct_effect = (direct_effect_raw - de_mean) / de_sd
+        z_direct_effect = (direct_effect - de_mean) / de_sd
     else:
-        z_direct_effect = direct_effect_raw
+        z_direct_effect = direct_effect
     
     # ========================================================================
     # FINAL EQUATION: DI_i
     # ========================================================================
     
+    anchor_weights = params.get('anchor_weights', {})
     WPB = anchor_weights.get('prosocial_weight', 0.50)
     beta_0 = params.get('intercept', 0.1)
     
@@ -350,27 +411,41 @@ def disclose_income_stochastic(
     DI_i = beta_0 + (1 - WPB) * z_direct_effect + WPB * prosocial_effect
     
     # ========================================================================
-    # STOCHASTIC COMPONENT
+    # STOCHASTIC COMPONENT (conditional on population context)
     # ========================================================================
     
     stochastic_params = params.get('stochastic', {})
     sigma_value = stochastic_params.get('sigma_value', 0)
     
-    if sigma_value > 0:
+    # Determine whether to use stochastic component based on population context
+    use_stochastic = (
+        pop_context == 'documentation' and
+        sigma_value > 0
+    )
+    
+    if use_stochastic:
+        # Documentation mode with stochastic enabled: Apply Normal(DI, σ) draw
         sigma_strategy = stochastic_params.get('sigma_strategy', 'overall')
         
         if sigma_strategy == 'quintile':
+            # Quintile mode: Use level-specific base sigma and scale factor
             level = int(agent_state.get('Assigned Allowance Level', 3))
             sigma_quintile = stochastic_params.get('sigma_quintile', {})
             sigma_raw = sigma_quintile.get(str(level), stochastic_params.get('sigma_overall', 9.899547))
+            
+            # Get quintile-specific scale factor (falls back to overall scale_factor)
+            quintile_scale_factors = stochastic_params.get('quintile_scale_factors', {})
+            scale_factor = quintile_scale_factors.get(str(level), stochastic_params.get('scale_factor', 0.1))
         else:
+            # Overall mode: Use single sigma and scale factor for all agents
             sigma_raw = stochastic_params.get('sigma_overall', 9.899547)
+            scale_factor = stochastic_params.get('scale_factor', 0.1)
         
-        scale_factor = stochastic_params.get('scale_factor', 0.1)
-        sigma_scaled = sigma_raw * scale_factor
+        sigma_scaled = sigma_raw * float(scale_factor)
         
         draw = rng.normal(DI_i, sigma_scaled)
     else:
+        # Baseline mode OR documentation with sigma disabled: Use DI_i directly
         draw = DI_i
     
     # ========================================================================
@@ -380,3 +455,33 @@ def disclose_income_stochastic(
     disclose_income = "Y" if draw > 0 else "N"
     
     return {"disclose_income": disclose_income}
+
+
+# =============================================================================
+# BACKWARD COMPATIBILITY ALIAS (deprecated, will be removed)
+# =============================================================================
+
+def compute_disclose_income_raw_values(
+    agent_state: Dict[str, Any],
+    params: Dict[str, Any],
+    simulation_config: Optional[Dict[str, Any]] = None
+) -> Dict[str, float]:
+    """
+    DEPRECATED: Use compute_pass1_values() instead.
+    
+    This function is kept for backward compatibility during transition.
+    It calls compute_pass1_values() and adds a dummy anchored_pb for old code
+    that expects it (though this anchored_pb is NOT correctly computed).
+    """
+    pass1_values = compute_pass1_values(agent_state, params, simulation_config)
+    
+    # Add dummy anchored_pb for backward compatibility (using raw weighted_prosocial)
+    # WARNING: This is the OLD incorrect approach - only for backward compat
+    anchor_weights = params.get('anchor_weights', {})
+    WOPB = anchor_weights.get('observed_prosocial', 0.25)
+    dummy_anchored_pb = WOPB * pass1_values['z_obs_PB'] + (1 - WOPB) * pass1_values['weighted_prosocial']
+    
+    return {
+        **pass1_values,
+        'anchored_pb': dummy_anchored_pb,  # Deprecated - do not rely on this
+    }

@@ -49,12 +49,20 @@ def can_run_complete_simulation():
     This prevents running all decisions when multiple donation configurations would be generated,
     unless the user has explicitly selected one configuration to use.
     
+    Also blocks complete simulation when disclose_income is set to "Compare both" mode,
+    since that generates multiple comparison results not suitable for full simulation.
+    
     Returns:
         tuple: (can_run: bool, reason: str, config_count: int)
             - can_run: Whether complete simulation is allowed
             - reason: Human-readable explanation
             - config_count: Number of configurations that would be generated
     """
+    # Check if disclose_income is in "Compare both" mode - this blocks complete simulation
+    di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+    if 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower():
+        return (False, "Disclose Income is set to 'Compare both' mode - please select 'Categorical only' or 'Continuous only' to run complete simulation", 2)
+    
     # Check if multiple configurations will be generated for donation_default
     population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
     income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
@@ -141,9 +149,13 @@ def get_implied_single_configuration():
             }
         
         # Build implied configuration (without metrics since simulation hasn't run)
+        # NOTE: donation_income_mode is the PRIMARY key for donation-specific income mode
         config = {
             'result_key': f"implied_{population_mode.lower().replace(' ', '_').replace('(', '').replace(')', '')}_{income_spec_mode.replace(' ', '_')}",
             'population_mode': population_mode,
+            # NEW: donation-specific income mode (primary)
+            'donation_income_mode': income_spec_mode,
+            # DEPRECATED: kept for backwards compatibility
             'income_spec_mode': income_spec_mode,
             'coefficients': coefficients,
             'stochastic_params': stochastic_params,
@@ -593,33 +605,22 @@ def get_actual_default_value(decision_name, sim_params=None):
 
 
 def run_individual_decision(decision_name):
-    """Run a single decision simulation"""
+    """Run a single decision simulation.
+    
+    Each decision uses its OWN settings from its respective tab.
+    No global overrides are applied.
+    """
     with st.spinner(f"Running {decision_name} simulation..."):
         try:
-            # Store original state values to restore later (without modifying session state immediately)
+            # Store original state values to restore later
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
             original_custom_decisions = getattr(st.session_state, 'custom_decisions', [])
             original_default_decisions = getattr(st.session_state, 'default_decisions', [])
             
-            # Clear any selected configuration for donation_default to allow full comparison
-            had_selected_config = False
-            original_population_mode = None
-            original_income_spec_mode = None
-            
+            # For donation_default, clear any saved configuration to allow fresh run with current tab settings
             if decision_name == "donation_default" and hasattr(st.session_state, 'selected_donation_config'):
-                st.info("🔄 Clearing selected configuration to show all comparison variants")
-                had_selected_config = True
+                st.info("🔄 Clearing saved donation configuration - will use current tab settings")
                 delattr(st.session_state, 'selected_donation_config')
-                
-                # Store original values without immediate state modification
-                if hasattr(st.session_state, '_original_population_mode'):
-                    original_population_mode = st.session_state.population_mode
-                    original_income_spec_mode = st.session_state.income_spec_mode
-                    st.session_state.population_mode = st.session_state._original_population_mode
-                    st.session_state.income_spec_mode = st.session_state._original_income_spec_mode
-                    delattr(st.session_state, '_original_population_mode')
-                    delattr(st.session_state, '_original_income_spec_mode')
-                    st.info("🔄 Restored original UI settings for comparison")
             
             # Modify selected decisions for simulation
             st.session_state.decision_params.selected_decisions = [decision_name]
@@ -705,31 +706,85 @@ def run_individual_decision(decision_name):
             st.text(traceback.format_exc())
 
 
+def _validate_income_mode_compatibility(selected_decisions, unselected_decisions, using_selected_donation_config):
+    """
+    Validate that income modes are compatible across decisions and show warning if mismatched.
+    
+    This is informational only - we proceed with user's explicit settings.
+    Each decision uses its own configured income mode independently.
+    """
+    # Determine donation_default income mode
+    if using_selected_donation_config:
+        config = st.session_state.selected_donation_config
+        donation_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
+    else:
+        donation_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    
+    # Determine disclose_income mode
+    di_mode = st.session_state.get('di_income_mode', 'Categorical only')
+    
+    # Normalize for comparison
+    def normalize_mode(mode):
+        mode_lower = str(mode).lower()
+        if 'continuous' in mode_lower:
+            return 'continuous'
+        elif 'categorical' in mode_lower:
+            return 'categorical'
+        elif 'compare' in mode_lower or 'both' in mode_lower:
+            return 'compare'
+        return 'categorical'
+    
+    donation_normalized = normalize_mode(donation_mode)
+    di_normalized = normalize_mode(di_mode)
+    
+    # Check for mismatch (ignore if either is in "compare" mode)
+    if donation_normalized != 'compare' and di_normalized != 'compare':
+        if donation_normalized != di_normalized:
+            st.warning(f"""
+⚠️ **Income Mode Mismatch Detected**
+
+- **Donation Default**: {donation_mode} ({donation_normalized})
+- **Disclose Income**: {di_mode} ({di_normalized})
+
+Each decision will use its own configured income mode. This is intentional - 
+you have configured different income specifications for each decision.
+
+If you want them to match, update the settings on the respective decision tabs.
+            """)
+
+
 def run_combined_simulation(selected_decisions):
-    """Run complete simulation with selected decisions using custom parameters and unselected decisions using defaults"""
+    """Run complete simulation with selected decisions using custom parameters and unselected decisions using defaults.
+    
+    NOTE: Each decision uses its OWN income mode setting independently.
+    - donation_default uses selected_donation_config.donation_income_mode (if saved) or income_spec_mode
+    - disclose_income uses di_income_mode from its tab settings
+    - Other decisions use their own respective settings
+    
+    We no longer override global income_spec_mode from selected_donation_config.
+    """
     
     # Store information about selected vs default decisions
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
-    # Check if using a selected configuration (for multiple config scenarios)
-    using_selected_config = hasattr(st.session_state, 'selected_donation_config')
-    original_population_mode = None
-    original_income_spec = None
+    # Show info about what each decision will use (no global override)
+    using_selected_donation_config = hasattr(st.session_state, 'selected_donation_config')
     
-    if using_selected_config:
-        # Store original values to restore later
-        original_population_mode = st.session_state.population_mode
-        original_income_spec = st.session_state.income_spec_mode
-        
-        # Apply selected configuration
+    if using_selected_donation_config:
         config = st.session_state.selected_donation_config
-        st.session_state.population_mode = config['population_mode']
-        st.session_state.income_spec_mode = config['income_spec_mode']
-        
-        # Mark that we're using selected config (for results display)
+        donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
+        st.info(f"🎯 **Donation Default** will use saved config: {donation_income_mode}")
+        # Mark for results display
         st.session_state._using_selected_config = True
-        
-        st.info(f"🎯 **Using selected configuration**: {config['population_mode']} + {config['income_spec_mode']}")
+    
+    # Show disclose_income mode if it's being run
+    if 'disclose_income' in selected_decisions or 'disclose_income' in unselected_decisions:
+        di_mode = st.session_state.get('di_income_mode', 'Categorical only')
+        st.info(f"📋 **Disclose Income** will use: {di_mode}")
+    
+    # Validate income mode compatibility and show warning if mismatched
+    # (This is informational only - we proceed with user's explicit settings)
+    _validate_income_mode_compatibility(selected_decisions, unselected_decisions, using_selected_donation_config)
     
     # Create appropriate spinner message
     if len(selected_decisions) == 0:
@@ -774,9 +829,6 @@ def run_combined_simulation(selected_decisions):
                     
                     # Restore state before rerun
                     st.session_state.decision_params.selected_decisions = original_decisions
-                    if using_selected_config and original_population_mode is not None:
-                        st.session_state.population_mode = original_population_mode
-                        st.session_state.income_spec_mode = original_income_spec
                     
                     st.rerun()
                 else:
@@ -787,11 +839,6 @@ def run_combined_simulation(selected_decisions):
             
             # Restore original selected decisions
             st.session_state.decision_params.selected_decisions = original_decisions
-            
-            # Restore original population/income modes if we changed them
-            if using_selected_config and original_population_mode is not None:
-                st.session_state.population_mode = original_population_mode
-                st.session_state.income_spec_mode = original_income_spec
             
             # Show completion message
             if st.session_state.simulation_results:
@@ -815,11 +862,6 @@ def run_combined_simulation(selected_decisions):
             st.error(f"❌ Error running complete simulation: {str(e)}")
             import traceback
             st.text(traceback.format_exc())
-            
-            # Restore original modes even on error
-            if using_selected_config and original_population_mode is not None:
-                st.session_state.population_mode = original_population_mode
-                st.session_state.income_spec_mode = original_income_spec
 
 
 # ==================== CONFIGURATION SELECTION SYSTEM ====================
@@ -846,9 +888,14 @@ def save_selected_configuration(result_key, result_df):
         original_seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
     
     # Create complete configuration object
+    # NOTE: donation_income_mode is the PRIMARY key for donation-specific income mode
+    # income_spec_mode is kept for backwards compatibility but should not be used for global override
     config = {
         'result_key': result_key,
         'population_mode': config_details['population_mode'],
+        # NEW: donation-specific income mode (primary)
+        'donation_income_mode': config_details['income_spec_mode'],
+        # DEPRECATED: kept for backwards compatibility only - do not use for global override
         'income_spec_mode': config_details['income_spec_mode'],
         'coefficients': coefficients,
         'stochastic_params': stochastic_params,

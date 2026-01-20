@@ -64,7 +64,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     # Donation rate analysis (if available) - always use truncated
     donation_col = 'donation_default'
     if donation_col in df.columns:
-        st.subheader(f" Donation Rate Analysis{title_suffix}")
+        st.subheader(f"📊 Donation Rate Analysis{title_suffix}")
         
         # Distribution plot
         col1, col2 = st.columns([2, 1])
@@ -82,7 +82,8 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
                 xaxis_tickformat='.0%',
                 showlegend=False
             )
-            st.plotly_chart(fig, width="stretch")
+            chart_key = f"donation_hist_{result_key}" if result_key else f"donation_hist_{title_suffix}"
+            st.plotly_chart(fig, use_container_width=True, key=chart_key)
         
         with col2:
             st.markdown("**📈 Statistics**")
@@ -101,6 +102,40 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
                 ]
             })
             st.dataframe(stats_df, hide_index=True)
+    
+    # Disclose Income analysis (if available)
+    if 'disclose_income' in df.columns:
+        st.subheader(f"📊 Disclose Income Analysis{title_suffix}")
+        
+        value_counts = df['disclose_income'].value_counts()
+        total = len(df)
+        
+        # Pie chart (full width)
+        if len(value_counts) > 0:
+            fig = px.pie(
+                values=value_counts.values,
+                names=value_counts.index,
+                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
+            )
+            chart_key = f"disclose_income_pie_{result_key}" if result_key else f"disclose_income_pie_{title_suffix}"
+            st.plotly_chart(fig, use_container_width=True, key=chart_key)
+        
+        # Choice breakdown table below the chart
+        st.markdown("**📊 Choice Breakdown**")
+        # Ensure Y appears before N in the breakdown
+        ordered_choices = ['Y', 'N']
+        ordered_data = []
+        for choice in ordered_choices:
+            if choice in value_counts.index:
+                count = value_counts[choice]
+                ordered_data.append({
+                    'Choice': choice,
+                    'Count': count,
+                    'Percentage': f"{(count/total)*100:.1f}%"
+                })
+        
+        breakdown_df = pd.DataFrame(ordered_data)
+        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     
     # Add inline selection button if enabled
     if enable_selection and result_key:

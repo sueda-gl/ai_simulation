@@ -102,8 +102,11 @@ def render_configuration_selection_ui(results_dict):
     if has_selected_config:
         st.markdown("---")
         config = st.session_state.selected_donation_config
+        # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
+        donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'unknown'))
         with st.container():
-            st.success(f"✅ **Selected Configuration**: {format_result_name(config['result_key'])}")
+            st.success(f"✅ **Selected Donation Configuration**: {format_result_name(config['result_key'])}")
+            st.caption(f"Income mode for Donation Default: {donation_income_mode}")
             col1, col2 = st.columns([3, 1])
             with col1:
                 st.caption(f"Selected at {config['selected_timestamp'].strftime('%H:%M:%S')} - Avg Donation: {config['metrics']['mean_donation']:.2%}")

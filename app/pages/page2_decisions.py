@@ -261,7 +261,8 @@ def render_overview_tab(selected_decisions):
         elif config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
             # Show selected configuration info
             config = st.session_state.selected_donation_config
-            st.success(f"✅ **Using selected configuration**: {config['population_mode']} + {config['income_spec_mode']}")
+            donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'unknown'))
+            st.success(f"✅ **Using selected donation configuration**: {config['population_mode']} + {donation_income_mode}")
             
             if len(selected_decisions) == 0:
                 st.info(f"🎯 All {len(ALL_DECISIONS)} decisions will use default values")
@@ -418,8 +419,11 @@ def render_selected_donation_config_display():
     st.markdown("#### 3. Donation Default")
     
     # Main configuration display
+    # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
+    donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'unknown'))
+    
     with st.container():
-        st.success(f"✅ **Configuration**: {config['population_mode']} + {config['income_spec_mode']}")
+        st.success(f"✅ **Donation Default Configuration**: {config['population_mode']} + {donation_income_mode}")
         
         # Metrics and details in columns
         if is_auto_implied:
@@ -430,7 +434,7 @@ def render_selected_donation_config_display():
                 st.metric("Population Mode", config['population_mode'])
             
             with col2:
-                st.metric("Income Mode", config['income_spec_mode'])
+                st.metric("Income Mode", donation_income_mode)
             
             with col3:
                 st.metric("Agents", f"{config['total_agents']:,}")
@@ -442,7 +446,7 @@ def render_selected_donation_config_display():
                 st.metric("Population Mode", config['population_mode'])
             
             with col2:
-                st.metric("Income Mode", config['income_spec_mode'])
+                st.metric("Income Mode", donation_income_mode)
             
             with col3:
                 st.metric("Avg Donation Rate", f"{config['metrics']['mean_donation']:.2%}")
@@ -469,8 +473,8 @@ def render_selected_donation_config_display():
                     st.caption(f"{group}: {coeff:.6f}")
             
             with coeff_col2:
-                # Income effects
-                if config['income_spec_mode'] == 'categorical only':
+                # Income effects - use donation_income_mode defined above
+                if 'categorical' in donation_income_mode.lower():
                     st.markdown("**💰 Income Quintile Effects:**")
                     for quintile, coeff in coeffs['beta_income_q'].items():
                         st.caption(f"{quintile}: {coeff:.6f}")
