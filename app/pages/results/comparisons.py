@@ -3,14 +3,14 @@
 Comparison functions for different simulation modes.
 """
 import streamlit as st
-from app.components import show_overview, show_dependent_variable_comparison
+from app.components import show_overview, show_dependent_variable_comparison, render_disclose_income_run_simulation_button
 
 
 def should_enable_selection():
-    """Check if selection buttons should be enabled for individual donation runs"""
+    """Check if selection buttons should be enabled for individual decision runs (donation_default or disclose_income)"""
     return (
         hasattr(st.session_state, 'custom_decisions') and 
-        st.session_state.custom_decisions == ['donation_default'] and
+        st.session_state.custom_decisions in [['donation_default'], ['disclose_income']] and
         hasattr(st.session_state, 'default_decisions') and
         len(st.session_state.default_decisions) == 0  # Individual runs have empty default_decisions
     )
@@ -271,3 +271,8 @@ def render_income_comparison(results_dict):
             )
         else:
             st.caption("Continuous results not available")
+    
+    # Full-width "Run Complete Simulation" button (outside columns)
+    # Only shows when a disclose_income config is selected
+    if should_enable_selection():
+        render_disclose_income_run_simulation_button()

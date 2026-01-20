@@ -481,20 +481,20 @@ def render_categorical_formula():
         st.markdown("**👥 Group Effects (β_group):**")
         group_data = {
             'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 st.session_state.get('donation_coeff_midsub', 0.856140306694656),
                 st.session_state.get('donation_coeff_nosub', -0.926633374153906),
                 st.session_state.get('donation_coeff_fullsub', 0.0)
             ]
         }
         group_df = pd.DataFrame(group_data)
-        group_df['Coefficient'] = group_df['Coefficient'].map('{:.6f}'.format)
+        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(group_df, hide_index=True, use_container_width=True)
         
         st.markdown("**🎓 Study Programme Effects (β_study):**")
         study_data = {
             'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 st.session_state.get('donation_coeff_incoming', -6.920193024391676),
                 st.session_state.get('donation_coeff_law', -2.081331674770856),
                 st.session_state.get('donation_coeff_ug', -2.139093511519692),
@@ -502,14 +502,14 @@ def render_categorical_formula():
             ]
         }
         study_df = pd.DataFrame(study_data)
-        study_df['Coefficient'] = study_df['Coefficient'].map('{:.6f}'.format)
+        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(study_df, hide_index=True, use_container_width=True)
     
     with col2:
         st.markdown("**💰 Income Quintile Effects (β_income_q):**")
         income_data = {
             'Quintile': ['Q1 (Level 1)', 'Q2 (Level 2)', 'Q3 (Level 3)', 'Q4_Q5 (Levels 4-5, ref)'],
-            'Coefficient': [
+            'Intercept': [
                 st.session_state.get('donation_coeff_q1', -0.520290427509808),
                 st.session_state.get('donation_coeff_q2', 3.754612744416796),
                 st.session_state.get('donation_coeff_q3', 4.001714810873598),
@@ -517,7 +517,7 @@ def render_categorical_formula():
             ]
         }
         income_df = pd.DataFrame(income_data)
-        income_df['Coefficient'] = income_df['Coefficient'].map('{:.6f}'.format)
+        income_df['Intercept'] = income_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(income_df, hide_index=True, use_container_width=True)
 
 
@@ -548,20 +548,20 @@ def render_continuous_formula():
         st.markdown("**👥 Group Effects (β_group):**")
         group_data = {
             'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 st.session_state.get('donation_coeff_midsub', 0.856140306694656),
                 st.session_state.get('donation_coeff_nosub', -0.926633374153906),
                 st.session_state.get('donation_coeff_fullsub', 0.0)
             ]
         }
         group_df = pd.DataFrame(group_data)
-        group_df['Coefficient'] = group_df['Coefficient'].map('{:.6f}'.format)
+        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(group_df, hide_index=True, use_container_width=True)
         
         st.markdown("**🎓 Study Programme Effects (β_study):**")
         study_data = {
             'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 st.session_state.get('donation_coeff_incoming', -6.920193024391676),
                 st.session_state.get('donation_coeff_law', -2.081331674770856),
                 st.session_state.get('donation_coeff_ug', -2.139093511519692),
@@ -569,7 +569,7 @@ def render_continuous_formula():
             ]
         }
         study_df = pd.DataFrame(study_data)
-        study_df['Coefficient'] = study_df['Coefficient'].map('{:.6f}'.format)
+        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(study_df, hide_index=True, use_container_width=True)
     
     with col2:
@@ -720,20 +720,20 @@ def render_categorical_formula_specific():
         st.markdown("**👥 Group Effects (β_group):**")
         group_data = {
             'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 get_coefficient('midsub', 'cat'),
                 get_coefficient('nosub', 'cat'),
                 get_coefficient('fullsub', 'cat')
             ]
         }
         group_df = pd.DataFrame(group_data)
-        group_df['Coefficient'] = group_df['Coefficient'].map('{:.6f}'.format)
+        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(group_df, hide_index=True, use_container_width=True)
         
         st.markdown("**🎓 Study Programme Effects (β_study):**")
         study_data = {
             'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 get_coefficient('incoming', 'cat'),
                 get_coefficient('law', 'cat'),
                 get_coefficient('ug', 'cat'),
@@ -741,14 +741,14 @@ def render_categorical_formula_specific():
             ]
         }
         study_df = pd.DataFrame(study_data)
-        study_df['Coefficient'] = study_df['Coefficient'].map('{:.6f}'.format)
+        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(study_df, hide_index=True, use_container_width=True)
     
     with col2:
         st.markdown("**💰 Income Quintile Effects (β_income_q):**")
         income_data = {
             'Quintile': ['Q1 (Level 16, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
-            'Coefficient': [
+            'Intercept': [
                 get_coefficient('q1', 'cat'),
                 get_coefficient('q2', 'cat'),
                 get_coefficient('q3', 'cat'),
@@ -757,7 +757,7 @@ def render_categorical_formula_specific():
             ]
         }
         income_df = pd.DataFrame(income_data)
-        income_df['Coefficient'] = income_df['Coefficient'].map('{:.6f}'.format)
+        income_df['Intercept'] = income_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(income_df, hide_index=True, use_container_width=True)
 
 
@@ -788,20 +788,20 @@ def render_continuous_formula_specific():
         st.markdown("**👥 Group Effects (β_group):**")
         group_data = {
             'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 get_coefficient('midsub', 'cont'),
                 get_coefficient('nosub', 'cont'),
                 get_coefficient('fullsub', 'cont')
             ]
         }
         group_df = pd.DataFrame(group_data)
-        group_df['Coefficient'] = group_df['Coefficient'].map('{:.6f}'.format)
+        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(group_df, hide_index=True, use_container_width=True)
         
         st.markdown("**🎓 Study Programme Effects (β_study):**")
         study_data = {
             'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Coefficient': [
+            'Intercept': [
                 get_coefficient('incoming', 'cont'),
                 get_coefficient('law', 'cont'),
                 get_coefficient('ug', 'cont'),
@@ -809,7 +809,7 @@ def render_continuous_formula_specific():
             ]
         }
         study_df = pd.DataFrame(study_data)
-        study_df['Coefficient'] = study_df['Coefficient'].map('{:.6f}'.format)
+        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(study_df, hide_index=True, use_container_width=True)
     
     with col2:

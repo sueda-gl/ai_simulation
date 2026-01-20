@@ -122,6 +122,26 @@ def render_disclose_income_tab():
 
     st.markdown('<h3 class="section-header">Disclose Income Configuration</h3>', unsafe_allow_html=True)
 
+    # Show selected configuration status if in Compare both mode
+    di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+    is_compare_mode = 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()
+    
+    if is_compare_mode:
+        if hasattr(st.session_state, 'selected_disclose_income_config') and st.session_state.selected_disclose_income_config:
+            di_config = st.session_state.selected_disclose_income_config
+            selected_mode = di_config.get('income_mode', 'Unknown')
+            y_rate = di_config.get('metrics', {}).get('y_rate', 0)
+            col_status, col_clear = st.columns([3, 1])
+            with col_status:
+                st.success(f"✅ **Selected Configuration:** {selected_mode} (Y rate: {y_rate:.1%})")
+            with col_clear:
+                if st.button("🗑️ Clear", key="clear_di_config_btn", help="Clear selected configuration"):
+                    from app.pages.decision_execution import clear_disclose_income_configuration
+                    clear_disclose_income_configuration()
+                    st.rerun()
+        else:
+            st.info("ℹ️ **Compare both** mode: Run 'Disclose Income Only' and select a configuration for complete simulation.")
+
     col1, col2 = st.columns(2)
 
     with col1:
@@ -231,7 +251,7 @@ def render_disclose_income_tab():
 
         if sigma_enabled:
             # Strategy selection: Overall vs Quintiles
-            st.markdown("**Sigma Strategy**")
+            st.markdown("**σ mode**")
             
             # Restore strategy from storage
             strategy_val = restore_widget_from_storage(
@@ -253,12 +273,12 @@ def render_disclose_income_tab():
                 save_to_disclose_income_storage('di_tab_sigma_strategy', 'sigma_strategy')
                 save_disclose_income_config({'stochastic.sigma_strategy': new_strategy})
                 st.session_state.di_sigma_strategy = new_strategy
-                st.toast(f"Sigma strategy set to: {new_strategy}", icon="💾")
+                st.toast(f"σ mode set to: {new_strategy}", icon="💾")
             
             sigma_strategy = st.radio(
-                "Apply sigma uniformly or per income level?",
+                "Apply σ uniformly or per income level?",
                 options=['overall', 'quintile'],
-                format_func=lambda x: 'Overall (single σ for all)' if x == 'overall' else 'Quintiles (per budget level)',
+                format_func=lambda x: 'Overall (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
                 index=0 if strategy_val == 'overall' else 1,
                 key="di_tab_sigma_strategy",
                 on_change=on_strategy_change,
@@ -396,15 +416,15 @@ def render_disclose_income_tab():
 
         # WOPB - Weight for observed vs calculated prosocial behavior
         new_wopb = st.slider(
-            "W_OPB: Observed vs Calculated PB weight",
+            "W_OPB: Observed vs Calculated prosocial behavior weight",
             min_value=0.0,
             max_value=1.0,
             value=float(current_wopb),
             step=0.01,
-            help="anchored_PB = WOPB × observed_PB + (1-WOPB) × calculated_PB. Default: 0.25",
+            help="anchored_PB = WOPB×Observed_PB + (1-WOPB×Calculated_PB based on Honesty-Humility, Agreeableness, Openness, and Religiosity); Default: 0.25",
             key="di_wopb_widget"
         )
-        st.caption(f"Observed PB weight: {new_wopb:.2f}")
+        st.caption(f"Observed prosocial behavior weight: {new_wopb:.2f}")
 
         if abs(new_wopb - current_wopb) > 0.001:
             st.session_state.di_wopb = new_wopb
@@ -418,10 +438,10 @@ def render_disclose_income_tab():
             max_value=1.0,
             value=float(current_wpb),
             step=0.01,
-            help="DI = β₀ + (1-WPB)×direct_effects + WPB×(PB×income_high). Default: 0.50",
+            help="DI = β0+(1-WPB)×(Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness) + WPB×(Prosocial Behavior×Income_High); Default: 0.5",
             key="di_wpb_widget"
         )
-        st.caption(f"PB weight: {new_wpb:.2f}")
+        st.caption(f"Prosocial behavior weight: {new_wpb:.2f}")
 
         if abs(new_wpb - current_wpb) > 0.001:
             st.session_state.di_wpb = new_wpb
@@ -462,8 +482,8 @@ def render_formula_display(config):
         if income_mode == "Categorical only":
             st.markdown("""
             **Decision 1: Disclose Income** uses a two-stage mediation model:
-            - **Equation 1**: Calculated Prosocial Behavior (calc_PB) based on Agreeableness, Openness, Honesty-Humility, and Religiosity
-            - **Equation 2**: Disclosure Intention using **level-specific intercepts** (NO income coefficient)
+            - **Equation 1**: Calculated Prosocial Behavior (Calculated_PB) based on Honesty-Humility, Agreeableness, Openness, and Religiosity – same for both modes
+            - **Equation 2**: Disclose Income (DI) based on β₀ intercept, PB, Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness - different for categorical vs continuous modes
             
             Output: "Y" if DI > 0 after stochastic draw, "N" otherwise.
             """)
@@ -473,8 +493,8 @@ def render_formula_display(config):
         elif income_mode == "Continuous only":
             st.markdown("""
             **Decision 1: Disclose Income** uses a two-stage mediation model:
-            - **Equation 1**: Calculated Prosocial Behavior (calc_PB) based on Agreeableness, Openness, Honesty-Humility, and Religiosity
-            - **Equation 2**: Disclosure Intention using **single β₀ intercept with income coefficient**
+            - **Equation 1**: Calculated Prosocial Behavior (Calculated_PB) based on Honesty-Humility, Agreeableness, Openness, and Religiosity – same for both modes
+            - **Equation 2**: Disclose Income (DI) based on β₀ intercept, PB, Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness - different for categorical vs continuous modes
             
             Output: "Y" if DI > 0 after stochastic draw, "N" otherwise.
             """)
@@ -484,8 +504,8 @@ def render_formula_display(config):
         else:  # Compare both
             st.markdown("""
             **Decision 1: Disclose Income** uses a two-stage mediation model:
-            - **Equation 1**: Calculated Prosocial Behavior (calc_PB) - same for both modes
-            - **Equation 2**: Disclosure Intention - **different for categorical vs continuous**
+            - **Equation 1**: Calculated Prosocial Behavior (Calculated_PB) based on Honesty-Humility, Agreeableness, Openness, and Religiosity – same for both modes
+            - **Equation 2**: Disclose Income (DI) based on β₀ intercept, PB, Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness - different for categorical vs continuous modes
             
             Output: "Y" if DI > 0 after stochastic draw, "N" otherwise.
             """)
@@ -527,19 +547,19 @@ def render_equation1_and_combining(config):
 
 def render_categorical_di_formula(config):
     """Render Equation 2 for CATEGORICAL income mode."""
-    st.markdown("### Equation 2: Disclosure Intention (Categorical)")
+    st.markdown("### Equation 2: Disclose Income (Categorical)")
     
     wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
     
     # Show full expanded formula (per professor's specification - no separate "direct effects" line)
     st.latex(f"""
-    DiscloseIncome_i = \\beta_{{level}} + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0295482 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
+    DiscloseIncome_i = \\beta_{{income\\_q}}[quintile_i] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0295482 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
     
     # Show level-specific intercepts table
-    st.markdown("**Level-Specific Intercepts (β_level):**")
+    st.markdown("**Income Quintile Effects (β_income_q):**")
     intercept_data = {
-        'Level': ['1 (€16)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
+        'Quintile': ['Q1 (€16)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)'],
         'Intercept': [
             '0.0089094',
             '0.0055403',
@@ -551,7 +571,7 @@ def render_categorical_di_formula(config):
     intercept_df = pd.DataFrame(intercept_data)
     st.dataframe(intercept_df, hide_index=True, use_container_width=True)
     
-    st.caption("β_level: Level-specific intercepts based on agent's income category (Levels 1-5)")
+    st.caption("β_income_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
 
 
 def render_continuous_di_formula(config):
@@ -589,12 +609,12 @@ def render_variable_definitions(income_mode):
         """)
     elif income_mode == "Categorical only":
         st.markdown("""
-        | β_level | Level-specific intercept based on income category (5 levels: €16, €32, €72, €128, €200) |
+        | β_income_q | Quintile-specific intercept based on income category (5 quintiles: €16, €32, €72, €128, €200) |
         """)
     else:  # Compare both
         st.markdown("""
         **Categorical mode:**
-        | β_level | Level-specific intercept based on income category (5 levels: €16, €32, €72, €128, €200) |
+        | β_income_q | Quintile-specific intercept based on income category (5 quintiles: €16, €32, €72, €128, €200) |
         
         **Continuous mode:**
         | z_I | Z-scored actual income of the agent (continuous) |
@@ -622,8 +642,8 @@ def render_intercept_override_section(config):
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown("**Current YAML Value**")
-            st.metric("Intercept (β₀)", f"{current_yaml_value:.6f}")
+            st.markdown("**Current Configuration Value**")
+            st.metric("Intercept (β₀)", f"{current_yaml_value:.2f}")
 
         with col2:
             st.markdown("**Override Value**")
@@ -642,7 +662,7 @@ def render_intercept_override_section(config):
                 max_value=5.0,
                 value=float(int_val),
                 step=0.01,
-                format="%.6f",
+                format="%.2f",
                 help="β₀ in the disclosure intention equation. Higher values increase baseline probability of disclosure.",
                 key="di_override_intercept",
                 on_change=lambda: auto_save_intercept(st.session_state.di_override_intercept)
@@ -654,7 +674,7 @@ def render_intercept_override_section(config):
             change = new_intercept - current_yaml_value
             if abs(change) > 0.0001:
                 impact = "Higher baseline" if change > 0 else "Lower baseline"
-                st.metric("Change", f"{change:+.6f}", delta=impact)
+                st.metric("Change", f"{change:+.2f}", delta=impact)
             else:
                 st.metric("Change", "No change")
 
@@ -676,7 +696,7 @@ def auto_save_intercept(new_value):
         success = save_disclose_income_config({'intercept': float(new_value)})
 
         if success:
-            st.toast(f"Intercept auto-saved: {new_value:.6f}", icon="💾")
+            st.toast(f"Intercept auto-saved: {new_value:.2f}", icon="💾")
         else:
             st.toast("Failed to save intercept", icon="⚠️")
 
@@ -743,15 +763,15 @@ def render_actions_and_management_section(config):
                 st.toast("Failed to reset configuration", icon="⚠️")
 
     with col2:
-        st.markdown("**Reload from YAML**")
+        st.markdown("**Reload from Configuration**")
         if st.button("Reload Configuration", type="secondary", use_container_width=True,
-                     help="Reload values from YAML configuration file",
+                     help="Reload values from configuration file",
                      key="di_reload_btn"):
             # Clear session state to force reload
             keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
             for key in keys_to_clear:
                 del st.session_state[key]
-            st.toast("Configuration reloaded from YAML", icon="🔄")
+            st.toast("Configuration reloaded", icon="🔄")
             st.rerun()
 
     # Debug expander below the buttons
@@ -762,7 +782,7 @@ def render_actions_and_management_section(config):
         st.write(f"- WOPB (di_wopb): {st.session_state.get('di_wopb', 'NOT SET')}")
         st.write(f"- WPB (di_wpb): {st.session_state.get('di_wpb', 'NOT SET')}")
         st.write(f"- Sigma Enabled (di_sigma_enabled): {st.session_state.get('di_sigma_enabled', 'NOT SET')}")
-        st.write(f"- Sigma Strategy (di_sigma_strategy): {st.session_state.get('di_sigma_strategy', 'NOT SET')}")
+        st.write(f"- σ mode (di_sigma_strategy): {st.session_state.get('di_sigma_strategy', 'NOT SET')}")
         st.write(f"- σ Coefficient (di_scale_factor): {st.session_state.get('di_scale_factor', 'NOT SET')}")
         st.write(f"- Quintile Scale Factors: {st.session_state.get('di_quintile_scale_factors', 'NOT SET')}")
 
@@ -770,20 +790,20 @@ def render_actions_and_management_section(config):
         try:
             yaml_config = load_disclose_income_config()
 
-            st.write("**Current YAML configuration values:**")
-            st.write(f"- YAML intercept: {yaml_config.get('intercept', 'NOT SET')}")
-            st.write(f"- YAML income_mode: {yaml_config.get('income_mode', 'NOT SET')}")
-            st.write(f"- YAML anchor_weights: {yaml_config.get('anchor_weights', 'NOT SET')}")
-            st.write(f"- YAML stochastic: {yaml_config.get('stochastic', 'NOT SET')}")
+            st.write("**Current configuration values:**")
+            st.write(f"- Configuration intercept: {yaml_config.get('intercept', 'NOT SET')}")
+            st.write(f"- Configuration income_mode: {yaml_config.get('income_mode', 'NOT SET')}")
+            st.write(f"- Configuration anchor_weights: {yaml_config.get('anchor_weights', 'NOT SET')}")
+            st.write(f"- Configuration stochastic: {yaml_config.get('stochastic', 'NOT SET')}")
 
             # Check if they match
             yaml_intercept = yaml_config.get('intercept', 0.75)
             session_intercept = st.session_state.get('di_intercept', 0.75)
 
             if abs(yaml_intercept - session_intercept) > 0.0001:
-                st.error("Session state doesn't match YAML! Click 'Reload Configuration' button.")
+                st.error("Session state doesn't match configuration! Click 'Reload Configuration' button.")
             else:
-                st.success("Session state matches YAML configuration values")
+                st.success("Session state matches configuration values")
 
         except Exception as e:
-            st.error(f"Error reading YAML configuration: {e}")
+            st.error(f"Error reading configuration: {e}")

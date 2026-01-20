@@ -9,7 +9,8 @@ from app.pages.decision_execution import (
     format_result_name,
     is_configuration_selected,
     clear_selected_configuration,
-    run_combined_simulation
+    run_combined_simulation,
+    can_run_complete_simulation
 )
 from app.models import ALL_DECISIONS
 
@@ -221,18 +222,53 @@ def render_complete_simulation_section():
     # Get selected configuration details
     config = st.session_state.selected_donation_config
     
-    # Simple button without verbose info
-    if st.button(
-        "🚀 Run Complete Simulation",
-        type="primary",
-        use_container_width=True,
-        key="run_complete_from_results",
-        help=f"Execute all {len(ALL_DECISIONS)} decisions with the selected configuration"
-    ):
-        # Execute the combined simulation
-        with st.spinner("🔄 Running complete simulation..."):
-            run_combined_simulation(selected_decisions)
-            
-            # After simulation completes, show success message
-            if hasattr(st.session_state, 'simulation_results') and st.session_state.simulation_results:
-                st.success("✅ Complete simulation finished!")
+    # Check if complete simulation can run (validates Disclose Income mode, etc.)
+    can_run, reason, config_count, block_type = can_run_complete_simulation()
+    
+    if not can_run:
+        # Show warning based on block type
+        if block_type == "disclose_income":
+            st.warning(f"""
+⚠️ **Disclose Income Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Income** tab in Decision Parameters
+2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+3. Return here to run complete simulation
+            """)
+        else:
+            # donation_config block type (shouldn't happen here since config is selected, but handle anyway)
+            st.warning(f"""
+⚠️ **Configuration Issue**
+
+{reason}
+            """)
+        
+        # Disabled button
+        help_text = "Change Disclose Income to single mode first" if block_type == "disclose_income" else "Configuration issue detected"
+        st.button(
+            "🚀 Run Complete Simulation",
+            type="primary",
+            use_container_width=True,
+            disabled=True,
+            key="run_complete_from_results_disabled",
+            help=help_text
+        )
+    else:
+        # Enabled button
+        if st.button(
+            "🚀 Run Complete Simulation",
+            type="primary",
+            use_container_width=True,
+            key="run_complete_from_results",
+            help=f"Execute all {len(ALL_DECISIONS)} decisions with the selected configuration"
+        ):
+            # Execute the combined simulation
+            with st.spinner("🔄 Running complete simulation..."):
+                run_combined_simulation(selected_decisions)
+                
+                # After simulation completes, show success message
+                if hasattr(st.session_state, 'simulation_results') and st.session_state.simulation_results:
+                    st.success("✅ Complete simulation finished!")

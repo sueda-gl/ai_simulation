@@ -53,15 +53,22 @@ def can_run_complete_simulation():
     since that generates multiple comparison results not suitable for full simulation.
     
     Returns:
-        tuple: (can_run: bool, reason: str, config_count: int)
+        tuple: (can_run: bool, reason: str, config_count: int, block_type: str or None)
             - can_run: Whether complete simulation is allowed
             - reason: Human-readable explanation
             - config_count: Number of configurations that would be generated
+            - block_type: Type of block - "disclose_income", "donation_config", or None if not blocked
     """
-    # Check if disclose_income is in "Compare both" mode - this blocks complete simulation
+    # Check if disclose_income is in "Compare both" mode
     di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
-    if 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower():
-        return (False, "Disclose Income is set to 'Compare both' mode - please select 'Categorical only' or 'Continuous only' to run complete simulation", 2)
+    di_is_compare_mode = 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()
+    
+    # Check if a disclose_income configuration has been selected
+    has_selected_di_config = hasattr(st.session_state, 'selected_disclose_income_config') and st.session_state.selected_disclose_income_config is not None
+    
+    # Block if disclose_income is in compare mode AND no config is selected
+    if di_is_compare_mode and not has_selected_di_config:
+        return (False, "Disclose Income is set to 'Compare both' mode - please run Disclose Income Only and select a configuration", 2, "disclose_income")
     
     # Check if multiple configurations will be generated for donation_default
     population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
@@ -78,7 +85,7 @@ def can_run_complete_simulation():
     
     # Case 1: Only one configuration - always allow
     if total_configs == 1:
-        return (True, "Single configuration", 1)
+        return (True, "Single configuration", 1, None)
     
     # Case 2: Multiple configurations - check if one is selected
     has_selected_config = hasattr(st.session_state, 'selected_donation_config')
@@ -87,10 +94,10 @@ def can_run_complete_simulation():
         # User has selected a specific configuration - allow with that config
         config = st.session_state.selected_donation_config
         config_name = f"{config['population_mode']} + {config['income_spec_mode']}"
-        return (True, f"Using selected configuration: {config_name}", total_configs)
+        return (True, f"Using selected configuration: {config_name}", total_configs, None)
     else:
         # Multiple configs but none selected - block complete simulation
-        return (False, f"Multiple donation configurations ({total_configs}) detected - please select one first", total_configs)
+        return (False, f"Multiple donation configurations ({total_configs}) detected - please select one first", total_configs, "donation_config")
 
 
 def get_implied_single_configuration():
@@ -106,7 +113,7 @@ def get_implied_single_configuration():
     """
     try:
         # Check configuration count
-        can_run, reason, config_count = can_run_complete_simulation()
+        can_run, reason, config_count, block_type = can_run_complete_simulation()
         
         # Only return implied config when exactly one configuration exists
         if config_count != 1:
@@ -205,7 +212,7 @@ def auto_populate_single_donation_config():
             # If modes changed, clear the old config so we can re-evaluate
             if existing.get('population_mode') != current_pop or existing.get('income_spec_mode') != current_income:
                 # Modes have changed - check if we should update
-                can_run, reason, config_count = can_run_complete_simulation()
+                can_run, reason, config_count, block_type = can_run_complete_simulation()
                 if config_count == 1:
                     # Single config now - update to match current settings
                     implied_config = get_implied_single_configuration()
@@ -317,41 +324,64 @@ def render_simulation_buttons(decision_name, selected_decisions):
                     st.caption(f"{format_decision_title(dec, include_number=True)}")
         
         # Check if complete simulation can run (validation for multiple configurations)
-        can_run, reason, config_count = can_run_complete_simulation()
+        can_run, reason, config_count, block_type = can_run_complete_simulation()
         
         if not can_run:
             # Disabled button with explanation
+            help_text = "Disclose Income is in Compare mode" if block_type == "disclose_income" else "Multiple configurations detected - select one first"
             st.button(
                 "🎯 Run Complete Simulation", 
                 type="primary",
                 use_container_width=True,
                 disabled=True,
                 key=f"run_complete_from_{decision_name}_btn_disabled",
-                help="Multiple configurations detected - select one first"
+                help=help_text
             )
             
-            # Show helpful warning message
-            st.warning(f"""
-⚠️ **Complete Simulation Blocked**
+            # Show helpful warning message based on block type
+            if block_type == "disclose_income":
+                st.warning(f"""
+⚠️ **Disclose Income Configuration Required**
 
 {reason}
 
-**To run all decisions:**
+**Action Required:**
 
-1. Click **🔬 Run {format_decision_title(decision_name)} Only** above
-2. Review the {config_count} result configurations
+1. Go to the **Disclose Income** tab
+2. Click **"Run Disclose Income Only"** to see comparison results
+3. Click **"Use This Config"** on your preferred configuration
+4. Return here and click **Run Complete Simulation**
+
+Alternatively, change "Income Specification" from "Compare both" to a single mode.
+                """)
+            else:
+                # donation_config block type
+                st.warning(f"""
+⚠️ **Multiple Donation Configurations Detected**
+
+{reason}
+
+**Action Required:**
+
+1. Go to the **Donation Default** tab
+2. Run **donation_default only**
 3. **Select one configuration** from the results
 4. Return here and click **Run Complete Simulation**
 
 This ensures all decisions use consistent settings.
-            """)
+                """)
             
         else:
             # Enabled button - can proceed
-            # Show info about selected config if applicable
+            # Show info about selected configs if applicable
             if config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
                 config = st.session_state.selected_donation_config
-                st.success(f"✅ Using: {config['population_mode']} + {config['income_spec_mode']}")
+                st.success(f"✅ Donation: {config['population_mode']} + {config['income_spec_mode']}")
+            
+            # Show selected disclose_income config if in compare mode
+            if hasattr(st.session_state, 'selected_disclose_income_config') and st.session_state.selected_disclose_income_config:
+                di_config = st.session_state.selected_disclose_income_config
+                st.success(f"✅ Disclose Income: {di_config.get('income_mode', 'Selected')}")
             
             if st.button(
                 "🎯 Run Complete Simulation", 
@@ -1065,3 +1095,128 @@ def clear_selected_configuration():
     st.session_state.final_donation_rate_default_value = 0.10
     if '_persistent_defaults' in st.session_state:
         st.session_state._persistent_defaults['final_donation_rate_default_value'] = 0.10
+
+
+# ==================== DISCLOSE INCOME CONFIGURATION SELECTION SYSTEM ====================
+
+def save_disclose_income_configuration(result_key, result_df):
+    """Save the selected disclose income configuration for later use in combined simulations"""
+    
+    # Extract configuration details from the result key
+    config_details = extract_disclose_income_configuration_details(result_key)
+    
+    # Get current disclose income parameters from session state
+    di_params = get_current_disclose_income_params()
+    
+    # Calculate key metrics from the result
+    metrics = calculate_disclose_income_metrics(result_df)
+    
+    # Get seed used during the original run
+    if st.session_state.sim_params.simulation_mode == "Single Run":
+        original_seed = st.session_state.get('seed_input', st.session_state.seed)
+    else:
+        original_seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
+    
+    # Create complete configuration object
+    config = {
+        'result_key': result_key,
+        'income_mode': config_details['income_mode'],
+        'params': di_params,
+        'metrics': metrics,
+        'selected_timestamp': datetime.now(),
+        'total_agents': len(result_df),
+        'source': 'individual_disclose_income_run',
+        'original_seed': original_seed,
+        'original_n_agents': st.session_state.n_agents
+    }
+    
+    # Store in session state
+    st.session_state.selected_disclose_income_config = config
+    
+    return config
+
+
+def extract_disclose_income_configuration_details(result_key):
+    """Extract income mode from result key for disclose income"""
+    
+    # Income mode detection
+    if 'categorical' in result_key.lower():
+        income_mode = 'Categorical only'
+    elif 'continuous' in result_key.lower():
+        income_mode = 'Continuous only'
+    else:
+        # Use current session state value
+        income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+    
+    return {
+        'income_mode': income_mode
+    }
+
+
+def get_current_disclose_income_params():
+    """Collect current disclose income parameters from session state"""
+    return {
+        'intercept': st.session_state.get('di_intercept', 0.75),
+        'income_mode': st.session_state.get('di_income_mode', 'Categorical only'),
+        'anchor_weights': {
+            'observed_prosocial': st.session_state.get('di_wopb', 0.25),
+            'prosocial_weight': st.session_state.get('di_wpb', 0.50)
+        },
+        'stochastic': {
+            'sigma_enabled': st.session_state.get('di_sigma_enabled', False),
+            'scale_factor': st.session_state.get('di_scale_factor', 1.0),
+            'sigma_strategy': st.session_state.get('di_sigma_strategy', 'overall'),
+            'quintile_scale_factors': st.session_state.get('di_quintile_scale_factors', {})
+        }
+    }
+
+
+def calculate_disclose_income_metrics(result_df):
+    """Calculate key metrics from disclose income result DataFrame"""
+    
+    metrics = {}
+    
+    # Calculate Y/N rates
+    if 'disclose_income' in result_df.columns:
+        total = len(result_df)
+        y_count = (result_df['disclose_income'] == 'Y').sum()
+        n_count = (result_df['disclose_income'] == 'N').sum()
+        metrics['y_rate'] = y_count / total if total > 0 else 0
+        metrics['n_rate'] = n_count / total if total > 0 else 0
+        metrics['y_count'] = int(y_count)
+        metrics['n_count'] = int(n_count)
+    
+    # Calculate raw value statistics if available
+    if 'disclose_income_raw' in result_df.columns:
+        raw_values = result_df['disclose_income_raw'].dropna()
+        metrics['raw_mean'] = float(raw_values.mean())
+        metrics['raw_std'] = float(raw_values.std())
+        metrics['raw_median'] = float(raw_values.median())
+        metrics['raw_min'] = float(raw_values.min())
+        metrics['raw_max'] = float(raw_values.max())
+        metrics['raw_q25'] = float(raw_values.quantile(0.25))
+        metrics['raw_q75'] = float(raw_values.quantile(0.75))
+    
+    # Calculate DI_i statistics if available (pre-stochastic value)
+    if 'disclose_income_di' in result_df.columns:
+        di_values = result_df['disclose_income_di'].dropna()
+        metrics['di_mean'] = float(di_values.mean())
+        metrics['di_std'] = float(di_values.std())
+    
+    return metrics
+
+
+def is_disclose_income_configuration_selected(result_key):
+    """Check if a specific disclose income configuration is currently selected"""
+    
+    if not hasattr(st.session_state, 'selected_disclose_income_config'):
+        return False
+    
+    return st.session_state.selected_disclose_income_config.get('result_key') == result_key
+
+
+def clear_disclose_income_configuration():
+    """Clear the currently selected disclose income configuration"""
+    
+    if hasattr(st.session_state, 'selected_disclose_income_config'):
+        del st.session_state.selected_disclose_income_config

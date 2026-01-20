@@ -30,7 +30,8 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
 
 
 def render_disclose_income(df, decision_name, decision_title, decision_data):
-    """Visualization for disclose_income - binary Y/N choice"""
+    """Visualization for disclose_income - binary Y/N choice with optional raw value histogram"""
+    import plotly.graph_objects as go
     
     # Binary choice metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -52,35 +53,126 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         disclosure_rate = (yes_count/total)*100
         st.metric("Disclosure Rate", f"{disclosure_rate:.1f}%")
     
-    # Binary choice visualization - pie chart
-    col_plot, col_stats = st.columns([2, 1])
+    # Check if raw DI values are available for detailed analysis
+    has_raw_values = 'disclose_income_raw' in df.columns
     
-    with col_plot:
-        if len(value_counts) > 0:
-            st.markdown(f"**{decision_title} Distribution**")
-            fig = px.pie(
-                values=value_counts.values,
-                names=value_counts.index,
-                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with col_stats:
-        st.markdown("**📊 Choice Breakdown**")
-        # Ensure Y appears before N in the breakdown
-        ordered_choices = ['Y', 'N']
-        ordered_data = []
-        for choice in ordered_choices:
-            if choice in value_counts.index:
-                count = value_counts[choice]
-                ordered_data.append({
-                    'Choice': choice,
-                    'Count': count,
-                    'Percentage': f"{(count/total)*100:.1f}%"
-                })
+    if has_raw_values:
+        # Show raw DI value histogram (distribution before Y/N classification)
+        st.markdown("### 📊 Raw Disclosure Intention Distribution")
+        st.caption("Distribution of raw DI values before classification (>0 → Y, ≤0 → N)")
         
-        breakdown_df = pd.DataFrame(ordered_data)
-        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+        raw_values = df['disclose_income_raw'].dropna()
+        mean_val = raw_values.mean()
+        
+        # Create histogram with vertical line at 0
+        fig = go.Figure()
+        
+        # Add histogram
+        fig.add_trace(go.Histogram(
+            x=raw_values,
+            nbinsx=40,
+            name='DI Raw Values',
+            marker_color='steelblue',
+            opacity=0.7
+        ))
+        
+        # Add vertical line at 0 (decision boundary)
+        fig.add_vline(
+            x=0,
+            line_dash="solid",
+            line_color="red",
+            line_width=3,
+            annotation_text="Boundary (0)",
+            annotation_position="top",
+            annotation_font_color="red"
+        )
+        
+        # Add vertical line at mean
+        fig.add_vline(
+            x=mean_val,
+            line_dash="dash",
+            line_color="green",
+            line_width=2,
+            annotation_text=f"Mean: {mean_val:.3f}",
+            annotation_position="bottom",
+            annotation_font_color="green"
+        )
+        
+        fig.update_layout(
+            title="Raw DI Value Distribution",
+            xaxis_title="Raw DI Value (>0 → Y, ≤0 → N)",
+            yaxis_title="Number of Agents",
+            showlegend=False,
+            height=350,
+            xaxis=dict(zeroline=True, zerolinecolor='red', zerolinewidth=2)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Statistics and pie chart side by side
+        col_stats, col_pie = st.columns(2)
+        
+        with col_stats:
+            st.markdown("**📈 Raw Value Statistics**")
+            stats_df = pd.DataFrame({
+                'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+                'Value': [
+                    f"{mean_val:.4f}",
+                    f"{raw_values.std():.4f}",
+                    f"{raw_values.median():.4f}",
+                    f"{raw_values.min():.4f}",
+                    f"{raw_values.max():.4f}"
+                ]
+            })
+            st.dataframe(stats_df, hide_index=True, use_container_width=True)
+            
+            # Show insight
+            if mean_val > 0:
+                st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")
+            elif mean_val < 0:
+                st.warning(f"⚠️ Mean ({mean_val:.4f}) < 0: Distribution favors non-disclosure")
+            else:
+                st.info("ℹ️ Mean ≈ 0: Distribution is balanced")
+        
+        with col_pie:
+            st.markdown("**📊 Final Classification (Pie Chart)**")
+            if len(value_counts) > 0:
+                fig_pie = px.pie(
+                    values=value_counts.values,
+                    names=value_counts.index,
+                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
+                )
+                fig_pie.update_layout(height=300, margin=dict(t=20, b=20, l=20, r=20))
+                st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        # Basic visualization - pie chart only (no raw values available)
+        col_plot, col_stats = st.columns([2, 1])
+        
+        with col_plot:
+            if len(value_counts) > 0:
+                st.markdown(f"**{decision_title} Distribution**")
+                fig = px.pie(
+                    values=value_counts.values,
+                    names=value_counts.index,
+                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        
+        with col_stats:
+            st.markdown("**📊 Choice Breakdown**")
+            ordered_choices = ['Y', 'N']
+            ordered_data = []
+            for choice in ordered_choices:
+                if choice in value_counts.index:
+                    count = value_counts[choice]
+                    ordered_data.append({
+                        'Choice': choice,
+                        'Count': count,
+                        'Percentage': f"{(count/total)*100:.1f}%"
+                    })
+            
+            breakdown_df = pd.DataFrame(ordered_data)
+            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     
     # Excel download section
     st.markdown("---")

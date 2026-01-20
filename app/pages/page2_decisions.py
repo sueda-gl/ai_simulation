@@ -241,13 +241,26 @@ def render_overview_tab(selected_decisions):
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
     # Check if complete simulation can run (validation for multiple configurations)
-    can_run, reason, config_count = can_run_complete_simulation()
+    can_run, reason, config_count, block_type = can_run_complete_simulation()
     
     col1, col2 = st.columns([3, 1])
     with col1:
         if not can_run:
-            # Show warning about multiple configurations
-            st.warning(f"""
+            # Show warning based on block type
+            if block_type == "disclose_income":
+                st.warning(f"""
+⚠️ **Disclose Income Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Income** tab
+2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+3. Return here to run complete simulation
+                """)
+            else:
+                # donation_config block type
+                st.warning(f"""
 ⚠️ **Multiple Donation Configurations Detected**
 
 {reason}
@@ -257,7 +270,7 @@ def render_overview_tab(selected_decisions):
 2. Run **donation_default only**
 3. Select your preferred configuration from results
 4. Return here to run complete simulation
-            """)
+                """)
         elif config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
             # Show selected configuration info
             config = st.session_state.selected_donation_config
@@ -287,14 +300,15 @@ def render_overview_tab(selected_decisions):
     
     with col2:
         if not can_run:
-            # Disabled button
+            # Disabled button with appropriate help text
+            help_text = "Change Disclose Income to single mode first" if block_type == "disclose_income" else "Select a donation configuration first"
             st.button(
                 "🚀 Run Complete Simulation", 
                 type="primary", 
                 use_container_width=True, 
                 disabled=True,
                 key="run_complete_simulation_disabled",
-                help="Select a donation configuration first"
+                help=help_text
             )
         else:
             # Enabled button

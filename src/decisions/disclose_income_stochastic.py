@@ -454,7 +454,13 @@ def disclose_income_stochastic(
     
     disclose_income = "Y" if draw > 0 else "N"
     
-    return {"disclose_income": disclose_income}
+    # Return both the final decision AND the raw DI value for analysis
+    # The raw value is the draw value BEFORE classification (what we compare to 0)
+    return {
+        "disclose_income": disclose_income,
+        "disclose_income_raw": float(draw),  # Raw value before Y/N classification
+        "disclose_income_di": float(DI_i),   # The DI_i value before stochastic draw
+    }
 
 
 # =============================================================================

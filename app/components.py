@@ -56,10 +56,13 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             st.metric("Method", "Bootstrap")
     
     with col4:
-        # Always use truncated donation_default for consistency
+        # Show key metric - donation_default if available, otherwise disclose_income rate
         donation_col = 'donation_default'
         if donation_col in df.columns:
             st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
+        elif 'disclose_income' in df.columns:
+            y_rate = (df['disclose_income'] == 'Y').mean()
+            st.metric("Disclose Income (Y)", f"{y_rate:.1%}")
     
     # Donation rate analysis (if available) - always use truncated
     donation_col = 'donation_default'
@@ -107,38 +110,47 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     if 'disclose_income' in df.columns:
         st.subheader(f"📊 Disclose Income Analysis{title_suffix}")
         
-        value_counts = df['disclose_income'].value_counts()
-        total = len(df)
+        # Check if we have raw DI values for detailed analysis
+        has_raw_values = 'disclose_income_raw' in df.columns
         
-        # Pie chart (full width)
-        if len(value_counts) > 0:
-            fig = px.pie(
-                values=value_counts.values,
-                names=value_counts.index,
-                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
-            )
-            chart_key = f"disclose_income_pie_{result_key}" if result_key else f"disclose_income_pie_{title_suffix}"
-            st.plotly_chart(fig, use_container_width=True, key=chart_key)
-        
-        # Choice breakdown table below the chart
-        st.markdown("**📊 Choice Breakdown**")
-        # Ensure Y appears before N in the breakdown
-        ordered_choices = ['Y', 'N']
-        ordered_data = []
-        for choice in ordered_choices:
-            if choice in value_counts.index:
-                count = value_counts[choice]
-                ordered_data.append({
-                    'Choice': choice,
-                    'Count': count,
-                    'Percentage': f"{(count/total)*100:.1f}%"
-                })
-        
-        breakdown_df = pd.DataFrame(ordered_data)
-        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+        if has_raw_values:
+            # DETAILED ANALYSIS: Show histogram of raw values before Y/N classification
+            show_disclose_income_rate_analysis(df, title_suffix, result_key, enable_selection)
+        else:
+            # BASIC ANALYSIS: Only show pie chart of Y/N outcomes (no raw values available)
+            value_counts = df['disclose_income'].value_counts()
+            total = len(df)
+            
+            # Pie chart (full width)
+            if len(value_counts) > 0:
+                fig = px.pie(
+                    values=value_counts.values,
+                    names=value_counts.index,
+                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
+                )
+                chart_key = f"disclose_income_pie_{result_key}" if result_key else f"disclose_income_pie_{title_suffix}"
+                st.plotly_chart(fig, use_container_width=True, key=chart_key)
+            
+            # Choice breakdown table below the chart
+            st.markdown("**📊 Choice Breakdown**")
+            # Ensure Y appears before N in the breakdown
+            ordered_choices = ['Y', 'N']
+            ordered_data = []
+            for choice in ordered_choices:
+                if choice in value_counts.index:
+                    count = value_counts[choice]
+                    ordered_data.append({
+                        'Choice': choice,
+                        'Count': count,
+                        'Percentage': f"{(count/total)*100:.1f}%"
+                    })
+            
+            breakdown_df = pd.DataFrame(ordered_data)
+            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     
-    # Add inline selection button if enabled
-    if enable_selection and result_key:
+    # Add inline selection button if enabled (only for donation_default results)
+    # Disclose income has its own selection button in show_disclose_income_rate_analysis
+    if enable_selection and result_key and 'donation_default' in df.columns:
         render_inline_selection_button(result_key, df)
 
 
@@ -157,10 +169,16 @@ def render_inline_selection_button(result_key, result_df):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Show key metric for quick reference - always use truncated
+        # Show key metric for quick reference - check which columns are available
         donation_col = 'donation_default'
-        mean_donation = result_df[donation_col].mean()
-        st.caption(f"📊 Quick Summary: {len(result_df):,} agents, avg {mean_donation:.2%}")
+        if donation_col in result_df.columns:
+            mean_donation = result_df[donation_col].mean()
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, avg donation {mean_donation:.2%}")
+        elif 'disclose_income' in result_df.columns:
+            y_rate = (result_df['disclose_income'] == 'Y').mean()
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, Y rate {y_rate:.1%}")
+        else:
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents")
     
     with col2:
         # Selection button
@@ -177,6 +195,237 @@ def render_inline_selection_button(result_key, result_df):
                 save_selected_configuration(result_key, result_df)
                 st.success("Configuration selected!")
                 st.rerun()
+
+
+def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, enable_selection=False):
+    """
+    Display Disclose Income Rate Analysis with histogram of raw DI values.
+    
+    Shows the distribution of raw disclosure intention values BEFORE classification
+    (i.e., before the >0 → Y, ≤0 → N threshold is applied).
+    
+    The histogram includes a clear vertical line at 0 to show the decision boundary.
+    
+    Args:
+        df: DataFrame with 'disclose_income_raw' column containing raw DI values
+        title_suffix: Additional text for titles
+        result_key: Unique key for this result (needed for selection buttons)
+        enable_selection: Whether to show "Use This Config" button
+    """
+    raw_col = 'disclose_income_raw'
+    
+    if raw_col not in df.columns:
+        st.warning("Raw DI values not available - showing basic Y/N analysis only")
+        return
+    
+    # Get the raw values
+    raw_values = df[raw_col].dropna()
+    
+    if len(raw_values) == 0:
+        st.warning("No raw DI values found in results")
+        return
+    
+    # Calculate statistics
+    mean_val = raw_values.mean()
+    std_val = raw_values.std()
+    min_val = raw_values.min()
+    max_val = raw_values.max()
+    median_val = raw_values.median()
+    q25_val = raw_values.quantile(0.25)
+    q75_val = raw_values.quantile(0.75)
+    
+    # Calculate Y/N split based on threshold
+    y_count = (raw_values > 0).sum()
+    n_count = (raw_values <= 0).sum()
+    total = len(raw_values)
+    y_pct = (y_count / total) * 100 if total > 0 else 0
+    n_pct = (n_count / total) * 100 if total > 0 else 0
+    
+    # Create histogram with vertical line at 0
+    fig = go.Figure()
+    
+    # Add histogram
+    fig.add_trace(go.Histogram(
+        x=raw_values,
+        nbinsx=40,
+        name='DI Raw Values',
+        marker_color='steelblue',
+        opacity=0.7
+    ))
+    
+    # Add vertical line at 0 (decision boundary)
+    fig.add_vline(
+        x=0,
+        line_dash="solid",
+        line_color="red",
+        line_width=3,
+        annotation_text="Boundary (0)",
+        annotation_position="top",
+        annotation_font_color="red"
+    )
+    
+    # Add vertical line at mean
+    fig.add_vline(
+        x=mean_val,
+        line_dash="dash",
+        line_color="green",
+        line_width=2,
+        annotation_text=f"Mean: {mean_val:.3f}",
+        annotation_position="bottom",
+        annotation_font_color="green"
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title=f"Raw Disclosure Intention Distribution{title_suffix}",
+        xaxis_title="Raw DI Value (>0 → Y, ≤0 → N)",
+        yaxis_title="Agents",
+        showlegend=False,
+        height=300,
+        margin=dict(l=40, r=40, t=40, b=40),
+        xaxis=dict(
+            zeroline=True,
+            zerolinecolor='red',
+            zerolinewidth=2
+        )
+    )
+    
+    chart_key = f"di_raw_hist_{result_key}" if result_key else f"di_raw_hist_{title_suffix}"
+    st.plotly_chart(fig, use_container_width=True, key=chart_key)
+    
+    # Statistics and Classification side by side BELOW the graph
+    col_stats, col_class = st.columns(2)
+    
+    with col_stats:
+        st.markdown("**📈 Statistics**")
+        stats_df = pd.DataFrame({
+            'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+            'Value': [
+                f"{mean_val:.4f}",
+                f"{std_val:.4f}",
+                f"{median_val:.4f}",
+                f"{min_val:.4f}",
+                f"{max_val:.4f}"
+            ]
+        })
+        st.dataframe(stats_df, hide_index=True, use_container_width=True)
+    
+    with col_class:
+        st.markdown("**📊 Classification**")
+        classification_df = pd.DataFrame({
+            'Choice': ['Y (disclose)', 'N (not disclose)'],
+            'Count': [y_count, n_count],
+            '%': [f"{y_pct:.1f}%", f"{n_pct:.1f}%"]
+        })
+        st.dataframe(classification_df, hide_index=True, use_container_width=True)
+    
+    # Show key insight about distribution relative to threshold
+    if mean_val > 0:
+        st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")
+    elif mean_val < 0:
+        st.warning(f"⚠️ Mean ({mean_val:.4f}) < 0: Distribution favors non-disclosure")
+    else:
+        st.info("ℹ️ Mean ≈ 0: Distribution is balanced")
+    
+    # Show "Use This Config" button if enabled
+    if enable_selection and result_key:
+        render_disclose_income_selection_button(result_key, df)
+
+
+def render_disclose_income_selection_button(result_key, result_df):
+    """Render selection button for disclose income configuration"""
+    
+    # Import here to avoid circular imports
+    from app.pages.decision_execution import (
+        is_disclose_income_configuration_selected,
+        save_disclose_income_configuration
+    )
+    
+    is_selected = is_disclose_income_configuration_selected(result_key)
+    
+    st.markdown("---")
+    
+    # Create a compact selection interface
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        # Show key metrics for quick reference
+        raw_col = 'disclose_income_raw'
+        if raw_col in result_df.columns:
+            mean_raw = result_df[raw_col].mean()
+            y_rate = (result_df[raw_col] > 0).mean() * 100
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, mean DI={mean_raw:.4f}, Y rate={y_rate:.1f}%")
+        else:
+            y_count = (result_df['disclose_income'] == 'Y').sum()
+            y_rate = (y_count / len(result_df)) * 100 if len(result_df) > 0 else 0
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, Y rate={y_rate:.1f}%")
+    
+    with col2:
+        # Selection button
+        if is_selected:
+            st.success("✅ Selected")
+        else:
+            if st.button(
+                "🎯 Use This Config",
+                key=f"di_inline_select_{result_key}",
+                type="primary",
+                use_container_width=True,
+                help="Select this disclose income configuration for combined simulations"
+            ):
+                save_disclose_income_configuration(result_key, result_df)
+                st.success("Disclose Income configuration selected!")
+                st.rerun()
+
+
+def render_disclose_income_run_simulation_button():
+    """
+    Render a full-width 'Run Complete Simulation' button for disclose income comparison.
+    
+    This should be called OUTSIDE of column contexts to span full width.
+    Only shows the button when a disclose_income config is selected.
+    """
+    from app.pages.decision_execution import (
+        can_run_complete_simulation,
+        run_combined_simulation
+    )
+    
+    # Check if a disclose_income config is selected
+    has_selected_di_config = (
+        hasattr(st.session_state, 'selected_disclose_income_config') and 
+        st.session_state.selected_disclose_income_config is not None
+    )
+    
+    if not has_selected_di_config:
+        return
+    
+    # Get the selected config info
+    di_config = st.session_state.selected_disclose_income_config
+    selected_mode = di_config.get('income_mode', 'Unknown')
+    
+    st.markdown("---")
+    
+    # Check if complete simulation can run
+    can_run, reason, config_count, block_type = can_run_complete_simulation()
+    
+    if can_run:
+        st.success(f"✅ **Selected Configuration:** {selected_mode}")
+        
+        if st.button(
+            "🚀 Run Complete Simulation",
+            key="di_run_complete_full_width",
+            type="primary",
+            use_container_width=True,
+            help="Run all decisions with the selected disclose income configuration"
+        ):
+            # Get selected decisions from session state
+            selected_decisions = []
+            if hasattr(st.session_state, 'decision_params') and hasattr(st.session_state.decision_params, 'selected_decisions'):
+                selected_decisions = st.session_state.decision_params.selected_decisions
+            run_combined_simulation(selected_decisions)
+    else:
+        # Show why complete simulation can't run yet
+        if block_type == "donation_config":
+            st.warning(f"⚠️ **Additional Configuration Required:** {reason}")
 
 
 def show_parameter_applicability_analysis(selected_decisions):
