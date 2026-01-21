@@ -52,11 +52,17 @@ class Orchestrator:
         ]
         
         # Load decision modules dynamically
+        # For disclose_income, use stochastic version (like baseline/doc modes) to support research model
         self.decision_modules = {}
         for decision_name in self.decision_order:
             try:
-                module = importlib.import_module(f'src.decisions.{decision_name}')
-                self.decision_modules[decision_name] = getattr(module, decision_name)
+                if decision_name == 'disclose_income':
+                    # Use stochastic version for disclose_income (handles copula mode via pop_context + in_copula)
+                    module = importlib.import_module(f'src.decisions.{decision_name}_stochastic')
+                    self.decision_modules[decision_name] = getattr(module, f'{decision_name}_stochastic')
+                else:
+                    module = importlib.import_module(f'src.decisions.{decision_name}')
+                    self.decision_modules[decision_name] = getattr(module, decision_name)
             except (ImportError, AttributeError) as e:
                 print(f"Warning: Could not load decision module {decision_name}: {e}")
     
@@ -100,10 +106,6 @@ class Orchestrator:
         if 'vendor_remaining_capacity' in self.simulation_config:
             del self.simulation_config['vendor_remaining_capacity']
         
-        # Create dedicated RNG for agent processing (independent of setup)
-        # All modes use same seed here, ensuring identical agent RNG derivation
-        rng_global = np.random.default_rng(seed + 1000000)
-        
         # Determine which decisions to run
         if single_decision:
             if isinstance(single_decision, str):
@@ -130,10 +132,53 @@ class Orchestrator:
         # Import income utility for pre-generation
         from src.decisions.income_utils import get_agent_income
         
-        # Process each agent
-        results = []
+        # ============================================================================
+        # TWO-PASS APPROACH FOR INCOME STATISTICS COMPUTATION
+        # Pass 1: Generate all incomes first to compute population statistics
+        # Pass 2: Run decisions (which can now access mean/sd for continuous mode)
+        # This matches the approach used in orchestrator_doc_mode.py and orchestrator_baseline.py
+        # ============================================================================
+        
+        # PASS 1: Generate all agent incomes and compute population statistics
+        # We need a fresh RNG that matches what will be used in Pass 2
+        rng_pass1 = np.random.default_rng(seed + 1000000)
+        all_incomes = []
+        agent_base_seeds = []  # Store seeds for reuse in Pass 2
         
         for idx, row in agents_df.iterrows():
+            # Generate the same base seed that will be used in Pass 2
+            agent_base_seed = rng_pass1.integers(1e9)
+            agent_base_seeds.append(agent_base_seed)
+            
+            # Create temporary agent state for income generation
+            temp_state = row.to_dict()
+            income_rng = np.random.default_rng(agent_base_seed + 999999)
+            income = get_agent_income(temp_state, self.simulation_config, income_rng)
+            all_incomes.append(income)
+        
+        # Compute and store population statistics for continuous income mode
+        self.simulation_config['income_median'] = float(np.median(all_incomes))
+        self.simulation_config['income_stats'] = {
+            'mean': float(np.mean(all_incomes)),
+            'sd': float(np.std(all_incomes))
+        }
+        print(f"[Copula] Computed income median: ${self.simulation_config['income_median']:,.2f}")
+        print(f"[Copula] Computed income stats: mean=${self.simulation_config['income_stats']['mean']:,.2f}, sd=${self.simulation_config['income_stats']['sd']:,.2f}")
+        
+        # Log disclose_income mode if running
+        if 'disclose_income' in decisions_to_run and 'disclose_income' in self.decision_modules:
+            disclose_income_params = self.config.get('disclose_income', {})
+            di_income_mode = disclose_income_params.get('income_mode', 'categorical')
+            print(f"[Copula] disclose_income income_mode: {di_income_mode}")
+        
+        # ============================================================================
+        # PASS 2: Process agents and run decisions
+        # Uses pre-computed income statistics and same RNG seeds as Pass 1
+        # ============================================================================
+        
+        results = []
+        
+        for list_idx, (idx, row) in enumerate(agents_df.iterrows()):
             # Initialize agent state with traits
             agent_state = row.to_dict()
             
@@ -141,12 +186,11 @@ class Orchestrator:
             agent_state['index'] = idx
             agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
             
-            # Create base seed for this agent (deterministic based on agent index)
-            agent_base_seed = rng_global.integers(1e9)
+            # Use the same base seed from Pass 1 (ensures identical income generation)
+            agent_base_seed = agent_base_seeds[list_idx]
             
-            # CRITICAL FIX: Pre-generate income with a CONSISTENT RNG
+            # Pre-generate income with the SAME RNG as Pass 1 (ensures consistency)
             # This ensures income is the same regardless of which decisions run
-            # Income RNG uses a fixed offset to be independent of decision order
             income_rng = np.random.default_rng(agent_base_seed + 999999)
             get_agent_income(agent_state, self.simulation_config, income_rng)
             
@@ -163,9 +207,9 @@ class Orchestrator:
                     decision_rng = np.random.default_rng(decision_seed)
                     
                     # Execute decision module
-                    # Pass pop_context to modules that support it (donation_default)
+                    # Pass pop_context to modules that support it (donation_default, disclose_income)
                     # Pass simulation_config to all modules for global parameters
-                    if decision_name == 'donation_default':
+                    if decision_name in ('donation_default', 'disclose_income'):
                         decision_output = self.decision_modules[decision_name](
                             agent_state, params, decision_rng, pop_context=self.pop_context, simulation_config=self.simulation_config
                         )

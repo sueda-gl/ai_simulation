@@ -122,26 +122,6 @@ def render_disclose_income_tab():
 
     st.markdown('<h3 class="section-header">Disclose Income Configuration</h3>', unsafe_allow_html=True)
 
-    # Show selected configuration status if in Compare both mode
-    di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
-    is_compare_mode = 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()
-    
-    if is_compare_mode:
-        if hasattr(st.session_state, 'selected_disclose_income_config') and st.session_state.selected_disclose_income_config:
-            di_config = st.session_state.selected_disclose_income_config
-            selected_mode = di_config.get('income_mode', 'Unknown')
-            y_rate = di_config.get('metrics', {}).get('y_rate', 0)
-            col_status, col_clear = st.columns([3, 1])
-            with col_status:
-                st.success(f"✅ **Selected Configuration:** {selected_mode} (Y rate: {y_rate:.1%})")
-            with col_clear:
-                if st.button("🗑️ Clear", key="clear_di_config_btn", help="Clear selected configuration"):
-                    from app.pages.decision_execution import clear_disclose_income_configuration
-                    clear_disclose_income_configuration()
-                    st.rerun()
-        else:
-            st.info("ℹ️ **Compare both** mode: Run 'Disclose Income Only' and select a configuration for complete simulation.")
-
     col1, col2 = st.columns(2)
 
     with col1:
@@ -174,6 +154,15 @@ def render_disclose_income_tab():
             st.session_state.di_income_mode = new_mode
             save_to_disclose_income_storage('di_tab_income_mode', 'income_mode')
             save_disclose_income_config({'income_mode': new_mode})
+            # FIX: Clear saved disclose_income config from BOTH legacy AND unified storage
+            # This prevents stale configs from persisting when user changes income mode
+            # Legacy storage
+            if hasattr(st.session_state, 'selected_disclose_income_config'):
+                delattr(st.session_state, 'selected_disclose_income_config')
+            # Unified storage
+            if 'selected_decision_configs' in st.session_state:
+                if 'disclose_income' in st.session_state.selected_decision_configs:
+                    del st.session_state.selected_decision_configs['disclose_income']
             st.toast(f"Income specification set to: {new_mode}", icon="💾")
 
         # Restore income mode from storage
@@ -460,16 +449,21 @@ def render_disclose_income_tab():
     st.markdown('<h4 class="subsection-header">Actions & Management</h4>', unsafe_allow_html=True)
     render_actions_and_management_section(config)
 
-    # Simulation buttons
+    # Simulation buttons - same as donation_default
     try:
         from app.pages.decision_execution import render_simulation_buttons
+        
+        # Safety: Get selected_decisions with a default
         selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])
+        
         render_simulation_buttons(
             decision_name="disclose_income",
             selected_decisions=selected_decs
         )
     except Exception as e:
         st.error(f"Error rendering simulation buttons: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def render_formula_display(config):

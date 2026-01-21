@@ -1,6 +1,6 @@
 # app/pages/results/config_selection.py
 """
-Configuration selection UI for donation decision results.
+Configuration selection UI for decision results (donation_default and disclose_income).
 """
 import streamlit as st
 import pandas as pd
@@ -10,7 +10,10 @@ from app.pages.decision_execution import (
     is_configuration_selected,
     clear_selected_configuration,
     run_combined_simulation,
-    can_run_complete_simulation
+    can_run_complete_simulation,
+    get_selected_decision_configs,
+    get_decision_config,
+    clear_decision_config
 )
 from app.models import ALL_DECISIONS
 
@@ -44,13 +47,14 @@ def render_configuration_selection_ui(results_dict):
     if not is_individual_donation_run:
         return
     
-    # Check if config is already selected
-    has_selected_config = (
-        'selected_donation_config' in st.session_state and 
-        st.session_state.selected_donation_config is not None
-    )
+    # Check if config is already selected (only count explicitly saved configs, not auto-implied)
+    has_selected_config = False
+    if 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None:
+        config = st.session_state.selected_donation_config
+        # Only count as "selected" if it was explicitly saved, not auto-implied
+        has_selected_config = config.get('source') != 'auto_implied_single_config'
     
-    # SINGLE CONFIG SCENARIO: Show save button when only one config exists and not yet saved
+    # SINGLE CONFIG SCENARIO: Show save button when only one config exists and not yet explicitly saved
     if len(results_dict) == 1 and not has_selected_config:
         st.markdown("---")
         st.markdown('<h3 class="section-header">💾 Save Configuration</h3>', unsafe_allow_html=True)
@@ -117,6 +121,84 @@ def render_configuration_selection_ui(results_dict):
                     st.rerun()
         
         # Add "Run Complete Simulation" button right here on Results page
+        # The render_complete_simulation_section will check can_run_complete_simulation() internally
+        render_complete_simulation_section()
+
+
+def render_disclose_income_config_selection_ui(results_dict):
+    """Render configuration selection UI for disclose_income decision results"""
+    
+    if not results_dict:
+        return
+    
+    # Check if any results have disclose_income column
+    has_di_results = any(
+        'disclose_income' in df.columns 
+        for df in results_dict.values() 
+        if isinstance(df, pd.DataFrame) and not df.empty
+    )
+    
+    if not has_di_results:
+        return
+    
+    # Check if this is from an individual disclose_income decision run
+    is_individual_di_run = (
+        hasattr(st.session_state, 'custom_decisions') and 
+        st.session_state.custom_decisions == ['disclose_income'] and
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) == 0
+    )
+    
+    if not is_individual_di_run:
+        return
+    
+    # Check if config is already selected (from unified or legacy storage)
+    # Only count explicitly saved configs, not auto-implied ones
+    di_config = get_decision_config('disclose_income')
+    has_selected_config = di_config is not None and di_config.get('source') != 'auto_implied_single_config'
+    
+    if not has_selected_config:
+        legacy_config = st.session_state.get('selected_disclose_income_config')
+        has_selected_config = (
+            legacy_config is not None and 
+            legacy_config.get('source') != 'auto_implied_single_config'
+        )
+    
+    # If config is selected, show the selected config info and potentially the Run Complete Simulation button
+    if has_selected_config:
+        st.markdown("---")
+        
+        # Get config from unified storage first, then legacy
+        config = get_decision_config('disclose_income')
+        if config is None:
+            config = st.session_state.selected_disclose_income_config
+        
+        income_mode = config.get('params', {}).get('income_mode', config.get('income_mode', 'Unknown'))
+        
+        with st.container():
+            st.success(f"✅ **Selected Disclose Income Configuration**: {income_mode}")
+            
+            # Show metrics if available
+            metrics = config.get('metrics', {})
+            if metrics:
+                col1, col2, col3 = st.columns([2, 2, 1])
+                with col1:
+                    y_rate = metrics.get('y_rate', 0)
+                    st.caption(f"Y Rate: {y_rate:.1%}")
+                with col2:
+                    timestamp = config.get('selected_timestamp')
+                    if timestamp:
+                        st.caption(f"Selected at {timestamp.strftime('%H:%M:%S')}")
+                with col3:
+                    if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_di_selection"):
+                        clear_decision_config('disclose_income')
+                        st.rerun()
+        
+        # CRITICAL: Check if complete simulation can actually run before showing the section
+        can_run, reason, config_count, block_type = can_run_complete_simulation()
+        
+        # Only show Run Complete Simulation section if simulation is viable OR if it's blocked 
+        # (so we can show the user why it's blocked and what to do)
         render_complete_simulation_section()
 
 
@@ -213,20 +295,17 @@ def render_complete_simulation_section():
     st.markdown("---")
     st.markdown('<h3 class="section-header">🚀 Run Complete Simulation</h3>', unsafe_allow_html=True)
     
+    # CRITICAL: Check if complete simulation can run FIRST, before showing any config info
+    can_run, reason, config_count, block_type = can_run_complete_simulation()
+    
     # Get selected decisions from session state
     selected_decisions = getattr(st.session_state.decision_params, 'selected_decisions', [])
     
     # Calculate unselected decisions
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
-    # Get selected configuration details
-    config = st.session_state.selected_donation_config
-    
-    # Check if complete simulation can run (validates Disclose Income mode, etc.)
-    can_run, reason, config_count, block_type = can_run_complete_simulation()
-    
     if not can_run:
-        # Show warning based on block type
+        # Show warning FIRST so user knows there's an issue
         if block_type == "disclose_income":
             st.warning(f"""
 ⚠️ **Disclose Income Configuration Required**
@@ -234,12 +313,22 @@ def render_complete_simulation_section():
 {reason}
 
 **Action Required:**
-1. Go to the **Disclose Income** tab in Decision Parameters
-2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+1. Run **Disclose Income Only** from the Disclose Income tab
+2. Click **"Use This Config"** on the result you want to use
+3. Return here to run complete simulation
+            """)
+        elif block_type == "donation_config":
+            st.warning(f"""
+⚠️ **Donation Default Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Run **Donation Default Only** from the Donation Default tab
+2. Click **"Use This Config"** on the result you want to use
 3. Return here to run complete simulation
             """)
         else:
-            # donation_config block type (shouldn't happen here since config is selected, but handle anyway)
             st.warning(f"""
 ⚠️ **Configuration Issue**
 
@@ -247,7 +336,13 @@ def render_complete_simulation_section():
             """)
         
         # Disabled button
-        help_text = "Change Disclose Income to single mode first" if block_type == "disclose_income" else "Configuration issue detected"
+        if block_type == "disclose_income":
+            help_text = "Select a Disclose Income config first"
+        elif block_type == "donation_config":
+            help_text = "Select a Donation Default config first"
+        else:
+            help_text = "Configuration issue detected"
+            
         st.button(
             "🚀 Run Complete Simulation",
             type="primary",
@@ -257,6 +352,34 @@ def render_complete_simulation_section():
             help=help_text
         )
     else:
+        # Simulation CAN run - now show saved configs that will be used
+        # Only show explicitly saved configs (not auto-implied ones)
+        saved_configs = get_selected_decision_configs()
+        explicit_configs = {
+            k: v for k, v in saved_configs.items() 
+            if v.get('source') != 'auto_implied_single_config'
+        }
+        
+        if explicit_configs:
+            st.info(f"📋 **{len(explicit_configs)} saved configuration(s) will be used:**")
+            for decision_name, config in explicit_configs.items():
+                decision_title = decision_name.replace('_', ' ').title()
+                if decision_name == 'donation_default':
+                    income_mode = config.get('params', {}).get('income_mode', 
+                        config.get('income_spec_mode', 'Unknown'))
+                    mean_val = config.get('metrics', {}).get('mean_donation', 0)
+                    st.caption(f"  ✅ {decision_title}: {income_mode} (mean: {mean_val:.2%})")
+                elif decision_name == 'disclose_income':
+                    income_mode = config.get('params', {}).get('income_mode',
+                        config.get('income_mode', 'Unknown'))
+                    y_rate = config.get('metrics', {}).get('y_rate', 0)
+                    st.caption(f"  ✅ {decision_title}: {income_mode} (Y rate: {y_rate:.1%})")
+                else:
+                    st.caption(f"  ✅ {decision_title}")
+        else:
+            # No explicit configs but simulation can run (single mode)
+            st.info("📋 **Using current UI settings** (no explicit configurations saved)")
+        
         # Enabled button
         if st.button(
             "🚀 Run Complete Simulation",

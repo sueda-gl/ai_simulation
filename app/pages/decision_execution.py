@@ -46,11 +46,12 @@ def can_run_complete_simulation():
     """
     Determine if complete simulation can run based on configuration state.
     
-    This prevents running all decisions when multiple donation configurations would be generated,
-    unless the user has explicitly selected one configuration to use.
+    This prevents running all decisions when:
+    1. Any decision is in "Compare both" mode without a saved config selected
+    2. Multiple configurations would be generated without an explicit selection
     
-    Also blocks complete simulation when disclose_income is set to "Compare both" mode,
-    since that generates multiple comparison results not suitable for full simulation.
+    IMPORTANT: Only check config requirements for decisions the user actually selected.
+    Unselected decisions will use defaults and don't need explicit config selection.
     
     Returns:
         tuple: (can_run: bool, reason: str, config_count: int, block_type: str or None)
@@ -59,16 +60,34 @@ def can_run_complete_simulation():
             - config_count: Number of configurations that would be generated
             - block_type: Type of block - "disclose_income", "donation_config", or None if not blocked
     """
-    # Check if disclose_income is in "Compare both" mode
+    # Use unified config system
+    configs = get_selected_decision_configs()
+    
+    # FIX: Get the user's selected decisions - only check requirements for these
+    selected_decisions = []
+    if hasattr(st.session_state, 'decision_params') and hasattr(st.session_state.decision_params, 'selected_decisions'):
+        selected_decisions = st.session_state.decision_params.selected_decisions or []
+    
+    # Also include decisions that have saved configs (user explicitly saved a config)
+    for decision_name in configs:
+        if configs[decision_name].get('source') != 'auto_implied_single_config':
+            if decision_name not in selected_decisions:
+                selected_decisions = list(selected_decisions) + [decision_name]
+    
+    # Check disclose_income "Compare both" mode - ONLY if disclose_income is selected or has saved config
     di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
-    di_is_compare_mode = 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()
+    di_in_compare_mode = 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()
+    disclose_income_selected = 'disclose_income' in selected_decisions
     
-    # Check if a disclose_income configuration has been selected
-    has_selected_di_config = hasattr(st.session_state, 'selected_disclose_income_config') and st.session_state.selected_disclose_income_config is not None
-    
-    # Block if disclose_income is in compare mode AND no config is selected
-    if di_is_compare_mode and not has_selected_di_config:
-        return (False, "Disclose Income is set to 'Compare both' mode - please run Disclose Income Only and select a configuration", 2, "disclose_income")
+    if di_in_compare_mode and disclose_income_selected:
+        # Check if user has selected a disclose_income config
+        if 'disclose_income' in configs:
+            # User has a saved config - allow using that config
+            saved_mode = configs['disclose_income'].get('params', {}).get('income_mode', 
+                configs['disclose_income'].get('income_mode', 'Unknown'))
+            # Continue checking other decisions (don't return yet)
+        else:
+            return (False, "Disclose Income is set to 'Compare both' mode - please run disclose_income only, then click 'Use This Config' to select one", 2, "disclose_income")
     
     # Check if multiple configurations will be generated for donation_default
     population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
@@ -83,17 +102,72 @@ def can_run_complete_simulation():
     
     total_configs = population_count * income_count
     
-    # Case 1: Only one configuration - always allow
-    if total_configs == 1:
-        return (True, "Single configuration", 1, None)
+    # FIX: Check if donation_default is in the user's selected decisions
+    # If NOT selected, it will use defaults - no need to require config selection
+    donation_default_selected = 'donation_default' in selected_decisions
     
-    # Case 2: Multiple configurations - check if one is selected
-    has_selected_config = hasattr(st.session_state, 'selected_donation_config')
+    # Case 1: Only one donation configuration OR donation_default not selected
+    # If donation_default is not selected, it will use defaults regardless of config count
+    if total_configs == 1 or not donation_default_selected:
+        # Build config description
+        config_parts = []
+        
+        # Show disclose_income config if selected and saved
+        if 'disclose_income' in configs:
+            di_config = configs['disclose_income']
+            di_mode = di_config.get('params', {}).get('income_mode', di_config.get('income_mode', 'Unknown'))
+            config_parts.append(f"Disclose Income: {di_mode}")
+        
+        # Show donation_default config if selected and saved
+        if 'donation_default' in configs and configs['donation_default'].get('source') != 'auto_implied_single_config':
+            dd_config = configs['donation_default']
+            dd_mode = dd_config.get('params', {}).get('income_mode', dd_config.get('income_spec_mode', 'Unknown'))
+            config_parts.append(f"Donation Default: {dd_mode}")
+        
+        if config_parts:
+            return (True, f"Using saved configuration(s): {', '.join(config_parts)}", 1, None)
+        elif not donation_default_selected:
+            return (True, "Donation Default will use default values", 1, None)
+        else:
+            return (True, "Single configuration", 1, None)
     
-    if has_selected_config:
-        # User has selected a specific configuration - allow with that config
-        config = st.session_state.selected_donation_config
-        config_name = f"{config['population_mode']} + {config['income_spec_mode']}"
+    # Case 2: Multiple donation configurations AND donation_default IS selected - check if one is selected
+    # CRITICAL: Only count EXPLICITLY saved configs, not auto-implied ones
+    has_donation_config = False
+    
+    if 'donation_default' in configs:
+        config = configs['donation_default']
+        # Only count if not auto-implied
+        if config.get('source') != 'auto_implied_single_config':
+            has_donation_config = True
+    
+    # Also check legacy storage for backwards compatibility
+    if not has_donation_config and hasattr(st.session_state, 'selected_donation_config'):
+        legacy_config = st.session_state.selected_donation_config
+        # Only count if not auto-implied
+        if legacy_config and legacy_config.get('source') != 'auto_implied_single_config':
+            has_donation_config = True
+    
+    if has_donation_config:
+        # User has selected a specific donation configuration
+        if 'donation_default' in configs:
+            config = configs['donation_default']
+            pop_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+            inc_mode = config.get('params', {}).get('income_mode', config.get('income_spec_mode', 'Unknown'))
+        else:
+            # Legacy storage
+            config = st.session_state.selected_donation_config
+            pop_mode = config.get('population_mode', 'Unknown')
+            inc_mode = config.get('income_spec_mode', 'Unknown')
+        
+        config_name = f"{pop_mode} + {inc_mode}"
+        
+        # Also show disclose_income config if selected
+        if 'disclose_income' in configs:
+            di_config = configs['disclose_income']
+            di_mode = di_config.get('params', {}).get('income_mode', di_config.get('income_mode', 'Unknown'))
+            config_name += f", Disclose Income: {di_mode}"
+        
         return (True, f"Using selected configuration: {config_name}", total_configs, None)
     else:
         # Multiple configs but none selected - block complete simulation
@@ -196,10 +270,36 @@ def auto_populate_single_donation_config():
     This should be called during page initialization to ensure the Overview tab
     shows the current configuration settings without requiring explicit selection.
     
+    IMPORTANT: Auto-implied configs are ONLY for UI convenience. They should NOT
+    be treated as "saved" configs for the Run Complete Simulation feature.
+    When user is in "Compare both" mode, any auto-implied configs must be cleared.
+    
     Returns:
         bool: True if config was auto-populated, False otherwise
     """
     try:
+        # First, check if we're in a "Compare both" mode - if so, clear any auto-implied configs
+        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
+        
+        is_compare_mode = (
+            population_mode == "Compare all" or 
+            'compare' in str(income_spec_mode).lower() or 
+            'both' in str(income_spec_mode).lower()
+        )
+        
+        if is_compare_mode:
+            # In compare mode - clear any auto-implied configs from BOTH legacy and unified storage
+            if 'selected_donation_config' in st.session_state:
+                existing = st.session_state.selected_donation_config
+                if existing and existing.get('source') == 'auto_implied_single_config':
+                    del st.session_state.selected_donation_config
+                    # Also clear from unified storage
+                    configs = get_selected_decision_configs()
+                    if 'donation_default' in configs and configs['donation_default'].get('source') == 'auto_implied_single_config':
+                        del configs['donation_default']
+            return False
+        
         # Check if already has a configuration (use 'in' for Streamlit session state)
         has_existing = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
         
@@ -214,25 +314,30 @@ def auto_populate_single_donation_config():
                 # Modes have changed - check if we should update
                 can_run, reason, config_count, block_type = can_run_complete_simulation()
                 if config_count == 1:
-                    # Single config now - update to match current settings
-                    implied_config = get_implied_single_configuration()
-                    if implied_config:
-                        st.session_state.selected_donation_config = implied_config
-                        
-                        # Sync final_donation_rate_default_value with implied config's mean donation
-                        # This happens only ONCE when the config is auto-populated/updated
-                        mean_donation = implied_config['metrics']['mean_donation']
-                        st.session_state.final_donation_rate_default_value = mean_donation
-                        
-                        if '_persistent_defaults' not in st.session_state:
-                            st.session_state._persistent_defaults = {}
-                        st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
-                        
-                        return True
+                    # Single config now - only auto-populate if the existing was auto-implied
+                    # Don't overwrite explicitly saved configs
+                    if existing.get('source') == 'auto_implied_single_config':
+                        implied_config = get_implied_single_configuration()
+                        if implied_config:
+                            st.session_state.selected_donation_config = implied_config
+                            
+                            # Sync final_donation_rate_default_value with implied config's mean donation
+                            mean_donation = implied_config['metrics']['mean_donation']
+                            st.session_state.final_donation_rate_default_value = mean_donation
+                            
+                            if '_persistent_defaults' not in st.session_state:
+                                st.session_state._persistent_defaults = {}
+                            st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
+                            
+                            return True
                 else:
-                    # Multiple configs now - clear the old single-config selection
+                    # Multiple configs now - clear the old single-config selection if it was auto-implied
                     if existing.get('source') == 'auto_implied_single_config':
                         del st.session_state.selected_donation_config
+                        # Also clear from unified storage
+                        configs = get_selected_decision_configs()
+                        if 'donation_default' in configs and configs['donation_default'].get('source') == 'auto_implied_single_config':
+                            del configs['donation_default']
             return False
         
         # No existing config - try to get implied single configuration
@@ -348,11 +453,10 @@ def render_simulation_buttons(decision_name, selected_decisions):
 **Action Required:**
 
 1. Go to the **Disclose Income** tab
-2. Click **"Run Disclose Income Only"** to see comparison results
-3. Click **"Use This Config"** on your preferred configuration
-4. Return here and click **Run Complete Simulation**
+2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+3. Return here and click **Run Complete Simulation**
 
-Alternatively, change "Income Specification" from "Compare both" to a single mode.
+This ensures all decisions produce a single result set.
                 """)
             else:
                 # donation_config block type
@@ -373,15 +477,13 @@ This ensures all decisions use consistent settings.
             
         else:
             # Enabled button - can proceed
-            # Show info about selected configs if applicable
+            # Show info about selected config if applicable
+            # CRITICAL: Only show "Using:" message for EXPLICITLY saved configs, not auto-implied ones
             if config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
                 config = st.session_state.selected_donation_config
-                st.success(f"✅ Donation: {config['population_mode']} + {config['income_spec_mode']}")
-            
-            # Show selected disclose_income config if in compare mode
-            if hasattr(st.session_state, 'selected_disclose_income_config') and st.session_state.selected_disclose_income_config:
-                di_config = st.session_state.selected_disclose_income_config
-                st.success(f"✅ Disclose Income: {di_config.get('income_mode', 'Selected')}")
+                # Only show message if this was explicitly selected by user
+                if config and config.get('source') != 'auto_implied_single_config':
+                    st.success(f"✅ Using: {config['population_mode']} + {config['income_spec_mode']}")
             
             if st.button(
                 "🎯 Run Complete Simulation", 
@@ -795,7 +897,34 @@ def run_combined_simulation(selected_decisions):
     """
     
     # Store information about selected vs default decisions
-    unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
+    # FIX: If there's a saved config for a decision, treat it as "selected/custom" even if not in multiselect
+    effective_selected_decisions = list(selected_decisions)
+    
+    # Check for saved disclose_income config
+    using_selected_disclose_income_config = False
+    di_saved_mode = None
+    
+    # Check unified storage first
+    if 'selected_decision_configs' in st.session_state:
+        if 'disclose_income' in st.session_state.selected_decision_configs:
+            di_config = st.session_state.selected_decision_configs['disclose_income']
+            # Skip auto-implied configs
+            if di_config.get('source') != 'auto_implied_single_config':
+                using_selected_disclose_income_config = True
+                di_saved_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
+    
+    # Also check legacy storage
+    if not using_selected_disclose_income_config and hasattr(st.session_state, 'selected_disclose_income_config'):
+        di_config = st.session_state.selected_disclose_income_config
+        if di_config.get('source') != 'auto_implied_single_config':
+            using_selected_disclose_income_config = True
+            di_saved_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
+    
+    # If there's a saved disclose_income config, ensure it's treated as custom
+    if using_selected_disclose_income_config and 'disclose_income' not in effective_selected_decisions:
+        effective_selected_decisions.append('disclose_income')
+    
+    unselected_decisions = [d for d in ALL_DECISIONS if d not in effective_selected_decisions]
     
     # Show info about what each decision will use (no global override)
     using_selected_donation_config = hasattr(st.session_state, 'selected_donation_config')
@@ -807,22 +936,27 @@ def run_combined_simulation(selected_decisions):
         # Mark for results display
         st.session_state._using_selected_config = True
     
-    # Show disclose_income mode if it's being run
-    if 'disclose_income' in selected_decisions or 'disclose_income' in unselected_decisions:
+    # FIX: Show disclose_income mode from SAVED CONFIG if available, not just di_income_mode
+    if using_selected_disclose_income_config:
+        st.info(f"📋 **Disclose Income** will use saved config: {di_saved_mode}")
+        # Update di_income_mode to match saved config for consistency
+        if di_saved_mode:
+            st.session_state.di_income_mode = di_saved_mode
+    elif 'disclose_income' in effective_selected_decisions or 'disclose_income' in unselected_decisions:
         di_mode = st.session_state.get('di_income_mode', 'Categorical only')
         st.info(f"📋 **Disclose Income** will use: {di_mode}")
     
     # Validate income mode compatibility and show warning if mismatched
     # (This is informational only - we proceed with user's explicit settings)
-    _validate_income_mode_compatibility(selected_decisions, unselected_decisions, using_selected_donation_config)
+    _validate_income_mode_compatibility(effective_selected_decisions, unselected_decisions, using_selected_donation_config)
     
     # Create appropriate spinner message
-    if len(selected_decisions) == 0:
+    if len(effective_selected_decisions) == 0:
         spinner_msg = f"Running complete simulation: All {len(ALL_DECISIONS)} decisions with default values..."
     elif len(unselected_decisions) == 0:
-        spinner_msg = f"Running complete simulation: All {len(selected_decisions)} decisions with custom parameters..."
+        spinner_msg = f"Running complete simulation: All {len(effective_selected_decisions)} decisions with custom parameters..."
     else:
-        spinner_msg = f"Running complete simulation: {len(selected_decisions)} custom + {len(unselected_decisions)} default decisions..."
+        spinner_msg = f"Running complete simulation: {len(effective_selected_decisions)} custom + {len(unselected_decisions)} default decisions..."
     
     with st.spinner(spinner_msg):
         try:
@@ -833,7 +967,8 @@ def run_combined_simulation(selected_decisions):
             st.session_state.decision_params.selected_decisions = ALL_DECISIONS
             
             # Store metadata about which decisions use custom vs default parameters
-            st.session_state.custom_decisions = selected_decisions
+            # FIX: Use effective_selected_decisions which includes decisions with saved configs
+            st.session_state.custom_decisions = effective_selected_decisions
             st.session_state.default_decisions = unselected_decisions
             
             # Run simulation with all decisions - check if Monte Carlo or Single Run mode
@@ -875,12 +1010,13 @@ def run_combined_simulation(selected_decisions):
                 st.success(f"✅ Complete simulation finished!")
                 
                 # Provide clear messaging based on configuration
-                if len(selected_decisions) == 0:
+                # Use effective_selected_decisions to include decisions with saved configs
+                if len(effective_selected_decisions) == 0:
                     st.info(f"🔧 **All {len(ALL_DECISIONS)} decisions** used default values")
                 elif len(unselected_decisions) == 0:
-                    st.info(f"📊 **All {len(selected_decisions)} decisions** used your custom parameters")
+                    st.info(f"📊 **All {len(effective_selected_decisions)} decisions** used your custom parameters")
                 else:
-                    st.info(f"📊 **{len(selected_decisions)} decisions** used your custom parameters")
+                    st.info(f"📊 **{len(effective_selected_decisions)} decisions** used your custom parameters")
                     st.info(f"🔧 **{len(unselected_decisions)} decisions** used default values")
                 
                 # Show preview
@@ -895,10 +1031,17 @@ def run_combined_simulation(selected_decisions):
 
 
 # ==================== CONFIGURATION SELECTION SYSTEM ====================
+# NOTE: These functions are kept for backwards compatibility.
+# New code should use the unified save_decision_config() function from the
+# UNIFIED DECISION CONFIGURATION SYSTEM section below.
 
 def save_selected_configuration(result_key, result_df):
-    """Save the selected configuration for later use in combined simulations"""
+    """
+    Save the selected donation configuration for later use in combined simulations.
     
+    DEPRECATED: This is a wrapper for backwards compatibility.
+    New code should use: save_decision_config('donation_default', result_key, result_df, params, metrics, extra_data)
+    """
     # Extract configuration details from the result key
     config_details = extract_configuration_details(result_key)
     
@@ -911,47 +1054,59 @@ def save_selected_configuration(result_key, result_df):
     # Calculate key metrics from the result
     metrics = calculate_result_metrics(result_df)
     
-    # Get seed used during the original run
-    if st.session_state.sim_params.simulation_mode == "Single Run":
-        original_seed = st.session_state.get('seed_input', st.session_state.seed)
-    else:
-        original_seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
-    
-    # Create complete configuration object
-    # NOTE: donation_income_mode is the PRIMARY key for donation-specific income mode
-    # income_spec_mode is kept for backwards compatibility but should not be used for global override
-    config = {
-        'result_key': result_key,
-        'population_mode': config_details['population_mode'],
-        # NEW: donation-specific income mode (primary)
-        'donation_income_mode': config_details['income_spec_mode'],
-        # DEPRECATED: kept for backwards compatibility only - do not use for global override
-        'income_spec_mode': config_details['income_spec_mode'],
+    # Build params dict for unified system
+    params = {
         'coefficients': coefficients,
         'stochastic_params': stochastic_params,
-        'metrics': metrics,
-        'selected_timestamp': datetime.now(),
-        'total_agents': len(result_df),
-        'source': 'individual_donation_run',
-        # CRITICAL: Save seed and agent count for exact reproducibility
-        'original_seed': original_seed,
-        'original_n_agents': st.session_state.n_agents
+        'income_mode': config_details['income_spec_mode']
     }
     
-    # Store in session state
-    st.session_state.selected_donation_config = config
+    extra_data = {
+        'population_mode': config_details['population_mode'],
+        'income_spec_mode': config_details['income_spec_mode']
+    }
     
-    # Sync final_donation_rate_default_value with selected config's mean donation
-    # This ensures the slider on Page 2 reflects the selected configuration
-    mean_donation = metrics['mean_donation']
-    st.session_state.final_donation_rate_default_value = mean_donation
+    # Use unified save function
+    success, config, error_info = save_decision_config(
+        'donation_default', result_key, result_df, params, metrics, extra_data
+    )
     
-    # Also update persistent storage for navigation persistence
-    if '_persistent_defaults' not in st.session_state:
-        st.session_state._persistent_defaults = {}
-    st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
-    
-    return config
+    if success:
+        return config
+    else:
+        # For backwards compatibility, still save to legacy storage even if seed mismatch
+        # The UI will show the error, but existing code expecting a config will still work
+        # Get seed used during the original run
+        if st.session_state.sim_params.simulation_mode == "Single Run":
+            original_seed = st.session_state.get('seed_input', st.session_state.seed)
+        else:
+            original_seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
+        
+        legacy_config = {
+            'result_key': result_key,
+            'population_mode': config_details['population_mode'],
+            'donation_income_mode': config_details['income_spec_mode'],
+            'income_spec_mode': config_details['income_spec_mode'],
+            'coefficients': coefficients,
+            'stochastic_params': stochastic_params,
+            'metrics': metrics,
+            'selected_timestamp': datetime.now(),
+            'total_agents': len(result_df),
+            'source': 'individual_donation_run',
+            'original_seed': original_seed,
+            'original_n_agents': st.session_state.n_agents
+        }
+        
+        st.session_state.selected_donation_config = legacy_config
+        
+        # Sync final_donation_rate_default_value
+        mean_donation = metrics['mean_donation']
+        st.session_state.final_donation_rate_default_value = mean_donation
+        if '_persistent_defaults' not in st.session_state:
+            st.session_state._persistent_defaults = {}
+        st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
+        
+        return legacy_config
 
 
 def extract_configuration_details(result_key):
@@ -1098,42 +1253,60 @@ def clear_selected_configuration():
 
 
 # ==================== DISCLOSE INCOME CONFIGURATION SELECTION SYSTEM ====================
+# NOTE: These functions are kept for backwards compatibility.
+# New code should use the unified save_decision_config() function.
 
 def save_disclose_income_configuration(result_key, result_df):
-    """Save the selected disclose income configuration for later use in combined simulations"""
+    """
+    Save the selected disclose income configuration for later use in combined simulations.
     
+    DEPRECATED: This is a wrapper for backwards compatibility.
+    New code should use: save_decision_config('disclose_income', result_key, result_df, params, metrics, extra_data)
+    """
     # Extract configuration details from the result key
     config_details = extract_disclose_income_configuration_details(result_key)
     
     # Get current disclose income parameters from session state
-    di_params = get_current_disclose_income_params()
+    params = get_current_disclose_income_params()
     
     # Calculate key metrics from the result
     metrics = calculate_disclose_income_metrics(result_df)
     
-    # Get seed used during the original run
-    if st.session_state.sim_params.simulation_mode == "Single Run":
-        original_seed = st.session_state.get('seed_input', st.session_state.seed)
-    else:
-        original_seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
-    
-    # Create complete configuration object
-    config = {
-        'result_key': result_key,
-        'income_mode': config_details['income_mode'],
-        'params': di_params,
-        'metrics': metrics,
-        'selected_timestamp': datetime.now(),
-        'total_agents': len(result_df),
-        'source': 'individual_disclose_income_run',
-        'original_seed': original_seed,
-        'original_n_agents': st.session_state.n_agents
+    extra_data = {
+        'income_mode': config_details['income_mode']
     }
     
-    # Store in session state
-    st.session_state.selected_disclose_income_config = config
+    # Use unified save function
+    success, config, error_info = save_decision_config(
+        'disclose_income', result_key, result_df, params, metrics, extra_data
+    )
     
-    return config
+    if success:
+        return config
+    else:
+        # For backwards compatibility, still save to legacy storage even if seed mismatch
+        # Get seed used during the original run
+        if st.session_state.sim_params.simulation_mode == "Single Run":
+            original_seed = st.session_state.get('seed_input', st.session_state.seed)
+        else:
+            original_seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
+        
+        legacy_config = {
+            'result_key': result_key,
+            'income_mode': config_details['income_mode'],
+            'params': params,
+            'metrics': metrics,
+            'selected_timestamp': datetime.now(),
+            'total_agents': len(result_df),
+            'source': 'individual_disclose_income_run',
+            'original_seed': original_seed,
+            'original_n_agents': st.session_state.n_agents
+        }
+        
+        # Store in legacy session state
+        st.session_state.selected_disclose_income_config = legacy_config
+        
+        return legacy_config
 
 
 def extract_disclose_income_configuration_details(result_key):
@@ -1220,3 +1393,360 @@ def clear_disclose_income_configuration():
     
     if hasattr(st.session_state, 'selected_disclose_income_config'):
         del st.session_state.selected_disclose_income_config
+
+
+# ==================== UNIFIED DECISION CONFIGURATION SYSTEM ====================
+# This unified system replaces the fragmented per-decision config storage.
+# All decision configs are now stored in a single dict: selected_decision_configs
+# This enables seed matching validation and easy extensibility for new decisions.
+
+def get_selected_decision_configs():
+    """Get the unified decision configs dictionary, initializing if needed."""
+    if 'selected_decision_configs' not in st.session_state:
+        st.session_state.selected_decision_configs = {}
+    return st.session_state.selected_decision_configs
+
+
+def validate_seed_consistency(new_decision_name, new_seed, new_n_agents):
+    """
+    Check if new config's seed/n_agents matches existing configs.
+    
+    CRITICAL: Only validates against EXPLICITLY saved configs, not auto-implied ones.
+    Auto-implied configs are for UI convenience only and should not block saving.
+    
+    Args:
+        new_decision_name: Name of the decision being saved
+        new_seed: Seed used for the new config
+        new_n_agents: Number of agents used for the new config
+    
+    Returns:
+        tuple: (is_valid, existing_seed, existing_n_agents, conflicting_decision)
+            - is_valid: True if seed matches or no existing configs
+            - existing_seed: The seed from existing configs (if any)
+            - existing_n_agents: The n_agents from existing configs (if any)
+            - conflicting_decision: Name of the decision with mismatched seed (if any)
+    """
+    configs = get_selected_decision_configs()
+    
+    for decision_name, config in configs.items():
+        # Skip if checking against itself (re-saving same decision)
+        if decision_name == new_decision_name:
+            continue
+        
+        # Skip auto-implied configs - they're not real user selections
+        # Only validate against explicitly saved configs
+        if config.get('source') == 'auto_implied_single_config':
+            continue
+            
+        existing_seed = config.get('original_seed')
+        existing_n_agents = config.get('original_n_agents')
+        
+        if existing_seed != new_seed or existing_n_agents != new_n_agents:
+            return (False, existing_seed, existing_n_agents, decision_name)
+    
+    return (True, new_seed, new_n_agents, None)
+
+
+def save_decision_config(decision_name, result_key, result_df, params, metrics=None, extra_data=None):
+    """
+    Unified function to save a decision configuration.
+    
+    This is the standard way to save any decision config for use in combined simulations.
+    All configs are validated for seed consistency before saving.
+    
+    Args:
+        decision_name: Name of the decision (e.g., 'donation_default', 'disclose_income')
+        result_key: Key identifying the result configuration
+        result_df: DataFrame containing the simulation results
+        params: Dict of decision-specific parameters (coefficients, weights, etc.)
+        metrics: Optional dict of calculated metrics. If None, will use basic metrics.
+        extra_data: Optional dict of additional data to store (e.g., for backwards compat)
+    
+    Returns:
+        tuple: (success: bool, config: dict or None, error_info: dict or None)
+            - success: True if config was saved successfully
+            - config: The saved config dict (if successful)
+            - error_info: Dict with seed mismatch details (if failed)
+    """
+    # Get seed used during the original run
+    if hasattr(st.session_state, 'sim_params') and st.session_state.sim_params.simulation_mode == "Single Run":
+        original_seed = st.session_state.get('seed_input', st.session_state.get('seed', 42))
+    else:
+        original_seed = st.session_state.get('base_seed_input', st.session_state.get('base_seed', 42))
+    
+    original_n_agents = st.session_state.get('n_agents', 1000)
+    
+    # Validate seed consistency with existing configs
+    is_valid, existing_seed, existing_n_agents, conflicting_decision = validate_seed_consistency(
+        decision_name, original_seed, original_n_agents
+    )
+    
+    if not is_valid:
+        return (False, None, {
+            'new_seed': original_seed,
+            'new_n_agents': original_n_agents,
+            'existing_seed': existing_seed,
+            'existing_n_agents': existing_n_agents,
+            'conflicting_decision': conflicting_decision
+        })
+    
+    # Build the config object
+    config = {
+        'result_key': result_key,
+        'params': params,
+        'metrics': metrics or {},
+        'selected_timestamp': datetime.now(),
+        'total_agents': len(result_df) if result_df is not None else 0,
+        'source': f'individual_{decision_name}_run',
+        'original_seed': original_seed,
+        'original_n_agents': original_n_agents
+    }
+    
+    # Merge in any extra data (for backwards compatibility)
+    if extra_data:
+        config.update(extra_data)
+    
+    # Store in unified configs dict
+    configs = get_selected_decision_configs()
+    configs[decision_name] = config
+    
+    # Also maintain backwards compatibility with legacy storage
+    _sync_to_legacy_storage(decision_name, config)
+    
+    return (True, config, None)
+
+
+def _sync_to_legacy_storage(decision_name, config):
+    """
+    Sync unified config to legacy storage for backwards compatibility.
+    
+    This ensures existing code that reads from the old storage locations
+    continues to work during the transition period.
+    """
+    if decision_name == 'donation_default':
+        # Build legacy format donation config
+        legacy_config = {
+            'result_key': config['result_key'],
+            'population_mode': config.get('population_mode', st.session_state.get('population_mode', 'Copula (synthetic)')),
+            'donation_income_mode': config['params'].get('income_mode', config.get('income_spec_mode', 'categorical only')),
+            'income_spec_mode': config['params'].get('income_mode', config.get('income_spec_mode', 'categorical only')),
+            'coefficients': config['params'].get('coefficients', config.get('coefficients', {})),
+            'stochastic_params': config['params'].get('stochastic_params', config.get('stochastic_params', {})),
+            'metrics': config['metrics'],
+            'selected_timestamp': config['selected_timestamp'],
+            'total_agents': config['total_agents'],
+            'source': config['source'],
+            'original_seed': config['original_seed'],
+            'original_n_agents': config['original_n_agents']
+        }
+        st.session_state.selected_donation_config = legacy_config
+        
+        # Sync final_donation_rate_default_value
+        if 'mean_donation' in config['metrics']:
+            mean_donation = config['metrics']['mean_donation']
+            st.session_state.final_donation_rate_default_value = mean_donation
+            if '_persistent_defaults' not in st.session_state:
+                st.session_state._persistent_defaults = {}
+            st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
+            
+    elif decision_name == 'disclose_income':
+        # Build legacy format disclose_income config
+        # FIX: income_mode is in config directly (from extra_data), not in config['params']
+        legacy_config = {
+            'result_key': config['result_key'],
+            'income_mode': config.get('income_mode', config['params'].get('income_mode', 'Categorical only')),
+            'params': config['params'],
+            'metrics': config['metrics'],
+            'selected_timestamp': config['selected_timestamp'],
+            'total_agents': config['total_agents'],
+            'source': config['source'],
+            'original_seed': config['original_seed'],
+            'original_n_agents': config['original_n_agents']
+        }
+        st.session_state.selected_disclose_income_config = legacy_config
+
+
+def get_decision_config(decision_name):
+    """
+    Get the saved configuration for a specific decision.
+    
+    Args:
+        decision_name: Name of the decision
+    
+    Returns:
+        dict or None: The config dict if exists, None otherwise
+    """
+    configs = get_selected_decision_configs()
+    return configs.get(decision_name)
+
+
+def has_decision_config(decision_name):
+    """
+    Check if a decision has a saved configuration.
+    
+    Args:
+        decision_name: Name of the decision
+    
+    Returns:
+        bool: True if config exists
+    """
+    return get_decision_config(decision_name) is not None
+
+
+def is_decision_config_selected(decision_name, result_key):
+    """
+    Check if a specific result_key is the currently selected config for a decision.
+    
+    Args:
+        decision_name: Name of the decision
+        result_key: The result key to check
+    
+    Returns:
+        bool: True if this result_key is currently selected
+    """
+    config = get_decision_config(decision_name)
+    if config is None:
+        return False
+    return config.get('result_key') == result_key
+
+
+def clear_decision_config(decision_name):
+    """
+    Clear the saved configuration for a specific decision.
+    
+    Args:
+        decision_name: Name of the decision to clear
+    """
+    configs = get_selected_decision_configs()
+    if decision_name in configs:
+        del configs[decision_name]
+    
+    # Also clear legacy storage
+    if decision_name == 'donation_default':
+        if hasattr(st.session_state, 'selected_donation_config'):
+            del st.session_state.selected_donation_config
+        # Reset final_donation_rate_default_value
+        st.session_state.final_donation_rate_default_value = 0.10
+        if '_persistent_defaults' in st.session_state:
+            st.session_state._persistent_defaults['final_donation_rate_default_value'] = 0.10
+    elif decision_name == 'disclose_income':
+        if hasattr(st.session_state, 'selected_disclose_income_config'):
+            del st.session_state.selected_disclose_income_config
+
+
+def clear_all_decision_configs():
+    """Clear all saved decision configurations."""
+    st.session_state.selected_decision_configs = {}
+    
+    # Also clear legacy storage
+    if hasattr(st.session_state, 'selected_donation_config'):
+        del st.session_state.selected_donation_config
+    if hasattr(st.session_state, 'selected_disclose_income_config'):
+        del st.session_state.selected_disclose_income_config
+    
+    # Reset defaults
+    st.session_state.final_donation_rate_default_value = 0.10
+    if '_persistent_defaults' in st.session_state:
+        st.session_state._persistent_defaults['final_donation_rate_default_value'] = 0.10
+
+
+def get_simulation_seed_from_configs():
+    """
+    Get the seed to use for simulation from saved configs.
+    
+    If configs exist, returns their seed (all configs have matching seed).
+    Otherwise returns the current session state seed.
+    
+    Returns:
+        tuple: (seed, n_agents, source) where source is 'configs' or 'session_state'
+    """
+    configs = get_selected_decision_configs()
+    
+    if configs:
+        # All configs have matching seed, so just get from first one
+        first_config = next(iter(configs.values()))
+        return (
+            first_config['original_seed'],
+            first_config['original_n_agents'],
+            'configs'
+        )
+    
+    # No saved configs, use session state
+    if hasattr(st.session_state, 'sim_params') and st.session_state.sim_params.simulation_mode == "Single Run":
+        seed = st.session_state.get('seed_input', st.session_state.get('seed', 42))
+    else:
+        seed = st.session_state.get('base_seed_input', st.session_state.get('base_seed', 42))
+    
+    n_agents = st.session_state.get('n_agents', 1000)
+    
+    return (seed, n_agents, 'session_state')
+
+
+def get_all_saved_config_summary():
+    """
+    Get a summary of all saved decision configs.
+    
+    Returns:
+        list of dicts: Summary info for each saved config
+    """
+    configs = get_selected_decision_configs()
+    summaries = []
+    
+    for decision_name, config in configs.items():
+        summaries.append({
+            'decision_name': decision_name,
+            'result_key': config.get('result_key', 'unknown'),
+            'original_seed': config.get('original_seed'),
+            'original_n_agents': config.get('original_n_agents'),
+            'selected_timestamp': config.get('selected_timestamp'),
+            'source': config.get('source')
+        })
+    
+    return summaries
+
+
+def migrate_legacy_configs_to_unified():
+    """
+    Migrate any existing legacy configs to the unified storage.
+    
+    This should be called at app startup to ensure backwards compatibility.
+    Existing configs in the old format are copied to the new unified storage.
+    """
+    configs = get_selected_decision_configs()
+    
+    # Migrate donation_default if exists in legacy storage but not unified
+    if 'donation_default' not in configs and hasattr(st.session_state, 'selected_donation_config'):
+        legacy = st.session_state.selected_donation_config
+        configs['donation_default'] = {
+            'result_key': legacy.get('result_key', 'migrated'),
+            'params': {
+                'coefficients': legacy.get('coefficients', {}),
+                'stochastic_params': legacy.get('stochastic_params', {}),
+                'income_mode': legacy.get('donation_income_mode', legacy.get('income_spec_mode', 'categorical only'))
+            },
+            'metrics': legacy.get('metrics', {}),
+            'selected_timestamp': legacy.get('selected_timestamp', datetime.now()),
+            'total_agents': legacy.get('total_agents', 0),
+            'source': legacy.get('source', 'migrated_legacy'),
+            'original_seed': legacy.get('original_seed', st.session_state.get('seed', 42)),
+            'original_n_agents': legacy.get('original_n_agents', st.session_state.get('n_agents', 1000)),
+            # Keep extra fields for compatibility
+            'population_mode': legacy.get('population_mode'),
+            'income_spec_mode': legacy.get('income_spec_mode')
+        }
+    
+    # Migrate disclose_income if exists in legacy storage but not unified
+    if 'disclose_income' not in configs and hasattr(st.session_state, 'selected_disclose_income_config'):
+        legacy = st.session_state.selected_disclose_income_config
+        configs['disclose_income'] = {
+            'result_key': legacy.get('result_key', 'migrated'),
+            'params': legacy.get('params', {}),
+            'metrics': legacy.get('metrics', {}),
+            'selected_timestamp': legacy.get('selected_timestamp', datetime.now()),
+            'total_agents': legacy.get('total_agents', 0),
+            'source': legacy.get('source', 'migrated_legacy'),
+            'original_seed': legacy.get('original_seed', st.session_state.get('seed', 42)),
+            'original_n_agents': legacy.get('original_n_agents', st.session_state.get('n_agents', 1000)),
+            # Keep extra fields for compatibility
+            'income_mode': legacy.get('income_mode')
+        }

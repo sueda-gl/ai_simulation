@@ -10,11 +10,29 @@ import plotly.express as px
 
 def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame):
     """
-    Apply Excel number formatting to price-related columns to display 2 decimal places.
+    Apply Excel number formatting to numeric columns.
+    
+    Uses different decimal precision based on column type:
+    - 4 decimal places for trait values and intermediate calculations
+    - 5 decimal places for intercept
+    - 6 decimal places for PB_i and DI_i (calculated values)
+    - 2 decimal places for legacy columns
     """
-    price_columns = [
-        'income', 'Income', 'Honesty_Humility',
-        'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
+    # Columns with 4 decimal places (trait values)
+    four_decimal_columns = [
+        'Agreeable', 'Openness', 'Honesty_Humility', 'Extraversion', 'Neuroticism',
+        'Religious', 'TWT+Sospeso', 'WOPB', 'WPB'
+    ]
+    
+    # Columns with 5 decimal places (intercept)
+    five_decimal_columns = ['Intercept']
+    
+    # Columns with 6 decimal places (calculated values)
+    six_decimal_columns = ['PB_i', 'DI_i']
+    
+    # Legacy columns with 2 decimal places
+    two_decimal_columns = [
+        'income', 'Income', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
         'Assigned income from the distribution',
     ]
     
@@ -22,16 +40,27 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
     worksheet = workbook[sheet_name]
     
     for col_idx, col_name in enumerate(df.columns, start=1):
-        if col_name in price_columns:
-            for row_idx in range(2, len(df) + 2):
-                cell = worksheet.cell(row=row_idx, column=col_idx)
-                if isinstance(cell.value, (int, float)) and cell.value is not None:
-                    cell.number_format = '0.00'
+        # Determine format based on column name
+        if col_name in six_decimal_columns:
+            number_format = '0.000000'
+        elif col_name in five_decimal_columns:
+            number_format = '0.00000'
+        elif col_name in four_decimal_columns:
+            number_format = '0.0000'
+        elif col_name in two_decimal_columns:
+            number_format = '0.00'
+        else:
+            continue  # Skip columns not in any list
+        
+        # Apply formatting to all data rows
+        for row_idx in range(2, len(df) + 2):
+            cell = worksheet.cell(row=row_idx, column=col_idx)
+            if isinstance(cell.value, (int, float)) and cell.value is not None:
+                cell.number_format = number_format
 
 
 def render_disclose_income(df, decision_name, decision_title, decision_data):
-    """Visualization for disclose_income - binary Y/N choice with optional raw value histogram"""
-    import plotly.graph_objects as go
+    """Visualization for disclose_income - binary Y/N choice"""
     
     # Binary choice metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -53,141 +82,35 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         disclosure_rate = (yes_count/total)*100
         st.metric("Disclosure Rate", f"{disclosure_rate:.1f}%")
     
-    # Check if raw DI values are available for detailed analysis
-    has_raw_values = 'disclose_income_raw' in df.columns
+    # Binary choice visualization - pie chart
+    col_plot, col_stats = st.columns([2, 1])
     
-    if has_raw_values:
-        # Show raw DI value histogram and pie chart side by side
-        st.markdown("### 📊 Disclosure Analysis")
-        
-        raw_values = df['disclose_income_raw'].dropna()
-        mean_val = raw_values.mean()
-        
-        # Histogram and Pie Chart side by side
-        col_hist, col_pie = st.columns(2)
-        
-        with col_hist:
-            st.markdown("**Raw DI Value Distribution**")
-            st.caption("Before classification (>0 → Y, ≤0 → N)")
-            
-            # Create histogram with vertical line at 0
-            fig = go.Figure()
-            
-            # Add histogram
-            fig.add_trace(go.Histogram(
-                x=raw_values,
-                nbinsx=40,
-                name='DI Raw Values',
-                marker_color='steelblue',
-                opacity=0.7
-            ))
-            
-            # Add vertical line at 0 (decision boundary)
-            fig.add_vline(
-                x=0,
-                line_dash="solid",
-                line_color="red",
-                line_width=3,
-                annotation_text="Boundary (0)",
-                annotation_position="top",
-                annotation_font_color="red"
+    with col_plot:
+        if len(value_counts) > 0:
+            st.markdown(f"**{decision_title} Distribution**")
+            fig = px.pie(
+                values=value_counts.values,
+                names=value_counts.index,
+                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
             )
-            
-            # Add vertical line at mean
-            fig.add_vline(
-                x=mean_val,
-                line_dash="dash",
-                line_color="green",
-                line_width=2,
-                annotation_text=f"Mean: {mean_val:.3f}",
-                annotation_position="bottom",
-                annotation_font_color="green"
-            )
-            
-            fig.update_layout(
-                xaxis_title="Raw DI Value",
-                yaxis_title="Agents",
-                showlegend=False,
-                height=350,
-                margin=dict(t=30, b=40, l=50, r=20),
-                xaxis=dict(zeroline=True, zerolinecolor='red', zerolinewidth=2)
-            )
-            
             st.plotly_chart(fig, use_container_width=True)
+    
+    with col_stats:
+        st.markdown("**📊 Choice Breakdown**")
+        # Ensure Y appears before N in the breakdown
+        ordered_choices = ['Y', 'N']
+        ordered_data = []
+        for choice in ordered_choices:
+            if choice in value_counts.index:
+                count = value_counts[choice]
+                ordered_data.append({
+                    'Choice': choice,
+                    'Count': count,
+                    'Percentage': f"{(count/total)*100:.1f}%"
+                })
         
-        with col_pie:
-            st.markdown("**Final Classification (Y/N)**")
-            st.caption("After applying threshold at 0")
-            
-            if len(value_counts) > 0:
-                fig_pie = px.pie(
-                    values=value_counts.values,
-                    names=value_counts.index,
-                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
-                )
-                fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-                fig_pie.update_layout(
-                    height=350,
-                    margin=dict(t=30, b=20, l=20, r=20),
-                    showlegend=True
-                )
-                st.plotly_chart(fig_pie, use_container_width=True)
-        
-        # Statistics below the charts
-        st.markdown("**📈 Statistics**")
-        col_stats1, col_stats2, col_insight = st.columns([1, 1, 2])
-        
-        with col_stats1:
-            stats_df = pd.DataFrame({
-                'Metric': ['Mean', 'Std Dev', 'Median'],
-                'Value': [f"{mean_val:.4f}", f"{raw_values.std():.4f}", f"{raw_values.median():.4f}"]
-            })
-            st.dataframe(stats_df, hide_index=True, use_container_width=True)
-        
-        with col_stats2:
-            class_df = pd.DataFrame({
-                'Choice': ['Y', 'N'],
-                'Count': [value_counts.get('Y', 0), value_counts.get('N', 0)],
-                '%': [f"{(value_counts.get('Y', 0)/total)*100:.1f}%", f"{(value_counts.get('N', 0)/total)*100:.1f}%"]
-            })
-            st.dataframe(class_df, hide_index=True, use_container_width=True)
-        
-        with col_insight:
-            if mean_val > 0:
-                st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")
-            elif mean_val < 0:
-                st.warning(f"⚠️ Mean ({mean_val:.4f}) < 0: Distribution favors non-disclosure")
-            else:
-                st.info("ℹ️ Mean ≈ 0: Distribution is balanced")
-    else:
-        # Basic visualization - pie chart only (no raw values available)
-        col_plot, col_stats = st.columns([2, 1])
-        
-        with col_plot:
-            if len(value_counts) > 0:
-                st.markdown(f"**{decision_title} Distribution**")
-                fig = px.pie(
-                    values=value_counts.values,
-                    names=value_counts.index,
-                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col_stats:
-            st.markdown("**📊 Choice Breakdown**")
-            ordered_choices = ['Y', 'N']
-            ordered_data = []
-            for choice in ordered_choices:
-                if choice in value_counts.index:
-                    count = value_counts[choice]
-                    ordered_data.append({
-                        'Choice': choice,
-                        'Count': count,
-                        'Percentage': f"{(count/total)*100:.1f}%"
-                    })
-            
-            breakdown_df = pd.DataFrame(ordered_data)
-            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+        breakdown_df = pd.DataFrame(ordered_data)
+        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     
     # Excel download section
     st.markdown("---")
@@ -455,13 +378,23 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare disclose income data for Excel export.
     
-    Includes all agent traits and the disclose income decision indicator.
+    Includes all variables used in the disclose income calculation:
+    - Raw trait values (non-standardized): Agreeable, Openness, Honesty_Humility, 
+      Extraversion, Neuroticism, ReligiousAffiliation, ReligiousService, Religious composite
+    - Income information: Assigned Allowance Level, I-High indicator
+    - Observed prosocial behavior: TWT+Sospeso
+    - Configuration values: WOPB, WPB, Intercept
+    - Calculated values: PB_i (anchored prosocial behavior), DI_i (continuous value)
+    - Income (actual income value)
+    - Final decision: disclose_income (1/0)
+    
+    IMPORTANT: Columns after disclose_income are intentionally excluded.
     
     Args:
         df: Results dataframe with agent data
         
     Returns:
-        DataFrame formatted for Excel export, or None if required columns missing
+        DataFrame formatted for Excel export with 19 columns, or None if required columns missing
     """
     # Check required column
     if 'disclose_income' not in df.columns:
@@ -470,7 +403,9 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     # Create export dataframe
     export_df = pd.DataFrame()
     
-    # Agent ID - try multiple possible column names
+    # ========================================================================
+    # 1. Agent ID
+    # ========================================================================
     if 'agent_id' in df.columns:
         export_df['Agent ID'] = df['agent_id']
     elif 'index' in df.columns:
@@ -478,53 +413,156 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         export_df['Agent ID'] = range(1, len(df) + 1)
     
-    # Agent Traits
-    # Honesty_Humility
+    # ========================================================================
+    # 2-6. Raw Personality Trait Values (non-standardized)
+    # ========================================================================
+    
+    # 2. Agreeable
+    if 'Agreeable' in df.columns:
+        export_df['Agreeable'] = df['Agreeable'].round(4)
+    else:
+        export_df['Agreeable'] = ''
+    
+    # 3. Openness (from OpennessBig5)
+    if 'OpennessBig5' in df.columns:
+        export_df['Openness'] = df['OpennessBig5'].round(4)
+    else:
+        export_df['Openness'] = ''
+    
+    # 4. Honesty_Humility
     if 'Honesty_Humility' in df.columns:
-        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(2)
+        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(4)
     else:
         export_df['Honesty_Humility'] = ''
     
-    # Assigned Allowance Level - use the actual allowance column which exists for ALL agents
-    # Priority: 'Assigned Allowance Level' > 'actual_allowance' > 'income' (not income_category which is only for Discount/Fixed)
+    # 5. Extraversion (from ExtraversionBig5)
+    if 'ExtraversionBig5' in df.columns:
+        export_df['Extraversion'] = df['ExtraversionBig5'].round(4)
+    else:
+        export_df['Extraversion'] = ''
+    
+    # 6. Neuroticism (from NeuroticismBig5)
+    if 'NeuroticismBig5' in df.columns:
+        export_df['Neuroticism'] = df['NeuroticismBig5'].round(4)
+    else:
+        export_df['Neuroticism'] = ''
+    
+    # ========================================================================
+    # 7-9. Religious Components (raw values + computed composite)
+    # ========================================================================
+    
+    # 7. ReligiousAffiliation (raw binary 0/1)
+    if 'ReligiousAffiliation' in df.columns:
+        export_df['ReligiousAffiliation'] = df['ReligiousAffiliation']
+    else:
+        export_df['ReligiousAffiliation'] = ''
+    
+    # 8. ReligiousService (raw ordinal)
+    if 'ReligiousService' in df.columns:
+        export_df['ReligiousService'] = df['ReligiousService']
+    else:
+        export_df['ReligiousService'] = ''
+    
+    # 9. Religious composite (computed, non-standardized)
+    # This comes from the decision function output
+    if 'disclose_income_religious_composite' in df.columns:
+        export_df['Religious'] = df['disclose_income_religious_composite'].round(4)
+    else:
+        # Fallback: compute it here if not available
+        # Religious = (ReligiousAffiliation + scaled_ReligiousService) / 2
+        # where scaled_ReligiousService = ReligiousService / 4 (assuming max=4)
+        if 'ReligiousAffiliation' in df.columns and 'ReligiousService' in df.columns:
+            rs_scaled = df['ReligiousService'] / 4.0  # Scale to 0-1
+            export_df['Religious'] = ((df['ReligiousAffiliation'] + rs_scaled) / 2).round(4)
+        else:
+            export_df['Religious'] = ''
+    
+    # ========================================================================
+    # 10-12. Income Information
+    # ========================================================================
+    
+    # 10. Assigned Allowance Level
     if 'Assigned Allowance Level' in df.columns:
         export_df['Assigned Allowance Level'] = df['Assigned Allowance Level']
     elif 'actual_allowance' in df.columns:
         export_df['Assigned Allowance Level'] = df['actual_allowance']
-    elif 'income' in df.columns:
-        export_df['Assigned Allowance Level'] = df['income']
     else:
         export_df['Assigned Allowance Level'] = ''
     
-    # Study Program
-    if 'Study Program' in df.columns:
-        export_df['Study Program'] = df['Study Program']
-    else:
-        export_df['Study Program'] = ''
-    
-    # Group_experiment
-    if 'Group_experiment' in df.columns:
-        export_df['Group_experiment'] = df['Group_experiment']
-    elif 'group' in df.columns:
-        export_df['Group_experiment'] = df['group']
-    elif 'group_experiment' in df.columns:
-        export_df['Group_experiment'] = df['group_experiment']
-    else:
-        export_df['Group_experiment'] = ''
-    
-    # TWT+Sospeso
-    if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
-        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(2)
-    else:
-        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
-    
-    # Income
+    # 11. Income (right after Assigned Allowance Level)
     if 'income' in df.columns:
         export_df['income'] = df['income'].round(2)
     elif 'actual_allowance' in df.columns:
         export_df['income'] = df['actual_allowance'].round(2)
     else:
         export_df['income'] = ''
+    
+    # 12. I-High (income_high indicator: 1 if level > 3, else 0)
+    if 'disclose_income_income_high' in df.columns:
+        export_df['I-High'] = df['disclose_income_income_high']
+    else:
+        # Fallback: compute from Assigned Allowance Level
+        if 'Assigned Allowance Level' in df.columns:
+            export_df['I-High'] = (df['Assigned Allowance Level'] > 3).astype(int)
+        else:
+            export_df['I-High'] = ''
+    
+    # ========================================================================
+    # 13. Observed Prosocial Behavior
+    # ========================================================================
+    
+    # TWT+Sospeso (observed prosocial behavior)
+    if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
+        export_df['TWT+Sospeso'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(4)
+    else:
+        export_df['TWT+Sospeso'] = ''
+    
+    # ========================================================================
+    # 14-16. Configuration Values (Weights and Intercept)
+    # ========================================================================
+    
+    # 14. WOPB (Observed Prosocial Behavior Weight)
+    if 'disclose_income_wopb' in df.columns:
+        export_df['WOPB'] = df['disclose_income_wopb'].round(4)
+    else:
+        # Default value from config
+        export_df['WOPB'] = 0.25
+    
+    # 15. WPB (Prosocial Behavior Weight in final equation)
+    if 'disclose_income_wpb' in df.columns:
+        export_df['WPB'] = df['disclose_income_wpb'].round(4)
+    else:
+        # Default value from config
+        export_df['WPB'] = 0.50
+    
+    # 16. Intercept (β₀)
+    if 'disclose_income_intercept' in df.columns:
+        export_df['Intercept'] = df['disclose_income_intercept'].round(5)
+    else:
+        # Default value from config
+        export_df['Intercept'] = 0.75
+    
+    # ========================================================================
+    # 17-18. Calculated Values
+    # ========================================================================
+    
+    # 17. PB_i (Anchored Prosocial Behavior)
+    if 'disclose_income_anchored_pb' in df.columns:
+        export_df['PB_i'] = df['disclose_income_anchored_pb'].round(6)
+    else:
+        export_df['PB_i'] = ''
+    
+    # 18. DI_i (Continuous value before Y/N classification)
+    if 'disclose_income_di' in df.columns:
+        export_df['DI_i'] = df['disclose_income_di'].round(6)
+    elif 'disclose_income_raw' in df.columns:
+        export_df['DI_i'] = df['disclose_income_raw'].round(6)
+    else:
+        export_df['DI_i'] = ''
+    
+    # ========================================================================
+    # 19. Final Decision (LAST COLUMN - nothing after this)
+    # ========================================================================
     
     # disclose_income (Y/N to 1/0)
     export_df['disclose_income'] = df['disclose_income'].apply(
@@ -642,4 +680,218 @@ def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
         export_df['Discount'] = ''
     
     return export_df
+
+
+def render_disclose_income_comparison_excel(results_dict, mode="compare_all"):
+    """
+    Render Excel export section for disclose_income comparison modes.
+    
+    Handles two modes:
+    - "compare_all": Multiple sheets (one per population mode: Copula, ResSpec, ResBase)
+    - "compare_both": Single sheet with separate columns for Categorical and Continuous
+    
+    Args:
+        results_dict: Dictionary of DataFrames keyed by configuration name
+        mode: Either "compare_all" or "compare_both"
+    """
+    from io import BytesIO
+    from datetime import datetime
+    import numpy as np
+    
+    st.markdown("### 📥 Download Disclose Income Comparison Data")
+    
+    if mode == "compare_all":
+        # COMPARE ALL MODE: Each population mode gets its own sheet
+        st.markdown(f"""
+        **Disclose Income Results Export (Compare All Mode - {len(results_dict)} Configurations):**
+        - Each population mode (Copula, Research Spec, Research Baseline) has its own sheet
+        - Each sheet contains all 19 columns for disclose income analysis
+        - Includes both Categorical and Continuous income mode results where available
+        """)
+        
+        population_modes = [
+            ('copula', 'Copula'),
+            ('research_spec', 'ResSpec'),
+            ('research_baseline', 'ResBase')
+        ]
+        
+        sheets_data = {}
+        
+        for pop_key, pop_prefix in population_modes:
+            # Find the DataFrames for this population mode
+            cat_key = f"{pop_key}_categorical"
+            cont_key = f"{pop_key}_continuous"
+            
+            cat_df = results_dict.get(cat_key)
+            cont_df = results_dict.get(cont_key)
+            
+            # Use whichever DataFrame is available for base data
+            base_df = cat_df if cat_df is not None and not cat_df.empty else cont_df
+            
+            if base_df is None or base_df.empty:
+                continue
+            
+            # Prepare the export DataFrame using the standard function
+            sheet_df = _prepare_disclose_income_excel_data(base_df)
+            
+            if sheet_df is None:
+                continue
+            
+            # If we have both income modes, add a suffix to the disclose_income column
+            # and add the other mode's disclose_income
+            if cat_df is not None and cont_df is not None and not cat_df.empty and not cont_df.empty:
+                # Rename the existing disclose_income to specify it's from base
+                if base_df is cat_df:
+                    sheet_df = sheet_df.rename(columns={'disclose_income': 'disclose_income_Categorical'})
+                    # Add continuous disclose_income
+                    cont_di = cont_df['disclose_income'].apply(
+                        lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
+                    )
+                    sheet_df['disclose_income_Continuous'] = cont_di.values
+                else:
+                    sheet_df = sheet_df.rename(columns={'disclose_income': 'disclose_income_Continuous'})
+                    # Add categorical disclose_income
+                    cat_di = cat_df['disclose_income'].apply(
+                        lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
+                    )
+                    # Insert categorical before continuous
+                    cols = list(sheet_df.columns)
+                    cont_idx = cols.index('disclose_income_Continuous')
+                    sheet_df.insert(cont_idx, 'disclose_income_Categorical', cat_di.values)
+            
+            sheets_data[pop_prefix] = sheet_df
+        
+        if not sheets_data:
+            st.warning("⚠️ No data available for export")
+            return
+        
+        # Create Excel file with multiple sheets
+        try:
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                for sheet_name, sheet_df in sheets_data.items():
+                    sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                    _apply_price_formatting_disclosure(writer, sheet_name, sheet_df)
+            
+            # Show metrics
+            total_sheets = len(sheets_data)
+            first_sheet_df = next(iter(sheets_data.values()))
+            n_agents = len(first_sheet_df)
+            n_columns = len(first_sheet_df.columns)
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Sheets", total_sheets)
+            with col2:
+                st.metric("Agents per Sheet", n_agents)
+            with col3:
+                st.metric("Columns per Sheet", n_columns)
+            
+            excel_label = f"📊 Download Disclose Income Excel ({total_sheets} Sheets)"
+            excel_filename = f"disclose_income_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            
+            st.download_button(
+                label=excel_label,
+                data=buffer.getvalue(),
+                file_name=excel_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Each population mode has its own sheet with all disclose income columns"
+            )
+            
+            # Show preview
+            with st.expander("📋 Preview Disclose Income Data (first 5 rows per sheet)"):
+                st.info("""
+                **Sheet Structure:**
+                - **Copula**: Synthetic agents generated from copula
+                - **ResSpec**: Original 280 participants with stochastic draws
+                - **ResBase**: Original 280 participants without stochastic draws
+                
+                Each sheet contains all 19 disclose income columns plus income mode columns if both are available.
+                """)
+                
+                for sheet_name, sheet_df in sheets_data.items():
+                    st.markdown(f"**{sheet_name} Sheet:**")
+                    st.dataframe(sheet_df.head(), use_container_width=True)
+                    st.caption(f"Columns: {', '.join(sheet_df.columns[:10])}{'...' if len(sheet_df.columns) > 10 else ''}")
+        
+        except Exception as e:
+            st.error(f"Error creating Excel export: {str(e)}")
+    
+    elif mode == "compare_both":
+        # COMPARE BOTH MODE: Single sheet with separate columns for each income mode
+        st.markdown(f"""
+        **Disclose Income Results Export (Compare Both Income Modes):**
+        - Single sheet with all trait columns
+        - Separate disclose_income columns for Categorical and Continuous modes
+        """)
+        
+        # Get the DataFrames
+        cat_df = results_dict.get("categorical")
+        cont_df = results_dict.get("continuous")
+        
+        if (cat_df is None or cat_df.empty) and (cont_df is None or cont_df.empty):
+            st.warning("⚠️ No data available for export")
+            return
+        
+        # Use categorical as base if available, otherwise continuous
+        base_df = cat_df if cat_df is not None and not cat_df.empty else cont_df
+        
+        # Prepare the export DataFrame
+        export_df = _prepare_disclose_income_excel_data(base_df)
+        
+        if export_df is None:
+            st.warning("⚠️ Unable to prepare Excel data")
+            return
+        
+        # Handle the disclose_income columns based on what's available
+        if cat_df is not None and cont_df is not None and not cat_df.empty and not cont_df.empty:
+            # Both modes available - create separate columns
+            # Remove the original disclose_income column
+            export_df = export_df.drop(columns=['disclose_income'])
+            
+            # Add categorical disclose_income
+            cat_di = cat_df['disclose_income'].apply(
+                lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
+            )
+            export_df['disclose_income_Categorical'] = cat_di.values
+            
+            # Add continuous disclose_income
+            cont_di = cont_df['disclose_income'].apply(
+                lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
+            )
+            export_df['disclose_income_Continuous'] = cont_di.values
+        elif cat_df is not None and not cat_df.empty:
+            # Only categorical
+            export_df = export_df.rename(columns={'disclose_income': 'disclose_income_Categorical'})
+        else:
+            # Only continuous
+            export_df = export_df.rename(columns={'disclose_income': 'disclose_income_Continuous'})
+        
+        try:
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                export_df.to_excel(writer, index=False, sheet_name='Disclose Income Comparison')
+                _apply_price_formatting_disclosure(writer, 'Disclose Income Comparison', export_df)
+            
+            # Show metrics
+            st.metric("Total Agents", len(export_df))
+            
+            excel_label = "📊 Download Disclose Income Excel (Both Income Modes)"
+            excel_filename = f"disclose_income_compare_both_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            
+            st.download_button(
+                label=excel_label,
+                data=buffer.getvalue(),
+                file_name=excel_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="Disclose income results with separate columns for Categorical and Continuous income modes"
+            )
+            
+            # Show preview
+            with st.expander("📋 Preview Disclose Income Data (first 5 rows)"):
+                st.dataframe(export_df.head(), use_container_width=True)
+                st.caption(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns[:10])}{'...' if len(export_df.columns) > 10 else ''}")
+        
+        except Exception as e:
+            st.error(f"Error creating Excel export: {str(e)}")
 

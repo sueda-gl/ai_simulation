@@ -150,9 +150,15 @@ def render_donation_default_tab():
                 save_to_donation_storage('page2_tab_income_spec_mode', 'income_spec_mode')
                 reload_coefficients_for_income_mode()
                 clear_input_field_cache()
-                # Clear selected config since mode change may invalidate it
+                # FIX: Clear selected config from BOTH legacy AND unified storage
+                # This prevents stale configs from persisting when user changes income mode
+                # Legacy storage
                 if hasattr(st.session_state, 'selected_donation_config'):
                     delattr(st.session_state, 'selected_donation_config')
+                # Unified storage - must also clear to prevent migration from restoring stale config
+                if 'selected_decision_configs' in st.session_state:
+                    if 'donation_default' in st.session_state.selected_decision_configs:
+                        del st.session_state.selected_decision_configs['donation_default']
             
             # Restore income spec mode
             income_val = restore_widget_from_storage(

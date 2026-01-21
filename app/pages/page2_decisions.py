@@ -8,7 +8,7 @@ from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, auto_populate_single_donation_config
+from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, auto_populate_single_donation_config, migrate_legacy_configs_to_unified
 
 
 def initialize_page2_widget_keys():
@@ -182,6 +182,9 @@ def initialize_page2_widget_keys():
             if value_key not in st.session_state:
                 st.session_state[value_key] = default_value
     
+    # Migrate any legacy configs to the unified system (backwards compatibility)
+    migrate_legacy_configs_to_unified()
+    
     # Auto-populate selected_donation_config when only one configuration exists
     # This ensures the Overview tab shows the current config without requiring explicit selection
     # NOTE: The sync of final_donation_rate happens INSIDE this function if it populates/updates
@@ -225,9 +228,14 @@ def render_overview_tab(selected_decisions):
     # Display Global Parameters
     render_global_parameters_readonly()
     
-    # Show selected donation configuration if available
-    if 'donation_default' in selected_decisions:
-        render_selected_donation_config_display()
+    # FIX: Always show saved configs regardless of whether decision is selected for customization
+    # This ensures users can see their saved configs even after navigation
+    # Show the section header once for both decision configs
+    st.markdown('<h3 class="section-header">🎯 Saved Decision Configurations</h3>', unsafe_allow_html=True)
+    
+    # Render both config displays - they handle the "no config" case internally
+    render_selected_donation_config_display()
+    render_selected_disclose_income_config_display()
     
     # NEW: Show default decisions configuration for unselected decisions
     st.markdown("---")
@@ -408,9 +416,6 @@ def render_page2():
 def render_selected_donation_config_display():
     """Display the selected donation configuration in the overview tab"""
     
-    # Common header for the section
-    st.markdown('<h3 class="section-header">🎯 Selected Decision Parameters</h3>', unsafe_allow_html=True)
-    
     # Check if config exists (use 'in' operator for Streamlit session state)
     has_config = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
     
@@ -421,10 +426,8 @@ def render_selected_donation_config_display():
         has_config = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
     
     if not has_config:
-        # Still no config - show the "not selected" message
-        st.markdown("#### 3. Donation Default")
-        st.info("💡 **No donation configuration selected yet**")
-        st.caption("Run the donation decision individually first, then select your preferred configuration from the results.")
+        # Still no config - silently return (no message to avoid clutter)
+        # User will see instructions in the Complete Simulation section if needed
         return
     
     config = st.session_state.selected_donation_config
@@ -539,3 +542,73 @@ def render_selected_donation_config_display():
                     from app.pages.decision_execution import clear_selected_configuration
                     clear_selected_configuration()
                     st.rerun()
+
+
+def render_selected_disclose_income_config_display():
+    """Display the selected disclose income configuration in the overview tab"""
+    from app.pages.decision_execution import get_decision_config, clear_decision_config
+    
+    # Check if config exists in unified storage or legacy
+    config = get_decision_config('disclose_income')
+    
+    if config is None and hasattr(st.session_state, 'selected_disclose_income_config'):
+        config = st.session_state.selected_disclose_income_config
+    
+    # Skip auto-implied configs - only show explicitly selected ones
+    if config is None or config.get('source') == 'auto_implied_single_config':
+        return
+    
+    st.markdown("#### 1. Disclose Income")
+    
+    # Get income mode from config
+    income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+    
+    with st.container():
+        st.success(f"✅ **Disclose Income Configuration**: {income_mode}")
+        
+        # Metrics display
+        metrics = config.get('metrics', {})
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Income Mode", income_mode)
+        
+        with col2:
+            y_rate = metrics.get('y_rate', 0)
+            st.metric("Y Rate", f"{y_rate:.1%}")
+        
+        with col3:
+            st.metric("Agents", f"{config.get('total_agents', 0):,}")
+        
+        # Additional details in expandable section
+        with st.expander("📊 Configuration Details", expanded=False):
+            params = config.get('params', {})
+            
+            st.markdown("**🔢 Model Parameters:**")
+            param_col1, param_col2 = st.columns(2)
+            
+            with param_col1:
+                st.metric("Intercept", f"{params.get('intercept', 0):.4f}")
+                st.metric("WoPB", f"{params.get('anchor_weights', {}).get('observed_prosocial', 0):.4f}")
+                st.metric("WPB", f"{params.get('anchor_weights', {}).get('prosocial_weight', 0):.4f}")
+            
+            with param_col2:
+                stochastic = params.get('stochastic', {})
+                st.metric("Scale Factor", f"{stochastic.get('scale_factor', 1.0):.2f}")
+                st.metric("Sigma Strategy", stochastic.get('sigma_strategy', 'overall'))
+            
+            st.markdown("**ℹ️ Configuration Info:**")
+            st.caption(f"Selected at: {config.get('selected_timestamp', 'Unknown')}")
+            st.caption(f"Original seed: {config.get('original_seed', 'Unknown')}")
+            st.caption(f"Source: {config.get('source', 'Unknown')}")
+        
+        # Action buttons
+        action_col1, action_col2 = st.columns([3, 1])
+        
+        with action_col1:
+            st.caption("This configuration will be used for the disclose income decision in complete simulations")
+        
+        with action_col2:
+            if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_disclose_income_config"):
+                clear_decision_config('disclose_income')
+                st.rerun()

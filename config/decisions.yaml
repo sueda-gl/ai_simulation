@@ -27,7 +27,7 @@ donation_default:
         FullSub: 0.0
       beta_income_linear: 0.0255512
       beta_study:
-        Incoming: -7.303586
+        Incoming: -7.305585
         Law5yr: -2.048199
         UG3yr: -2.016326
         Grad2yr: 0.0
@@ -90,32 +90,42 @@ disclose_income:
   anchor_weights:
     observed_prosocial: 0.25
     prosocial_weight: 0.5
-  intercept: 0.75
+  intercept: 0.1
   z_scoring:
     Agreeable:
-      mean: 3.464286
-      sd: 0.603221
+      mean: 3.546071
+      sd: 0.373271
     Honesty_Humility:
-      mean: 3.392143
-      sd: 0.558719
+      mean: 3.392187
+      sd: 0.558664
     ExtraversionBig5:
-      mean: 3.478571
-      sd: 0.821108
+      mean: 3.557857
+      sd: 0.698957
     NeuroticismBig5:
-      mean: 2.714286
-      sd: 0.800036
+      mean: 2.702143
+      sd: 0.683966
     OpennessBig5:
-      mean: 3.507143
-      sd: 0.615553
+      mean: 4.060714
+      sd: 0.506827
     religious_composite:
-      mean: 0.297024
-      sd: 0.277665
+      mean: 0.189286
+      sd: 0.261811
     TWT_Sospeso:
-      mean: 9.139286
+      mean: 3.357143
       sd: 9.899547
   religiosity:
     service_min: 0
     service_max: 4
+  composite_z_scoring:
+    weighted_prosocial:
+      mean: 0.0
+      sd: 0.0859299558
+    direct_effect:
+      mean: 0.0
+      sd: 0.0344991747
+    anchored_pb:
+      mean: 0.0
+      sd: 0.2594725501
   stochastic:
     sigma_strategy: overall
     sigma_overall: 9.899547
@@ -125,14 +135,15 @@ disclose_income:
       '3': 3.532226
       '4': 12.219622
       '5': 16.854622
-    sigma_value: 9.8995
-    scale_factor: 0.1
+    sigma_value: 0
+    scale_factor: 1.0
     quintile_scale_factors:
       '1': 1.0
       '2': 1.0
       '3': 1.0
       '4': 1.0
       '5': 1.0
+    in_copula: false
   income_mode: Compare both
   categorical_intercepts:
     level_1: 0.0089094

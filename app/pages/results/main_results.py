@@ -34,9 +34,84 @@ from app.pages.results.decision_visualizations import (
 )
 from app.pages.results.config_selection import (
     render_configuration_selection_ui,
+    render_disclose_income_config_selection_ui,
     render_configuration_card,
     extract_configuration_details_from_key
 )
+
+
+def get_decision_config_display(decision_name):
+    """Get the selected configuration info for a decision to display in results.
+    
+    Returns a dict with 'has_config', 'income_mode', 'source', 'is_saved' keys.
+    """
+    result = {
+        'has_config': False,
+        'income_mode': None,
+        'source': None,
+        'is_saved': False
+    }
+    
+    if decision_name == 'donation_default':
+        # Check for saved donation config
+        if hasattr(st.session_state, 'selected_donation_config'):
+            config = st.session_state.selected_donation_config
+            if config.get('source') != 'auto_implied_single_config':
+                result['has_config'] = True
+                result['income_mode'] = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
+                result['source'] = 'Saved Configuration'
+                result['is_saved'] = True
+        # Fallback to session state
+        if not result['has_config']:
+            result['has_config'] = True
+            result['income_mode'] = st.session_state.get('income_spec_mode', 'categorical only')
+            result['source'] = 'Page 2 Settings'
+            
+    elif decision_name == 'disclose_income':
+        # Check unified storage first
+        if 'selected_decision_configs' in st.session_state:
+            if 'disclose_income' in st.session_state.selected_decision_configs:
+                config = st.session_state.selected_decision_configs['disclose_income']
+                if config.get('source') != 'auto_implied_single_config':
+                    result['has_config'] = True
+                    result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+                    result['source'] = 'Saved Configuration'
+                    result['is_saved'] = True
+        # Check legacy storage
+        if not result['has_config'] and hasattr(st.session_state, 'selected_disclose_income_config'):
+            config = st.session_state.selected_disclose_income_config
+            if config.get('source') != 'auto_implied_single_config':
+                result['has_config'] = True
+                result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+                result['source'] = 'Saved Configuration'
+                result['is_saved'] = True
+        # Fallback to session state
+        if not result['has_config']:
+            result['has_config'] = True
+            result['income_mode'] = st.session_state.get('di_income_mode', 'Categorical only')
+            result['source'] = 'Page 2 Settings'
+    
+    return result
+
+
+def render_decision_config_badge(decision_name):
+    """Render a compact badge showing the selected configuration for a decision."""
+    config_info = get_decision_config_display(decision_name)
+    
+    if not config_info['has_config']:
+        return
+    
+    # Create a compact display
+    if config_info['is_saved']:
+        icon = "🎯"
+        label = "Saved Config"
+    else:
+        icon = "⚙️"
+        label = "Current Settings"
+    
+    income_mode = config_info['income_mode']
+    if income_mode:
+        st.caption(f"{icon} **{label}:** {income_mode}")
 
 
 def render_results_page():
@@ -70,20 +145,29 @@ def render_single_run_results():
         # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
         donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
         st.info(f"🎯 **Donation Default used saved configuration:** {donation_income_mode}")
-    
-    # Show disclose_income configuration if a selected config was used
-    if hasattr(st.session_state, 'selected_disclose_income_config') and st.session_state.selected_disclose_income_config:
-        di_config = st.session_state.selected_disclose_income_config
-        di_selected_mode = di_config.get('income_mode', 'Unknown')
-        di_metrics = di_config.get('metrics', {})
-        y_rate = di_metrics.get('y_rate', 0)
-        st.success(f"✅ **Disclose Income used selected configuration:** {di_selected_mode} (Y rate: {y_rate:.1%})")
-    elif hasattr(st.session_state, 'custom_decisions'):
-        # Show current disclose_income mode if it was run but no config selected
-        all_decisions_run = st.session_state.custom_decisions + st.session_state.get('default_decisions', [])
-        if 'disclose_income' in all_decisions_run:
-            di_mode = st.session_state.get('di_income_mode', 'Categorical only')
-            st.info(f"📋 **Disclose Income used:** {di_mode}")
+        
+        # Also show disclose_income mode if it was run
+        if hasattr(st.session_state, 'custom_decisions'):
+            all_decisions_run = st.session_state.custom_decisions + st.session_state.get('default_decisions', [])
+            if 'disclose_income' in all_decisions_run:
+                # FIX: Check for saved disclose_income config first
+                di_mode = None
+                # Check unified storage
+                if 'selected_decision_configs' in st.session_state:
+                    if 'disclose_income' in st.session_state.selected_decision_configs:
+                        di_config = st.session_state.selected_decision_configs['disclose_income']
+                        if di_config.get('source') != 'auto_implied_single_config':
+                            di_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
+                # Check legacy storage
+                if di_mode is None and hasattr(st.session_state, 'selected_disclose_income_config'):
+                    di_config = st.session_state.selected_disclose_income_config
+                    if di_config.get('source') != 'auto_implied_single_config':
+                        di_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
+                # Fallback to session state
+                if di_mode is None:
+                    di_mode = st.session_state.get('di_income_mode', 'Categorical only')
+                
+                st.info(f"📋 **Disclose Income used:** {di_mode}")
     
     # Show decision configuration summary when we have both custom and default decisions (combined simulation)
     # OR when in single mode (not comparison modes)
@@ -136,30 +220,35 @@ def render_single_run_results():
             # Determine if this decision was customized or uses defaults
             if decision in st.session_state.custom_decisions:
                 # Custom decision - show green checkmark
+                
+                # FIX: Check if this decision has a saved config
+                # If it does, we should show results even in "comparison mode"
+                # because the user explicitly selected a specific configuration
+                decision_has_saved_config = False
+                if decision in ['donation_default', 'disclose_income']:
+                    config_info = get_decision_config_display(decision)
+                    decision_has_saved_config = config_info.get('is_saved', False)
+                
                 if use_dropdown:
                     # Multiple decisions - use collapsible dropdown
                     with st.expander(f"✅ {decision_title} (Custom Parameters)", expanded=False):
                         st.success("This decision was configured with custom parameters on Page 2")
-                        st.write("**Configuration Source:** Page 2 Decision Tab")
+                        # Show selected config badge for relevant decisions
+                        if decision in ['donation_default', 'disclose_income']:
+                            render_decision_config_badge(decision)
                         
                         # Show decision-specific results if available
                         if not df.empty and decision in df.columns:
-                            if is_comparison_mode and decision == "donation_default":
-                                # For donation_default in comparison mode, show the actual comparison grids
+                            # FIX: If decision has a saved config, always show results
+                            # (user selected a specific config, so we're not in true "comparison" anymore)
+                            if decision_has_saved_config:
+                                render_decision_results(df, decision, decision_title)
+                            elif is_comparison_mode and decision == "donation_default":
+                                # For donation_default in comparison mode without saved config, show comparison grids
                                 if st.session_state.population_mode == "Compare all":
                                     render_all_modes_comparison(results_dict)
                                 elif st.session_state.income_spec_mode == "Compare both":
                                     render_income_comparison(results_dict)
-                            elif is_comparison_mode and decision == "disclose_income":
-                                # For disclose_income: show results if a config was selected
-                                has_selected_di_config = (
-                                    hasattr(st.session_state, 'selected_disclose_income_config') and 
-                                    st.session_state.selected_disclose_income_config is not None
-                                )
-                                if has_selected_di_config:
-                                    render_decision_results(df, decision, decision_title)
-                                else:
-                                    st.info("📊 Custom decision results are shown in the comparison grids below")
                             elif is_comparison_mode:
                                 st.info("📊 Custom decision results are shown in the comparison grids below")
                             else:
@@ -170,27 +259,22 @@ def render_single_run_results():
                     # Single decision - show content directly (better UX)
                     st.markdown(f'<h4 class="subsection-header">✅ {decision_title} (Custom Parameters)</h4>', unsafe_allow_html=True)
                     st.success("This decision was configured with custom parameters on Page 2")
-                    st.write("**Configuration Source:** Page 2 Decision Tab")
+                    # Show selected config badge for relevant decisions
+                    if decision in ['donation_default', 'disclose_income']:
+                        render_decision_config_badge(decision)
                     
                     # Show decision-specific results if available
                     if not df.empty and decision in df.columns:
-                        if is_comparison_mode and decision == "donation_default":
-                            # For donation_default in comparison mode, show the actual comparison grids
+                        # FIX: If decision has a saved config, always show results
+                        # (user selected a specific config, so we're not in true "comparison" anymore)
+                        if decision_has_saved_config:
+                            render_decision_results(df, decision, decision_title)
+                        elif is_comparison_mode and decision == "donation_default":
+                            # For donation_default in comparison mode without saved config, show comparison grids
                             if st.session_state.population_mode == "Compare all":
                                 render_all_modes_comparison(results_dict)
                             elif st.session_state.income_spec_mode == "Compare both":
                                 render_income_comparison(results_dict)
-                        elif is_comparison_mode and decision == "disclose_income":
-                            # For disclose_income: show results if a config was selected, otherwise show comparison message
-                            has_selected_di_config = (
-                                hasattr(st.session_state, 'selected_disclose_income_config') and 
-                                st.session_state.selected_disclose_income_config is not None
-                            )
-                            if has_selected_di_config:
-                                # Show the actual results with pie chart since config was selected
-                                render_decision_results(df, decision, decision_title)
-                            else:
-                                st.info("📊 Custom decision results are shown in the comparison grids below")
                         elif is_comparison_mode:
                             st.info("📊 Custom decision results are shown in the comparison grids below")
                         else:
@@ -332,6 +416,9 @@ def render_single_run_results():
     
     # Configuration selection UI - shows config cards and "Run Complete Simulation" button
     render_configuration_selection_ui(results_dict)
+    
+    # Disclose Income configuration selection UI
+    render_disclose_income_config_selection_ui(results_dict)
     
     # Get DataFrame for individual agent analysis
     if st.session_state.population_mode == "Compare all":

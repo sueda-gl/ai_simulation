@@ -154,16 +154,61 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         render_inline_selection_button(result_key, df)
 
 
+def render_seed_mismatch_error(decision_name, error_info):
+    """
+    Render a clear error message when seed mismatch is detected.
+    
+    Args:
+        decision_name: Name of the decision being saved (e.g., 'disclose_income')
+        error_info: Dict with keys: new_seed, new_n_agents, existing_seed, existing_n_agents, conflicting_decision
+    """
+    from app.pages.decision_execution import clear_decision_config
+    
+    conflicting = error_info['conflicting_decision']
+    conflicting_title = conflicting.replace('_', ' ').title()
+    decision_title = decision_name.replace('_', ' ').title()
+    
+    st.error(f"""
+**Seed Mismatch Detected**
+
+Your **{decision_title}** configuration was run with:
+- Seed: **{error_info['new_seed']}**
+- Agents: **{error_info['new_n_agents']:,}**
+
+But you already have a **{conflicting_title}** configuration saved with:
+- Seed: **{error_info['existing_seed']}**
+- Agents: **{error_info['existing_n_agents']:,}**
+
+**Why this matters:** To ensure consistent results across decisions, all saved configurations must use the same seed and agent count.
+
+**Action Required:** Re-run {decision_title} with seed={error_info['existing_seed']} and n_agents={error_info['existing_n_agents']}, then select that configuration.
+    """)
+    
+    # Offer option to clear the conflicting config instead
+    if st.button(
+        f"🗑️ Clear {conflicting_title} config instead",
+        key=f"clear_conflict_{decision_name}_{conflicting}",
+        help=f"Remove the saved {conflicting_title} config so you can use this {decision_title} config"
+    ):
+        clear_decision_config(conflicting)
+        st.success(f"Cleared {conflicting_title} configuration. Click 'Use This Config' again.")
+        st.rerun()
+
+
 def render_inline_selection_button(result_key, result_df):
-    """Render selection button directly under the chart"""
+    """Render selection button directly under the chart (for donation_default)"""
     
     # Import here to avoid circular imports
     from app.pages.decision_execution import (
-        save_selected_configuration, 
-        is_configuration_selected
+        save_decision_config,
+        is_decision_config_selected,
+        get_current_coefficients,
+        get_current_stochastic_params,
+        calculate_result_metrics,
+        extract_configuration_details
     )
     
-    is_selected = is_configuration_selected(result_key)
+    is_selected = is_decision_config_selected('donation_default', result_key)
     
     # Create a compact selection interface
     col1, col2 = st.columns([2, 1])
@@ -192,16 +237,124 @@ def render_inline_selection_button(result_key, result_df):
                 use_container_width=True,
                 help="Select this configuration for combined simulations"
             ):
-                save_selected_configuration(result_key, result_df)
-                st.success("Configuration selected!")
-                st.rerun()
+                # Get donation-specific parameters
+                coefficients = get_current_coefficients()
+                stochastic_params = get_current_stochastic_params()
+                config_details = extract_configuration_details(result_key)
+                
+                params = {
+                    'coefficients': coefficients,
+                    'stochastic_params': stochastic_params,
+                    'income_mode': config_details['income_spec_mode']
+                }
+                
+                metrics = calculate_result_metrics(result_df)
+                
+                extra_data = {
+                    'population_mode': config_details['population_mode'],
+                    'income_spec_mode': config_details['income_spec_mode']
+                }
+                
+                # Use unified save function with seed validation
+                success, config, error_info = save_decision_config(
+                    'donation_default', result_key, result_df, params, metrics, extra_data
+                )
+                
+                if success:
+                    st.success("Configuration selected!")
+                    st.rerun()
+                else:
+                    # Show seed mismatch error
+                    render_seed_mismatch_error('donation_default', error_info)
+
+
+def show_disclose_income_overview(df, title_suffix="", result_key=None, enable_selection=False):
+    """
+    Display compact Disclose Income overview for comparison views.
+    
+    Shows key metrics: Total Agents, Y count, N count, Disclosure Rate.
+    Suitable for side-by-side comparison grids.
+    
+    Args:
+        df: DataFrame with 'disclose_income' column
+        title_suffix: Additional text for titles
+        result_key: Unique key for this result (needed for selection buttons)
+        enable_selection: Whether to show "Use This Config" button
+    """
+    st.subheader(f"Disclose Income Overview{title_suffix}")
+    
+    if 'disclose_income' not in df.columns:
+        st.warning("disclose_income column not found in results")
+        return
+    
+    # Calculate metrics
+    total = len(df)
+    y_count = (df['disclose_income'] == 'Y').sum()
+    n_count = (df['disclose_income'] == 'N').sum()
+    y_rate = (y_count / total) * 100 if total > 0 else 0
+    
+    # Display metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Total Agents", f"{total:,}")
+    with col2:
+        st.metric("Disclosed (Y)", f"{y_count:,}")
+    with col3:
+        st.metric("Not Disclosed (N)", f"{n_count:,}")
+    
+    # Disclosure rate metric
+    st.metric("Disclosure Rate", f"{y_rate:.1f}%")
+    
+    # Pie chart (compact)
+    import plotly.express as px
+    value_counts = df['disclose_income'].value_counts()
+    if len(value_counts) > 0:
+        fig = px.pie(
+            values=value_counts.values,
+            names=value_counts.index,
+            color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
+        )
+        fig.update_layout(
+            margin=dict(t=20, b=20, l=20, r=20),
+            height=200
+        )
+        chart_key = f"di_pie_{result_key}" if result_key else f"di_pie_{title_suffix.replace(' ', '_')}"
+        st.plotly_chart(fig, use_container_width=True, key=chart_key)
+    
+    # Add inline selection button if enabled
+    if enable_selection and result_key:
+        from app.pages.decision_execution import (
+            save_disclose_income_config_from_results, 
+            validate_seed_for_config_save
+        )
+        
+        # Get current simulation parameters
+        current_seed = st.session_state.get('seed', 42)
+        current_n_agents = st.session_state.get('n_agents', 1000)
+        
+        # Validate seed consistency before showing the button
+        is_valid, error_info = validate_seed_for_config_save(
+            'disclose_income', current_seed, current_n_agents
+        )
+        
+        if is_valid:
+            button_key = f"select_di_{result_key}"
+            if st.button(f"✅ Use This Config", key=button_key, help="Select this configuration for complete simulation"):
+                success = save_disclose_income_config_from_results(result_key, df)
+                if success:
+                    st.success(f"✅ Configuration saved: {result_key}")
+                    st.rerun()
+        else:
+            # Show seed mismatch error
+            render_seed_mismatch_error('disclose_income', error_info)
 
 
 def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, enable_selection=False):
     """
     Display Disclose Income Rate Analysis with histogram of raw DI values.
     
-    Shows the distribution of raw disclosure intention values BEFORE classification
+    Shows the distribution of raw disclose income values BEFORE classification
     (i.e., before the >0 → Y, ≤0 → N threshold is applied).
     
     The histogram includes a clear vertical line at 0 to show the decision boundary.
@@ -259,7 +412,7 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
         line_dash="solid",
         line_color="red",
         line_width=3,
-        annotation_text="Boundary (0)",
+        annotation_text="Threshold (0)",
         annotation_position="top",
         annotation_font_color="red"
     )
@@ -277,7 +430,7 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
     
     # Update layout
     fig.update_layout(
-        title=f"Raw Disclosure Intention Distribution{title_suffix}",
+        title=f"Raw Disclose Income Distribution{title_suffix}",
         xaxis_title="Raw DI Value (>0 → Y, ≤0 → N)",
         yaxis_title="Agents",
         showlegend=False,
@@ -337,11 +490,14 @@ def render_disclose_income_selection_button(result_key, result_df):
     
     # Import here to avoid circular imports
     from app.pages.decision_execution import (
-        is_disclose_income_configuration_selected,
-        save_disclose_income_configuration
+        save_decision_config,
+        is_decision_config_selected,
+        get_current_disclose_income_params,
+        calculate_disclose_income_metrics,
+        extract_disclose_income_configuration_details
     )
     
-    is_selected = is_disclose_income_configuration_selected(result_key)
+    is_selected = is_decision_config_selected('disclose_income', result_key)
     
     st.markdown("---")
     
@@ -372,60 +528,26 @@ def render_disclose_income_selection_button(result_key, result_df):
                 use_container_width=True,
                 help="Select this disclose income configuration for combined simulations"
             ):
-                save_disclose_income_configuration(result_key, result_df)
-                st.success("Disclose Income configuration selected!")
-                st.rerun()
-
-
-def render_disclose_income_run_simulation_button():
-    """
-    Render a full-width 'Run Complete Simulation' button for disclose income comparison.
-    
-    This should be called OUTSIDE of column contexts to span full width.
-    Only shows the button when a disclose_income config is selected.
-    """
-    from app.pages.decision_execution import (
-        can_run_complete_simulation,
-        run_combined_simulation
-    )
-    
-    # Check if a disclose_income config is selected
-    has_selected_di_config = (
-        hasattr(st.session_state, 'selected_disclose_income_config') and 
-        st.session_state.selected_disclose_income_config is not None
-    )
-    
-    if not has_selected_di_config:
-        return
-    
-    # Get the selected config info
-    di_config = st.session_state.selected_disclose_income_config
-    selected_mode = di_config.get('income_mode', 'Unknown')
-    
-    st.markdown("---")
-    
-    # Check if complete simulation can run
-    can_run, reason, config_count, block_type = can_run_complete_simulation()
-    
-    if can_run:
-        st.success(f"✅ **Selected Configuration:** {selected_mode}")
-        
-        if st.button(
-            "🚀 Run Complete Simulation",
-            key="di_run_complete_full_width",
-            type="primary",
-            use_container_width=True,
-            help="Run all decisions with the selected disclose income configuration"
-        ):
-            # Get selected decisions from session state
-            selected_decisions = []
-            if hasattr(st.session_state, 'decision_params') and hasattr(st.session_state.decision_params, 'selected_decisions'):
-                selected_decisions = st.session_state.decision_params.selected_decisions
-            run_combined_simulation(selected_decisions)
-    else:
-        # Show why complete simulation can't run yet
-        if block_type == "donation_config":
-            st.warning(f"⚠️ **Additional Configuration Required:** {reason}")
+                # Get disclose income specific parameters
+                params = get_current_disclose_income_params()
+                metrics = calculate_disclose_income_metrics(result_df)
+                config_details = extract_disclose_income_configuration_details(result_key)
+                
+                extra_data = {
+                    'income_mode': config_details['income_mode']
+                }
+                
+                # Use unified save function with seed validation
+                success, config, error_info = save_decision_config(
+                    'disclose_income', result_key, result_df, params, metrics, extra_data
+                )
+                
+                if success:
+                    st.success("Disclose Income configuration selected!")
+                    st.rerun()
+                else:
+                    # Show seed mismatch error
+                    render_seed_mismatch_error('disclose_income', error_info)
 
 
 def show_parameter_applicability_analysis(selected_decisions):

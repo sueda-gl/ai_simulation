@@ -178,98 +178,19 @@ class OrchestratorDocMode:
         print(f"[DocMode] Computed income stats: mean=${self.simulation_config['income_stats']['mean']:,.2f}, sd=${self.simulation_config['income_stats']['sd']:,.2f}")
         
         # ============================================================================
-        # THREE-PASS APPROACH FOR DISCLOSE_INCOME POPULATION STATISTICS
-        # Pass 1: Compute weighted_prosocial and direct_effect for all agents
-        # Pass 2: Use weighted_prosocial stats to compute anchored_pb correctly
-        # Pass 3: Execute decisions using all population stats and cached values
+        # SINGLE-PASS APPROACH FOR DISCLOSE_INCOME
+        # No re-standardization of composite variables - use values as-is
+        # Natural variation in bootstrap samples is preserved as legitimate
         # ============================================================================
         
         if 'disclose_income' in decisions_to_run and 'disclose_income' in self.decision_modules:
-            from src.decisions.disclose_income_stochastic import (
-                compute_pass1_values,
-                compute_pass2_anchored_pb
-            )
-            
             disclose_income_params = self.config.get('disclose_income', {})
             di_income_mode = disclose_income_params.get('income_mode', 'categorical')
-            print(f"[DocMode] Computing disclose_income population stats (three-pass) with income_mode: {di_income_mode}")
-            
-            # Initialize cache for storing intermediate values
-            self.simulation_config['disclose_income_cache'] = {}
-            
-            # ========== PASS 1: Compute weighted_prosocial and direct_effect ==========
-            pass1_values_list = []
-            cache_idx = 0
-            
-            for idx, row in agents_df.iterrows():
-                for rep in range(outcome_draws):
-                    agent_state = row.to_dict()
-                    # Add income from income pass - required for continuous income mode
-                    agent_state['income'] = all_incomes[cache_idx]
-                    
-                    pass1_values = compute_pass1_values(
-                        agent_state, 
-                        disclose_income_params,
-                        self.simulation_config
-                    )
-                    pass1_values_list.append(pass1_values)
-                    
-                    # Cache Pass 1 values keyed by cache_idx
-                    self.simulation_config['disclose_income_cache'][cache_idx] = pass1_values.copy()
-                    cache_idx += 1
-            
-            # Compute Pass 1 statistics
-            wp_values = [v['weighted_prosocial'] for v in pass1_values_list]
-            de_values = [v['direct_effect'] for v in pass1_values_list]
-            
-            wp_stats = {'mean': float(np.mean(wp_values)), 'sd': float(np.std(wp_values))}
-            de_stats = {'mean': float(np.mean(de_values)), 'sd': float(np.std(de_values))}
-            
-            print(f"[DocMode] Pass 1 complete:")
-            print(f"  - weighted_prosocial: mean={wp_stats['mean']:.6f}, sd={wp_stats['sd']:.6f}")
-            print(f"  - direct_effect: mean={de_stats['mean']:.6f}, sd={de_stats['sd']:.6f}")
-            
-            # ========== PASS 2: Compute anchored_pb using correct z_weighted_prosocial ==========
-            anchored_pb_values = []
-            
-            for cache_idx in range(len(pass1_values_list)):
-                pass1_values = self.simulation_config['disclose_income_cache'][cache_idx]
-                
-                # Compute anchored_pb using population-standardized weighted_prosocial
-                anchored_pb = compute_pass2_anchored_pb(pass1_values, wp_stats, disclose_income_params)
-                anchored_pb_values.append(anchored_pb)
-                
-                # Update cache with anchored_pb
-                self.simulation_config['disclose_income_cache'][cache_idx]['anchored_pb'] = anchored_pb
-            
-            # Compute Pass 2 statistics
-            ap_stats = {'mean': float(np.mean(anchored_pb_values)), 'sd': float(np.std(anchored_pb_values))}
-            
-            print(f"[DocMode] Pass 2 complete:")
-            print(f"  - anchored_pb: mean={ap_stats['mean']:.6f}, sd={ap_stats['sd']:.6f}")
-            
-            # ========== Store all population stats ==========
-            self.simulation_config['disclose_income_population_stats'] = {
-                'weighted_prosocial': wp_stats,
-                'direct_effect': de_stats,
-                'anchored_pb': ap_stats  # NOW COMPUTED CORRECTLY from Pass 2!
-            }
-            
-            # ========== VERIFICATION: Check z-scored values have mean≈0, sd≈1 ==========
-            # This confirms the three-pass approach is working correctly
-            z_wp_values = [(v - wp_stats['mean']) / wp_stats['sd'] if wp_stats['sd'] > 0 else v for v in wp_values]
-            z_ap_values = [(v - ap_stats['mean']) / ap_stats['sd'] if ap_stats['sd'] > 0 else v for v in anchored_pb_values]
-            z_de_values = [(v - de_stats['mean']) / de_stats['sd'] if de_stats['sd'] > 0 else v for v in de_values]
-            
-            print(f"[DocMode] Three-pass VERIFICATION (z-scored values should have mean≈0, sd≈1):")
-            print(f"  - z_weighted_prosocial: mean={np.mean(z_wp_values):.6f}, sd={np.std(z_wp_values):.6f}")
-            print(f"  - z_anchored_pb: mean={np.mean(z_ap_values):.6f}, sd={np.std(z_ap_values):.6f}")
-            print(f"  - z_direct_effect: mean={np.mean(z_de_values):.6f}, sd={np.std(z_de_values):.6f}")
-            print(f"[DocMode] Three-pass disclose_income population stats complete")
+            print(f"[DocMode] disclose_income using single-pass (no re-standardization), income_mode: {di_income_mode}")
         
-        # PASS 3: Process agents and run decisions
+        # Process agents and run decisions (single-pass)
         results = []
-        agent_idx = 0  # Index into agent_base_seeds and disclose_income_cache
+        agent_idx = 0  # Index into agent_base_seeds
         
         for idx, row in agents_df.iterrows():
             for rep in range(outcome_draws):  # repeat dependent-var draw
@@ -279,17 +200,14 @@ class OrchestratorDocMode:
                 agent_state['index'] = idx
                 agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
                 
-                # Add cache index for disclose_income to retrieve cached values
-                agent_state['_cache_index'] = agent_idx
+                if outcome_draws > 1:
+                    agent_state['draw_id'] = rep + 1
                 
-                if outcome_draws>1:
-                    agent_state['draw_id']=rep+1
-                
-                # Use the same base seed from Pass 1
+                # Use the same base seed from income pass
                 agent_base_seed = agent_base_seeds[agent_idx]
                 agent_idx += 1
                 
-                # Pre-generate income with the SAME RNG as Pass 1 (ensures consistency)
+                # Pre-generate income with the SAME RNG as income pass (ensures consistency)
                 income_rng = np.random.default_rng(agent_base_seed + 999999)
                 get_agent_income(agent_state, self.simulation_config, income_rng)
 

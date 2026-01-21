@@ -16,7 +16,7 @@ donation_default:
 # Placeholder blocks for remaining decisions - traits TBD when models are fitted
 disclose_income:
   # Decision 1: Disclose income for Fixed status
-  # Two-stage mediation model: Prosocial Behavior → Disclosure Intention
+  # Two-stage mediation model: Prosocial Behavior → Disclose Income
   # Equation 1 (PB): Agreeable, Openness, Honesty_Humility, Religiosity
   # Equation 2 (DI): Extraversion, Neuroticism, Honesty_Humility, Income, PB*income_high
   - Agreeable

@@ -317,6 +317,11 @@ def _apply_disclose_income_config(orchestrator, pop_mode: str, inc_mode: str = N
     
     Handles income mode, stochastic settings, and anchor weights for disclose_income.
     
+    Priority for configuration:
+    1. Saved config from unified selected_decision_configs (if exists)
+    2. Explicit inc_mode parameter (for "Compare both" mode)
+    3. Session state values (current UI settings)
+    
     Args:
         orchestrator: The orchestrator instance to configure
         pop_mode: Population mode (documentation, copula, baseline, depvar)
@@ -331,6 +336,105 @@ def _apply_disclose_income_config(orchestrator, pop_mode: str, inc_mode: str = N
     if pop_mode == "depvar":
         return  # depvar mode doesn't use these settings
     
+    di_config = orchestrator.config['disclose_income']
+    
+    # Check for saved config first (from unified config system)
+    from app.pages.decision_execution import get_decision_config
+    saved_config = get_decision_config('disclose_income')
+    
+    if saved_config is not None:
+        # Apply saved configuration - this takes precedence over session state
+        print(f"[DiscloseIncome] Using saved configuration from unified config system")
+        _apply_saved_disclose_income_config(orchestrator, pop_mode, saved_config)
+        return
+    
+    # Fallback: Also check legacy storage for backwards compatibility
+    if hasattr(st.session_state, 'selected_disclose_income_config'):
+        print(f"[DiscloseIncome] Using saved configuration from legacy storage")
+        _apply_saved_disclose_income_config(orchestrator, pop_mode, st.session_state.selected_disclose_income_config)
+        return
+    
+    # No saved config - apply from session state / parameters
+    _apply_disclose_income_from_session_state(orchestrator, pop_mode, inc_mode)
+
+
+def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_config: dict):
+    """
+    Apply a saved disclose_income configuration to the orchestrator.
+    
+    Args:
+        orchestrator: The orchestrator instance to configure
+        pop_mode: Population mode (documentation, copula, baseline, depvar)
+        saved_config: The saved configuration dict with 'params' key
+    """
+    di_config = orchestrator.config['disclose_income']
+    params = saved_config.get('params', {})
+    
+    # Apply income mode
+    income_mode = params.get('income_mode', saved_config.get('income_mode', 'Categorical only'))
+    if 'continuous' in str(income_mode).lower():
+        di_config['income_mode'] = 'continuous'
+    else:
+        di_config['income_mode'] = 'categorical'
+    print(f"[DiscloseIncome] Applied saved income_mode: {di_config['income_mode']}")
+    
+    # Apply intercept
+    if 'intercept' in params:
+        di_config['intercept'] = params['intercept']
+    
+    # Apply anchor weights
+    if 'anchor_weights' not in di_config:
+        di_config['anchor_weights'] = {}
+    
+    anchor_weights = params.get('anchor_weights', {})
+    if 'observed_prosocial' in anchor_weights:
+        di_config['anchor_weights']['observed_prosocial'] = anchor_weights['observed_prosocial']
+    if 'prosocial_weight' in anchor_weights:
+        di_config['anchor_weights']['prosocial_weight'] = anchor_weights['prosocial_weight']
+    
+    # Apply stochastic settings
+    if 'stochastic' not in di_config:
+        di_config['stochastic'] = {}
+    
+    stochastic = params.get('stochastic', {})
+    
+    if pop_mode == "baseline":
+        # Baseline mode: no stochastic component
+        di_config['stochastic']['sigma_value'] = 0.0
+    elif stochastic.get('sigma_enabled', False):
+        # Stochastic enabled in saved config
+        di_config['stochastic']['sigma_value'] = 9.899547
+        if 'sigma_strategy' in stochastic:
+            di_config['stochastic']['sigma_strategy'] = stochastic['sigma_strategy']
+        if 'scale_factor' in stochastic:
+            di_config['stochastic']['scale_factor'] = stochastic['scale_factor']
+        if 'quintile_scale_factors' in stochastic:
+            di_config['stochastic']['quintile_scale_factors'] = stochastic['quintile_scale_factors']
+    else:
+        # Stochastic disabled
+        di_config['stochastic']['sigma_value'] = 0.0
+    
+    # Also update session state to reflect saved config (for UI consistency)
+    st.session_state.di_income_mode = income_mode
+    if 'intercept' in params:
+        st.session_state.di_intercept = params['intercept']
+    if 'observed_prosocial' in anchor_weights:
+        st.session_state.di_wopb = anchor_weights['observed_prosocial']
+    if 'prosocial_weight' in anchor_weights:
+        st.session_state.di_wpb = anchor_weights['prosocial_weight']
+    st.session_state.di_sigma_enabled = stochastic.get('sigma_enabled', False)
+    if 'scale_factor' in stochastic:
+        st.session_state.di_scale_factor = stochastic['scale_factor']
+    if 'sigma_strategy' in stochastic:
+        st.session_state.di_sigma_strategy = stochastic['sigma_strategy']
+
+
+def _apply_disclose_income_from_session_state(orchestrator, pop_mode: str, inc_mode: str = None):
+    """
+    Apply disclose_income configuration from session state (current UI settings).
+    
+    This is the fallback when no saved config exists.
+    """
     di_config = orchestrator.config['disclose_income']
     
     # Determine income mode to use
@@ -393,6 +497,46 @@ def _apply_disclose_income_config(orchestrator, pop_mode: str, inc_mode: str = N
     else:
         # Stochastic disabled
         di_config['stochastic']['sigma_value'] = 0.0
+
+
+def apply_all_selected_configs(orchestrator, pop_mode: str, inc_mode: str = None):
+    """
+    Apply all saved decision configurations to the orchestrator.
+    
+    This is the main entry point for applying configs during complete simulation.
+    It iterates through all saved configs in the unified storage and applies them.
+    
+    Args:
+        orchestrator: The orchestrator instance to configure
+        pop_mode: Population mode (documentation, copula, baseline, depvar)
+        inc_mode: Optional income mode override (for Compare both scenarios)
+    """
+    from app.pages.decision_execution import get_selected_decision_configs, get_all_saved_config_summary
+    
+    configs = get_selected_decision_configs()
+    
+    if configs:
+        summaries = get_all_saved_config_summary()
+        print(f"[ApplyConfigs] Applying {len(configs)} saved decision configurations:")
+        for summary in summaries:
+            print(f"  - {summary['decision_name']}: seed={summary['original_seed']}, n_agents={summary['original_n_agents']}")
+    
+    # Apply each decision's config
+    # Note: _apply_donation_config and _apply_disclose_income_config already check for saved configs
+    # This function is mainly for coordination and logging, and will be extended for future decisions
+    
+    # For now, the individual apply functions handle their own config lookup
+    # In the future, we can add a registry of apply functions here:
+    # DECISION_APPLY_FUNCTIONS = {
+    #     'donation_default': _apply_donation_config,
+    #     'disclose_income': _apply_disclose_income_config,
+    #     # Add new decisions here
+    # }
+    # for decision_name in configs:
+    #     if decision_name in DECISION_APPLY_FUNCTIONS:
+    #         DECISION_APPLY_FUNCTIONS[decision_name](orchestrator, pop_mode, inc_mode)
+    
+    pass  # Currently, individual _apply_* functions handle their own saved config lookup
 
 
 # =============================================================================
@@ -812,33 +956,40 @@ def run_simulation_from_sidebar():
     """
     try:
         with st.spinner("🔄 Running simulation..."):
-            # Get common parameters
-            n_agents = st.session_state.n_agents
-            if st.session_state.sim_params.simulation_mode == "Single Run":
-                seed = st.session_state.get('seed_input', st.session_state.seed)
-            else:
-                seed = st.session_state.get('base_seed_input', st.session_state.base_seed)
+            # Get common parameters - use unified config system for seed/n_agents
+            from app.pages.decision_execution import (
+                get_simulation_seed_from_configs,
+                get_selected_decision_configs,
+                get_all_saved_config_summary
+            )
+            
+            # Get seed/n_agents from unified configs (if any) or session state
+            seed, n_agents, source = get_simulation_seed_from_configs()
+            
+            # Show info about saved configs being used
+            saved_configs = get_selected_decision_configs()
+            if saved_configs:
+                st.info(f"📋 Using {len(saved_configs)} saved decision configuration(s)")
+                
+                # Show details for each saved config
+                for decision_name, config in saved_configs.items():
+                    decision_title = decision_name.replace('_', ' ').title()
+                    if decision_name == 'donation_default':
+                        income_mode = config.get('params', {}).get('income_mode', 
+                            config.get('income_spec_mode', 'categorical only'))
+                        st.caption(f"  🎯 {decision_title}: {income_mode}")
+                    elif decision_name == 'disclose_income':
+                        income_mode = config.get('params', {}).get('income_mode',
+                            config.get('income_mode', 'Categorical only'))
+                        st.caption(f"  📋 {decision_title}: {income_mode}")
+                    else:
+                        st.caption(f"  ✓ {decision_title}")
+                
+                if source == 'configs':
+                    st.caption(f"🔑 Using saved seed: {seed}, agents: {n_agents:,}")
             
             # Determine which decisions to run
             single_decision = None if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS) else st.session_state.decision_params.selected_decisions
-            
-            # NOTE: selected_donation_config is used ONLY for donation_default decision.
-            # Each decision has its own income mode setting that is respected independently.
-            # We no longer override global income_spec_mode - each decision reads its own settings.
-            if hasattr(st.session_state, 'selected_donation_config'):
-                config = st.session_state.selected_donation_config
-                
-                # Show info about donation config (but don't override global settings)
-                donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
-                st.info(f"🎯 Donation Default will use saved configuration: {donation_income_mode}")
-                
-                # Use original seed/n_agents for reproducibility of donation_default results
-                if 'original_seed' in config:
-                    seed = config['original_seed']
-                    st.caption(f"🔑 Using original seed: {seed}")
-                if 'original_n_agents' in config:
-                    n_agents = config['original_n_agents']
-                    st.caption(f"👥 Using original agent count: {n_agents}")
             
             # Collect current decision settings
             decision_settings = collect_decision_settings()
@@ -908,9 +1059,67 @@ def run_simulation_from_sidebar():
                     effective_income_mode = st.session_state.get('income_spec_mode', 'categorical only')
                 st.caption(f"🎯 Using Donation Default income mode: {effective_income_mode}")
             else:
-                # Combined simulation or other decisions - use the global income_spec_mode setting
-                # Individual decisions will read their own settings during execution
-                effective_income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+                # Combined simulation or other decisions
+                # FIX: Use saved config's income mode if available, instead of global income_spec_mode
+                # This ensures "Run Complete Simulation" respects user's selected configuration
+                effective_income_mode = None
+                
+                # Check disclose_income saved config first
+                if 'selected_decision_configs' in st.session_state:
+                    configs = st.session_state.selected_decision_configs
+                    if 'disclose_income' in configs:
+                        di_config = configs['disclose_income']
+                        effective_income_mode = di_config.get('income_mode', 
+                            di_config.get('params', {}).get('income_mode'))
+                        if effective_income_mode:
+                            # Sync to global so results page shows correct view
+                            st.session_state.income_spec_mode = effective_income_mode
+                            st.caption(f"📋 Using saved Disclose Income mode: {effective_income_mode}")
+                    
+                    # If no disclose_income config, check donation_default
+                    if effective_income_mode is None and 'donation_default' in configs:
+                        dd_config = configs['donation_default']
+                        effective_income_mode = dd_config.get('donation_income_mode', 
+                            dd_config.get('income_spec_mode',
+                            dd_config.get('params', {}).get('income_mode')))
+                        if effective_income_mode:
+                            # Sync to global so results page shows correct view
+                            st.session_state.income_spec_mode = effective_income_mode
+                            st.caption(f"🎯 Using saved Donation Default mode: {effective_income_mode}")
+                
+                # Also check legacy storage
+                if effective_income_mode is None and hasattr(st.session_state, 'selected_disclose_income_config'):
+                    di_config = st.session_state.selected_disclose_income_config
+                    effective_income_mode = di_config.get('income_mode', 
+                        di_config.get('params', {}).get('income_mode'))
+                    if effective_income_mode:
+                        st.session_state.income_spec_mode = effective_income_mode
+                        st.caption(f"📋 Using saved Disclose Income mode: {effective_income_mode}")
+                
+                if effective_income_mode is None and hasattr(st.session_state, 'selected_donation_config'):
+                    config = st.session_state.selected_donation_config
+                    effective_income_mode = config.get('donation_income_mode', config.get('income_spec_mode'))
+                    if effective_income_mode:
+                        st.session_state.income_spec_mode = effective_income_mode
+                        st.caption(f"🎯 Using saved Donation Default mode: {effective_income_mode}")
+                
+                # Fallback to global income_spec_mode if no saved configs
+                if effective_income_mode is None:
+                    effective_income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+                
+                # ALSO sync population_mode from saved configs if available
+                # This ensures is_comparison_mode will be correct in display logic
+                if 'selected_decision_configs' in st.session_state:
+                    for config in st.session_state.selected_decision_configs.values():
+                        if config.get('population_mode') and config.get('source') != 'auto_implied_single_config':
+                            st.session_state.population_mode = config['population_mode']
+                            st.caption(f"🔄 Using saved population mode: {config['population_mode']}")
+                            break
+                # Also check legacy donation config
+                if hasattr(st.session_state, 'selected_donation_config'):
+                    legacy_config = st.session_state.selected_donation_config
+                    if legacy_config.get('population_mode') and legacy_config.get('source') != 'auto_implied_single_config':
+                        st.session_state.population_mode = legacy_config['population_mode']
             
             if st.session_state.population_mode == "Compare all":
                 # Compare all three population modes - each uses its natural agent source
@@ -956,6 +1165,15 @@ def run_simulation_from_sidebar():
             
             # Store results
             st.session_state.simulation_results = results
+            
+            # Store run metadata - this captures WHAT WAS ACTUALLY RUN
+            # The display logic should use this instead of checking stale global mode variables
+            st.session_state._run_metadata = {
+                'is_comparison': len(results) > 1,
+                'result_keys': list(results.keys()),
+                'num_results': len(results),
+                'effective_income_mode': effective_income_mode
+            }
             
             # Extract and store vendor data from first DataFrame
             for df in results.values():
