@@ -229,6 +229,15 @@ def render_single_run_results():
                     config_info = get_decision_config_display(decision)
                     decision_has_saved_config = config_info.get('is_saved', False)
                 
+                # Check if results actually have compare-all keys (only true for individual decision runs in Compare all mode)
+                # Full/combined simulations always run in single mode due to can_run_complete_simulation() blocking
+                compare_all_keys = ["copula_categorical", "copula_continuous", "research_spec_categorical", 
+                                   "research_spec_continuous", "research_baseline_categorical", "research_baseline_continuous"]
+                results_have_compare_all_keys = any(k in results_dict for k in compare_all_keys)
+                
+                # For combined simulations, results are always single-mode, so never show comparison views
+                is_individual_decision_run = not has_combined_simulation
+                
                 if use_dropdown:
                     # Multiple decisions - use collapsible dropdown
                     with st.expander(f"✅ {decision_title} (Custom Parameters)", expanded=False):
@@ -243,13 +252,13 @@ def render_single_run_results():
                             # (user selected a specific config, so we're not in true "comparison" anymore)
                             if decision_has_saved_config:
                                 render_decision_results(df, decision, decision_title)
-                            elif is_comparison_mode and decision == "donation_default":
-                                # For donation_default in comparison mode without saved config, show comparison grids
+                            elif is_comparison_mode and decision == "donation_default" and is_individual_decision_run and results_have_compare_all_keys:
+                                # For donation_default in comparison mode - only show comparison grids for individual runs with actual compare-all results
                                 if st.session_state.population_mode == "Compare all":
                                     render_all_modes_comparison(results_dict)
                                 elif st.session_state.income_spec_mode == "Compare both":
                                     render_income_comparison(results_dict)
-                            elif is_comparison_mode:
+                            elif is_comparison_mode and not has_combined_simulation:
                                 st.info("📊 Custom decision results are shown in the comparison grids below")
                             else:
                                 render_decision_results(df, decision, decision_title)
@@ -269,13 +278,13 @@ def render_single_run_results():
                         # (user selected a specific config, so we're not in true "comparison" anymore)
                         if decision_has_saved_config:
                             render_decision_results(df, decision, decision_title)
-                        elif is_comparison_mode and decision == "donation_default":
-                            # For donation_default in comparison mode without saved config, show comparison grids
+                        elif is_comparison_mode and decision == "donation_default" and is_individual_decision_run and results_have_compare_all_keys:
+                            # For donation_default in comparison mode - only show comparison grids for individual runs with actual compare-all results
                             if st.session_state.population_mode == "Compare all":
                                 render_all_modes_comparison(results_dict)
                             elif st.session_state.income_spec_mode == "Compare both":
                                 render_income_comparison(results_dict)
-                        elif is_comparison_mode:
+                        elif is_comparison_mode and not has_combined_simulation:
                             st.info("📊 Custom decision results are shown in the comparison grids below")
                         else:
                             render_decision_results(df, decision, decision_title)
@@ -361,14 +370,24 @@ def render_single_run_results():
                 'donation_default' in st.session_state.custom_decisions
             )
             
-            if st.session_state.population_mode == "Compare all":
+            # Check if results actually have "Compare all" keys before rendering comparison
+            compare_all_keys = ["copula_categorical", "copula_continuous", "research_spec_categorical", 
+                               "research_spec_continuous", "research_baseline_categorical", "research_baseline_continuous"]
+            has_compare_all_results = any(k in results_dict for k in compare_all_keys)
+            
+            # CRITICAL: For combined/full simulations, NEVER show compare-all view
+            # Full simulations are blocked from running in compare-all mode by can_run_complete_simulation()
+            # So if we have a combined simulation, skip directly to single mode display
+            is_full_simulation = has_combined_simulation
+            
+            if st.session_state.population_mode == "Compare all" and has_compare_all_results and not is_full_simulation:
                 render_all_modes_comparison(results_dict)
-            elif st.session_state.population_mode == "Dependent variable resampling":
+            elif st.session_state.population_mode == "Dependent variable resampling" and not is_full_simulation:
                 render_dependent_variable_results(results_dict)
-            elif st.session_state.income_spec_mode == "Compare both":
+            elif st.session_state.income_spec_mode == "Compare both" and not is_full_simulation:
                 render_income_comparison(results_dict)
-            elif not using_selected_config and not is_donation_custom_only:
-                # Single mode display - show high-level summary (but NOT for selected configurations or donation custom runs)
+            elif not is_full_simulation and not using_selected_config and not is_donation_custom_only:
+                # Single mode display - show high-level summary (but NOT for full simulations, selected configurations, or donation custom runs)
                 st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
                 df = next(iter(results_dict.values()))
                 mode_name = next(iter(results_dict.keys()))
@@ -412,7 +431,8 @@ def render_single_run_results():
                     result_key=mode_name,
                     enable_selection=enable_selection
                 )
-            # If using_selected_config is True or is_donation_custom_only is True, we skip the overview display entirely
+            # For full simulations, selected configs, or donation custom runs - skip overview display entirely
+            # Decision results are shown in the dropdown sections above instead
     
     # Configuration selection UI - shows config cards and "Run Complete Simulation" button
     render_configuration_selection_ui(results_dict)
@@ -421,6 +441,9 @@ def render_single_run_results():
     render_disclose_income_config_selection_ui(results_dict)
     
     # Get DataFrame for individual agent analysis
+    # ROBUST FIX: Always try to get a valid DataFrame, falling back if expected keys don't match
+    df = pd.DataFrame()
+    
     if st.session_state.population_mode == "Compare all":
         if st.session_state.income_spec_mode == "Compare both":
             df = next((results_dict[k] for k in ["copula_categorical", "research_spec_categorical", "research_baseline_categorical", "copula_continuous", "research_spec_continuous", "research_baseline_continuous"] if k in results_dict), pd.DataFrame())
@@ -430,7 +453,12 @@ def render_single_run_results():
     elif st.session_state.income_spec_mode == "Compare both":
         df = next((results_dict[k] for k in ["categorical", "continuous"] if k in results_dict), pd.DataFrame())
     else:
-        df = next(iter(results_dict.values()))
+        df = next(iter(results_dict.values()), pd.DataFrame())
+    
+    # FALLBACK: If df is empty but results_dict has data, use any available DataFrame
+    # This handles cases where population_mode doesn't match the actual result keys
+    if df.empty and results_dict:
+        df = next(iter(results_dict.values()), pd.DataFrame())
     
     # Individual agent details
     if st.session_state.show_individual_agents and not df.empty:

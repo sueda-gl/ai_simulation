@@ -539,6 +539,40 @@ def apply_all_selected_configs(orchestrator, pop_mode: str, inc_mode: str = None
     pass  # Currently, individual _apply_* functions handle their own saved config lookup
 
 
+def get_population_mode_from_result_key(result_key: str) -> Optional[str]:
+    """
+    Extract population mode from a result_key.
+    
+    Result keys from Compare All mode contain the population mode information:
+    - "copula_categorical", "copula_continuous" -> "Copula (synthetic)"
+    - "research_spec_categorical", "research_spec_continuous" -> "Research Specification (documentation)"
+    - "research_baseline_categorical", "research_baseline_continuous" -> "Research Baseline"
+    
+    Result keys from single mode runs ("categorical", "continuous") don't contain
+    population mode info, so we return None to indicate the current mode should be kept.
+    
+    Args:
+        result_key: The result key from a saved configuration
+        
+    Returns:
+        Population mode string if identifiable, None otherwise
+    """
+    if not result_key:
+        return None
+    
+    result_key_lower = result_key.lower()
+    
+    if 'copula' in result_key_lower:
+        return 'Copula (synthetic)'
+    elif 'research_spec' in result_key_lower or 'documentation' in result_key_lower:
+        return 'Research Specification (documentation)'
+    elif 'baseline' in result_key_lower or 'research_baseline' in result_key_lower:
+        return 'Research Baseline'
+    
+    # Single mode result keys like "categorical" or "continuous" don't indicate population mode
+    return None
+
+
 # =============================================================================
 # MODE RUNNER FUNCTIONS - Each mode encapsulates its own agent sampling
 # =============================================================================
@@ -1109,17 +1143,42 @@ def run_simulation_from_sidebar():
                 
                 # ALSO sync population_mode from saved configs if available
                 # This ensures is_comparison_mode will be correct in display logic
+                # FIX: Also extract population_mode from result_key if not explicitly stored
+                population_mode_synced = False
+                
                 if 'selected_decision_configs' in st.session_state:
                     for config in st.session_state.selected_decision_configs.values():
-                        if config.get('population_mode') and config.get('source') != 'auto_implied_single_config':
-                            st.session_state.population_mode = config['population_mode']
-                            st.caption(f"🔄 Using saved population mode: {config['population_mode']}")
+                        # Skip auto-implied configs
+                        if config.get('source') == 'auto_implied_single_config':
+                            continue
+                        # Try explicit population_mode first
+                        pop_mode = config.get('population_mode')
+                        # If not found, extract from result_key (e.g., "copula_categorical" -> "Copula (synthetic)")
+                        if not pop_mode:
+                            pop_mode = get_population_mode_from_result_key(config.get('result_key'))
+                        if pop_mode:
+                            st.session_state.population_mode = pop_mode
+                            st.caption(f"🔄 Using saved population mode: {pop_mode}")
+                            population_mode_synced = True
                             break
-                # Also check legacy donation config
-                if hasattr(st.session_state, 'selected_donation_config'):
-                    legacy_config = st.session_state.selected_donation_config
-                    if legacy_config.get('population_mode') and legacy_config.get('source') != 'auto_implied_single_config':
-                        st.session_state.population_mode = legacy_config['population_mode']
+                
+                # Also check legacy configs if not synced yet
+                if not population_mode_synced:
+                    for legacy_attr in ['selected_donation_config', 'selected_disclose_income_config']:
+                        if hasattr(st.session_state, legacy_attr):
+                            legacy_config = getattr(st.session_state, legacy_attr)
+                            if legacy_config.get('source') == 'auto_implied_single_config':
+                                continue
+                            # Try explicit population_mode first
+                            pop_mode = legacy_config.get('population_mode')
+                            # If not found, extract from result_key
+                            if not pop_mode:
+                                pop_mode = get_population_mode_from_result_key(legacy_config.get('result_key'))
+                            if pop_mode:
+                                st.session_state.population_mode = pop_mode
+                                st.caption(f"🔄 Using saved population mode: {pop_mode}")
+                                population_mode_synced = True
+                                break
             
             if st.session_state.population_mode == "Compare all":
                 # Compare all three population modes - each uses its natural agent source

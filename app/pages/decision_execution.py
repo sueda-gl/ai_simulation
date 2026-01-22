@@ -1506,6 +1506,12 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     if extra_data:
         config.update(extra_data)
     
+    # FIX: For disclose_income, ensure population_mode is stored (extract from result_key if needed)
+    # This ensures the config can be properly synced when running full simulation
+    if decision_name == 'disclose_income' and 'population_mode' not in config:
+        config_details = extract_configuration_details(result_key)
+        config['population_mode'] = config_details['population_mode']
+    
     # Store in unified configs dict
     configs = get_selected_decision_configs()
     configs[decision_name] = config
@@ -1552,8 +1558,17 @@ def _sync_to_legacy_storage(decision_name, config):
     elif decision_name == 'disclose_income':
         # Build legacy format disclose_income config
         # FIX: income_mode is in config directly (from extra_data), not in config['params']
+        # FIX: Also extract and store population_mode from result_key for proper sync
+        
+        # Extract population_mode from result_key if not explicitly stored
+        population_mode = config.get('population_mode')
+        if not population_mode:
+            config_details = extract_configuration_details(config['result_key'])
+            population_mode = config_details['population_mode']
+        
         legacy_config = {
             'result_key': config['result_key'],
+            'population_mode': population_mode,  # ADD: Store population_mode for proper sync
             'income_mode': config.get('income_mode', config['params'].get('income_mode', 'Categorical only')),
             'params': config['params'],
             'metrics': config['metrics'],
