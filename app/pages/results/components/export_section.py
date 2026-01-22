@@ -247,15 +247,34 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
     for idx, row in df.iterrows():
         agent_id = row.get('agent_id', idx + 1)
         
-        # Start with agent ID and traits
+        # Start with agent ID and all personality traits
         agent_record = {
             'Agent ID': agent_id,
+            'Agreeable': row.get('Agreeable', np.nan),
+            'Openness': row.get('OpennessBig5', np.nan),
             'Honesty_Humility': row.get('Honesty_Humility', np.nan),
+            'Extraversion': row.get('ExtraversionBig5', np.nan),
+            'Neuroticism': row.get('NeuroticismBig5', np.nan),
+            'ReligiousAffiliation': row.get('ReligiousAffiliation', np.nan),
+            'ReligiousService': row.get('ReligiousService', np.nan),
             'Assigned Allowance Level': row.get('Assigned Allowance Level', np.nan),
             'Study Program': row.get('Study Program', ''),
             'Group_experiment': row.get('Group_experiment', ''),
             'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan),
         }
+        
+        # Religious composite (from decision output, or compute fallback)
+        if 'disclose_income_religious_composite' in row and pd.notna(row.get('disclose_income_religious_composite')):
+            agent_record['Religious'] = row.get('disclose_income_religious_composite')
+        else:
+            # Fallback: compute from raw values if available
+            ra = row.get('ReligiousAffiliation', np.nan)
+            rs = row.get('ReligiousService', np.nan)
+            if pd.notna(ra) and pd.notna(rs):
+                rs_scaled = rs / 4.0  # Scale to 0-1 (assuming max=4)
+                agent_record['Religious'] = (ra + rs_scaled) / 2
+            else:
+                agent_record['Religious'] = np.nan
         
         # Income and Income Category (before Disclose Income)
         # Income: Try to get from multiple sources
@@ -268,6 +287,41 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
         # Income category - use 'N/A' for empty/missing values (e.g., regular customers who didn't disclose income)
         income_category_raw = row.get('income_category', np.nan)
         agent_record['income_category'] = 'N/A' if (pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None) else income_category_raw
+
+        # Disclose Income calculated columns
+        # Check if disclose_income was actually calculated (not defaulted) by checking for calculated columns
+        disclose_income_was_calculated = 'disclose_income_di' in row and pd.notna(row.get('disclose_income_di'))
+        
+        # I-High (income_high indicator)
+        if disclose_income_was_calculated and 'disclose_income_income_high' in row and pd.notna(row.get('disclose_income_income_high')):
+            agent_record['I-High'] = row.get('disclose_income_income_high')
+        elif disclose_income_was_calculated:
+            # Fallback: compute from Assigned Allowance Level
+            level = row.get('Assigned Allowance Level', np.nan)
+            if pd.notna(level):
+                agent_record['I-High'] = 1 if level > 3 else 0
+            else:
+                agent_record['I-High'] = 'N/A'
+        else:
+            agent_record['I-High'] = 'N/A'  # Defaulted - not calculated
+        
+        # Configuration Values (Weights and Intercept) - N/A if defaulted
+        if disclose_income_was_calculated:
+            agent_record['WOPB'] = row.get('disclose_income_wopb', np.nan)
+            agent_record['WPB'] = row.get('disclose_income_wpb', np.nan)
+            agent_record['Intercept'] = row.get('disclose_income_intercept', np.nan)
+        else:
+            agent_record['WOPB'] = 'N/A'
+            agent_record['WPB'] = 'N/A'
+            agent_record['Intercept'] = 'N/A'
+        
+        # Calculated Values (PB_i and DI_i) - N/A if defaulted
+        if disclose_income_was_calculated:
+            agent_record['PB_i'] = row.get('disclose_income_anchored_pb', np.nan)
+            agent_record['DI_i'] = row.get('disclose_income_di', row.get('disclose_income_raw', np.nan))
+        else:
+            agent_record['PB_i'] = 'N/A'
+            agent_record['DI_i'] = 'N/A'
 
         # Decision 1: Disclose Income (convert Y/N to 1/0 for consistency)
         disclose_income_raw = row.get('disclose_income', '')
