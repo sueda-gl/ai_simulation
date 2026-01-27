@@ -78,7 +78,7 @@ def initialize_disclose_income_session_state():
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
-    
+
     # Initialize quintile scale factors
     if 'di_quintile_scale_factors' not in st.session_state:
         default_scale = stochastic.get('scale_factor', 1.0)
@@ -119,6 +119,12 @@ def render_disclose_income_tab():
     """Render disclose_income specific configuration."""
     initialize_disclose_income_session_state()
     config = load_disclose_income_config()
+
+    # Overlay session-state intercept override so the formula display
+    # and other readers of `config` see the latest value even though
+    # the YAML is only written on explicit Reset/Save.
+    if 'di_intercept' in st.session_state:
+        config['intercept'] = st.session_state.di_intercept
 
     st.markdown('<h3 class="section-header">Disclose Income Configuration</h3>', unsafe_allow_html=True)
 
@@ -630,24 +636,30 @@ def render_intercept_override_section(config):
 
     # Show current configuration values for reference
     try:
-        current_yaml_value = get_current_yaml_intercept()
+        # Fixed research default — Impact Preview always compares against this,
+        # regardless of what auto-save wrote to the YAML.
+        research_default = 0.75
+
+        # Current YAML value is used as the widget's initial value
+        # so it reflects what's actually saved in the config.
+        current_config_value = get_current_yaml_intercept()
 
         # Use 3 columns: Current Value, Override Value, Impact Preview
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown("**Current Configuration Value**")
-            st.metric("Intercept (β₀)", f"{current_yaml_value:.2f}")
+            st.markdown("**Research Default**")
+            st.metric("Intercept (β₀)", f"{research_default:.4f}")
 
         with col2:
             st.markdown("**Override Value**")
 
-            # Restore intercept widget key
+            # Restore intercept widget key, defaulting to current config value
             int_val = restore_widget_from_storage(
                 'di_override_intercept',
                 st.session_state.di_intercept_override_values,
                 'intercept',
-                current_yaml_value
+                current_config_value
             )
 
             new_intercept = st.number_input(
@@ -656,7 +668,7 @@ def render_intercept_override_section(config):
                 max_value=5.0,
                 value=float(int_val),
                 step=0.01,
-                format="%.2f",
+                format="%.4f",
                 help="β₀ in the disclosure intention equation. Higher values increase baseline probability of disclosure.",
                 key="di_override_intercept",
                 on_change=lambda: auto_save_intercept(st.session_state.di_override_intercept)
@@ -665,10 +677,10 @@ def render_intercept_override_section(config):
 
         with col3:
             st.markdown("**Impact Preview**")
-            change = new_intercept - current_yaml_value
-            if abs(change) > 0.0001:
+            change = new_intercept - research_default
+            if abs(change) > 0.00001:
                 impact = "Higher baseline" if change > 0 else "Lower baseline"
-                st.metric("Change", f"{change:+.2f}", delta=impact)
+                st.metric("Change", f"{change:+.4f}", delta=impact)
             else:
                 st.metric("Change", "No change")
 
@@ -677,25 +689,44 @@ def render_intercept_override_section(config):
 
 
 def auto_save_intercept(new_value):
-    """Auto-save intercept changes to YAML config."""
-    try:
-        # Update the override values
-        if 'di_intercept_override_values' not in st.session_state:
-            st.session_state.di_intercept_override_values = {}
+    """Update intercept override in session state (not YAML).
 
-        st.session_state.di_intercept_override_values['intercept'] = new_value
-        st.session_state.di_intercept = new_value
+    The YAML is only written by the Reset button.  Reload Configuration
+    reads from the unchanged YAML, so it can restore the last saved value.
+    The simulation reads di_intercept from session state, so it always
+    picks up the latest override without needing a YAML write.
+    """
+    if 'di_intercept_override_values' not in st.session_state:
+        st.session_state.di_intercept_override_values = {}
 
-        # Save to YAML immediately
-        success = save_disclose_income_config({'intercept': float(new_value)})
+    st.session_state.di_intercept_override_values['intercept'] = new_value
+    st.session_state.di_intercept = new_value
 
-        if success:
-            st.toast(f"Intercept auto-saved: {new_value:.2f}", icon="💾")
-        else:
-            st.toast("Failed to save intercept", icon="⚠️")
 
-    except Exception as e:
-        st.toast(f"Auto-save error: {str(e)}", icon="⚠️")
+def _apply_config_to_widget_keys(config):
+    """Explicitly set every widget key from a config dict.
+
+    Streamlit's internal widget cache can retain stale slider values even
+    after their session-state key is deleted.  Explicitly *setting* the key
+    is more reliable than deletion because it overwrites the cache.
+    """
+    anchor = config.get('anchor_weights', {})
+    stochastic = config.get('stochastic', {})
+
+    st.session_state.di_wopb_widget = anchor.get('observed_prosocial', 0.25)
+    st.session_state.di_wpb_widget = anchor.get('prosocial_weight', 0.50)
+    st.session_state.di_override_intercept = config.get('intercept', 0.75)
+    st.session_state.di_tab_sigma_enabled = stochastic.get('sigma_value', 0) > 0
+    st.session_state.di_tab_sigma_coefficient = stochastic.get('scale_factor', 1.0)
+    st.session_state.di_tab_sigma_strategy = stochastic.get('sigma_strategy', 'overall')
+    st.session_state.di_tab_income_mode = config.get('income_mode', 'Categorical only')
+
+    default_scale = stochastic.get('scale_factor', 1.0)
+    quintile_scales = stochastic.get('quintile_scale_factors', {})
+    for level in ['1', '2', '3', '4', '5']:
+        st.session_state[f'di_tab_sigma_q{level}'] = quintile_scales.get(
+            level, default_scale
+        )
 
 
 def reset_to_defaults():
@@ -721,20 +752,18 @@ def reset_to_defaults():
             success = False
 
     if success:
-        # Clear session state overrides
-        st.session_state.di_intercept_override_values = {}
-        st.session_state.di_intercept = 0.75
-        st.session_state.di_wopb = 0.25
-        st.session_state.di_wpb = 0.50
-        st.session_state.di_sigma_enabled = False
-        st.session_state.di_scale_factor = 1.0
-        st.session_state.di_sigma_strategy = 'overall'
-        st.session_state.di_income_mode = 'Categorical only'
-        st.session_state.di_quintile_scale_factors = {
-            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0
-        }
-        # Clear persistence storage
-        st.session_state.disclose_income_tab_persistence = {}
+        # 1. Clear all di_ keys and persistence storage
+        keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
+        for key in keys_to_clear:
+            del st.session_state[key]
+        if 'disclose_income_tab_persistence' in st.session_state:
+            del st.session_state['disclose_income_tab_persistence']
+
+        # 2. Re-read the now-reset YAML and SET every widget key to
+        #    the default value.  This prevents Streamlit's internal
+        #    widget cache from retaining stale slider values that would
+        #    be auto-saved back to YAML on the next rerun.
+        _apply_config_to_widget_keys(load_disclose_income_config())
 
     return success
 
@@ -761,10 +790,15 @@ def render_actions_and_management_section(config):
         if st.button("Reload Configuration", type="secondary", use_container_width=True,
                      help="Reload values from configuration file",
                      key="di_reload_btn"):
-            # Clear session state to force reload
+            # Clear all di_ keys and persistence storage
             keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
             for key in keys_to_clear:
                 del st.session_state[key]
+            if 'disclose_income_tab_persistence' in st.session_state:
+                del st.session_state['disclose_income_tab_persistence']
+            # SET widget keys from the YAML config so Streamlit's
+            # widget cache doesn't retain stale values
+            _apply_config_to_widget_keys(load_disclose_income_config())
             st.toast("Configuration reloaded", icon="🔄")
             st.rerun()
 
