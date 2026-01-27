@@ -195,7 +195,7 @@ def render_disclose_income_config_selection_ui(results_dict):
                         st.rerun()
         
         # CRITICAL: Check if complete simulation can actually run before showing the section
-        can_run, reason, config_count, block_type = can_run_complete_simulation()
+        can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
         
         # Only show Run Complete Simulation section if simulation is viable OR if it's blocked 
         # (so we can show the user why it's blocked and what to do)
@@ -296,7 +296,9 @@ def render_complete_simulation_section():
     st.markdown('<h3 class="section-header">🚀 Run Complete Simulation</h3>', unsafe_allow_html=True)
     
     # CRITICAL: Check if complete simulation can run FIRST, before showing any config info
-    can_run, reason, config_count, block_type = can_run_complete_simulation()
+    result = can_run_complete_simulation()
+    can_run, reason, config_count, block_type = result[:4]
+    blocking_issues = result[4] if len(result) > 4 else []
     
     # Get selected decisions from session state
     selected_decisions = getattr(st.session_state.decision_params, 'selected_decisions', [])
@@ -305,9 +307,36 @@ def render_complete_simulation_section():
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
     if not can_run:
-        # Show warning FIRST so user knows there's an issue
-        if block_type == "disclose_income":
-            st.warning(f"""
+        # FIX: Show ALL blocking issues, not just the first one
+        if blocking_issues and len(blocking_issues) > 1:
+            # Multiple issues - show them all together
+            st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
+            for i, issue in enumerate(blocking_issues, 1):
+                if issue['block_type'] == "disclose_income":
+                    st.warning(f"""
+**Issue {i}: Disclose Income**
+
+{issue['reason']}
+
+**Action Required:**
+1. Run **Disclose Income Only** from the Disclose Income tab
+2. Click **"Use This Config"** on the result you want to use
+                    """)
+                else:
+                    # donation_config block type
+                    st.warning(f"""
+**Issue {i}: Donation Default**
+
+{issue['reason']}
+
+**Action Required:**
+1. Run **Donation Default Only** from the Donation Default tab
+2. Click **"Use This Config"** on the result you want to use
+                    """)
+        else:
+            # Single issue - show original format
+            if block_type == "disclose_income":
+                st.warning(f"""
 ⚠️ **Disclose Income Configuration Required**
 
 {reason}
@@ -316,9 +345,9 @@ def render_complete_simulation_section():
 1. Run **Disclose Income Only** from the Disclose Income tab
 2. Click **"Use This Config"** on the result you want to use
 3. Return here to run complete simulation
-            """)
-        elif block_type == "donation_config":
-            st.warning(f"""
+                """)
+            elif block_type == "donation_config":
+                st.warning(f"""
 ⚠️ **Donation Default Configuration Required**
 
 {reason}
@@ -327,21 +356,16 @@ def render_complete_simulation_section():
 1. Run **Donation Default Only** from the Donation Default tab
 2. Click **"Use This Config"** on the result you want to use
 3. Return here to run complete simulation
-            """)
-        else:
-            st.warning(f"""
+                """)
+            else:
+                st.warning(f"""
 ⚠️ **Configuration Issue**
 
 {reason}
-            """)
+                """)
         
         # Disabled button
-        if block_type == "disclose_income":
-            help_text = "Select a Disclose Income config first"
-        elif block_type == "donation_config":
-            help_text = "Select a Donation Default config first"
-        else:
-            help_text = "Configuration issue detected"
+        help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Select a Disclose Income config first" if block_type == "disclose_income" else ("Select a Donation Default config first" if block_type == "donation_config" else "Configuration issue detected"))
             
         st.button(
             "🚀 Run Complete Simulation",

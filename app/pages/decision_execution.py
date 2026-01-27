@@ -53,17 +53,24 @@ def can_run_complete_simulation():
     IMPORTANT: Only check config requirements for decisions the user actually selected.
     Unselected decisions will use defaults and don't need explicit config selection.
     
+    FIXED: Now accumulates ALL blocking issues instead of returning on first one.
+    This allows the UI to display all conflicts at once.
+    
     Returns:
-        tuple: (can_run: bool, reason: str, config_count: int, block_type: str or None)
+        tuple: (can_run: bool, reason: str, config_count: int, block_type: str or None, blocking_issues: list)
             - can_run: Whether complete simulation is allowed
-            - reason: Human-readable explanation
+            - reason: Human-readable explanation (combined if multiple issues)
             - config_count: Number of configurations that would be generated
-            - block_type: Type of block - "disclose_income", "donation_config", or None if not blocked
+            - block_type: Primary block type for backward compat - "disclose_income", "donation_config", or None
+            - blocking_issues: List of all blocking issues with details (NEW!)
     """
     # Use unified config system
     configs = get_selected_decision_configs()
     
-    # FIX: Get the user's selected decisions - only check requirements for these
+    # Accumulator for ALL blocking issues
+    blocking_issues = []
+    
+    # Get the user's selected decisions - only check requirements for these
     selected_decisions = []
     if hasattr(st.session_state, 'decision_params') and hasattr(st.session_state.decision_params, 'selected_decisions'):
         selected_decisions = st.session_state.decision_params.selected_decisions or []
@@ -74,104 +81,131 @@ def can_run_complete_simulation():
             if decision_name not in selected_decisions:
                 selected_decisions = list(selected_decisions) + [decision_name]
     
-    # Check disclose_income "Compare both" mode - ONLY if disclose_income is selected or has saved config
-    di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
-    di_in_compare_mode = 'compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()
-    disclose_income_selected = 'disclose_income' in selected_decisions
+    # ========================================================================
+    # CALCULATE ALL COUNTS UPFRONT (shared between disclose_income and donation_default)
+    # ========================================================================
     
-    if di_in_compare_mode and disclose_income_selected:
-        # Check if user has selected a disclose_income config
-        if 'disclose_income' in configs:
-            # User has a saved config - allow using that config
-            saved_mode = configs['disclose_income'].get('params', {}).get('income_mode', 
-                configs['disclose_income'].get('income_mode', 'Unknown'))
-            # Continue checking other decisions (don't return yet)
-        else:
-            return (False, "Disclose Income is set to 'Compare both' mode - please run disclose_income only, then click 'Use This Config' to select one", 2, "disclose_income")
-    
-    # Check if multiple configurations will be generated for donation_default
-    population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
-    income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
-    
-    # Count how many configurations will be generated
     # Population modes: "Compare all" generates 3, others generate 1
+    population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
     population_count = 3 if population_mode == "Compare all" else 1
     
-    # Income modes: "Compare both" generates 2, others generate 1
-    income_count = 2 if income_spec_mode == "Compare both" else 1
+    # Disclose income modes: "Compare both" generates 2, others generate 1
+    di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+    di_income_count = 2 if ('compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()) else 1
     
-    total_configs = population_count * income_count
+    # Donation default income modes: "Compare both" generates 2, others generate 1
+    # FIX: Use case-insensitive comparison like disclose_income does
+    income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    donation_income_count = 2 if ('compare' in str(income_spec_mode).lower() or 'both' in str(income_spec_mode).lower()) else 1
     
-    # FIX: Check if donation_default is in the user's selected decisions
-    # If NOT selected, it will use defaults - no need to require config selection
-    donation_default_selected = 'donation_default' in selected_decisions
+    # ========================================================================
+    # CHECK DISCLOSE_INCOME (only if selected)
+    # FIX: Now correctly multiplies by population_count like donation_default does
+    # ========================================================================
     
-    # Case 1: Only one donation configuration OR donation_default not selected
-    # If donation_default is not selected, it will use defaults regardless of config count
-    if total_configs == 1 or not donation_default_selected:
-        # Build config description
-        config_parts = []
-        
-        # Show disclose_income config if selected and saved
+    disclose_income_selected = 'disclose_income' in selected_decisions
+    di_total_configs = population_count * di_income_count  # FIX: Include population_count!
+    has_disclose_income_config = False
+    di_saved_mode = None
+    
+    if disclose_income_selected:
+        # Check if user has a saved disclose_income config (not auto-implied)
         if 'disclose_income' in configs:
             di_config = configs['disclose_income']
-            di_mode = di_config.get('params', {}).get('income_mode', di_config.get('income_mode', 'Unknown'))
-            config_parts.append(f"Disclose Income: {di_mode}")
+            if di_config.get('source') != 'auto_implied_single_config':
+                has_disclose_income_config = True
+                di_saved_mode = di_config.get('params', {}).get('income_mode', 
+                    di_config.get('income_mode', 'Unknown'))
         
-        # Show donation_default config if selected and saved
-        if 'donation_default' in configs and configs['donation_default'].get('source') != 'auto_implied_single_config':
-            dd_config = configs['donation_default']
-            dd_mode = dd_config.get('params', {}).get('income_mode', dd_config.get('income_spec_mode', 'Unknown'))
-            config_parts.append(f"Donation Default: {dd_mode}")
+        # Also check legacy storage
+        if not has_disclose_income_config and hasattr(st.session_state, 'selected_disclose_income_config'):
+            legacy_config = st.session_state.selected_disclose_income_config
+            if legacy_config and legacy_config.get('source') != 'auto_implied_single_config':
+                has_disclose_income_config = True
+                di_saved_mode = legacy_config.get('income_mode', legacy_config.get('params', {}).get('income_mode'))
         
-        if config_parts:
-            return (True, f"Using saved configuration(s): {', '.join(config_parts)}", 1, None)
-        elif not donation_default_selected:
-            return (True, "Donation Default will use default values", 1, None)
-        else:
-            return (True, "Single configuration", 1, None)
+        # If multiple configs and no saved selection, add to blocking issues
+        if di_total_configs > 1 and not has_disclose_income_config:
+            blocking_issues.append({
+                'decision': 'disclose_income',
+                'block_type': 'disclose_income',
+                'config_count': di_total_configs,
+                'reason': f"Disclose Income has {di_total_configs} configurations (population: {population_count}, income: {di_income_count}) - please run disclose_income only and select one"
+            })
     
-    # Case 2: Multiple donation configurations AND donation_default IS selected - check if one is selected
-    # CRITICAL: Only count EXPLICITLY saved configs, not auto-implied ones
+    # ========================================================================
+    # CHECK DONATION_DEFAULT (only if selected)
+    # ========================================================================
+    
+    donation_default_selected = 'donation_default' in selected_decisions
+    donation_total_configs = population_count * donation_income_count
     has_donation_config = False
+    donation_saved_info = None
     
-    if 'donation_default' in configs:
-        config = configs['donation_default']
-        # Only count if not auto-implied
-        if config.get('source') != 'auto_implied_single_config':
-            has_donation_config = True
-    
-    # Also check legacy storage for backwards compatibility
-    if not has_donation_config and hasattr(st.session_state, 'selected_donation_config'):
-        legacy_config = st.session_state.selected_donation_config
-        # Only count if not auto-implied
-        if legacy_config and legacy_config.get('source') != 'auto_implied_single_config':
-            has_donation_config = True
-    
-    if has_donation_config:
-        # User has selected a specific donation configuration
+    if donation_default_selected:
+        # Check if user has a saved donation_default config (not auto-implied)
         if 'donation_default' in configs:
             config = configs['donation_default']
-            pop_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
-            inc_mode = config.get('params', {}).get('income_mode', config.get('income_spec_mode', 'Unknown'))
-        else:
-            # Legacy storage
-            config = st.session_state.selected_donation_config
-            pop_mode = config.get('population_mode', 'Unknown')
-            inc_mode = config.get('income_spec_mode', 'Unknown')
+            if config.get('source') != 'auto_implied_single_config':
+                has_donation_config = True
+                pop_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+                inc_mode = config.get('params', {}).get('income_mode', config.get('income_spec_mode', 'Unknown'))
+                donation_saved_info = f"{pop_mode} + {inc_mode}"
         
-        config_name = f"{pop_mode} + {inc_mode}"
+        # Also check legacy storage
+        if not has_donation_config and hasattr(st.session_state, 'selected_donation_config'):
+            legacy_config = st.session_state.selected_donation_config
+            if legacy_config and legacy_config.get('source') != 'auto_implied_single_config':
+                has_donation_config = True
+                pop_mode = legacy_config.get('population_mode', 'Unknown')
+                inc_mode = legacy_config.get('income_spec_mode', 'Unknown')
+                donation_saved_info = f"{pop_mode} + {inc_mode}"
         
-        # Also show disclose_income config if selected
-        if 'disclose_income' in configs:
-            di_config = configs['disclose_income']
-            di_mode = di_config.get('params', {}).get('income_mode', di_config.get('income_mode', 'Unknown'))
-            config_name += f", Disclose Income: {di_mode}"
+        # If multiple configs and no saved selection, add to blocking issues
+        if donation_total_configs > 1 and not has_donation_config:
+            blocking_issues.append({
+                'decision': 'donation_default',
+                'block_type': 'donation_config',
+                'config_count': donation_total_configs,
+                'reason': f"Donation Default has {donation_total_configs} configurations (population: {population_count}, income: {donation_income_count}) - please run donation_default only and select one"
+            })
+    
+    # ========================================================================
+    # DETERMINE RESULT
+    # ========================================================================
+    
+    # If there are any blocking issues, return them ALL
+    if blocking_issues:
+        # Combine all reasons for display
+        combined_reasons = "\n\n".join([issue['reason'] for issue in blocking_issues])
+        # Use first block_type for backward compatibility
+        primary_block_type = blocking_issues[0]['block_type']
+        # Total config count is max of all (represents worst case)
+        max_config_count = max(issue['config_count'] for issue in blocking_issues)
         
-        return (True, f"Using selected configuration: {config_name}", total_configs, None)
+        return (False, combined_reasons, max_config_count, primary_block_type, blocking_issues)
+    
+    # No blocking issues - build success message
+    config_parts = []
+    
+    # Show disclose_income config if selected and saved
+    if has_disclose_income_config and di_saved_mode:
+        config_parts.append(f"Disclose Income: {di_saved_mode}")
+    
+    # Show donation_default config if selected and saved
+    if has_donation_config and donation_saved_info:
+        config_parts.append(f"Donation Default: {donation_saved_info}")
+    
+    # Determine total config count for display
+    total_configs = max(di_total_configs if disclose_income_selected else 1,
+                       donation_total_configs if donation_default_selected else 1)
+    
+    if config_parts:
+        return (True, f"Using saved configuration(s): {', '.join(config_parts)}", total_configs, None, [])
+    elif not disclose_income_selected and not donation_default_selected:
+        return (True, "Using default values for all decisions", 1, None, [])
     else:
-        # Multiple configs but none selected - block complete simulation
-        return (False, f"Multiple donation configurations ({total_configs}) detected - please select one first", total_configs, "donation_config")
+        return (True, "Single configuration", 1, None, [])
 
 
 def get_implied_single_configuration():
@@ -187,7 +221,8 @@ def get_implied_single_configuration():
     """
     try:
         # Check configuration count
-        can_run, reason, config_count, block_type = can_run_complete_simulation()
+        # Note: Using *_ to handle the new 5th return value (blocking_issues list)
+        can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
         
         # Only return implied config when exactly one configuration exists
         if config_count != 1:
@@ -312,7 +347,7 @@ def auto_populate_single_donation_config():
             # If modes changed, clear the old config so we can re-evaluate
             if existing.get('population_mode') != current_pop or existing.get('income_spec_mode') != current_income:
                 # Modes have changed - check if we should update
-                can_run, reason, config_count, block_type = can_run_complete_simulation()
+                can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
                 if config_count == 1:
                     # Single config now - only auto-populate if the existing was auto-implied
                     # Don't overwrite explicitly saved configs
@@ -429,11 +464,13 @@ def render_simulation_buttons(decision_name, selected_decisions):
                     st.caption(f"{format_decision_title(dec, include_number=True)}")
         
         # Check if complete simulation can run (validation for multiple configurations)
-        can_run, reason, config_count, block_type = can_run_complete_simulation()
+        result = can_run_complete_simulation()
+        can_run, reason, config_count, block_type = result[:4]
+        blocking_issues = result[4] if len(result) > 4 else []
         
         if not can_run:
             # Disabled button with explanation
-            help_text = "Disclose Income is in Compare mode" if block_type == "disclose_income" else "Multiple configurations detected - select one first"
+            help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Disclose Income is in Compare mode" if block_type == "disclose_income" else "Multiple configurations detected - select one first")
             st.button(
                 "🎯 Run Complete Simulation", 
                 type="primary",
@@ -443,9 +480,37 @@ def render_simulation_buttons(decision_name, selected_decisions):
                 help=help_text
             )
             
-            # Show helpful warning message based on block type
-            if block_type == "disclose_income":
-                st.warning(f"""
+            # FIX: Show ALL blocking issues, not just the first one
+            if blocking_issues and len(blocking_issues) > 1:
+                # Multiple issues - show them all together
+                st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
+                for i, issue in enumerate(blocking_issues, 1):
+                    if issue['block_type'] == "disclose_income":
+                        st.warning(f"""
+**Issue {i}: Disclose Income**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Disclose Income** tab
+2. Run **disclose_income only** and select one configuration
+3. Or change to **"Categorical only"** or **"Continuous only"** mode
+                        """)
+                    else:
+                        # donation_config block type
+                        st.warning(f"""
+**Issue {i}: Donation Default**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Donation Default** tab
+2. Run **donation_default only** and select one configuration
+                        """)
+            else:
+                # Single issue - show original format
+                if block_type == "disclose_income":
+                    st.warning(f"""
 ⚠️ **Disclose Income Configuration Required**
 
 {reason}
@@ -457,10 +522,10 @@ def render_simulation_buttons(decision_name, selected_decisions):
 3. Return here and click **Run Complete Simulation**
 
 This ensures all decisions produce a single result set.
-                """)
-            else:
-                # donation_config block type
-                st.warning(f"""
+                    """)
+                else:
+                    # donation_config block type
+                    st.warning(f"""
 ⚠️ **Multiple Donation Configurations Detected**
 
 {reason}
@@ -473,7 +538,7 @@ This ensures all decisions produce a single result set.
 4. Return here and click **Run Complete Simulation**
 
 This ensures all decisions use consistent settings.
-                """)
+                    """)
             
         else:
             # Enabled button - can proceed
@@ -749,6 +814,15 @@ def run_individual_decision(decision_name):
             original_custom_decisions = getattr(st.session_state, 'custom_decisions', [])
             original_default_decisions = getattr(st.session_state, 'default_decisions', [])
             
+            # FIX: Store in session state for restoration after st.rerun()
+            # This is needed because run_simulation_from_sidebar() may call st.rerun()
+            # BEFORE this function's restoration code can execute
+            # NOTE: Only store selected_decisions - custom_decisions/default_decisions should
+            # reflect the current run (needed for should_enable_selection())
+            st.session_state._pending_decisions_restore = {
+                'selected_decisions': original_decisions
+            }
+            
             # For donation_default, clear any saved configuration to allow fresh run with current tab settings
             if decision_name == "donation_default" and hasattr(st.session_state, 'selected_donation_config'):
                 st.info("🔄 Clearing saved donation configuration - will use current tab settings")
@@ -801,6 +875,15 @@ def run_individual_decision(decision_name):
                     # Navigate to results page
                     st.session_state.page = 'results'
                     st.info("🔄 Redirecting to Results page to view full Monte Carlo analysis...")
+                    
+                    # FIX: Restore ONLY selected_decisions BEFORE rerun
+                    # Do NOT restore custom_decisions/default_decisions - they should reflect the current run
+                    # (needed for should_enable_selection() to show "Use This Config" button)
+                    st.session_state.decision_params.selected_decisions = original_decisions
+                    # Clean up the pending restore flag
+                    if hasattr(st.session_state, '_pending_decisions_restore'):
+                        del st.session_state._pending_decisions_restore
+                    
                     st.rerun()
                 else:
                     st.error("❌ Monte Carlo simulation returned no results")
@@ -827,12 +910,22 @@ def run_individual_decision(decision_name):
                             if 'donation_default' in results.columns:
                                 st.metric("Average Donation Rate", f"{results['donation_default'].mean():.2%}")
             
-            # Restore all original state in one operation to minimize reruns
+            # Restore ONLY selected_decisions - keep custom_decisions/default_decisions as-is
+            # because they're needed for should_enable_selection() to show "Use This Config" button
             st.session_state.decision_params.selected_decisions = original_decisions
-            st.session_state.custom_decisions = original_custom_decisions
-            st.session_state.default_decisions = original_default_decisions
+            # Do NOT restore custom_decisions and default_decisions
+            
+            # Clear pending restore flag since we restored successfully
+            if hasattr(st.session_state, '_pending_decisions_restore'):
+                del st.session_state._pending_decisions_restore
             
         except Exception as e:
+            # Restore selected_decisions on exception to ensure state is consistent
+            st.session_state.decision_params.selected_decisions = original_decisions
+            # Do NOT restore custom_decisions and default_decisions
+            if hasattr(st.session_state, '_pending_decisions_restore'):
+                del st.session_state._pending_decisions_restore
+            
             st.error(f"❌ Error running {decision_name}: {str(e)}")
             import traceback
             st.text(traceback.format_exc())
@@ -894,60 +987,93 @@ def run_combined_simulation(selected_decisions):
     - Other decisions use their own respective settings
     
     We no longer override global income_spec_mode from selected_donation_config.
+    
+    FIXED: Now properly adds ALL decisions with saved configs to effective_selected_decisions,
+    not just disclose_income. This ensures manually selected decisions get executed.
     """
     
     # Store information about selected vs default decisions
-    # FIX: If there's a saved config for a decision, treat it as "selected/custom" even if not in multiselect
     effective_selected_decisions = list(selected_decisions)
     
-    # Check for saved disclose_income config
-    using_selected_disclose_income_config = False
-    di_saved_mode = None
+    # Track which decisions have saved configs for display purposes
+    saved_config_info = {}  # decision_name -> display info
     
-    # Check unified storage first
+    # ========================================================================
+    # FIX: GENERICALLY ADD ALL DECISIONS WITH SAVED CONFIGS TO EFFECTIVE LIST
+    # This ensures any decision with a saved config is treated as "custom/selected"
+    # ========================================================================
+    
+    # Check unified storage for ANY decision with saved config
     if 'selected_decision_configs' in st.session_state:
-        if 'disclose_income' in st.session_state.selected_decision_configs:
-            di_config = st.session_state.selected_decision_configs['disclose_income']
-            # Skip auto-implied configs
-            if di_config.get('source') != 'auto_implied_single_config':
-                using_selected_disclose_income_config = True
-                di_saved_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
+        for decision_name, config in st.session_state.selected_decision_configs.items():
+            # Skip auto-implied configs (they don't count as explicit selection)
+            if config.get('source') == 'auto_implied_single_config':
+                continue
+            
+            # Add to effective_selected_decisions if not already there
+            if decision_name not in effective_selected_decisions:
+                effective_selected_decisions.append(decision_name)
+            
+            # Store info for display
+            if decision_name == 'disclose_income':
+                saved_config_info['disclose_income'] = config.get('income_mode', 
+                    config.get('params', {}).get('income_mode', 'Unknown'))
+            elif decision_name == 'donation_default':
+                pop_mode = config.get('population_mode', 'Unknown')
+                inc_mode = config.get('params', {}).get('income_mode', 
+                    config.get('income_spec_mode', 'Unknown'))
+                saved_config_info['donation_default'] = f"{pop_mode} + {inc_mode}"
+            else:
+                # Generic handling for other decisions
+                saved_config_info[decision_name] = "custom config"
     
-    # Also check legacy storage
-    if not using_selected_disclose_income_config and hasattr(st.session_state, 'selected_disclose_income_config'):
-        di_config = st.session_state.selected_disclose_income_config
-        if di_config.get('source') != 'auto_implied_single_config':
-            using_selected_disclose_income_config = True
-            di_saved_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
+    # Also check legacy storage for backward compatibility
+    if hasattr(st.session_state, 'selected_disclose_income_config'):
+        legacy_config = st.session_state.selected_disclose_income_config
+        if legacy_config and legacy_config.get('source') != 'auto_implied_single_config':
+            if 'disclose_income' not in effective_selected_decisions:
+                effective_selected_decisions.append('disclose_income')
+            if 'disclose_income' not in saved_config_info:
+                saved_config_info['disclose_income'] = legacy_config.get('income_mode', 
+                    legacy_config.get('params', {}).get('income_mode', 'Unknown'))
     
-    # If there's a saved disclose_income config, ensure it's treated as custom
-    if using_selected_disclose_income_config and 'disclose_income' not in effective_selected_decisions:
-        effective_selected_decisions.append('disclose_income')
+    if hasattr(st.session_state, 'selected_donation_config'):
+        legacy_config = st.session_state.selected_donation_config
+        if legacy_config and legacy_config.get('source') != 'auto_implied_single_config':
+            if 'donation_default' not in effective_selected_decisions:
+                effective_selected_decisions.append('donation_default')
+            if 'donation_default' not in saved_config_info:
+                pop_mode = legacy_config.get('population_mode', 'Unknown')
+                inc_mode = legacy_config.get('donation_income_mode', 
+                    legacy_config.get('income_spec_mode', 'Unknown'))
+                saved_config_info['donation_default'] = f"{pop_mode} + {inc_mode}"
     
     unselected_decisions = [d for d in ALL_DECISIONS if d not in effective_selected_decisions]
     
-    # Show info about what each decision will use (no global override)
-    using_selected_donation_config = hasattr(st.session_state, 'selected_donation_config')
+    # ========================================================================
+    # DISPLAY INFO ABOUT SAVED CONFIGS
+    # ========================================================================
     
-    if using_selected_donation_config:
-        config = st.session_state.selected_donation_config
-        donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
-        st.info(f"🎯 **Donation Default** will use saved config: {donation_income_mode}")
-        # Mark for results display
+    # Show info about saved configs being used
+    if 'donation_default' in saved_config_info:
+        st.info(f"🎯 **Donation Default** will use saved config: {saved_config_info['donation_default']}")
         st.session_state._using_selected_config = True
     
-    # FIX: Show disclose_income mode from SAVED CONFIG if available, not just di_income_mode
-    if using_selected_disclose_income_config:
+    if 'disclose_income' in saved_config_info:
+        di_saved_mode = saved_config_info['disclose_income']
         st.info(f"📋 **Disclose Income** will use saved config: {di_saved_mode}")
         # Update di_income_mode to match saved config for consistency
-        if di_saved_mode:
+        if di_saved_mode and di_saved_mode != 'Unknown':
             st.session_state.di_income_mode = di_saved_mode
-    elif 'disclose_income' in effective_selected_decisions or 'disclose_income' in unselected_decisions:
+    elif 'disclose_income' in effective_selected_decisions:
+        # Decision is selected but no saved config - show current mode
         di_mode = st.session_state.get('di_income_mode', 'Categorical only')
         st.info(f"📋 **Disclose Income** will use: {di_mode}")
     
     # Validate income mode compatibility and show warning if mismatched
     # (This is informational only - we proceed with user's explicit settings)
+    # FIX: using_selected_donation_config is now determined by presence in saved_config_info
+    using_selected_donation_config = 'donation_default' in saved_config_info
     _validate_income_mode_compatibility(effective_selected_decisions, unselected_decisions, using_selected_donation_config)
     
     # Create appropriate spinner message

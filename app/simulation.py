@@ -1244,6 +1244,16 @@ def run_simulation_from_sidebar():
             if hasattr(st.session_state, 'selected_donation_config'):
                 st.session_state._using_selected_config = True
             
+            # FIX: Restore ONLY selected_decisions BEFORE st.rerun() if there's a pending restoration
+            # This handles the case where run_individual_decision() set a temporary value
+            # NOTE: Do NOT restore custom_decisions/default_decisions - those are metadata about 
+            # the current run and are needed for should_enable_selection() to work correctly
+            if hasattr(st.session_state, '_pending_decisions_restore'):
+                restore_data = st.session_state._pending_decisions_restore
+                st.session_state.decision_params.selected_decisions = restore_data['selected_decisions']
+                # Do NOT restore custom_decisions and default_decisions - they should reflect the current run
+                del st.session_state._pending_decisions_restore
+            
             st.session_state.page = 'results'
             st.rerun()
             

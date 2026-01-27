@@ -289,20 +289,20 @@ def render_disclose_income_tab():
                     current_scale
                 )
                 
-                # Clamp value to valid range [0, 1]
-                coeff_val = max(0.0, min(float(coeff_val), 1.0))
+                # Clamp value to valid range [0, 2]
+                coeff_val = max(0.0, min(float(coeff_val), 2.0))
                 
                 if 'di_tab_sigma_coefficient' in st.session_state:
-                    if st.session_state.di_tab_sigma_coefficient > 1.0:
-                        st.session_state.di_tab_sigma_coefficient = 1.0
+                    if st.session_state.di_tab_sigma_coefficient > 2.0:
+                        st.session_state.di_tab_sigma_coefficient = 2.0
                     elif st.session_state.di_tab_sigma_coefficient < 0.0:
                         st.session_state.di_tab_sigma_coefficient = 0.0
 
                 sigma_coefficient = st.slider(
                     "σ Coefficient (multiplier)",
                     min_value=0.0,
-                    max_value=1.0,
-                    value=coeff_val,
+                    max_value=2.0,
+                    value=coeff_val if coeff_val != 0.0 else 1.0,
                     step=0.01,
                     help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
                     key="di_tab_sigma_coefficient",
@@ -345,7 +345,7 @@ def render_disclose_income_tab():
                 for level in ['1', '2', '3', '4', '5']:
                     # Get current value for this level
                     level_scale = current_quintile_scales.get(level, current_scale)
-                    level_scale = max(0.0, min(float(level_scale), 1.0))
+                    level_scale = max(0.0, min(float(level_scale), 2.0))
                     
                     # Restore from storage
                     storage_key = f'sigma_quintile_{level}'
@@ -357,7 +357,7 @@ def render_disclose_income_tab():
                         storage_key,
                         level_scale
                     )
-                    q_val = max(0.0, min(float(q_val), 1.0))
+                    q_val = max(0.0, min(float(q_val), 2.0))
                     
                     base_sigma = base_sigmas[level]
                     
@@ -366,8 +366,8 @@ def render_disclose_income_tab():
                         q_coeff = st.slider(
                             f"{level_labels[level]} (base σ={base_sigma:.2f})",
                             min_value=0.0,
-                            max_value=1.0,
-                            value=q_val,
+                            max_value=2.0,
+                            value=q_val if q_val != 0.0 else 1.0,
                             step=0.01,
                             key=widget_key,
                             on_change=lambda l=level: save_to_disclose_income_storage(f'di_tab_sigma_q{l}', f'sigma_quintile_{l}')

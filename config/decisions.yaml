@@ -90,7 +90,7 @@ disclose_income:
   anchor_weights:
     observed_prosocial: 0.25
     prosocial_weight: 0.5
-  intercept: 0.1
+  intercept: 0.75
   z_scoring:
     Agreeable:
       mean: 3.546071
@@ -144,7 +144,7 @@ disclose_income:
       '4': 1.0
       '5': 1.0
     in_copula: false
-  income_mode: Compare both
+  income_mode: Continuous only
   categorical_intercepts:
     level_1: 0.0089094
     level_2: 0.0055403

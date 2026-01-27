@@ -249,14 +249,45 @@ def render_overview_tab(selected_decisions):
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
     # Check if complete simulation can run (validation for multiple configurations)
-    can_run, reason, config_count, block_type = can_run_complete_simulation()
+    # UPDATED: Now returns 5-tuple with blocking_issues list
+    result = can_run_complete_simulation()
+    can_run, reason, config_count, block_type = result[:4]
+    blocking_issues = result[4] if len(result) > 4 else []
     
     col1, col2 = st.columns([3, 1])
     with col1:
         if not can_run:
-            # Show warning based on block type
-            if block_type == "disclose_income":
-                st.warning(f"""
+            # FIX: Show ALL blocking issues at once, not just the first one
+            if blocking_issues and len(blocking_issues) > 1:
+                # Multiple issues - show them all together
+                st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
+                for i, issue in enumerate(blocking_issues, 1):
+                    if issue['block_type'] == "disclose_income":
+                        st.warning(f"""
+**Issue {i}: Disclose Income**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Disclose Income** tab
+2. Run **disclose_income only** and select one configuration
+3. Or change to **"Categorical only"** or **"Continuous only"** mode
+                        """)
+                    else:
+                        # donation_config block type
+                        st.warning(f"""
+**Issue {i}: Donation Default**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Donation Default** tab
+2. Run **donation_default only** and select one configuration
+                        """)
+            else:
+                # Single issue - show original format for backward compatibility
+                if block_type == "disclose_income":
+                    st.warning(f"""
 ⚠️ **Disclose Income Configuration Required**
 
 {reason}
@@ -265,10 +296,10 @@ def render_overview_tab(selected_decisions):
 1. Go to the **Disclose Income** tab
 2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
 3. Return here to run complete simulation
-                """)
-            else:
-                # donation_config block type
-                st.warning(f"""
+                    """)
+                else:
+                    # donation_config block type
+                    st.warning(f"""
 ⚠️ **Multiple Donation Configurations Detected**
 
 {reason}
@@ -278,7 +309,7 @@ def render_overview_tab(selected_decisions):
 2. Run **donation_default only**
 3. Select your preferred configuration from results
 4. Return here to run complete simulation
-                """)
+                    """)
         elif config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
             # Show selected configuration info
             config = st.session_state.selected_donation_config
