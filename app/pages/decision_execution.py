@@ -848,6 +848,15 @@ def run_individual_decision(decision_name):
                 st.info("🔄 Clearing saved donation configuration - will use current tab settings")
                 delattr(st.session_state, 'selected_donation_config')
             
+            # For disclose_income, clear any saved configuration to allow fresh run with current tab settings
+            if decision_name == "disclose_income":
+                # Clear from unified storage
+                if 'selected_decision_configs' in st.session_state and 'disclose_income' in st.session_state.selected_decision_configs:
+                    del st.session_state.selected_decision_configs['disclose_income']
+                # Clear from legacy storage
+                if hasattr(st.session_state, 'selected_disclose_income_config'):
+                    delattr(st.session_state, 'selected_disclose_income_config')
+            
             # Modify selected decisions for simulation
             st.session_state.decision_params.selected_decisions = [decision_name]
             
@@ -959,7 +968,7 @@ def _validate_income_mode_compatibility(selected_decisions, unselected_decisions
     Each decision uses its own configured income mode independently.
     """
     # Determine donation_default income mode
-    if using_selected_donation_config:
+    if using_selected_donation_config and hasattr(st.session_state, 'selected_donation_config') and st.session_state.selected_donation_config:
         config = st.session_state.selected_donation_config
         donation_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
     else:

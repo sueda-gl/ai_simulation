@@ -1276,7 +1276,7 @@ def render_actions_and_management_section():
     
     with col1:
         st.markdown("**🔄 Reset Intercept**")
-        if st.button("Reset Intercept to Default Values", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
+        if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
             # Reset to research default values
             default_values = {
                 'categorical': 1.519818,  # Research default for categorical

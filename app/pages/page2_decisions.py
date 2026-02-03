@@ -591,24 +591,28 @@ def render_selected_disclose_income_config_display():
     
     st.markdown("#### 1. Disclose Income")
     
-    # Get income mode from config
+    # Get income mode and population mode from config
     income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+    population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
     
     with st.container():
-        st.success(f"✅ **Disclose Income Configuration**: {income_mode}")
+        st.success(f"✅ **Disclose Income Configuration**: {population_mode} + {income_mode}")
         
         # Metrics display
         metrics = config.get('metrics', {})
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("Income Mode", income_mode)
+            st.metric("Population Mode", population_mode)
         
         with col2:
+            st.metric("Income Mode", income_mode)
+        
+        with col3:
             y_rate = metrics.get('y_rate', 0)
             st.metric("Y Rate", f"{y_rate:.1%}")
         
-        with col3:
+        with col4:
             st.metric("Agents", f"{config.get('total_agents', 0):,}")
         
         # Additional details in expandable section

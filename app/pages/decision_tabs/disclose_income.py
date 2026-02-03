@@ -765,7 +765,7 @@ def render_actions_and_management_section(config):
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("**Reset Configuration**")
+        st.markdown("**🔄 Reset All**")
         if st.button("Reset Config to Defaults", type="secondary", use_container_width=True,
                      help="Reset all disclose income values to research defaults",
                      key="di_reset_btn"):
@@ -777,21 +777,22 @@ def render_actions_and_management_section(config):
                 st.toast("Failed to reset configuration", icon="⚠️")
 
     with col2:
-        st.markdown("**Reload from Configuration**")
-        if st.button("Reset Intercept", type="secondary", use_container_width=True,
-                     help="Reload values from configuration file",
+        st.markdown("**🔄 Reset Intercept**")
+        if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True,
+                     help="Reset intercept value to research default (0.75)",
                      key="di_reload_btn"):
-            # Clear all di_ keys and persistence storage
-            keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
-            for key in keys_to_clear:
-                del st.session_state[key]
-            if 'disclose_income_tab_persistence' in st.session_state:
-                del st.session_state['disclose_income_tab_persistence']
-            # SET widget keys from the YAML config so Streamlit's
-            # widget cache doesn't retain stale values
-            _apply_config_to_widget_keys(load_disclose_income_config())
-            st.toast("Configuration reloaded", icon="🔄")
-            st.rerun()
+            # Only reset the intercept value - NOT all configuration values
+            default_intercept = 0.75
+            success = save_disclose_income_config({'intercept': default_intercept})
+            if success:
+                # Update session state for intercept only
+                st.session_state.di_intercept = default_intercept
+                if 'di_intercept_override_values' in st.session_state:
+                    st.session_state.di_intercept_override_values['intercept'] = default_intercept
+                st.toast("✅ Intercept reset to research default (0.75)", icon="🔄")
+                st.rerun()
+            else:
+                st.toast("❌ Failed to reset intercept", icon="⚠️")
 
     # Debug expander below the buttons
     with st.expander("Debug: Current Session State Values", expanded=False):
