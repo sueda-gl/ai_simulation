@@ -15,7 +15,8 @@ original data. When bootstrapping, we use the SAME statistics (not recomputed).
 
 Equation 1: Prosocial Behavior (PB_i) - Mediating Variable
     weighted_prosocial = 0.023776*z_A + 0.016537*z_O + 0.0295482*z_HH + 0.0677157*z_R
-    anchored_PB = WOPB * z_obs_PB + (1-WOPB) * weighted_prosocial
+    z_weighted_prosocial = (weighted_prosocial - mean_280) / sd_280  # Standardize using fixed stats
+    anchored_PB = WOPB * z_obs_PB + (1-WOPB) * z_weighted_prosocial
     z_anchored_PB = (anchored_PB - mean_280) / sd_280  # Using fixed stats
 
 Equation 2: Disclose Income (DI_i) - Dependent Variable
@@ -152,7 +153,22 @@ def compute_pass1_values(
         eq1_coeffs.get('honesty_humility', 0.0295482) * z_honesty_humility +
         eq1_coeffs.get('religious', 0.0677157) * z_religious
     )
-    
+
+    # ========================================================================
+    # Z-SCORE WEIGHTED_PROSOCIAL using fixed stats from original 280
+    # Per documentation: egen z_weighted_prosocial = std(weighted_prosocial)
+    # ========================================================================
+
+    composite_z = params.get('composite_z_scoring', {})
+    wp_z_params = composite_z.get('weighted_prosocial', {})
+    wp_mean = wp_z_params.get('mean', 0)
+    wp_sd = wp_z_params.get('sd', 0.0859299558)
+
+    if wp_sd > 0:
+        z_weighted_prosocial = (weighted_prosocial - wp_mean) / wp_sd
+    else:
+        z_weighted_prosocial = weighted_prosocial
+
     # ========================================================================
     # Z-SCORE OBSERVED PROSOCIAL BEHAVIOR
     # ========================================================================
@@ -240,6 +256,7 @@ def compute_pass1_values(
     
     return {
         'weighted_prosocial': weighted_prosocial,
+        'z_weighted_prosocial': z_weighted_prosocial,  # Z-scored version for anchored_pb
         'direct_effect': direct_effect,
         'income_high': income_high,
         'z_obs_PB': z_obs_PB,
@@ -258,33 +275,34 @@ def compute_anchored_pb(
     params: Dict[str, Any]
 ) -> float:
     """
-    Compute anchored_pb by combining observed and calculated prosocial behavior.
-    
-    NO RE-STANDARDIZATION: weighted_prosocial is already based on z-scored traits
-    from the original 280 participants. Per documentation, we do NOT re-standardize
-    composite variables - the natural variation in bootstrap samples should be preserved.
-    
+    Compute anchored_pb by combining observed and z-scored weighted prosocial behavior.
+
+    Per documentation (Stata):
+        gen weighted_prosocial = (coeffs × z_traits)
+        egen z_weighted_prosocial = std(weighted_prosocial)  ← standardize using original 280 stats
+        gen anchored_prosocial_behavior = 0.25 * z_obs_PB + 0.75 * z_weighted_prosocial
+
     Formula:
-        anchored_pb = WOPB * z_obs_PB + (1-WOPB) * weighted_prosocial
-    
+        anchored_pb = WOPB * z_obs_PB + (1-WOPB) * z_weighted_prosocial
+
     Args:
-        pass1_values: Dict from compute_pass1_values() with weighted_prosocial, z_obs_PB
+        pass1_values: Dict from compute_pass1_values() with z_weighted_prosocial, z_obs_PB
         params: Configuration from decisions.yaml
-        
+
     Returns:
-        anchored_pb: The anchored prosocial behavior value (not re-standardized)
+        anchored_pb: The anchored prosocial behavior value
     """
-    weighted_prosocial = pass1_values['weighted_prosocial']
+    z_weighted_prosocial = pass1_values['z_weighted_prosocial']
     z_obs_PB = pass1_values['z_obs_PB']
-    
+
     # Get anchor weight
     anchor_weights = params.get('anchor_weights', {})
     WOPB = anchor_weights.get('observed_prosocial', 0.25)
-    
-    # Compute anchored_pb WITHOUT re-standardizing weighted_prosocial
-    # weighted_prosocial is already a weighted sum of z-scored traits
-    anchored_pb = WOPB * z_obs_PB + (1 - WOPB) * weighted_prosocial
-    
+
+    # Compute anchored_pb using z-scored weighted_prosocial
+    # Per documentation: anchored_pb = WOPB * z_obs_PB + (1-WOPB) * z_weighted_prosocial
+    anchored_pb = WOPB * z_obs_PB + (1 - WOPB) * z_weighted_prosocial
+
     return anchored_pb
 
 
@@ -318,9 +336,14 @@ def disclose_income_stochastic(
     - Composite variables are NOT re-standardized for each bootstrap sample
     - Natural variation in bootstrap samples is preserved as legitimate
     
+    STOCHASTIC COMPONENT (per documentation):
+    - Stochastic draw is applied to anchored_pb: Normal(anchored_pb, σ)
+    - σ = sd(TWT+Sospeso) × scale_factor (natural variability of observed prosocial behavior)
+    - The stochastic anchored_pb is then z-scored and used in the DI equation
+    
     Supports multiple population modes:
-    - 'documentation' (Research Specification): Uses stochastic Normal(DI, σ) draw
-    - 'baseline' (Research Baseline): Uses DI value directly (no stochastic component)
+    - 'documentation' (Research Specification): Uses stochastic Normal(anchored_pb, σ) draw
+    - 'baseline' (Research Baseline): Uses anchored_pb directly (no stochastic component)
     
     Args:
         agent_state: Agent's trait values and current state
@@ -385,44 +408,12 @@ def disclose_income_stochastic(
         # Compute anchored_pb WITHOUT re-standardization
         anchored_pb = compute_anchored_pb(pass1_values, params)
     
-    # ========================================================================
-    # Z-SCORE COMPOSITES USING ORIGINAL 280's STATISTICS (not recomputed per bootstrap)
-    # ========================================================================
-    
-    composite_z = params.get('composite_z_scoring', {})
-    
-    # z_direct_effect using fixed stats from original 280
-    de_stats = composite_z.get('direct_effect', {'mean': 0, 'sd': 0.0344991747})
-    de_mean = de_stats.get('mean', 0)
-    de_sd = de_stats.get('sd', 0.0344991747)
-    if de_sd > 0:
-        z_direct_effect = (direct_effect - de_mean) / de_sd
-    else:
-        z_direct_effect = direct_effect
-    
-    # z_anchored_pb using fixed stats from original 280
-    ap_stats = composite_z.get('anchored_pb', {'mean': 0, 'sd': 0.2594725501})
-    ap_mean = ap_stats.get('mean', 0)
-    ap_sd = ap_stats.get('sd', 0.2594725501)
-    if ap_sd > 0:
-        z_anchored_pb = (anchored_pb - ap_mean) / ap_sd
-    else:
-        z_anchored_pb = anchored_pb
+    # Store deterministic anchored_pb for export
+    anchored_pb_deterministic = anchored_pb
     
     # ========================================================================
-    # FINAL EQUATION: DI_i
-    # ========================================================================
-    
-    anchor_weights = params.get('anchor_weights', {})
-    WPB = anchor_weights.get('prosocial_weight', 0.50)
-    beta_0 = params.get('intercept', 0.0)
-    
-    # DI = β0 + (1-WPB) * z_direct_effect + WPB * z_anchored_pb * income_high
-    prosocial_effect = z_anchored_pb * income_high
-    DI_i = beta_0 + (1 - WPB) * z_direct_effect + WPB * prosocial_effect
-    
-    # ========================================================================
-    # STOCHASTIC COMPONENT (conditional on population context)
+    # STOCHASTIC COMPONENT (applied to anchored_pb per documentation)
+    # Per documentation: draw_k ~ Normal(μ = Anchor_k, σ = σ_overall)
     # ========================================================================
     
     stochastic_params = params.get('stochastic', {})
@@ -439,7 +430,7 @@ def disclose_income_stochastic(
     )
     
     if use_stochastic:
-        # Documentation mode with stochastic enabled: Apply Normal(DI, σ) draw
+        # Apply stochastic to anchored_pb (NOT to DI_i)
         sigma_strategy = stochastic_params.get('sigma_strategy', 'overall')
         
         if sigma_strategy == 'quintile':
@@ -457,11 +448,49 @@ def disclose_income_stochastic(
             scale_factor = stochastic_params.get('scale_factor', 0.1)
         
         sigma_scaled = sigma_raw * float(scale_factor)
-        
-        draw = rng.normal(DI_i, sigma_scaled)
+        stochastic_anchored_pb = rng.normal(anchored_pb, sigma_scaled)
     else:
-        # Baseline mode OR documentation with sigma disabled: Use DI_i directly
-        draw = DI_i
+        # Baseline mode OR documentation with sigma disabled: Use anchored_pb directly
+        stochastic_anchored_pb = anchored_pb
+    
+    # ========================================================================
+    # Z-SCORE COMPOSITES USING ORIGINAL 280's STATISTICS (not recomputed per bootstrap)
+    # ========================================================================
+    
+    composite_z = params.get('composite_z_scoring', {})
+    
+    # z_direct_effect using fixed stats from original 280
+    de_stats = composite_z.get('direct_effect', {'mean': 0, 'sd': 0.0344991747})
+    de_mean = de_stats.get('mean', 0)
+    de_sd = de_stats.get('sd', 0.0344991747)
+    if de_sd > 0:
+        z_direct_effect = (direct_effect - de_mean) / de_sd
+    else:
+        z_direct_effect = direct_effect
+    
+    # z_anchored_pb using fixed stats from original 280 (uses stochastic value)
+    ap_stats = composite_z.get('anchored_pb', {'mean': 0, 'sd': 0.2594725501})
+    ap_mean = ap_stats.get('mean', 0)
+    ap_sd = ap_stats.get('sd', 0.2594725501)
+    if ap_sd > 0:
+        z_anchored_pb = (stochastic_anchored_pb - ap_mean) / ap_sd
+    else:
+        z_anchored_pb = stochastic_anchored_pb
+    
+    # ========================================================================
+    # FINAL EQUATION: DI_i
+    # ========================================================================
+    
+    anchor_weights = params.get('anchor_weights', {})
+    WPB = anchor_weights.get('prosocial_weight', 0.50)
+    beta_0 = params.get('intercept', 0.0)
+    
+    # DI = β0 + (1-WPB) * z_direct_effect + WPB * z_anchored_pb * income_high
+    prosocial_effect = z_anchored_pb * income_high
+    DI_i = beta_0 + (1 - WPB) * z_direct_effect + WPB * prosocial_effect
+    
+    # Stochastic already applied to anchored_pb above, so DI_i is used directly
+    draw = DI_i
     
     # ========================================================================
     # FINAL DECISION
@@ -483,15 +512,16 @@ def disclose_income_stochastic(
     # The raw value is the draw value BEFORE classification (what we compare to 0)
     return {
         "disclose_income": disclose_income,
-        "disclose_income_raw": float(draw),  # Raw value before Y/N classification
-        "disclose_income_di": float(DI_i),   # The DI_i value before stochastic draw
+        "disclose_income_raw": float(draw),  # Raw value before Y/N classification (same as DI_i now)
+        "disclose_income_di": float(DI_i),   # The DI_i value (stochastic already in anchored_pb)
         # NEW: Values for Excel export
         "disclose_income_religious_composite": float(religious_composite_raw),  # Raw religious composite (non-z-scored)
         "disclose_income_income_high": int(income_high),  # I-High indicator
         "disclose_income_wopb": float(WOPB),  # Observed prosocial weight
         "disclose_income_wpb": float(WPB),  # Prosocial behavior weight
         "disclose_income_intercept": float(beta_0),  # β₀ intercept
-        "disclose_income_anchored_pb": float(anchored_pb),  # PB_i (anchored prosocial behavior)
+        "disclose_income_anchored_pb": float(stochastic_anchored_pb),  # PB_i with stochastic (if enabled)
+        "disclose_income_anchored_pb_deterministic": float(anchored_pb_deterministic),  # PB_i without stochastic
     }
 
 

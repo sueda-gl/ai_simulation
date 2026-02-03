@@ -69,50 +69,206 @@ def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_v
 
 def initialize_donation_widget_keys():
     """Initialize widget keys for donation_default tab to preserve values across navigation"""
-    
+
     # Initialize persistence storage if missing
     if "donation_tab_persistence" not in st.session_state:
         st.session_state.donation_tab_persistence = {}
-    
+
     # Initialize checkbox widget keys
     if "tab_sigma_in_copula" not in st.session_state:
         st.session_state.tab_sigma_in_copula = st.session_state.get('sigma_in_copula', False)
-    
+
     if "tab_sigma_in_research" not in st.session_state:
         st.session_state.tab_sigma_in_research = st.session_state.get('sigma_in_research', True)
-    
+
     if "tab_sigma_in_copula_compare" not in st.session_state:
         st.session_state.tab_sigma_in_copula_compare = st.session_state.get('sigma_in_copula', False)
-    
+
     if "tab_sigma_in_research_compare" not in st.session_state:
         st.session_state.tab_sigma_in_research_compare = st.session_state.get('sigma_in_research', True)
-    
+
     # Initialize slider widget keys
     if "tab_sigma_coefficient" not in st.session_state:
         st.session_state.tab_sigma_coefficient = st.session_state.get('sigma_coefficient', 1.0)
-    
+
     if "tab_sigma_coefficient_research" not in st.session_state:
         st.session_state.tab_sigma_coefficient_research = st.session_state.get('sigma_coefficient', 1.0)
-    
+
     if "tab_sigma_coefficient_compare" not in st.session_state:
         st.session_state.tab_sigma_coefficient_compare = st.session_state.get('sigma_coefficient', 1.0)
-    
+
     if "tab_anchor_weight" not in st.session_state:
         st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
+
+    # Initialize sigma strategy (overall vs quintile)
+    if "donation_sigma_strategy" not in st.session_state:
+        st.session_state.donation_sigma_strategy = st.session_state.get('donation_sigma_strategy', 'overall')
+
+    # Initialize quintile scale factors
+    if "donation_quintile_scale_factors" not in st.session_state:
+        st.session_state.donation_quintile_scale_factors = {
+            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0
+        }
 
 
 def save_to_donation_storage(widget_key, storage_key):
     """Save a widget value to donation storage.
-    
+
     Args:
         widget_key: The session state key of the widget
         storage_key: The key to use in the storage dictionary
     """
     if "donation_tab_persistence" not in st.session_state:
         st.session_state.donation_tab_persistence = {}
-    
+
     if widget_key in st.session_state:
         st.session_state.donation_tab_persistence[storage_key] = st.session_state[widget_key]
+
+
+def render_donation_sigma_controls(mode_suffix: str):
+    """
+    Render sigma strategy controls (overall vs quintile) for donation_default.
+
+    Args:
+        mode_suffix: One of 'copula', 'research', or 'compare' to distinguish widget keys
+    """
+    # Base sigma values per quintile (from empirical data)
+    BASE_SIGMAS = {
+        '1': 5.705052,   # Level 1 (€16)
+        '2': 3.069326,   # Level 2 (€32)
+        '3': 3.532226,   # Level 3 (€72)
+        '4': 12.219622,  # Level 4 (€128)
+        '5': 16.854622,  # Level 5 (€200)
+    }
+
+    LEVEL_LABELS = {
+        '1': 'Level 1 (€16)',
+        '2': 'Level 2 (€32)',
+        '3': 'Level 3 (€72)',
+        '4': 'Level 4 (€128)',
+        '5': 'Level 5 (€200)',
+    }
+
+    # Restore sigma strategy from storage
+    strategy_widget_key = f'donation_tab_sigma_strategy_{mode_suffix}'
+    strategy_storage_key = f'sigma_strategy_{mode_suffix}'
+    current_strategy = st.session_state.get('donation_sigma_strategy', 'overall')
+
+    strategy_val = restore_widget_from_storage(
+        strategy_widget_key,
+        st.session_state.donation_tab_persistence,
+        strategy_storage_key,
+        current_strategy
+    )
+
+    # Normalize strategy value
+    if 'quintile' in str(strategy_val).lower():
+        strategy_val = 'quintile'
+    else:
+        strategy_val = 'overall'
+
+    def on_strategy_change():
+        """Handle sigma strategy changes."""
+        new_strategy = st.session_state[strategy_widget_key]
+        save_to_donation_storage(strategy_widget_key, strategy_storage_key)
+        st.session_state.donation_sigma_strategy = new_strategy
+
+    sigma_strategy = st.radio(
+        "Apply σ uniformly or per income level?",
+        options=['overall', 'quintile'],
+        format_func=lambda x: 'Overall (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
+        index=0 if strategy_val == 'overall' else 1,
+        key=strategy_widget_key,
+        on_change=on_strategy_change,
+        horizontal=True
+    )
+    st.session_state.donation_sigma_strategy = sigma_strategy
+
+    st.markdown("---")
+
+    if sigma_strategy == 'overall':
+        # OVERALL MODE: Single slider
+        st.caption("Base σ = 9.8995 (empirical from 280 participants)")
+
+        # Restore coefficient widget value
+        coeff_widget_key = f'tab_sigma_coefficient_{mode_suffix}'
+        coeff_storage_key = f'sigma_coefficient_{mode_suffix}'
+
+        coeff_val = restore_widget_from_storage(
+            coeff_widget_key,
+            st.session_state.donation_tab_persistence,
+            coeff_storage_key,
+            1.0
+        )
+
+        # Clamp value to valid range [0, 2]
+        coeff_val = max(0.0, min(float(coeff_val), 2.0))
+
+        sigma_coefficient = st.slider(
+            "σ Coefficient (multiplier)",
+            min_value=0.0,
+            max_value=2.0,
+            value=coeff_val if coeff_val != 0.0 else 1.0,
+            step=0.01,
+            help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+            key=coeff_widget_key,
+            on_change=lambda: save_to_donation_storage(coeff_widget_key, coeff_storage_key)
+        )
+        st.session_state.sigma_coefficient = sigma_coefficient
+
+        effective_sigma = 9.8995 * sigma_coefficient
+        st.caption(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
+        st.session_state.sigma_value_ui = effective_sigma
+
+    else:
+        # QUINTILE MODE: 5 sliders (one per income level)
+        st.markdown("**Per-Quintile σ Coefficients**")
+        st.caption("Each level has its own base σ from empirical data:")
+
+        quintile_coefficients = {}
+
+        for level in ['1', '2', '3', '4', '5']:
+            # Get current value for this level
+            current_scale = st.session_state.donation_quintile_scale_factors.get(level, 1.0)
+            current_scale = max(0.0, min(float(current_scale), 2.0))
+
+            # Restore from storage
+            storage_key = f'donation_sigma_quintile_{level}_{mode_suffix}'
+            widget_key = f'donation_tab_sigma_q{level}_{mode_suffix}'
+
+            q_val = restore_widget_from_storage(
+                widget_key,
+                st.session_state.donation_tab_persistence,
+                storage_key,
+                current_scale
+            )
+            q_val = max(0.0, min(float(q_val), 2.0))
+
+            base_sigma = BASE_SIGMAS[level]
+
+            col_slider, col_result = st.columns([3, 1])
+            with col_slider:
+                q_coeff = st.slider(
+                    f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
+                    min_value=0.0,
+                    max_value=2.0,
+                    value=q_val if q_val != 0.0 else 1.0,
+                    step=0.01,
+                    key=widget_key,
+                    on_change=lambda l=level, wk=widget_key, sk=storage_key: save_to_donation_storage(wk, sk)
+                )
+            with col_result:
+                effective = base_sigma * q_coeff
+                st.metric("Effective σ", f"{effective:.2f}")
+
+            quintile_coefficients[level] = q_coeff
+
+        # Save quintile scale factors to session state
+        st.session_state.donation_quintile_scale_factors = quintile_coefficients
+
+        # Set sigma_value_ui to indicate stochastic is enabled (using overall sigma as fallback display)
+        st.session_state.sigma_value_ui = 9.8995
+        st.session_state.sigma_coefficient = 1.0  # Default coefficient for overall fallback
 
 
 def render_donation_default_tab():
@@ -191,7 +347,7 @@ def render_donation_default_tab():
         
         if population_mode == "Copula (synthetic)":
             # Show only Copula controls
-            
+
             # Restore widget value
             copula_val = restore_widget_from_storage(
                 'tab_sigma_in_copula',
@@ -199,7 +355,7 @@ def render_donation_default_tab():
                 'sigma_in_copula',
                 False
             )
-            
+
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
                 value=copula_val,
@@ -209,37 +365,14 @@ def render_donation_default_tab():
             )
             st.session_state.sigma_in_copula = sigma_in_copula
             st.session_state.sigma_in_research = True  # Default for research mode
-            
-            # Show static sigma value and coefficient slider
-            st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
-            
-            # Restore coefficient widget value
-            coeff_val = restore_widget_from_storage(
-                'tab_sigma_coefficient',
-                st.session_state.donation_tab_persistence,
-                'sigma_coefficient',
-                1.0
-            )
-            
-            sigma_coefficient = st.slider(
-                "σ Coefficient (multiplier)",
-                min_value=0.0,
-                max_value=2.0,
-                value=float(coeff_val),
-                step=0.01,
-                help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
-                key="tab_sigma_coefficient",
-                on_change=lambda: save_to_donation_storage('tab_sigma_coefficient', 'sigma_coefficient')
-            )
-            st.session_state.sigma_coefficient = sigma_coefficient
-            effective_sigma = 9.8995 * sigma_coefficient
-            st.caption(f"🎯 Effective σ = 9.8995 × {sigma_coefficient:.1f} = {effective_sigma:.2f}")
-            # Keep the static value in sigma_value_ui for backward compatibility
-            st.session_state.sigma_value_ui = effective_sigma
+
+            if sigma_in_copula:
+                # Show sigma strategy selector
+                render_donation_sigma_controls('copula')
             
         elif population_mode == "Research Specification":
             # Show only Research controls
-            
+
             # Restore research checkbox
             res_val = restore_widget_from_storage(
                 'tab_sigma_in_research',
@@ -247,7 +380,7 @@ def render_donation_default_tab():
                 'sigma_in_research',
                 True
             )
-            
+
             sigma_in_research = st.checkbox(
                 "Use Normal(anchor, σ) draw in Research mode",
                 value=res_val,
@@ -257,36 +390,12 @@ def render_donation_default_tab():
             )
             st.session_state.sigma_in_research = sigma_in_research
             st.session_state.sigma_in_copula = False  # Not applicable
-            
-            # Show sigma coefficient slider only if stochastic component is enabled
+
+            # Show sigma controls only if stochastic component is enabled
             if sigma_in_research:
-                st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
-                
-                # Restore research coefficient
-                coeff_res_val = restore_widget_from_storage(
-                    'tab_sigma_coefficient_research',
-                    st.session_state.donation_tab_persistence,
-                    'sigma_coefficient_research',
-                    1.0
-                )
-                
-                sigma_coefficient = st.slider(
-                    "σ Coefficient (multiplier)",
-                    min_value=0.0,
-                    max_value=2.0,
-                    value=float(coeff_res_val),
-                    step=0.01,
-                    help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
-                    key="tab_sigma_coefficient_research",
-                    on_change=lambda: save_to_donation_storage('tab_sigma_coefficient_research', 'sigma_coefficient_research')
-                )
-                st.session_state.sigma_coefficient = sigma_coefficient
-                effective_sigma = 9.8995 * sigma_coefficient
-                st.caption(f"🎯 Effective σ = 9.8995 × {sigma_coefficient:.1f} = {effective_sigma:.2f}")
-                # Keep the static value in sigma_value_ui for backward compatibility
-                st.session_state.sigma_value_ui = effective_sigma
+                render_donation_sigma_controls('research')
             else:
-                st.info("ℹ️ Stochastic component disabled - using anchor values directly")
+                st.info("Stochastic component disabled - using anchor values directly")
                 # Set sigma to 0 when disabled to ensure no variability
                 st.session_state.sigma_coefficient = 0.0
                 st.session_state.sigma_value_ui = 0.0
@@ -304,7 +413,7 @@ def render_donation_default_tab():
         else:  # Compare all
             # Show controls for all three modes
             st.markdown("**Copula Mode Controls:**")
-            
+
             # Restore copula checkbox for compare
             copula_comp_val = restore_widget_from_storage(
                 'tab_sigma_in_copula_compare',
@@ -312,7 +421,7 @@ def render_donation_default_tab():
                 'sigma_in_copula_compare',
                 False
             )
-            
+
             sigma_in_copula = st.checkbox(
                 "Add Normal(anchor, σ) draw to Copula runs",
                 value=copula_comp_val,
@@ -321,9 +430,9 @@ def render_donation_default_tab():
                 on_change=lambda: save_to_donation_storage('tab_sigma_in_copula_compare', 'sigma_in_copula_compare')
             )
             st.session_state.sigma_in_copula = sigma_in_copula
-            
+
             st.markdown("**Research Specification Controls:**")
-            
+
             # Restore research checkbox for compare
             res_comp_val = restore_widget_from_storage(
                 'tab_sigma_in_research_compare',
@@ -331,7 +440,7 @@ def render_donation_default_tab():
                 'sigma_in_research_compare',
                 True
             )
-            
+
             sigma_in_research = st.checkbox(
                 "Use Normal(anchor, σ) draw in Research Specification mode",
                 value=res_comp_val,
@@ -340,39 +449,15 @@ def render_donation_default_tab():
                 on_change=lambda: save_to_donation_storage('tab_sigma_in_research_compare', 'sigma_in_research_compare')
             )
             st.session_state.sigma_in_research = sigma_in_research
-            
+
             st.markdown("**Research Baseline:** Always uses anchor values only (no stochastic component)")
-            st.caption("🎯 Research Baseline = deterministic anchor = 0.75 × observed + 0.25 × predicted")
-            
-            # Show sigma coefficient slider if either mode has stochastic enabled
+            st.caption("Research Baseline = deterministic anchor = 0.75 × observed + 0.25 × predicted")
+
+            # Show sigma controls if either mode has stochastic enabled
             if sigma_in_copula or sigma_in_research:
-                st.caption(f"📊 Base σ = 9.8995 (empirical from 280 participants)")
-                
-                # Restore coefficient for compare
-                coeff_comp_val = restore_widget_from_storage(
-                    'tab_sigma_coefficient_compare',
-                    st.session_state.donation_tab_persistence,
-                    'sigma_coefficient_compare',
-                    1.0
-                )
-                
-                sigma_coefficient = st.slider(
-                    "σ Coefficient (multiplier)",
-                    min_value=0.0,
-                    max_value=2.0,
-                    value=float(coeff_comp_val),
-                    step=0.01,
-                    help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
-                    key="tab_sigma_coefficient_compare",
-                    on_change=lambda: save_to_donation_storage('tab_sigma_coefficient_compare', 'sigma_coefficient_compare')
-                )
-                st.session_state.sigma_coefficient = sigma_coefficient
-                effective_sigma = 9.8995 * sigma_coefficient
-                st.caption(f"🎯 Effective σ = 9.8995 × {sigma_coefficient:.1f} = {effective_sigma:.2f}")
-                # Keep the static value in sigma_value_ui for backward compatibility
-                st.session_state.sigma_value_ui = effective_sigma
+                render_donation_sigma_controls('compare')
             else:
-                st.info("ℹ️ Stochastic component disabled for both modes - using anchor values directly")
+                st.info("Stochastic component disabled for both modes - using anchor values directly")
                 st.session_state.sigma_coefficient = 0.0
                 st.session_state.sigma_value_ui = 0.0
         

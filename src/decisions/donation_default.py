@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # Import income utilities for Category-First architecture
 from src.decisions.income_utils import get_actual_allowance
+from src.utils.stochastic import get_stochastic_sigma
 
 def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
@@ -153,26 +154,55 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     # The anchor is computed purely from research-based regression and agent traits
     
     # Step 4: Determine if we should use stochastic component
-    # Check population context and stochastic flag
+    # NOTE: donation_default has different stochastic logic than disclose_income:
+    # - For documentation mode: ALWAYS use stochastic (matches original behavior)
+    # - For copula mode: only use if in_copula flag is set
     pop_context = kwargs.get('pop_context', 'copula')
+    stochastic_params = params.get('stochastic', {})
     use_stochastic = (
-        (params['stochastic'].get('in_copula', False) and pop_context == 'copula') or
+        (stochastic_params.get('in_copula', False) and pop_context == 'copula') or
         pop_context == 'documentation'
     )
-    
+
     if use_stochastic:
         # Apply stochastic component with Normal(anchor, σ) draw
-        # Use the same sigma logic as documentation mode
-        sigma_0_100 = params['stochastic']['sigma_value']  # 9.8995 on 0-112 scale
-        # Convert to 0-100 scale
-        sigma_0_100_scaled = sigma_0_100 * (100.0 / 112.0)
-        
+        # Check if quintile mode is enabled, otherwise use sigma_value directly (original behavior)
+        sigma_strategy = stochastic_params.get('sigma_strategy', 'overall')
+
+        if sigma_strategy == 'quintile':
+            # Quintile mode: use centralized utility for level-specific sigma
+            level = int(income_level)
+            sigma_raw = get_stochastic_sigma(
+                level=level,
+                stochastic_params=stochastic_params,
+                convert_to_z_scale=False,
+            )
+        else:
+            # Overall mode: use sigma_value directly (original behavior)
+            # sigma_value should be set by simulation.py from UI's sigma_value_ui
+            # If sigma_value is 0 or not set, fall back to sigma_overall or default
+            sigma_raw = stochastic_params.get('sigma_value', 0)
+            if sigma_raw == 0:
+                # Fallback: use sigma_overall * scale_factor (like the centralized utility)
+                sigma_overall = stochastic_params.get('sigma_overall', 9.8995)
+                scale_factor = stochastic_params.get('scale_factor', 1.0)
+                sigma_raw = sigma_overall * scale_factor
+
+        # DEBUG: Print sigma values to diagnose distribution differences
+        print(f"[DonationDefault DEBUG] strategy={sigma_strategy}, sigma_raw={sigma_raw}, "
+              f"scale_factor={stochastic_params.get('scale_factor')}, "
+              f"sigma_value={stochastic_params.get('sigma_value')}, "
+              f"sigma_overall={stochastic_params.get('sigma_overall')}")
+
+        # Convert sigma from 0-112 scale to 0-100 scale
+        sigma_0_100_scaled = sigma_raw * (100.0 / 112.0)
+
         # Step 4a: Draw from Normal(adjusted_anchor, σ)
         draw_0_100 = rng.normal(s100_anchor_adjusted, sigma_0_100_scaled)
-        
-        # Floor negative values at 0
+
+        # Floor negative values at 0 (donations can't be negative)
         draw_0_100 = max(draw_0_100, 0.0)
-        
+
         # Step 6: Simple scaling to proportion (0-1) matching documentation-mode logic
         donation_rate = draw_0_100 / 100.0
         return {"donation_default": np.clip(donation_rate, 0.0, 1.0)}
@@ -180,7 +210,7 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         # Use adjusted anchor directly (no additional stochastic component)
         # The copula sampling already provides natural variability
         draw_0_100 = s100_anchor_adjusted
-        
+
         # Step 6: Rescale to [0,1] range using simple scaling
         donation_rate = draw_0_100 / 100.0
-        return {"donation_default": np.clip(donation_rate,0.0,1.0)}
+        return {"donation_default": np.clip(donation_rate, 0.0, 1.0)}

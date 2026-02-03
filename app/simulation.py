@@ -275,13 +275,23 @@ def _apply_donation_config(orchestrator, pop_mode: str, inc_mode: str):
         donation_config['stochastic']['in_copula'] = st.session_state.sigma_in_copula
     
     # Apply sigma value based on mode and user preferences
-    if pop_mode == "documentation" and not st.session_state.sigma_in_research:
+    if pop_mode == "documentation" and not st.session_state.get('sigma_in_research', True):
         # Research mode with sigma disabled - set to 0
         donation_config['stochastic']['sigma_value'] = 0.0
     else:
-        # Apply selected sigma value
-        donation_config['stochastic']['sigma_value'] = st.session_state.sigma_value_ui
-    
+        # Apply selected sigma value (default to 9.8995 if not set)
+        sigma_value_ui = st.session_state.get('sigma_value_ui', 9.8995)
+        donation_config['stochastic']['sigma_value'] = sigma_value_ui
+
+    # Apply sigma strategy and quintile scale factors from session state
+    if 'donation_sigma_strategy' in st.session_state:
+        donation_config['stochastic']['sigma_strategy'] = st.session_state.donation_sigma_strategy
+    if 'sigma_coefficient' in st.session_state:
+        donation_config['stochastic']['scale_factor'] = st.session_state.sigma_coefficient
+    # Pass quintile-specific scale factors if in quintile mode
+    if 'donation_quintile_scale_factors' in st.session_state:
+        donation_config['stochastic']['quintile_scale_factors'] = st.session_state.donation_quintile_scale_factors
+
     # Apply chosen anchor weights
     donation_config['anchor_weights']['observed'] = st.session_state.anchor_observed_weight
     donation_config['anchor_weights']['predicted'] = 1 - st.session_state.anchor_observed_weight
@@ -414,6 +424,17 @@ def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_confi
         # Stochastic disabled
         di_config['stochastic']['sigma_value'] = 0.0
     
+    # IMPORTANT: Always apply CURRENT session state stochastic settings
+    # This ensures UI changes (like switching to quintile mode) take effect
+    # even when using a saved config for other parameters
+    if 'di_sigma_strategy' in st.session_state:
+        di_config['stochastic']['sigma_strategy'] = st.session_state.di_sigma_strategy
+        print(f"[DiscloseIncome] Applied session state sigma_strategy: {st.session_state.di_sigma_strategy}")
+    if 'di_scale_factor' in st.session_state:
+        di_config['stochastic']['scale_factor'] = st.session_state.di_scale_factor
+    if 'di_quintile_scale_factors' in st.session_state:
+        di_config['stochastic']['quintile_scale_factors'] = st.session_state.di_quintile_scale_factors
+
     # Also update session state to reflect saved config (for UI consistency)
     st.session_state.di_income_mode = income_mode
     if 'intercept' in params:
@@ -423,10 +444,6 @@ def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_confi
     if 'prosocial_weight' in anchor_weights:
         st.session_state.di_wpb = anchor_weights['prosocial_weight']
     st.session_state.di_sigma_enabled = stochastic.get('sigma_enabled', False)
-    if 'scale_factor' in stochastic:
-        st.session_state.di_scale_factor = stochastic['scale_factor']
-    if 'sigma_strategy' in stochastic:
-        st.session_state.di_sigma_strategy = stochastic['sigma_strategy']
 
 
 def _apply_disclose_income_from_session_state(orchestrator, pop_mode: str, inc_mode: str = None):
