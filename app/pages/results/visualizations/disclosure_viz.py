@@ -6,6 +6,7 @@ Handles disclose_income and disclose_documents decisions.
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 
 
 def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame):
@@ -82,35 +83,176 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         disclosure_rate = (yes_count/total)*100
         st.metric("Disclosure Rate", f"{disclosure_rate:.1f}%")
     
-    # Binary choice visualization - pie chart
-    col_plot, col_stats = st.columns([2, 1])
+    # Check if raw DI values are available for histogram
+    has_raw_values = 'disclose_income_raw' in df.columns
     
-    with col_plot:
-        if len(value_counts) > 0:
-            st.markdown(f"**{decision_title} Distribution**")
-            fig = px.pie(
-                values=value_counts.values,
-                names=value_counts.index,
-                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with col_stats:
-        st.markdown("**📊 Choice Breakdown**")
-        # Ensure Y appears before N in the breakdown
-        ordered_choices = ['Y', 'N']
-        ordered_data = []
-        for choice in ordered_choices:
-            if choice in value_counts.index:
-                count = value_counts[choice]
-                ordered_data.append({
-                    'Choice': choice,
-                    'Count': count,
-                    'Percentage': f"{(count/total)*100:.1f}%"
-                })
+    if has_raw_values:
+        # TWO-COLUMN LAYOUT: Pie chart on left, Histogram on right
+        col_pie, col_hist = st.columns(2)
         
-        breakdown_df = pd.DataFrame(ordered_data)
-        st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+        with col_pie:
+            st.markdown(f"**1. {decision_title} Distribution**")
+            if len(value_counts) > 0:
+                fig_pie = px.pie(
+                    values=value_counts.values,
+                    names=value_counts.index,
+                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
+                )
+                st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Choice breakdown table below pie chart
+            st.markdown("**📊 Choice Breakdown**")
+            ordered_choices = ['Y', 'N']
+            ordered_data = []
+            for choice in ordered_choices:
+                if choice in value_counts.index:
+                    count = value_counts[choice]
+                    ordered_data.append({
+                        'Choice': choice,
+                        'Count': count,
+                        'Percentage': f"{(count/total)*100:.1f}%"
+                    })
+            breakdown_df = pd.DataFrame(ordered_data)
+            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+        
+        with col_hist:
+            # Get raw values for histogram
+            raw_values = df['disclose_income_raw'].dropna()
+            
+            if len(raw_values) > 0:
+                # Calculate statistics
+                mean_val = raw_values.mean()
+                std_val = raw_values.std()
+                median_val = raw_values.median()
+                min_val = raw_values.min()
+                max_val = raw_values.max()
+                
+                # Calculate Y/N split based on threshold
+                y_count_raw = (raw_values > 0).sum()
+                n_count_raw = (raw_values <= 0).sum()
+                total_raw = len(raw_values)
+                y_pct_raw = (y_count_raw / total_raw) * 100 if total_raw > 0 else 0
+                n_pct_raw = (n_count_raw / total_raw) * 100 if total_raw > 0 else 0
+                
+                # Get income mode for title
+                income_mode = st.session_state.get('di_income_mode', 'Categorical')
+                if 'categorical' in str(income_mode).lower():
+                    mode_suffix = " (Categorical)"
+                elif 'continuous' in str(income_mode).lower():
+                    mode_suffix = " (Continuous)"
+                else:
+                    mode_suffix = ""
+                
+                st.markdown(f"**📈 Raw Disclose Income Distribution{mode_suffix}**")
+                
+                # Create histogram with vertical line at 0
+                fig_hist = go.Figure()
+                
+                # Add histogram
+                fig_hist.add_trace(go.Histogram(
+                    x=raw_values,
+                    nbinsx=40,
+                    name='DI Raw Values',
+                    marker_color='steelblue',
+                    opacity=0.7
+                ))
+                
+                # Add vertical line at 0 (decision boundary)
+                fig_hist.add_vline(
+                    x=0,
+                    line_dash="solid",
+                    line_color="red",
+                    line_width=3,
+                    annotation_text="Threshold (0)",
+                    annotation_position="top",
+                    annotation_font_color="red"
+                )
+                
+                # Add vertical line at mean
+                fig_hist.add_vline(
+                    x=mean_val,
+                    line_dash="dash",
+                    line_color="green",
+                    line_width=2,
+                    annotation_text=f"Mean: {mean_val:.3f}",
+                    annotation_position="bottom",
+                    annotation_font_color="green"
+                )
+                
+                # Update layout
+                fig_hist.update_layout(
+                    xaxis_title="Raw DI Value (>0 → Y, ≤0 → N)",
+                    yaxis_title="Agents",
+                    showlegend=False,
+                    height=300,
+                    margin=dict(l=40, r=40, t=40, b=40),
+                    xaxis=dict(
+                        zeroline=True,
+                        zerolinecolor='red',
+                        zerolinewidth=2
+                    )
+                )
+                
+                st.plotly_chart(fig_hist, use_container_width=True)
+                
+                # Statistics and Classification side by side below histogram
+                col_stats, col_class = st.columns(2)
+                
+                with col_stats:
+                    st.markdown("**📈 Statistics**")
+                    stats_df = pd.DataFrame({
+                        'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+                        'Value': [
+                            f"{mean_val:.4f}",
+                            f"{std_val:.4f}",
+                            f"{median_val:.4f}",
+                            f"{min_val:.4f}",
+                            f"{max_val:.4f}"
+                        ]
+                    })
+                    st.dataframe(stats_df, hide_index=True, use_container_width=True)
+                
+                with col_class:
+                    st.markdown("**📊 Classification**")
+                    classification_df = pd.DataFrame({
+                        'Choice': ['Y (disclose)', 'N (not disclose)'],
+                        'Count': [y_count_raw, n_count_raw],
+                        '%': [f"{y_pct_raw:.1f}%", f"{n_pct_raw:.1f}%"]
+                    })
+                    st.dataframe(classification_df, hide_index=True, use_container_width=True)
+            else:
+                st.warning("No raw DI values available for histogram")
+    
+    else:
+        # ORIGINAL LAYOUT: Pie chart + Choice breakdown (no raw values available)
+        col_plot, col_stats = st.columns([2, 1])
+        
+        with col_plot:
+            if len(value_counts) > 0:
+                st.markdown(f"**{decision_title} Distribution**")
+                fig = px.pie(
+                    values=value_counts.values,
+                    names=value_counts.index,
+                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
+                )
+                st.plotly_chart(fig, use_container_width=True)
+        
+        with col_stats:
+            st.markdown("**📊 Choice Breakdown**")
+            # Ensure Y appears before N in the breakdown
+            ordered_choices = ['Y', 'N']
+            ordered_data = []
+            for choice in ordered_choices:
+                if choice in value_counts.index:
+                    count = value_counts[choice]
+                    ordered_data.append({
+                        'Choice': choice,
+                        'Count': count,
+                        'Percentage': f"{(count/total)*100:.1f}%"
+                    })
+            
+            breakdown_df = pd.DataFrame(ordered_data)
+            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     
     # Excel download section
     st.markdown("---")

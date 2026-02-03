@@ -279,6 +279,56 @@ def render_donation_default_tab():
     # Initialize widget keys to preserve values across navigation
     initialize_donation_widget_keys()
     
+    # Handle full config reset flag BEFORE any widgets render
+    if st.session_state.get('_reset_config_to_defaults_flag', False):
+        st.session_state._reset_config_to_defaults_flag = False
+        
+        # Clear persistence storage
+        st.session_state.donation_tab_persistence = {}
+        
+        # Reset intercept widget keys
+        st.session_state.override_categorical_intercept = 1.519818
+        st.session_state.override_continuous_intercept = -0.139596
+        st.session_state.intercept_override_values = {}
+        
+        # Reset adjustment widget key
+        st.session_state.override_adjustment_shift = -4.0
+        st.session_state.adjustment_override_values = {}
+        
+        # Reset income mode
+        st.session_state.page2_tab_income_spec_mode = "categorical only"
+        st.session_state.income_spec_mode = "categorical only"
+        
+        # Reset sigma strategy (main state variable)
+        st.session_state.donation_sigma_strategy = "overall"
+        
+        # Reset sigma strategy widget keys for all mode suffixes
+        for mode_suffix in ['copula', 'research', 'compare']:
+            st.session_state[f'donation_tab_sigma_strategy_{mode_suffix}'] = "overall"
+            st.session_state[f'tab_sigma_coefficient_{mode_suffix}'] = 1.0
+            # Reset quintile slider widget keys
+            for level in ['1', '2', '3', '4', '5']:
+                st.session_state[f'donation_tab_sigma_q{level}_{mode_suffix}'] = 1.0
+        
+        # Reset sigma coefficient sliders (legacy keys)
+        st.session_state.tab_sigma_coefficient = 1.0
+        st.session_state.tab_sigma_coefficient_research = 1.0
+        st.session_state.tab_sigma_coefficient_compare = 1.0
+        
+        # Reset quintile scale factors
+        st.session_state.donation_quintile_scale_factors = {
+            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0
+        }
+        
+        # Reset anchor weight
+        st.session_state.tab_anchor_weight = 0.75
+        
+        # Reset sigma checkboxes
+        st.session_state.tab_sigma_in_copula = False
+        st.session_state.tab_sigma_in_research = True
+        st.session_state.tab_sigma_in_copula_compare = False
+        st.session_state.tab_sigma_in_research_compare = True
+    
     st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
@@ -930,6 +980,17 @@ def render_continuous_formula_specific():
 def render_intercept_override_section():
     """Render the intercept override section with ability to modify default coefficient values"""
     
+    # Research default values
+    CATEGORICAL_DEFAULT = 1.519818
+    CONTINUOUS_DEFAULT = -0.139596
+    
+    # Handle reset flag BEFORE widgets render
+    if st.session_state.get('_reset_intercept_flag', False):
+        st.session_state._reset_intercept_flag = False
+        st.session_state.override_categorical_intercept = CATEGORICAL_DEFAULT
+        st.session_state.override_continuous_intercept = CONTINUOUS_DEFAULT
+        st.session_state.intercept_override_values = {}
+    
     # Initialize override values if not present
     if 'intercept_override_values' not in st.session_state:
         st.session_state.intercept_override_values = {}
@@ -1145,6 +1206,15 @@ def auto_save_intercept(intercept_type, new_value):
 def render_adjustment_override_section():
     """Render the distribution adjustment override section"""
     
+    # Fixed research default - this never changes
+    research_default = -4.0
+    
+    # Handle reset flag BEFORE widget renders
+    if st.session_state.get('_reset_adjustment_flag', False):
+        st.session_state._reset_adjustment_flag = False
+        st.session_state.override_adjustment_shift = 0.0
+        st.session_state.adjustment_override_values = {}
+    
     # Initialize adjustment values if not present
     if 'adjustment_override_values' not in st.session_state:
         st.session_state.adjustment_override_values = {}
@@ -1153,22 +1223,23 @@ def render_adjustment_override_section():
     try:
         current_yaml_values = get_current_yaml_adjustment()
         
-        # Use 2 columns: Current Value and Override Value
-        col1, col2 = st.columns(2)
+        # Use 3 columns: Research Default, Override Value, Impact Preview
+        col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.markdown("**📋 Current Value**")
-            st.metric("Adjustment Shift", f"{current_yaml_values['shift_value']:.3f}")
+            st.markdown(f"**Research Default: {research_default:.3f}**")
+            st.markdown("Adjustment Shift")
+            st.caption("Fixed reference value from original research")
         
         with col2:
             st.markdown("**✏️ Override Value**")
             
-            # Restore adjustment widget key
+            # Restore adjustment widget key (default to research default -4.0)
             adj_val = restore_widget_from_storage(
                 'override_adjustment_shift',
                 st.session_state.adjustment_override_values,
                 'shift_value',
-                current_yaml_values['shift_value']
+                research_default
             )
             
             # Adjustment input field
@@ -1183,41 +1254,29 @@ def render_adjustment_override_section():
             )
             st.session_state.adjustment_override_values['shift_value'] = new_adjustment
         
-        st.caption("💡 How it works: Positive values shift the distribution up (greater donation), negative values shift it down (smaller donation)")
+        with col3:
+            st.markdown("**📊 Impact Preview**")
+            change = new_adjustment - research_default
+            if abs(change) > 0.001:
+                impact = "Higher donations" if change > 0 else "Lower donations"
+                st.metric("Change", f"{change:+.3f}", delta=impact)
+            else:
+                st.metric("Change", "No change")
         
-        # Show impact preview
-        st.markdown("---")
-        if st.session_state.adjustment_override_values:
-            current_value = current_yaml_values['shift_value']
-            new_value = new_adjustment
-            change = new_value - current_value
-            
-            if abs(change) > 0.001:  # Only show if there's a meaningful change
-                st.markdown("**📊 Impact Preview:**")
-                
-                impact_data = [{
-                    'Parameter': 'Distribution Shift',
-                    'Current': f"{current_value:.3f}",
-                    'New': f"{new_value:.3f}", 
-                    'Change': f"{change:+.3f}",
-                    'Impact': "Higher donations" if change > 0 else "Lower donations" if change < 0 else "No change"
-                }]
-                
-                impact_df = pd.DataFrame(impact_data)
-                st.dataframe(impact_df, hide_index=True, use_container_width=True)
+        st.caption("💡 How it works: Positive values shift the distribution up (greater donation), negative values shift it down (smaller donation)")
         
     except Exception as e:
         st.error(f"Error loading adjustment values: {e}")
 
 
 def render_actions_and_management_section():
-    """Render the combined actions and management section with two columns"""
+    """Render the combined actions and management section with three columns"""
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown("**🔄 Reset Intercept**")
-        if st.button("Reset to Default Values", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
+        if st.button("Reset Intercept to Default Values", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
             # Reset to research default values
             default_values = {
                 'categorical': 1.519818,  # Research default for categorical
@@ -1225,7 +1284,8 @@ def render_actions_and_management_section():
             }
             success = update_yaml_intercepts(default_values)
             if success:
-                st.session_state.intercept_override_values = {}
+                # Set flag to reset widgets on next rerun (before widgets render)
+                st.session_state._reset_intercept_flag = True
                 load_donation_coefficients_from_yaml()
                 st.toast("✅ Intercepts reset to research defaults", icon="🔄")
                 st.rerun()
@@ -1234,16 +1294,37 @@ def render_actions_and_management_section():
     
     with col2:
         st.markdown("**🔄 Reset Adjustment**")
-        if st.button("Reset to Default (0.0)", type="secondary", use_container_width=True, help="Reset adjustment value to default 0.0 and update configuration", key="reset_adjustment_btn"):
+        if st.button("Reset Adjustment to 0", type="secondary", use_container_width=True, help="Reset adjustment value to 0 and update configuration", key="reset_adjustment_btn"):
             # Reset to default value of 0.0
             success = update_yaml_adjustment({'shift_value': 0.0})
             if success:
-                st.session_state.adjustment_override_values = {}
+                # Set flag to reset widget on next rerun (before widget renders)
+                st.session_state._reset_adjustment_flag = True
                 load_donation_coefficients_from_yaml()
-                st.toast("✅ Adjustment reset to default (0.0)", icon="🔄")
+                st.toast("✅ Adjustment reset to 0", icon="🔄")
                 st.rerun()
             else:
                 st.toast("❌ Failed to reset adjustment", icon="⚠️")
+    
+    with col3:
+        st.markdown("**🔄 Reset All**")
+        if st.button("Reset Config to Defaults", type="secondary", use_container_width=True, help="Reset entire page to research defaults (intercepts, adjustment, sliders, radio buttons)", key="reset_config_btn"):
+            # Reset intercepts to research defaults
+            success_intercept = update_yaml_intercepts({
+                'categorical': 1.519818,
+                'continuous': -0.139596
+            })
+            # Reset adjustment to research default (-4.0)
+            success_adjustment = update_yaml_adjustment({'shift_value': -4.0})
+            
+            if success_intercept and success_adjustment:
+                # Set flag to reset ALL widgets on next rerun (before widgets render)
+                st.session_state._reset_config_to_defaults_flag = True
+                load_donation_coefficients_from_yaml()
+                st.toast("✅ All values reset to research defaults", icon="🔄")
+                st.rerun()
+            else:
+                st.toast("❌ Failed to reset configuration", icon="⚠️")
     
     # Debug expander below the buttons
     with st.expander("🔍 Debug: Current Session State Values", expanded=False):

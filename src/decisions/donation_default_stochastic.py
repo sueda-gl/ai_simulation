@@ -4,6 +4,7 @@ from scipy.stats import norm
 
 # Import income utilities for Category-First architecture
 from src.decisions.income_utils import get_actual_allowance
+from src.utils.stochastic import get_stochastic_sigma
 
 def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
@@ -147,14 +148,28 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
     use_stochastic = sd_params.get('sigma_value', 0) > 0
     
     if use_stochastic:
-        # Use the overall SD from observed behavior, scaled to 0-100 range
-        if sd_params['sigma_strategy'] == 'overall_sd_twt_sospeso':
-            # The sigma value should be the SD of the 0-100 scaled observed behavior
-            # Original SD = 9.8995 on 0-112 scale
-            # Scaled SD = 9.8995 * 100 / 112 ≈ 8.84
-            sigma_0_100 = sd_params['sigma_value'] * 100 / (obs_max - obs_min)
+        # Determine sigma based on strategy (quintile vs overall)
+        sigma_strategy = sd_params.get('sigma_strategy', 'overall')
+        
+        if sigma_strategy == 'quintile':
+            # Quintile mode: use centralized utility for level-specific sigma
+            level = int(income_level)
+            sigma_raw = get_stochastic_sigma(
+                level=level,
+                stochastic_params=sd_params,
+                convert_to_z_scale=False,
+            )
         else:
-            sigma_0_100 = 8.84  # fallback based on calculation above
+            # Overall mode (includes 'overall', 'overall_sd_twt_sospeso', etc.)
+            # Use sigma_value directly if set, otherwise fall back to sigma_overall
+            sigma_raw = sd_params.get('sigma_value', 0)
+            if sigma_raw == 0:
+                sigma_overall = sd_params.get('sigma_overall', 9.8995)
+                scale_factor = sd_params.get('scale_factor', 1.0)
+                sigma_raw = sigma_overall * scale_factor
+        
+        # Convert sigma from 0-112 scale to 0-100 scale
+        sigma_0_100 = sigma_raw * (100.0 / 112.0)
         
         # Draw from Normal(adjusted_anchor, sigma) (0-100 scale)
         draw_raw = rng.normal(s100_anchor_adjusted, sigma_0_100)

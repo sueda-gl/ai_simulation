@@ -271,9 +271,9 @@ def render_disclose_income_tab():
                 st.toast(f"σ mode set to: {new_strategy}", icon="💾")
             
             sigma_strategy = st.radio(
-                "Apply σ uniformly or per income level?",
+                "Apply σ uniformly or per budget level?",
                 options=['overall', 'quintile'],
-                format_func=lambda x: 'Overall (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
+                format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
                 index=0 if strategy_val == 'overall' else 1,
                 key="di_tab_sigma_strategy",
                 on_change=on_strategy_change,
@@ -648,8 +648,9 @@ def render_intercept_override_section(config):
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown("**Research Default**")
-            st.metric("Intercept (β₀)", f"{research_default:.4f}")
+            st.markdown(f"**Research Default: {research_default:.4f}**")
+            st.markdown("Intercept (β₀)")
+            st.caption("Fixed reference value from original research")
 
         with col2:
             st.markdown("**Override Value**")
@@ -775,7 +776,7 @@ def render_actions_and_management_section(config):
 
     with col1:
         st.markdown("**Reset Configuration**")
-        if st.button("Reset to Default Values", type="secondary", use_container_width=True,
+        if st.button("Reset Config to Defaults", type="secondary", use_container_width=True,
                      help="Reset all disclose income values to research defaults",
                      key="di_reset_btn"):
             success = reset_to_defaults()
@@ -787,7 +788,7 @@ def render_actions_and_management_section(config):
 
     with col2:
         st.markdown("**Reload from Configuration**")
-        if st.button("Reload Configuration", type="secondary", use_container_width=True,
+        if st.button("Reset Intercept", type="secondary", use_container_width=True,
                      help="Reload values from configuration file",
                      key="di_reload_btn"):
             # Clear all di_ keys and persistence storage
