@@ -19,7 +19,7 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
     # All numeric columns use General format to preserve original precision
     numeric_columns = [
         'Agreeable', 'Openness', 'Honesty_Humility', 'Extraversion', 'Neuroticism',
-        'Religious', 'TWT+Sospeso', 'WOPB', 'WPB', 'Intercept', 'PB_i', 'Disclosure Income',
+        'Religious', 'TWT+Sospeso', 'Predicted PB', 'WOPB', 'WPB', 'Intercept', 'PB_i', 'Disclosure Income',
         'income', 'Income', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
         'Assigned income from the distribution',
     ]
@@ -638,7 +638,17 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
         export_df['TWT+Sospeso'] = ''
     
     # ========================================================================
-    # 14-16. Configuration Values (Weights and Intercept)
+    # 14. Predicted Prosocial Behavior (trait-based)
+    # ========================================================================
+    
+    # Predicted PB (weighted_prosocial from traits, before anchoring)
+    if 'disclose_income_weighted_prosocial' in df.columns:
+        export_df['Predicted PB'] = df['disclose_income_weighted_prosocial']
+    else:
+        export_df['Predicted PB'] = ''
+    
+    # ========================================================================
+    # 15-17. Configuration Values (Weights and Intercept)
     # ========================================================================
     
     # 14. WOPB (Observed Prosocial Behavior Weight)

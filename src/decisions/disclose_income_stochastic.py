@@ -520,6 +520,7 @@ def disclose_income_stochastic(
         "disclose_income_wopb": float(WOPB),  # Observed prosocial weight
         "disclose_income_wpb": float(WPB),  # Prosocial behavior weight
         "disclose_income_intercept": float(beta_0),  # β₀ intercept
+        "disclose_income_weighted_prosocial": float(weighted_prosocial),  # Trait-based predicted PB (before anchoring)
         "disclose_income_anchored_pb": float(stochastic_anchored_pb),  # PB_i with stochastic (if enabled)
         "disclose_income_anchored_pb_deterministic": float(anchored_pb_deterministic),  # PB_i without stochastic
     }
