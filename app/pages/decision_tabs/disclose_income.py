@@ -660,7 +660,7 @@ def render_intercept_override_section(config):
                 value=float(int_val),
                 step=0.01,
                 format="%.4f",
-                help="β₀ in the disclosure intention equation. Higher values increase baseline probability of disclosure.",
+                help="β₀ = 0.75 in the disclose income equation. Override value, with higher values increasing baseline probability of disclosure.",
                 key="di_override_intercept",
                 on_change=lambda: auto_save_intercept(st.session_state.di_override_intercept)
             )

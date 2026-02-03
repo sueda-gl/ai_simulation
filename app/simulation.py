@@ -381,7 +381,9 @@ def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_confi
     params = saved_config.get('params', {})
     
     # Apply income mode
-    income_mode = params.get('income_mode', saved_config.get('income_mode', 'Categorical only'))
+    # Priority: top-level income_mode (from result_key) > params.income_mode (from session state at save time)
+    # This ensures "Compare both" in params doesn't override the specific mode user selected
+    income_mode = saved_config.get('income_mode', params.get('income_mode', 'Categorical only'))
     if 'continuous' in str(income_mode).lower():
         di_config['income_mode'] = 'continuous'
     else:

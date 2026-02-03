@@ -176,7 +176,7 @@ def render_donation_sigma_controls(mode_suffix: str):
     sigma_strategy = st.radio(
         "Apply σ uniformly or per income level?",
         options=['overall', 'quintile'],
-        format_func=lambda x: 'Overall (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
+        format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
         index=0 if strategy_val == 'overall' else 1,
         key=strategy_widget_key,
         on_change=on_strategy_change,
