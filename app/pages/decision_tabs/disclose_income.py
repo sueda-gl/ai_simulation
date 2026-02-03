@@ -159,7 +159,6 @@ def render_disclose_income_tab():
             new_mode = st.session_state.di_tab_income_mode
             st.session_state.di_income_mode = new_mode
             save_to_disclose_income_storage('di_tab_income_mode', 'income_mode')
-            save_disclose_income_config({'income_mode': new_mode})
             # FIX: Clear saved disclose_income config from BOTH legacy AND unified storage
             # This prevents stale configs from persisting when user changes income mode
             # Legacy storage
@@ -169,7 +168,6 @@ def render_disclose_income_tab():
             if 'selected_decision_configs' in st.session_state:
                 if 'disclose_income' in st.session_state.selected_decision_configs:
                     del st.session_state.selected_decision_configs['disclose_income']
-            st.toast(f"Income specification set to: {new_mode}", icon="💾")
 
         # Restore income mode from storage
         income_val = restore_widget_from_storage(
@@ -266,9 +264,7 @@ def render_disclose_income_tab():
                 """Handle sigma strategy changes."""
                 new_strategy = st.session_state.di_tab_sigma_strategy
                 save_to_disclose_income_storage('di_tab_sigma_strategy', 'sigma_strategy')
-                save_disclose_income_config({'stochastic.sigma_strategy': new_strategy})
                 st.session_state.di_sigma_strategy = new_strategy
-                st.toast(f"σ mode set to: {new_strategy}", icon="💾")
             
             sigma_strategy = st.radio(
                 "Apply σ uniformly or per budget level?",
@@ -318,11 +314,6 @@ def render_disclose_income_tab():
 
                 effective_sigma = 9.8995 * sigma_coefficient
                 st.caption(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
-
-                if abs(sigma_coefficient - current_scale) > 0.001:
-                    save_disclose_income_config({'stochastic.scale_factor': float(sigma_coefficient)})
-                    save_disclose_income_config({'stochastic.sigma_value': 9.8995})
-                    st.toast(f"σ coefficient set to: {sigma_coefficient:.2f}", icon="💾")
             
             else:
                 # QUINTILE MODE: 5 sliders (one per income level)
@@ -384,23 +375,12 @@ def render_disclose_income_tab():
                     
                     quintile_coefficients[level] = q_coeff
                 
-                # Save quintile scale factors to config
+                # Save quintile scale factors to session state
                 st.session_state.di_quintile_scale_factors = quintile_coefficients
-                
-                # Check if any changed and save
-                for level, coeff in quintile_coefficients.items():
-                    old_val = current_quintile_scales.get(level, current_scale)
-                    if abs(coeff - float(old_val)) > 0.001:
-                        save_disclose_income_config({f'stochastic.quintile_scale_factors.{level}': float(coeff)})
-                
-                # Also ensure sigma_value is set so stochastic is recognized as enabled
-                save_disclose_income_config({'stochastic.sigma_value': 9.8995})
                 
         else:
             st.info("Stochastic component disabled - using anchor values directly")
             st.session_state.di_scale_factor = 0.0
-            if current_sigma_enabled:
-                save_disclose_income_config({'stochastic.sigma_value': 0})
 
         # Anchor Mix
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
@@ -409,39 +389,49 @@ def render_disclose_income_tab():
         current_wopb = anchor_weights.get('observed_prosocial', 0.25)
         current_wpb = anchor_weights.get('prosocial_weight', 0.50)
 
+        # Restore WOPB from storage
+        wopb_val = restore_widget_from_storage(
+            'di_wopb_widget',
+            st.session_state.disclose_income_tab_persistence,
+            'wopb',
+            current_wopb
+        )
+
         # WOPB - Weight for observed vs calculated prosocial behavior
         new_wopb = st.slider(
             "W_OPB: Observed vs Calculated prosocial behavior weight",
             min_value=0.0,
             max_value=1.0,
-            value=float(current_wopb),
+            value=float(wopb_val),
             step=0.01,
             help="anchored_PB = WOPB×Observed_PB + (1-WOPB×Calculated_PB based on Honesty-Humility, Agreeableness, Openness, and Religiosity); Default: 0.25",
-            key="di_wopb_widget"
+            key="di_wopb_widget",
+            on_change=lambda: save_to_disclose_income_storage('di_wopb_widget', 'wopb')
         )
         st.caption(f"Observed prosocial behavior weight: {new_wopb:.2f}")
+        st.session_state.di_wopb = new_wopb
 
-        if abs(new_wopb - current_wopb) > 0.001:
-            st.session_state.di_wopb = new_wopb
-            save_disclose_income_config({'anchor_weights.observed_prosocial': float(new_wopb)})
-            st.toast(f"WOPB set to: {new_wopb:.2f}", icon="💾")
+        # Restore WPB from storage
+        wpb_val = restore_widget_from_storage(
+            'di_wpb_widget',
+            st.session_state.disclose_income_tab_persistence,
+            'wpb',
+            current_wpb
+        )
 
         # WPB - Weight for prosocial effect in disclosure equation
         new_wpb = st.slider(
             "W_PB: Prosocial behavior (Equation 1) effect weight",
             min_value=0.0,
             max_value=1.0,
-            value=float(current_wpb),
+            value=float(wpb_val),
             step=0.01,
             help="DI = β0+(1-WPB)×(Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness) + WPB×(Prosocial Behavior×Income_High); Default: 0.5",
-            key="di_wpb_widget"
+            key="di_wpb_widget",
+            on_change=lambda: save_to_disclose_income_storage('di_wpb_widget', 'wpb')
         )
         st.caption(f"Prosocial behavior weight: {new_wpb:.2f}")
-
-        if abs(new_wpb - current_wpb) > 0.001:
-            st.session_state.di_wpb = new_wpb
-            save_disclose_income_config({'anchor_weights.prosocial_weight': float(new_wpb)})
-            st.toast(f"WPB set to: {new_wpb:.2f}", icon="💾")
+        st.session_state.di_wpb = new_wpb
 
     # Mathematical Model Formula Section
     st.markdown('<h4 class="subsection-header">Mathematical Model Formula</h4>', unsafe_allow_html=True)

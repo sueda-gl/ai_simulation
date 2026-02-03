@@ -94,9 +94,19 @@ def can_run_complete_simulation():
     di_income_count = 2 if ('compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()) else 1
     
     # Donation default income modes: "Compare both" generates 2, others generate 1
-    # FIX: Use case-insensitive comparison like disclose_income does
-    income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
-    donation_income_count = 2 if ('compare' in str(income_spec_mode).lower() or 'both' in str(income_spec_mode).lower()) else 1
+    # FIX: Get donation_default's ACTUAL income mode from its dedicated storage
+    # The global income_spec_mode can be contaminated when running disclose_income with "Compare both"
+    # (simulation.py syncs di_income_mode to income_spec_mode for results display)
+    # Priority: 1) donation tab persistence, 2) page2_tab_income_spec_mode widget, 3) global income_spec_mode
+    donation_income_mode = None
+    if hasattr(st.session_state, 'donation_tab_persistence') and 'income_spec_mode' in st.session_state.donation_tab_persistence:
+        donation_income_mode = st.session_state.donation_tab_persistence['income_spec_mode']
+    elif 'page2_tab_income_spec_mode' in st.session_state:
+        donation_income_mode = st.session_state.page2_tab_income_spec_mode
+    else:
+        donation_income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    
+    donation_income_count = 2 if ('compare' in str(donation_income_mode).lower() or 'both' in str(donation_income_mode).lower()) else 1
     
     # ========================================================================
     # CHECK DISCLOSE_INCOME (only if selected)
@@ -313,7 +323,17 @@ def auto_populate_single_donation_config():
         bool: True if config was auto-populated, False otherwise
     """
     try:
-        # First, check if we're in a "Compare both" mode - if so, clear any auto-implied configs
+        # First, check if donation_default is in the user's selected_decisions
+        # Don't auto-populate configs for decisions the user hasn't selected
+        selected_decisions = []
+        if hasattr(st.session_state, 'decision_params') and hasattr(st.session_state.decision_params, 'selected_decisions'):
+            selected_decisions = st.session_state.decision_params.selected_decisions or []
+        
+        if 'donation_default' not in selected_decisions:
+            # User hasn't selected donation_default - don't create auto-implied config
+            return False
+        
+        # Next, check if we're in a "Compare both" mode - if so, clear any auto-implied configs
         population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
         income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
         

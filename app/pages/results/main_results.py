@@ -144,30 +144,52 @@ def render_single_run_results():
         config = st.session_state.selected_donation_config
         # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
         donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
-        st.info(f"🎯 **Donation Default used saved configuration:** {donation_income_mode}")
+        # Get population_mode from saved config
+        donation_population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+        st.info(f"🎯 **Donation Default used saved configuration:** {donation_population_mode} + {donation_income_mode}")
         
-        # Also show disclose_income mode if it was run
-        if hasattr(st.session_state, 'custom_decisions'):
-            all_decisions_run = st.session_state.custom_decisions + st.session_state.get('default_decisions', [])
-            if 'disclose_income' in all_decisions_run:
-                # FIX: Check for saved disclose_income config first
-                di_mode = None
-                # Check unified storage
-                if 'selected_decision_configs' in st.session_state:
-                    if 'disclose_income' in st.session_state.selected_decision_configs:
-                        di_config = st.session_state.selected_decision_configs['disclose_income']
-                        if di_config.get('source') != 'auto_implied_single_config':
-                            di_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
-                # Check legacy storage
-                if di_mode is None and hasattr(st.session_state, 'selected_disclose_income_config'):
-                    di_config = st.session_state.selected_disclose_income_config
+        # Also show disclose_income mode if it was MANUALLY configured (not just run with defaults)
+        # Only show if: in custom_decisions OR has a saved config (not auto-implied)
+        di_was_manually_configured = (
+            hasattr(st.session_state, 'custom_decisions') and 
+            'disclose_income' in st.session_state.custom_decisions
+        )
+        di_has_saved_config = False
+        # Check unified storage for saved config
+        if 'selected_decision_configs' in st.session_state:
+            if 'disclose_income' in st.session_state.selected_decision_configs:
+                di_config = st.session_state.selected_decision_configs['disclose_income']
+                if di_config.get('source') != 'auto_implied_single_config':
+                    di_has_saved_config = True
+        # Check legacy storage for saved config
+        if not di_has_saved_config and hasattr(st.session_state, 'selected_disclose_income_config'):
+            di_config = st.session_state.selected_disclose_income_config
+            if di_config and di_config.get('source') != 'auto_implied_single_config':
+                di_has_saved_config = True
+        
+        if di_was_manually_configured or di_has_saved_config:
+            di_mode = None
+            di_population_mode = None
+            # Check unified storage
+            if 'selected_decision_configs' in st.session_state:
+                if 'disclose_income' in st.session_state.selected_decision_configs:
+                    di_config = st.session_state.selected_decision_configs['disclose_income']
                     if di_config.get('source') != 'auto_implied_single_config':
                         di_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
-                # Fallback to session state
-                if di_mode is None:
-                    di_mode = st.session_state.get('di_income_mode', 'Categorical only')
-                
-                st.info(f"📋 **Disclose Income used:** {di_mode}")
+                        di_population_mode = di_config.get('population_mode')
+            # Check legacy storage
+            if di_mode is None and hasattr(st.session_state, 'selected_disclose_income_config'):
+                di_config = st.session_state.selected_disclose_income_config
+                if di_config and di_config.get('source') != 'auto_implied_single_config':
+                    di_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
+                    di_population_mode = di_config.get('population_mode')
+            # Fallback to session state
+            if di_mode is None:
+                di_mode = st.session_state.get('di_income_mode', 'Categorical only')
+            if di_population_mode is None:
+                di_population_mode = st.session_state.get('population_mode', 'Unknown')
+            
+            st.info(f"📋 **Disclose Income used:** {di_population_mode} + {di_mode}")
     
     # Show decision configuration summary when we have both custom and default decisions (combined simulation)
     # OR when in single mode (not comparison modes)

@@ -13,26 +13,13 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
     """
     Apply Excel number formatting to numeric columns.
     
-    Uses different decimal precision based on column type:
-    - 4 decimal places for trait values and intermediate calculations
-    - 5 decimal places for intercept
-    - 6 decimal places for PB_i and DI_i (calculated values)
-    - 2 decimal places for legacy columns
+    Uses 'General' format to preserve original decimal precision from the data.
+    No rounding or truncation is applied - values display exactly as stored.
     """
-    # Columns with 4 decimal places (trait values)
-    four_decimal_columns = [
+    # All numeric columns use General format to preserve original precision
+    numeric_columns = [
         'Agreeable', 'Openness', 'Honesty_Humility', 'Extraversion', 'Neuroticism',
-        'Religious', 'TWT+Sospeso', 'WOPB', 'WPB'
-    ]
-    
-    # Columns with 5 decimal places (intercept)
-    five_decimal_columns = ['Intercept']
-    
-    # Columns with 6 decimal places (calculated values)
-    six_decimal_columns = ['PB_i', 'DI_i']
-    
-    # Legacy columns with 2 decimal places
-    two_decimal_columns = [
+        'Religious', 'TWT+Sospeso', 'WOPB', 'WPB', 'Intercept', 'PB_i', 'Disclosure Income',
         'income', 'Income', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
         'Assigned income from the distribution',
     ]
@@ -41,23 +28,14 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
     worksheet = workbook[sheet_name]
     
     for col_idx, col_name in enumerate(df.columns, start=1):
-        # Determine format based on column name
-        if col_name in six_decimal_columns:
-            number_format = '0.000000'
-        elif col_name in five_decimal_columns:
-            number_format = '0.00000'
-        elif col_name in four_decimal_columns:
-            number_format = '0.0000'
-        elif col_name in two_decimal_columns:
-            number_format = '0.00'
-        else:
-            continue  # Skip columns not in any list
+        if col_name not in numeric_columns:
+            continue
         
-        # Apply formatting to all data rows
+        # Apply General format to preserve original precision
         for row_idx in range(2, len(df) + 2):
             cell = worksheet.cell(row=row_idx, column=col_idx)
             if isinstance(cell.value, (int, float)) and cell.value is not None:
-                cell.number_format = number_format
+                cell.number_format = 'General'
 
 
 def render_disclose_income(df, decision_name, decision_title, decision_data):
@@ -561,31 +539,31 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # 2. Agreeable
     if 'Agreeable' in df.columns:
-        export_df['Agreeable'] = df['Agreeable'].round(4)
+        export_df['Agreeable'] = df['Agreeable']
     else:
         export_df['Agreeable'] = ''
     
     # 3. Openness (from OpennessBig5)
     if 'OpennessBig5' in df.columns:
-        export_df['Openness'] = df['OpennessBig5'].round(4)
+        export_df['Openness'] = df['OpennessBig5']
     else:
         export_df['Openness'] = ''
     
     # 4. Honesty_Humility
     if 'Honesty_Humility' in df.columns:
-        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(4)
+        export_df['Honesty_Humility'] = df['Honesty_Humility']
     else:
         export_df['Honesty_Humility'] = ''
     
     # 5. Extraversion (from ExtraversionBig5)
     if 'ExtraversionBig5' in df.columns:
-        export_df['Extraversion'] = df['ExtraversionBig5'].round(4)
+        export_df['Extraversion'] = df['ExtraversionBig5']
     else:
         export_df['Extraversion'] = ''
     
     # 6. Neuroticism (from NeuroticismBig5)
     if 'NeuroticismBig5' in df.columns:
-        export_df['Neuroticism'] = df['NeuroticismBig5'].round(4)
+        export_df['Neuroticism'] = df['NeuroticismBig5']
     else:
         export_df['Neuroticism'] = ''
     
@@ -608,14 +586,14 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     # 9. Religious composite (computed, non-standardized)
     # This comes from the decision function output
     if 'disclose_income_religious_composite' in df.columns:
-        export_df['Religious'] = df['disclose_income_religious_composite'].round(4)
+        export_df['Religious'] = df['disclose_income_religious_composite']
     else:
         # Fallback: compute it here if not available
         # Religious = (ReligiousAffiliation + scaled_ReligiousService) / 2
         # where scaled_ReligiousService = ReligiousService / 4 (assuming max=4)
         if 'ReligiousAffiliation' in df.columns and 'ReligiousService' in df.columns:
             rs_scaled = df['ReligiousService'] / 4.0  # Scale to 0-1
-            export_df['Religious'] = ((df['ReligiousAffiliation'] + rs_scaled) / 2).round(4)
+            export_df['Religious'] = (df['ReligiousAffiliation'] + rs_scaled) / 2
         else:
             export_df['Religious'] = ''
     
@@ -633,9 +611,9 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # 11. Income (right after Assigned Allowance Level)
     if 'income' in df.columns:
-        export_df['income'] = df['income'].round(2)
+        export_df['income'] = df['income']
     elif 'actual_allowance' in df.columns:
-        export_df['income'] = df['actual_allowance'].round(2)
+        export_df['income'] = df['actual_allowance']
     else:
         export_df['income'] = ''
     
@@ -655,7 +633,7 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # TWT+Sospeso (observed prosocial behavior)
     if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
-        export_df['TWT+Sospeso'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(4)
+        export_df['TWT+Sospeso'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
     else:
         export_df['TWT+Sospeso'] = ''
     
@@ -665,21 +643,21 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # 14. WOPB (Observed Prosocial Behavior Weight)
     if 'disclose_income_wopb' in df.columns:
-        export_df['WOPB'] = df['disclose_income_wopb'].round(4)
+        export_df['WOPB'] = df['disclose_income_wopb']
     else:
         # Default value from config
         export_df['WOPB'] = 0.25
     
     # 15. WPB (Prosocial Behavior Weight in final equation)
     if 'disclose_income_wpb' in df.columns:
-        export_df['WPB'] = df['disclose_income_wpb'].round(4)
+        export_df['WPB'] = df['disclose_income_wpb']
     else:
         # Default value from config
         export_df['WPB'] = 0.50
     
     # 16. Intercept (β₀)
     if 'disclose_income_intercept' in df.columns:
-        export_df['Intercept'] = df['disclose_income_intercept'].round(5)
+        export_df['Intercept'] = df['disclose_income_intercept']
     else:
         # Default value from config
         export_df['Intercept'] = 0.75
@@ -690,24 +668,24 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # 17. PB_i (Anchored Prosocial Behavior)
     if 'disclose_income_anchored_pb' in df.columns:
-        export_df['PB_i'] = df['disclose_income_anchored_pb'].round(6)
+        export_df['PB_i'] = df['disclose_income_anchored_pb']
     else:
         export_df['PB_i'] = ''
     
-    # 18. DI_i (Continuous value before Y/N classification)
+    # 18. Disclosure Income (Continuous value before Y/N classification)
     if 'disclose_income_di' in df.columns:
-        export_df['DI_i'] = df['disclose_income_di'].round(6)
+        export_df['Disclosure Income'] = df['disclose_income_di']
     elif 'disclose_income_raw' in df.columns:
-        export_df['DI_i'] = df['disclose_income_raw'].round(6)
+        export_df['Disclosure Income'] = df['disclose_income_raw']
     else:
-        export_df['DI_i'] = ''
+        export_df['Disclosure Income'] = ''
     
     # ========================================================================
     # 19. Final Decision (LAST COLUMN - nothing after this)
     # ========================================================================
     
     # disclose_income (Y/N to 1/0)
-    export_df['disclose_income'] = df['disclose_income'].apply(
+    export_df['Disclose Income (Y=1)'] = df['disclose_income'].apply(
         lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
     )
     
