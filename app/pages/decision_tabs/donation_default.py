@@ -222,6 +222,20 @@ def render_donation_sigma_controls(mode_suffix: str):
 
     else:
         # QUINTILE MODE: 5 sliders (one per income level)
+        # Warn user that quintile sigma only applies to categorical mode
+        current_income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+        if 'continuous' in str(current_income_mode).lower() and 'compare' not in str(current_income_mode).lower():
+            st.warning(
+                "**Continuous mode uses overall σ.** "
+                "Per-quintile σ values are based on categorical budget levels and are "
+                "not applicable to the continuous income specification. "
+                "The simulation will use the overall σ (9.8995 × coefficient) for continuous runs."
+            )
+        elif 'compare' in str(current_income_mode).lower():
+            st.info(
+                "**Note:** Per-quintile σ values will only apply to the **categorical** run. "
+                "The continuous run will use the overall σ (9.8995 × coefficient)."
+            )
         st.markdown("**Per-Quintile σ Coefficients**")
         st.caption("Each level has its own base σ from empirical data:")
 

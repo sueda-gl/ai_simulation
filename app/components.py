@@ -62,7 +62,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
         elif 'disclose_income' in df.columns:
             y_rate = (df['disclose_income'] == 'Y').mean()
-            st.metric("Disclose Income (Y)", f"{y_rate:.1%}")
+            st.metric("Disclose Income (Y)", f"{y_rate:.2%}")
     
     # Donation rate analysis (if available) - always use truncated
     donation_col = 'donation_default'
@@ -142,7 +142,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
                     ordered_data.append({
                         'Choice': choice,
                         'Count': count,
-                        'Percentage': f"{(count/total)*100:.1f}%"
+                        'Percentage': f"{(count/total)*100:.2f}%"
                     })
             
             breakdown_df = pd.DataFrame(ordered_data)
@@ -221,7 +221,7 @@ def render_inline_selection_button(result_key, result_df):
             st.caption(f"📊 Quick Summary: {len(result_df):,} agents, avg donation {mean_donation:.2%}")
         elif 'disclose_income' in result_df.columns:
             y_rate = (result_df['disclose_income'] == 'Y').mean()
-            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, Y rate {y_rate:.1%}")
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, Y rate {y_rate:.2%}")
         else:
             st.caption(f"📊 Quick Summary: {len(result_df):,} agents")
     
@@ -304,7 +304,7 @@ def show_disclose_income_overview(df, title_suffix="", result_key=None, enable_s
         st.metric("Not Disclosed (N)", f"{n_count:,}")
     
     # Disclosure rate metric
-    st.metric("Disclosure Rate", f"{y_rate:.1f}%")
+    st.metric("Disclosure Rate", f"{y_rate:.2f}%")
     
     # Pie chart (compact)
     import plotly.express as px
@@ -468,7 +468,7 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
         classification_df = pd.DataFrame({
             'Choice': ['Y (disclose)', 'N (not disclose)'],
             'Count': [y_count, n_count],
-            '%': [f"{y_pct:.1f}%", f"{n_pct:.1f}%"]
+            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%"]
         })
         st.dataframe(classification_df, hide_index=True, use_container_width=True)
     
@@ -510,11 +510,11 @@ def render_disclose_income_selection_button(result_key, result_df):
         if raw_col in result_df.columns:
             mean_raw = result_df[raw_col].mean()
             y_rate = (result_df[raw_col] > 0).mean() * 100
-            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, mean DI={mean_raw:.4f}, Y rate={y_rate:.1f}%")
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, mean DI={mean_raw:.4f}, Y rate={y_rate:.2f}%")
         else:
             y_count = (result_df['disclose_income'] == 'Y').sum()
             y_rate = (y_count / len(result_df)) * 100 if len(result_df) > 0 else 0
-            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, Y rate={y_rate:.1f}%")
+            st.caption(f"📊 Quick Summary: {len(result_df):,} agents, Y rate={y_rate:.2f}%")
     
     with col2:
         # Selection button

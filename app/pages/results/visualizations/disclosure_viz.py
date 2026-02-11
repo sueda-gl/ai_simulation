@@ -19,7 +19,7 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
     # All numeric columns use General format to preserve original precision
     numeric_columns = [
         'Agreeable', 'Openness', 'Honesty_Humility', 'Extraversion', 'Neuroticism',
-        'Religious', 'TWT+Sospeso', 'Predicted PB', 'WOPB', 'WPB', 'Intercept', 'PB_i', 'Disclosure Income',
+        'Religious', 'TWT+Sospeso', 'calc_PB', 'WOPB', 'WPB', 'Intercept', 'PB_i', 'Disclosure Income',
         'income', 'Income', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
         'Assigned income from the distribution',
     ]
@@ -52,14 +52,14 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
     with col2:
         yes_count = value_counts.get('Y', 0)
         pct_yes = (yes_count/total)*100
-        st.metric("Disclosed (Y)", f"{yes_count:,} ({pct_yes:.1f}%)")
+        st.metric("Disclosed (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
     with col3:
         no_count = value_counts.get('N', 0)
         pct_no = (no_count/total)*100
-        st.metric("Not Disclosed (N)", f"{no_count:,} ({pct_no:.1f}%)")
+        st.metric("Not Disclosed (N)", f"{no_count:,} ({pct_no:.2f}%)")
     with col4:
         disclosure_rate = (yes_count/total)*100
-        st.metric("Disclosure Rate", f"{disclosure_rate:.1f}%")
+        st.metric("Disclosure Rate", f"{disclosure_rate:.2f}%")
     
     # Check if raw DI values are available for histogram
     has_raw_values = 'disclose_income_raw' in df.columns
@@ -88,7 +88,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                     ordered_data.append({
                         'Choice': choice,
                         'Count': count,
-                        'Percentage': f"{(count/total)*100:.1f}%"
+                        'Percentage': f"{(count/total)*100:.2f}%"
                     })
             breakdown_df = pd.DataFrame(ordered_data)
             st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
@@ -195,7 +195,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                     classification_df = pd.DataFrame({
                         'Choice': ['Y (disclose)', 'N (not disclose)'],
                         'Count': [y_count_raw, n_count_raw],
-                        '%': [f"{y_pct_raw:.1f}%", f"{n_pct_raw:.1f}%"]
+                        '%': [f"{y_pct_raw:.2f}%", f"{n_pct_raw:.2f}%"]
                     })
                     st.dataframe(classification_df, hide_index=True, use_container_width=True)
             else:
@@ -226,7 +226,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                     ordered_data.append({
                         'Choice': choice,
                         'Count': count,
-                        'Percentage': f"{(count/total)*100:.1f}%"
+                        'Percentage': f"{(count/total)*100:.2f}%"
                     })
             
             breakdown_df = pd.DataFrame(ordered_data)
@@ -308,13 +308,13 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
             st.metric("Qualified Agents", f"{qualified_agents:,}")
         with col2:
             pct_yes = (yes_count/qualified_agents)*100
-            st.metric("Disclosed (Y)", f"{yes_count:,} ({pct_yes:.1f}%)")
+            st.metric("Disclosed (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
         with col3:
             pct_no = (no_count/qualified_agents)*100
-            st.metric("Not Disclosed (N)", f"{no_count:,} ({pct_no:.1f}%)")
+            st.metric("Not Disclosed (N)", f"{no_count:,} ({pct_no:.2f}%)")
         with col4:
             disclosure_rate = (yes_count/qualified_agents)*100
-            st.metric("Disclosure Rate", f"{disclosure_rate:.1f}%",
+            st.metric("Disclosure Rate", f"{disclosure_rate:.2f}%",
                       help="Percentage of qualified agents who disclosed documents")
         
         # Binary choice visualization - pie chart (only Y/N, excluding NA)
@@ -343,7 +343,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
                     ordered_data.append({
                         'Choice': choice,
                         'Count': count,
-                        'Percentage': f"{(count/qualified_agents)*100:.1f}%"
+                        'Percentage': f"{(count/qualified_agents)*100:.2f}%"
                     })
             
             qualified_breakdown = pd.DataFrame(ordered_data)
@@ -368,15 +368,15 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
             st.metric("Total Agents", f"{customer_stats['total']:,}")
         with type_col2:
             st.metric("Regular Customers", 
-                     f"{customer_stats['regular']['count']:,} ({customer_stats['regular']['percentage']:.1f}%)",
+                     f"{customer_stats['regular']['count']:,} ({customer_stats['regular']['percentage']:.2f}%)",
                      help="Did not disclose income → Pay regular Purchase Now (PN) prices or place bids (BID)")
         with type_col3:
             st.metric("Fixed Customers", 
-                     f"{customer_stats['fixed']['count']:,} ({customer_stats['fixed']['percentage']:.1f}%)",
+                     f"{customer_stats['fixed']['count']:,} ({customer_stats['fixed']['percentage']:.2f}%)",
                      help="Disclosed income but not documents → Use fixed pricing only (FIXED)")
         with type_col4:
             st.metric("Discount Customers", 
-                     f"{customer_stats['discount']['count']:,} ({customer_stats['discount']['percentage']:.1f}%)",
+                     f"{customer_stats['discount']['count']:,} ({customer_stats['discount']['percentage']:.2f}%)",
                      help="Income < threshold, disclosed both → Get discount pricing (DISCOUNT)")
         
         # Detailed explanation expander
@@ -455,9 +455,9 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
                     f"{customer_stats['discount']['count']:,}"
                 ],
                 'Share': [
-                    f"{customer_stats['regular']['percentage']:.1f}%",
-                    f"{customer_stats['fixed']['percentage']:.1f}%",
-                    f"{customer_stats['discount']['percentage']:.1f}%"
+                    f"{customer_stats['regular']['percentage']:.2f}%",
+                    f"{customer_stats['fixed']['percentage']:.2f}%",
+                    f"{customer_stats['discount']['percentage']:.2f}%"
                 ]
             })
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
@@ -641,11 +641,11 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     # 14. Predicted Prosocial Behavior (trait-based)
     # ========================================================================
     
-    # Predicted PB (weighted_prosocial from traits, before anchoring)
+    # calc_PB (weighted_prosocial from traits, before anchoring)
     if 'disclose_income_weighted_prosocial' in df.columns:
-        export_df['Predicted PB'] = df['disclose_income_weighted_prosocial']
+        export_df['calc_PB'] = df['disclose_income_weighted_prosocial']
     else:
-        export_df['Predicted PB'] = ''
+        export_df['calc_PB'] = ''
     
     # ========================================================================
     # 15-17. Configuration Values (Weights and Intercept)

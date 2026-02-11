@@ -1492,6 +1492,7 @@ def get_current_disclose_income_params():
         },
         'stochastic': {
             'sigma_enabled': st.session_state.get('di_sigma_enabled', False),
+            'sigma_in_copula': st.session_state.get('di_sigma_in_copula', False),
             'scale_factor': st.session_state.get('di_scale_factor', 1.0),
             'sigma_strategy': st.session_state.get('di_sigma_strategy', 'overall'),
             'quintile_scale_factors': st.session_state.get('di_quintile_scale_factors', {})

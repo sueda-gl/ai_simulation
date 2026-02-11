@@ -108,22 +108,22 @@ disclose_income:
   z_scoring:
     Agreeable:
       mean: 3.546071
-      sd: 0.373271
+      sd: 0.3732712
     Honesty_Humility:
       mean: 3.392187
-      sd: 0.558664
+      sd: 0.5586641
     ExtraversionBig5:
       mean: 3.557857
-      sd: 0.698957
+      sd: 0.6989565
     NeuroticismBig5:
       mean: 2.702143
-      sd: 0.683966
+      sd: 0.6839657
     OpennessBig5:
       mean: 4.060714
-      sd: 0.506827
+      sd: 0.5068274
     religious_composite:
-      mean: 0.189286
-      sd: 0.261811
+      mean: 0.1892857
+      sd: 0.2618114
     TWT_Sospeso:
       mean: 3.357143
       sd: 9.899547
@@ -133,13 +133,13 @@ disclose_income:
   composite_z_scoring:
     weighted_prosocial:
       mean: 0.0
-      sd: 0.0859299558
-    direct_effect:
+      sd: 0.08608372
+    weighted_disclosure_categorical:
       mean: 0.0
-      sd: 0.0344991747
+      sd: 0.034560945
     anchored_pb:
       mean: 0.0
-      sd: 0.2594725501
+      sd: 0.7984211971
   stochastic:
     sigma_strategy: overall
     sigma_overall: 9.899547

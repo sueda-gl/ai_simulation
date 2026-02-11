@@ -88,6 +88,17 @@ def initialize_disclose_income_session_state():
         })
         st.session_state.di_quintile_scale_factors = quintile_scales
 
+    # Initialize copula stochastic key
+    if 'di_sigma_in_copula' not in st.session_state:
+        st.session_state.di_sigma_in_copula = False
+
+    # Initialize widget keys for copula stochastic checkboxes
+    if 'di_tab_sigma_in_copula' not in st.session_state:
+        st.session_state.di_tab_sigma_in_copula = st.session_state.get('di_sigma_in_copula', False)
+
+    if 'di_tab_sigma_in_copula_compare' not in st.session_state:
+        st.session_state.di_tab_sigma_in_copula_compare = st.session_state.get('di_sigma_in_copula', False)
+
 
 def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
     """Restore a widget key from storage dictionary before widget renders."""
@@ -113,6 +124,166 @@ def save_to_disclose_income_storage(widget_key, storage_key):
 
     if widget_key in st.session_state:
         st.session_state.disclose_income_tab_persistence[storage_key] = st.session_state[widget_key]
+
+
+def render_di_sigma_controls(mode_suffix: str):
+    """
+    Render sigma strategy controls (overall vs quintile) for disclose_income.
+
+    Args:
+        mode_suffix: One of 'copula', 'research', or 'compare' to distinguish widget keys
+    """
+    # Base sigma values per quintile (from empirical data)
+    BASE_SIGMAS = {
+        '1': 5.705052,   # Level 1 (€16)
+        '2': 3.069326,   # Level 2 (€32)
+        '3': 3.532226,   # Level 3 (€72)
+        '4': 12.219622,  # Level 4 (€128)
+        '5': 16.854622,  # Level 5 (€200)
+    }
+
+    LEVEL_LABELS = {
+        '1': 'Level 1 (€16)',
+        '2': 'Level 2 (€32)',
+        '3': 'Level 3 (€72)',
+        '4': 'Level 4 (€128)',
+        '5': 'Level 5 (€200)',
+    }
+
+    # Strategy selection: Overall vs Quintiles
+    st.markdown("**σ mode**")
+
+    strategy_widget_key = f'di_tab_sigma_strategy_{mode_suffix}'
+    strategy_storage_key = f'di_sigma_strategy_{mode_suffix}'
+    current_strategy = st.session_state.get('di_sigma_strategy', 'overall')
+
+    strategy_val = restore_widget_from_storage(
+        strategy_widget_key,
+        st.session_state.disclose_income_tab_persistence,
+        strategy_storage_key,
+        current_strategy
+    )
+
+    # Normalize strategy value
+    if 'quintile' in str(strategy_val).lower():
+        strategy_val = 'quintile'
+    else:
+        strategy_val = 'overall'
+
+    def on_strategy_change():
+        """Handle sigma strategy changes."""
+        new_strategy = st.session_state[strategy_widget_key]
+        save_to_disclose_income_storage(strategy_widget_key, strategy_storage_key)
+        st.session_state.di_sigma_strategy = new_strategy
+
+    sigma_strategy = st.radio(
+        "Apply σ uniformly or per budget level?",
+        options=['overall', 'quintile'],
+        format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
+        index=0 if strategy_val == 'overall' else 1,
+        key=strategy_widget_key,
+        on_change=on_strategy_change,
+        horizontal=True
+    )
+    st.session_state.di_sigma_strategy = sigma_strategy
+
+    st.markdown("---")
+
+    if sigma_strategy == 'overall':
+        # OVERALL MODE: Single slider
+        st.caption("Base σ = 9.8995 (empirical from 280 participants)")
+
+        coeff_widget_key = f'di_tab_sigma_coefficient_{mode_suffix}'
+        coeff_storage_key = f'di_sigma_coefficient_{mode_suffix}'
+
+        coeff_val = restore_widget_from_storage(
+            coeff_widget_key,
+            st.session_state.disclose_income_tab_persistence,
+            coeff_storage_key,
+            st.session_state.get('di_scale_factor', 1.0)
+        )
+
+        # Clamp value to valid range [0, 2]
+        coeff_val = max(0.0, min(float(coeff_val), 2.0))
+
+        sigma_coefficient = st.slider(
+            "σ Coefficient (multiplier)",
+            min_value=0.0,
+            max_value=2.0,
+            value=coeff_val if coeff_val != 0.0 else 1.0,
+            step=0.01,
+            help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+            key=coeff_widget_key,
+            on_change=lambda: save_to_disclose_income_storage(coeff_widget_key, coeff_storage_key)
+        )
+        st.session_state.di_scale_factor = sigma_coefficient
+
+        effective_sigma = 9.8995 * sigma_coefficient
+        st.caption(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
+
+    else:
+        # QUINTILE MODE: 5 sliders (one per income level)
+        current_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+        if 'continuous' in str(current_income_mode).lower() and 'compare' not in str(current_income_mode).lower():
+            st.warning(
+                "**Continuous mode uses overall σ.** "
+                "Per-quintile σ values are based on categorical budget levels and are "
+                "not applicable to the continuous income specification. "
+                "The simulation will use the overall σ (9.8995 × coefficient) for continuous runs."
+            )
+        elif 'compare' in str(current_income_mode).lower():
+            st.info(
+                "**Note:** Per-quintile σ values will only apply to the **categorical** run. "
+                "The continuous run will use the overall σ (9.8995 × coefficient)."
+            )
+        st.markdown("**Per-Quintile σ Coefficients**")
+        st.caption("Each level has its own base σ from empirical data:")
+
+        quintile_coefficients = {}
+        default_scale = st.session_state.get('di_scale_factor', 1.0)
+        current_quintile_scales = st.session_state.get('di_quintile_scale_factors', {
+            '1': default_scale, '2': default_scale, '3': default_scale,
+            '4': default_scale, '5': default_scale
+        })
+
+        for level in ['1', '2', '3', '4', '5']:
+            level_scale = current_quintile_scales.get(level, default_scale)
+            level_scale = max(0.0, min(float(level_scale), 2.0))
+
+            storage_key = f'di_sigma_quintile_{level}_{mode_suffix}'
+            widget_key = f'di_tab_sigma_q{level}_{mode_suffix}'
+
+            q_val = restore_widget_from_storage(
+                widget_key,
+                st.session_state.disclose_income_tab_persistence,
+                storage_key,
+                level_scale
+            )
+            q_val = max(0.0, min(float(q_val), 2.0))
+
+            base_sigma = BASE_SIGMAS[level]
+
+            col_slider, col_result = st.columns([3, 1])
+            with col_slider:
+                q_coeff = st.slider(
+                    f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
+                    min_value=0.0,
+                    max_value=2.0,
+                    value=q_val if q_val != 0.0 else 1.0,
+                    step=0.01,
+                    key=widget_key,
+                    on_change=lambda l=level: save_to_disclose_income_storage(
+                        f'di_tab_sigma_q{l}_{mode_suffix}', f'di_sigma_quintile_{l}_{mode_suffix}'
+                    )
+                )
+            with col_result:
+                effective = base_sigma * q_coeff
+                st.metric("Effective σ", f"{effective:.2f}")
+
+            quintile_coefficients[level] = q_coeff
+
+        # Save quintile scale factors to session state
+        st.session_state.di_quintile_scale_factors = quintile_coefficients
 
 
 def render_disclose_income_tab():
@@ -216,171 +387,114 @@ def render_disclose_income_tab():
 
         stochastic = config.get('stochastic', {})
         current_sigma_enabled = stochastic.get('sigma_value', 0) > 0
-        current_scale = stochastic.get('scale_factor', 1.0)
-        current_strategy = stochastic.get('sigma_strategy', 'overall')
-        
-        # Get quintile-specific scale factors from config (default to same as overall)
-        current_quintile_scales = stochastic.get('quintile_scale_factors', {
-            '1': current_scale, '2': current_scale, '3': current_scale,
-            '4': current_scale, '5': current_scale
-        })
 
-        # Restore sigma enabled checkbox
-        sigma_val = restore_widget_from_storage(
-            'di_tab_sigma_enabled',
-            st.session_state.disclose_income_tab_persistence,
-            'sigma_enabled',
-            current_sigma_enabled
-        )
+        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
 
-        sigma_enabled = st.checkbox(
-            "Use Normal(anchor, σ) draw in Research mode",
-            value=sigma_val,
-            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
-            key="di_tab_sigma_enabled",
-            on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled', 'sigma_enabled')
-        )
-        st.session_state.di_sigma_enabled = sigma_enabled
-
-        if sigma_enabled:
-            # Strategy selection: Overall vs Quintiles
-            st.markdown("**σ mode**")
-            
-            # Restore strategy from storage
-            strategy_val = restore_widget_from_storage(
-                'di_tab_sigma_strategy',
+        if population_mode == "Copula (synthetic)":
+            # Show only Copula controls
+            copula_val = restore_widget_from_storage(
+                'di_tab_sigma_in_copula',
                 st.session_state.disclose_income_tab_persistence,
-                'sigma_strategy',
-                current_strategy
+                'di_sigma_in_copula',
+                False
             )
-            
-            # Normalize strategy value
-            if 'quintile' in str(strategy_val).lower():
-                strategy_val = 'quintile'
-            else:
-                strategy_val = 'overall'
-            
-            def on_strategy_change():
-                """Handle sigma strategy changes."""
-                new_strategy = st.session_state.di_tab_sigma_strategy
-                save_to_disclose_income_storage('di_tab_sigma_strategy', 'sigma_strategy')
-                st.session_state.di_sigma_strategy = new_strategy
-            
-            sigma_strategy = st.radio(
-                "Apply σ uniformly or per budget level?",
-                options=['overall', 'quintile'],
-                format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-                index=0 if strategy_val == 'overall' else 1,
-                key="di_tab_sigma_strategy",
-                on_change=on_strategy_change,
-                horizontal=True
+
+            sigma_in_copula = st.checkbox(
+                "Add Normal(anchor, σ) draw to Copula runs",
+                value=copula_val,
+                help="When enabled, Copula mode will also use the stochastic component",
+                key="di_tab_sigma_in_copula",
+                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_in_copula', 'di_sigma_in_copula')
             )
-            st.session_state.di_sigma_strategy = sigma_strategy
-            
-            st.markdown("---")
-            
-            if sigma_strategy == 'overall':
-                # OVERALL MODE: Single slider
-                st.caption("Base σ = 9.8995 (empirical from 280 participants)")
+            st.session_state.di_sigma_in_copula = sigma_in_copula
+            st.session_state.di_sigma_enabled = True  # Default for research mode
 
-                # Restore coefficient widget value
-                coeff_val = restore_widget_from_storage(
-                    'di_tab_sigma_coefficient',
-                    st.session_state.disclose_income_tab_persistence,
-                    'sigma_coefficient',
-                    current_scale
-                )
-                
-                # Clamp value to valid range [0, 2]
-                coeff_val = max(0.0, min(float(coeff_val), 2.0))
-                
-                if 'di_tab_sigma_coefficient' in st.session_state:
-                    if st.session_state.di_tab_sigma_coefficient > 2.0:
-                        st.session_state.di_tab_sigma_coefficient = 2.0
-                    elif st.session_state.di_tab_sigma_coefficient < 0.0:
-                        st.session_state.di_tab_sigma_coefficient = 0.0
-
-                sigma_coefficient = st.slider(
-                    "σ Coefficient (multiplier)",
-                    min_value=0.0,
-                    max_value=2.0,
-                    value=coeff_val if coeff_val != 0.0 else 1.0,
-                    step=0.01,
-                    help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
-                    key="di_tab_sigma_coefficient",
-                    on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_coefficient', 'sigma_coefficient')
-                )
-                st.session_state.di_scale_factor = sigma_coefficient
-
-                effective_sigma = 9.8995 * sigma_coefficient
-                st.caption(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
-            
+            if sigma_in_copula:
+                render_di_sigma_controls('copula')
             else:
-                # QUINTILE MODE: 5 sliders (one per income level)
-                st.markdown("**Per-Quintile σ Coefficients**")
-                st.caption("Each level has its own base σ from empirical data:")
-                
-                # Base sigma values per quintile (from Stata output)
-                base_sigmas = {
-                    '1': 5.705052,  # Level 1 (€16)
-                    '2': 3.069326,  # Level 2 (€32)
-                    '3': 3.532226,  # Level 3 (€72)
-                    '4': 12.21962,  # Level 4 (€128)
-                    '5': 16.85462,  # Level 5 (€200)
-                }
-                
-                level_labels = {
-                    '1': 'Level 1 (€16)',
-                    '2': 'Level 2 (€32)',
-                    '3': 'Level 3 (€72)',
-                    '4': 'Level 4 (€128)',
-                    '5': 'Level 5 (€200)',
-                }
-                
-                quintile_coefficients = {}
-                
-                for level in ['1', '2', '3', '4', '5']:
-                    # Get current value for this level
-                    level_scale = current_quintile_scales.get(level, current_scale)
-                    level_scale = max(0.0, min(float(level_scale), 2.0))
-                    
-                    # Restore from storage
-                    storage_key = f'sigma_quintile_{level}'
-                    widget_key = f'di_tab_sigma_q{level}'
-                    
-                    q_val = restore_widget_from_storage(
-                        widget_key,
-                        st.session_state.disclose_income_tab_persistence,
-                        storage_key,
-                        level_scale
-                    )
-                    q_val = max(0.0, min(float(q_val), 2.0))
-                    
-                    base_sigma = base_sigmas[level]
-                    
-                    col_slider, col_result = st.columns([3, 1])
-                    with col_slider:
-                        q_coeff = st.slider(
-                            f"{level_labels[level]} (base σ={base_sigma:.2f})",
-                            min_value=0.0,
-                            max_value=2.0,
-                            value=q_val if q_val != 0.0 else 1.0,
-                            step=0.01,
-                            key=widget_key,
-                            on_change=lambda l=level: save_to_disclose_income_storage(f'di_tab_sigma_q{l}', f'sigma_quintile_{l}')
-                        )
-                    with col_result:
-                        effective = base_sigma * q_coeff
-                        st.metric("Effective σ", f"{effective:.2f}")
-                    
-                    quintile_coefficients[level] = q_coeff
-                
-                # Save quintile scale factors to session state
-                st.session_state.di_quintile_scale_factors = quintile_coefficients
-                
-        else:
-            st.info("Stochastic component disabled - using anchor values directly")
+                st.info("Stochastic component disabled - using anchor values directly")
+                st.session_state.di_scale_factor = 0.0
+
+        elif population_mode == "Research Specification":
+            # Show only Research controls
+            sigma_val = restore_widget_from_storage(
+                'di_tab_sigma_enabled',
+                st.session_state.disclose_income_tab_persistence,
+                'sigma_enabled',
+                current_sigma_enabled
+            )
+
+            sigma_enabled = st.checkbox(
+                "Use Normal(anchor, σ) draw in Research mode",
+                value=sigma_val,
+                help="When enabled, adds stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
+                key="di_tab_sigma_enabled",
+                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled', 'sigma_enabled')
+            )
+            st.session_state.di_sigma_enabled = sigma_enabled
+            st.session_state.di_sigma_in_copula = False  # Not applicable
+
+            if sigma_enabled:
+                render_di_sigma_controls('research')
+            else:
+                st.info("Stochastic component disabled - using anchor values directly")
+                st.session_state.di_scale_factor = 0.0
+
+        elif population_mode == "Research Baseline":
+            # Research Baseline mode - no stochastic component, anchor values only
+            st.session_state.di_sigma_in_copula = False
+            st.session_state.di_sigma_enabled = False
             st.session_state.di_scale_factor = 0.0
+
+            st.info("📊 Research Baseline Mode: Uses original 280 participants with anchor values only (no stochastic component)")
+            st.caption("🎯 This mode returns the deterministic anchor values")
+
+        else:  # Compare all
+            # Show controls for both modes
+            st.markdown("**Copula Mode Controls:**")
+
+            copula_comp_val = restore_widget_from_storage(
+                'di_tab_sigma_in_copula_compare',
+                st.session_state.disclose_income_tab_persistence,
+                'di_sigma_in_copula_compare',
+                False
+            )
+
+            sigma_in_copula = st.checkbox(
+                "Add Normal(anchor, σ) draw to Copula runs",
+                value=copula_comp_val,
+                help="When enabled, Copula mode will also use the stochastic component",
+                key="di_tab_sigma_in_copula_compare",
+                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_in_copula_compare', 'di_sigma_in_copula_compare')
+            )
+            st.session_state.di_sigma_in_copula = sigma_in_copula
+
+            st.markdown("**Research Specification Controls:**")
+
+            res_comp_val = restore_widget_from_storage(
+                'di_tab_sigma_enabled_compare',
+                st.session_state.disclose_income_tab_persistence,
+                'sigma_enabled_compare',
+                True
+            )
+
+            sigma_enabled = st.checkbox(
+                "Use Normal(anchor, σ) draw in Research Specification mode",
+                value=res_comp_val,
+                help="When enabled, Research Specification mode will add stochastic variation via Normal(anchor, σ) draws.",
+                key="di_tab_sigma_enabled_compare",
+                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled_compare', 'sigma_enabled_compare')
+            )
+            st.session_state.di_sigma_enabled = sigma_enabled
+
+            st.markdown("**Research Baseline:** Always uses anchor values only (no stochastic component)")
+            st.caption("Research Baseline = deterministic anchor values")
+
+            if sigma_in_copula or sigma_enabled:
+                render_di_sigma_controls('compare')
+            else:
+                st.info("Stochastic component disabled for both modes - using anchor values directly")
+                st.session_state.di_scale_factor = 0.0
 
         # Anchor Mix
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
@@ -711,6 +825,9 @@ def _apply_config_to_widget_keys(config):
     st.session_state.di_tab_sigma_coefficient = stochastic.get('scale_factor', 1.0)
     st.session_state.di_tab_sigma_strategy = stochastic.get('sigma_strategy', 'overall')
     st.session_state.di_tab_income_mode = config.get('income_mode', 'Categorical only')
+    st.session_state.di_tab_sigma_in_copula = False
+    st.session_state.di_tab_sigma_in_copula_compare = False
+    st.session_state.di_sigma_in_copula = False
 
     default_scale = stochastic.get('scale_factor', 1.0)
     quintile_scales = stochastic.get('quintile_scale_factors', {})
@@ -802,6 +919,7 @@ def render_actions_and_management_section(config):
         st.write(f"- WOPB (di_wopb): {st.session_state.get('di_wopb', 'NOT SET')}")
         st.write(f"- WPB (di_wpb): {st.session_state.get('di_wpb', 'NOT SET')}")
         st.write(f"- Sigma Enabled (di_sigma_enabled): {st.session_state.get('di_sigma_enabled', 'NOT SET')}")
+        st.write(f"- Sigma in Copula (di_sigma_in_copula): {st.session_state.get('di_sigma_in_copula', 'NOT SET')}")
         st.write(f"- σ mode (di_sigma_strategy): {st.session_state.get('di_sigma_strategy', 'NOT SET')}")
         st.write(f"- σ Coefficient (di_scale_factor): {st.session_state.get('di_scale_factor', 'NOT SET')}")
         st.write(f"- Quintile Scale Factors: {st.session_state.get('di_quintile_scale_factors', 'NOT SET')}")

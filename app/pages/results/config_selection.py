@@ -184,7 +184,7 @@ def render_disclose_income_config_selection_ui(results_dict):
                 col1, col2, col3 = st.columns([2, 2, 1])
                 with col1:
                     y_rate = metrics.get('y_rate', 0)
-                    st.caption(f"Y Rate: {y_rate:.1%}")
+                    st.caption(f"Y Rate: {y_rate:.2%}")
                 with col2:
                     timestamp = config.get('selected_timestamp')
                     if timestamp:
@@ -397,7 +397,7 @@ def render_complete_simulation_section():
                     income_mode = config.get('params', {}).get('income_mode',
                         config.get('income_mode', 'Unknown'))
                     y_rate = config.get('metrics', {}).get('y_rate', 0)
-                    st.caption(f"  ✅ {decision_title}: {income_mode} (Y rate: {y_rate:.1%})")
+                    st.caption(f"  ✅ {decision_title}: {income_mode} (Y rate: {y_rate:.2%})")
                 else:
                     st.caption(f"  ✅ {decision_title}")
         else:

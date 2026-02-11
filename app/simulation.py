@@ -410,12 +410,29 @@ def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_confi
     
     stochastic = params.get('stochastic', {})
     
+    di_sigma_in_copula = stochastic.get('sigma_in_copula', st.session_state.get('di_sigma_in_copula', False))
+
     if pop_mode == "baseline":
         # Baseline mode: no stochastic component
         di_config['stochastic']['sigma_value'] = 0.0
+        di_config['stochastic']['in_copula'] = False
+    elif pop_mode == "copula":
+        # Copula mode: use saved or session state in_copula flag
+        di_config['stochastic']['in_copula'] = di_sigma_in_copula
+        if di_sigma_in_copula:
+            di_config['stochastic']['sigma_value'] = 9.899547
+            if 'sigma_strategy' in stochastic:
+                di_config['stochastic']['sigma_strategy'] = stochastic['sigma_strategy']
+            if 'scale_factor' in stochastic:
+                di_config['stochastic']['scale_factor'] = stochastic['scale_factor']
+            if 'quintile_scale_factors' in stochastic:
+                di_config['stochastic']['quintile_scale_factors'] = stochastic['quintile_scale_factors']
+        else:
+            di_config['stochastic']['sigma_value'] = 0.0
     elif stochastic.get('sigma_enabled', False):
-        # Stochastic enabled in saved config
+        # Research/documentation mode with stochastic enabled in saved config
         di_config['stochastic']['sigma_value'] = 9.899547
+        di_config['stochastic']['in_copula'] = False
         if 'sigma_strategy' in stochastic:
             di_config['stochastic']['sigma_strategy'] = stochastic['sigma_strategy']
         if 'scale_factor' in stochastic:
@@ -425,6 +442,7 @@ def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_confi
     else:
         # Stochastic disabled
         di_config['stochastic']['sigma_value'] = 0.0
+        di_config['stochastic']['in_copula'] = False
     
     # IMPORTANT: Always apply CURRENT session state stochastic settings
     # This ensures UI changes (like switching to quintile mode) take effect
@@ -446,6 +464,7 @@ def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_confi
     if 'prosocial_weight' in anchor_weights:
         st.session_state.di_wpb = anchor_weights['prosocial_weight']
     st.session_state.di_sigma_enabled = stochastic.get('sigma_enabled', False)
+    st.session_state.di_sigma_in_copula = di_sigma_in_copula
 
 
 def _apply_disclose_income_from_session_state(orchestrator, pop_mode: str, inc_mode: str = None):
@@ -499,13 +518,30 @@ def _apply_disclose_income_from_session_state(orchestrator, pop_mode: str, inc_m
     
     # Check if stochastic is enabled via UI
     sigma_enabled = st.session_state.get('di_sigma_enabled', False)
+    di_sigma_in_copula = st.session_state.get('di_sigma_in_copula', False)
     
     if pop_mode == "baseline":
         # Baseline mode: no stochastic component
         di_config['stochastic']['sigma_value'] = 0.0
+        di_config['stochastic']['in_copula'] = False
+    elif pop_mode == "copula":
+        # Copula mode: use di_sigma_in_copula flag
+        di_config['stochastic']['in_copula'] = di_sigma_in_copula
+        if di_sigma_in_copula:
+            # Copula stochastic enabled - set sigma and apply strategy/scale
+            di_config['stochastic']['sigma_value'] = 9.899547
+            if 'di_sigma_strategy' in st.session_state:
+                di_config['stochastic']['sigma_strategy'] = st.session_state.di_sigma_strategy
+            if 'di_scale_factor' in st.session_state:
+                di_config['stochastic']['scale_factor'] = st.session_state.di_scale_factor
+            if 'di_quintile_scale_factors' in st.session_state:
+                di_config['stochastic']['quintile_scale_factors'] = st.session_state.di_quintile_scale_factors
+        else:
+            di_config['stochastic']['sigma_value'] = 0.0
     elif sigma_enabled:
-        # Stochastic enabled - use overall sigma
+        # Research/documentation mode with stochastic enabled
         di_config['stochastic']['sigma_value'] = 9.899547
+        di_config['stochastic']['in_copula'] = False
         if 'di_sigma_strategy' in st.session_state:
             di_config['stochastic']['sigma_strategy'] = st.session_state.di_sigma_strategy
         if 'di_scale_factor' in st.session_state:
@@ -516,6 +552,7 @@ def _apply_disclose_income_from_session_state(orchestrator, pop_mode: str, inc_m
     else:
         # Stochastic disabled
         di_config['stochastic']['sigma_value'] = 0.0
+        di_config['stochastic']['in_copula'] = False
 
 
 def apply_all_selected_configs(orchestrator, pop_mode: str, inc_mode: str = None):

@@ -49,6 +49,13 @@ def initialize_page2_widget_keys():
     if "tab_anchor_weight" not in st.session_state:
         st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
     
+    # Initialize disclose_income copula widget keys
+    if "di_tab_sigma_in_copula" not in st.session_state:
+        st.session_state.di_tab_sigma_in_copula = st.session_state.get('di_sigma_in_copula', False)
+    
+    if "di_tab_sigma_in_copula_compare" not in st.session_state:
+        st.session_state.di_tab_sigma_in_copula_compare = st.session_state.get('di_sigma_in_copula', False)
+    
     # Initialize income spec mode widget key
     if "page2_tab_income_spec_mode" not in st.session_state:
         # Map current income_spec_mode to radio button options
@@ -82,6 +89,11 @@ def initialize_page2_widget_keys():
                 st.session_state.sigma_value_ui = 9.8995
             if 'sigma_in_copula' not in st.session_state:
                 st.session_state.sigma_in_copula = False
+        # Sync disclose_income copula stochastic
+        if 'di_tab_sigma_in_copula' in st.session_state:
+            st.session_state.di_sigma_in_copula = st.session_state.di_tab_sigma_in_copula
+        elif 'di_sigma_in_copula' not in st.session_state:
+            st.session_state.di_sigma_in_copula = False
     elif population_mode == "Research Specification":
         # Use Research widget key
         if 'tab_sigma_coefficient_research' in st.session_state:
@@ -96,12 +108,16 @@ def initialize_page2_widget_keys():
                 st.session_state.sigma_value_ui = 9.8995
             if 'sigma_in_research' not in st.session_state:
                 st.session_state.sigma_in_research = True
+        # DI copula not applicable in Research mode
+        st.session_state.di_sigma_in_copula = False
     elif population_mode == "Research Baseline":
         # Research Baseline has no stochastic component - ALWAYS set to 0
         st.session_state.sigma_coefficient = 0.0
         st.session_state.sigma_value_ui = 0.0
         st.session_state.sigma_in_copula = False
         st.session_state.sigma_in_research = False
+        # DI copula not applicable in Baseline mode
+        st.session_state.di_sigma_in_copula = False
     elif population_mode == "Compare all":
         # Use Compare widget key
         if 'tab_sigma_coefficient_compare' in st.session_state:
@@ -120,6 +136,11 @@ def initialize_page2_widget_keys():
                 st.session_state.sigma_in_copula = False
             if 'sigma_in_research' not in st.session_state:
                 st.session_state.sigma_in_research = True
+        # Sync disclose_income copula stochastic from compare widget key
+        if 'di_tab_sigma_in_copula_compare' in st.session_state:
+            st.session_state.di_sigma_in_copula = st.session_state.di_tab_sigma_in_copula_compare
+        elif 'di_sigma_in_copula' not in st.session_state:
+            st.session_state.di_sigma_in_copula = False
     
     # ALWAYS sync anchor weight (common across all modes)
     if 'tab_anchor_weight' in st.session_state:
@@ -610,7 +631,7 @@ def render_selected_disclose_income_config_display():
         
         with col3:
             y_rate = metrics.get('y_rate', 0)
-            st.metric("Y Rate", f"{y_rate:.1%}")
+            st.metric("Y Rate", f"{y_rate:.2%}")
         
         with col4:
             st.metric("Agents", f"{config.get('total_agents', 0):,}")

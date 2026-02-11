@@ -26,7 +26,7 @@ Equation 2: Disclose Income (DI_i) - Dependent Variable
     For CATEGORICAL mode (level-specific intercepts, NO income coefficient):
         direct_effect = intercept[level] + 0.00674934*z_E + 0.0173732*z_N + 0.0295482*z_HH
     
-    z_direct_effect = (direct_effect - mean_280) / sd_280  # Using fixed stats
+    z_direct_effect = (direct_effect - mean_280) / sd_280  # Using fixed stats (categorical-specific)
     
     DI_i = β0 + (1-WPB) * z_direct_effect + WPB * z_anchored_PB * income_high
 
@@ -433,8 +433,14 @@ def disclose_income_stochastic(
         # Apply stochastic to anchored_pb (NOT to DI_i)
         sigma_strategy = stochastic_params.get('sigma_strategy', 'overall')
         
-        if sigma_strategy == 'quintile':
-            # Quintile mode: Use level-specific base sigma and scale factor
+        # Determine income mode: quintile sigma only applies to categorical mode.
+        # Continuous mode uses a single income coefficient, so level-specific
+        # sigmas are not meaningful — always fall back to overall sigma.
+        income_mode = params.get('income_mode', 'categorical')
+        is_continuous = 'continuous' in str(income_mode).lower()
+        
+        if sigma_strategy == 'quintile' and not is_continuous:
+            # Quintile mode (categorical only): Use level-specific base sigma and scale factor
             level = int(agent_state.get('Assigned Allowance Level', 3))
             sigma_quintile = stochastic_params.get('sigma_quintile', {})
             sigma_raw = sigma_quintile.get(str(level), stochastic_params.get('sigma_overall', 9.899547))
@@ -443,7 +449,7 @@ def disclose_income_stochastic(
             quintile_scale_factors = stochastic_params.get('quintile_scale_factors', {})
             scale_factor = quintile_scale_factors.get(str(level), stochastic_params.get('scale_factor', 0.1))
         else:
-            # Overall mode: Use single sigma and scale factor for all agents
+            # Overall mode OR continuous income mode: Use single sigma and scale factor for all agents
             sigma_raw = stochastic_params.get('sigma_overall', 9.899547)
             scale_factor = stochastic_params.get('scale_factor', 0.1)
         
@@ -459,8 +465,8 @@ def disclose_income_stochastic(
     
     composite_z = params.get('composite_z_scoring', {})
     
-    # z_direct_effect using fixed stats from original 280
-    de_stats = composite_z.get('direct_effect', {'mean': 0, 'sd': 0.0344991747})
+    # z_direct_effect using fixed stats from original 280 (categorical mode)
+    de_stats = composite_z.get('weighted_disclosure_categorical', {'mean': 0, 'sd': 0.0344991747})
     de_mean = de_stats.get('mean', 0)
     de_sd = de_stats.get('sd', 0.0344991747)
     if de_sd > 0:

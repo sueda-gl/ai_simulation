@@ -151,8 +151,11 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
         # Determine sigma based on strategy (quintile vs overall)
         sigma_strategy = sd_params.get('sigma_strategy', 'overall')
         
-        if sigma_strategy == 'quintile':
-            # Quintile mode: use centralized utility for level-specific sigma
+        # Quintile sigma only applies to categorical mode.
+        # Continuous mode uses a single income coefficient, so level-specific
+        # sigmas are not meaningful — always fall back to overall sigma.
+        if sigma_strategy == 'quintile' and normalized_mode != 'continuous':
+            # Quintile mode (categorical only): use centralized utility for level-specific sigma
             level = int(income_level)
             sigma_raw = get_stochastic_sigma(
                 level=level,
@@ -160,7 +163,7 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
                 convert_to_z_scale=False,
             )
         else:
-            # Overall mode (includes 'overall', 'overall_sd_twt_sospeso', etc.)
+            # Overall mode OR continuous income mode
             # Use sigma_value directly if set, otherwise fall back to sigma_overall
             sigma_raw = sd_params.get('sigma_value', 0)
             if sigma_raw == 0:
