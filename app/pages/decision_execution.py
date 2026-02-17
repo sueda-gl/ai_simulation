@@ -1602,8 +1602,12 @@ def clear_decision_config(decision_name):
             del st.session_state.selected_donation_config
         if hasattr(st.session_state, '_using_selected_config'):
             del st.session_state._using_selected_config
-        # Reset final_donation_rate_default_value
-        st.session_state.final_donation_rate_default_value = 0.10
+        # Reset final_donation_rate_default_value (wrapped in try/except because
+        # Streamlit prevents modification after the bound widget is instantiated)
+        try:
+            st.session_state.final_donation_rate_default_value = 0.10
+        except Exception:
+            pass
         if '_persistent_defaults' in st.session_state:
             st.session_state._persistent_defaults['final_donation_rate_default_value'] = 0.10
     elif decision_name == 'disclose_income':

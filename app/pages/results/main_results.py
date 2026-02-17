@@ -452,27 +452,40 @@ def render_single_run_results():
     
     # Raw data download
     if not df.empty:
-        # Check if we're using a selected configuration (from new simulation)
-        using_selected_config_from_sim = _has_explicit_donation_config
+        # Detect if this is a disclose_income-only run
+        _is_disclose_income_only_run = (
+            hasattr(st.session_state, 'custom_decisions') and 
+            st.session_state.custom_decisions == ['disclose_income'] and
+            hasattr(st.session_state, 'default_decisions') and
+            len(st.session_state.default_decisions) == 0
+        )
         
-        # Check if user has a selected config
-        has_selected_config = has_decision_config('donation_default')
-        
-        # Determine which results to export
-        if has_selected_config and not using_selected_config_from_sim:
-            # User selected a config from current results - export only that config
-            selected_key = dd_saved_config.get('result_key') if dd_saved_config else None
-            
-            # Filter results_dict to only include selected config AND update df to match
-            if selected_key and selected_key in results_dict:
-                filtered_results = {selected_key: results_dict[selected_key]}
-                selected_df = results_dict[selected_key]  # Use the selected config's DataFrame
-                render_export_section(selected_df, results_dict=filtered_results, using_selected_config=True)
-            else:
-                # Selected key not found, export all
-                render_export_section(df, results_dict=results_dict, using_selected_config=False)
+        if _is_disclose_income_only_run:
+            # For disclose_income-only runs, donation_default config state is irrelevant.
+            # Always pass the full results_dict so all computed configs are exported.
+            render_export_section(df, results_dict=results_dict, using_selected_config=False)
         else:
-            # Pass full results_dict for multi-config export (if not using selected config)
-            render_export_section(df, results_dict=results_dict, using_selected_config=using_selected_config_from_sim)
+            # Donation-only and full simulation runs: apply donation-specific config logic
+            using_selected_config_from_sim = _has_explicit_donation_config
+            
+            # Check if user has a selected config
+            has_selected_config = has_decision_config('donation_default')
+            
+            # Determine which results to export
+            if has_selected_config and not using_selected_config_from_sim:
+                # User selected a config from current results - export only that config
+                selected_key = dd_saved_config.get('result_key') if dd_saved_config else None
+                
+                # Filter results_dict to only include selected config AND update df to match
+                if selected_key and selected_key in results_dict:
+                    filtered_results = {selected_key: results_dict[selected_key]}
+                    selected_df = results_dict[selected_key]  # Use the selected config's DataFrame
+                    render_export_section(selected_df, results_dict=filtered_results, using_selected_config=True)
+                else:
+                    # Selected key not found, export all
+                    render_export_section(df, results_dict=results_dict, using_selected_config=False)
+            else:
+                # Pass full results_dict for multi-config export (if not using selected config)
+                render_export_section(df, results_dict=results_dict, using_selected_config=using_selected_config_from_sim)
     
     # No flag cleanup needed - we read directly from unified config storage
