@@ -61,14 +61,6 @@ def initialize_disclose_income_session_state():
     if 'disclose_income_tab_persistence' not in st.session_state:
         st.session_state.disclose_income_tab_persistence = {}
 
-    # One-time migration: remove stale seeded 'sigma_enabled: False' from
-    # older versions so the checkbox defaults to True (matching donation_default).
-    # Only clear if the user never explicitly interacted (seeded value was False).
-    persistence = st.session_state.disclose_income_tab_persistence
-    if persistence.get('sigma_enabled') is False and '_di_sigma_seed_migrated' not in st.session_state:
-        del persistence['sigma_enabled']
-        st.session_state._di_sigma_seed_migrated = True
-
     # Initialize model parameters from config
     anchor_weights = config.get('anchor_weights', {})
     stochastic = config.get('stochastic', {})
@@ -77,7 +69,7 @@ def initialize_disclose_income_session_state():
         'di_intercept': config.get('intercept', 0.75),
         'di_wopb': anchor_weights.get('observed_prosocial', 0.25),
         'di_wpb': anchor_weights.get('prosocial_weight', 0.50),
-        'di_sigma_enabled': stochastic.get('sigma_value', 0) > 0,
+        'di_sigma_enabled': True,
         'di_scale_factor': stochastic.get('scale_factor', 1.0),
         'di_sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
         'di_income_mode': config.get('income_mode', 'categorical'),
