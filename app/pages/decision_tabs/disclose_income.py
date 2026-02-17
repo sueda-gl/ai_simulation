@@ -61,6 +61,14 @@ def initialize_disclose_income_session_state():
     if 'disclose_income_tab_persistence' not in st.session_state:
         st.session_state.disclose_income_tab_persistence = {}
 
+    # One-time migration: remove stale seeded 'sigma_enabled: False' from
+    # older versions so the checkbox defaults to True (matching donation_default).
+    # Only clear if the user never explicitly interacted (seeded value was False).
+    persistence = st.session_state.disclose_income_tab_persistence
+    if persistence.get('sigma_enabled') is False and '_di_sigma_seed_migrated' not in st.session_state:
+        del persistence['sigma_enabled']
+        st.session_state._di_sigma_seed_migrated = True
+
     # Initialize model parameters from config
     anchor_weights = config.get('anchor_weights', {})
     stochastic = config.get('stochastic', {})
@@ -78,15 +86,6 @@ def initialize_disclose_income_session_state():
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
-
-    # Proactively seed persistence dict with initial values for critical keys.
-    # This ensures there is ALWAYS a fallback even if the user never interacts
-    # with a widget (on_change callbacks only fire on explicit user interaction).
-    # Without this, navigating away and back can lose default values because
-    # Streamlit garbage-collects widget keys for unrendered widgets.
-    persistence = st.session_state.disclose_income_tab_persistence
-    if 'sigma_enabled' not in persistence:
-        persistence['sigma_enabled'] = st.session_state.get('di_sigma_enabled', False)
 
     # Initialize quintile scale factors
     if 'di_quintile_scale_factors' not in st.session_state:
@@ -425,7 +424,7 @@ def render_disclose_income_tab():
             'di_tab_sigma_enabled',
             st.session_state.disclose_income_tab_persistence,
             'sigma_enabled',
-            False
+            True
         )
         sigma_enabled = st.checkbox(
             "Use Normal(anchor, σ) draw in Research Specification mode",
