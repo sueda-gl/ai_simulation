@@ -207,14 +207,16 @@ class OrchestratorBaseline:
             agent_state['index'] = idx
             agent_state['agent_id'] = idx + 1  # Agent IDs start at 1
             
-            agent_results = agent_state.copy()
-            
             # Use the same base seed from income pass
             agent_base_seed = agent_base_seeds[list_idx]
             
             # Pre-generate income with the SAME RNG as income pass (ensures consistency)
             income_rng = np.random.default_rng(agent_base_seed + 999999)
             get_agent_income(agent_state, self.simulation_config, income_rng)
+            
+            # Copy agent_state AFTER income generation so agent_results includes
+            # 'income' and 'actual_allowance' fields added by get_agent_income()
+            agent_results = agent_state.copy()
             
             # Run each decision in order
             for decision_name in decisions_to_run:
