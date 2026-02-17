@@ -10,7 +10,7 @@ ARCHITECTURE OVERVIEW (Category-First):
 2. Derived Values (generated once per agent, cached in agent_state):
    
    a) 'actual_allowance' (float, 12-200 scale)
-      - Deterministic mapping: Level 1→16, 2→32, 3→72, 4→128, 5→200
+      - Deterministic mapping: Level 1→12, 2→32, 3→72, 4→128, 5→200
       - Used ONLY by donation_default regression (trained on this scale)
    
    b) 'income' (float, large €/$ scale)
@@ -35,7 +35,7 @@ from typing import Optional, Dict, Tuple
 # ALLOWANCE CREDIT MAPPING (12-200 scale for regression)
 # ============================================================================
 ALLOWANCE_CREDIT_MAPPING = {
-    1: 16,   # Lowest income category
+    1: 12,   # Lowest income category
     2: 32,
     3: 72,
     4: 128,

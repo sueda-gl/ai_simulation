@@ -51,7 +51,7 @@ When any decision module calls `get_agent_income()` for the first time:
 
 2. **Generate `actual_allowance` (deterministic mapping)**:
    ```
-   Level 1 → 16
+   Level 1 → 12
    Level 2 → 32
    Level 3 → 72   ← Our example agent
    Level 4 → 128
@@ -168,7 +168,7 @@ All future calls to `get_agent_income()` or `get_actual_allowance()` return the 
 
 #### `get_actual_allowance(agent_state, simulation_config, rng)`
 - **Purpose**: Get the small-scale allowance credit value
-- **Returns**: `float` (12, 16, 32, 72, 128, or 200)
+- **Returns**: `float` (12, 32, 72, 128, or 200)
 - **Used by**: `donation_default` regression in "continuous mode"
 - **Side effect**: Triggers full income generation if not yet done
 
@@ -254,7 +254,7 @@ The implementation includes comprehensive unit tests (`tests/test_category_first
    - Mean income increases with level
 
 4. **Dual Income Variables**
-   - `actual_allowance` mapping is correct (16, 32, 72, 128, 200)
+   - `actual_allowance` mapping is correct (12, 32, 72, 128, 200)
    - Both variables are generated together
    - `get_actual_allowance()` triggers full generation if needed
 

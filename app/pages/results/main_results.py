@@ -22,7 +22,9 @@ from app.pages.decision_execution import (
     is_configuration_selected,
     clear_selected_configuration,
     DEFAULT_DECISION_VALUES,
-    DEFAULT_DECISION_DESCRIPTIONS
+    DEFAULT_DECISION_DESCRIPTIONS,
+    get_decision_config,
+    has_decision_config
 )
 from app.models import ALL_DECISIONS
 
@@ -53,39 +55,24 @@ def get_decision_config_display(decision_name):
     }
     
     if decision_name == 'donation_default':
-        # Check for saved donation config
-        if hasattr(st.session_state, 'selected_donation_config'):
-            config = st.session_state.selected_donation_config
-            if config.get('source') != 'auto_implied_single_config':
-                result['has_config'] = True
-                result['income_mode'] = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
-                result['source'] = 'Saved Configuration'
-                result['is_saved'] = True
-        # Fallback to session state
+        config = get_decision_config('donation_default')
+        if config and config.get('source') != 'auto_implied_single_config':
+            result['has_config'] = True
+            result['income_mode'] = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
+            result['source'] = 'Saved Configuration'
+            result['is_saved'] = True
         if not result['has_config']:
             result['has_config'] = True
             result['income_mode'] = st.session_state.get('income_spec_mode', 'categorical only')
             result['source'] = 'Page 2 Settings'
             
     elif decision_name == 'disclose_income':
-        # Check unified storage first
-        if 'selected_decision_configs' in st.session_state:
-            if 'disclose_income' in st.session_state.selected_decision_configs:
-                config = st.session_state.selected_decision_configs['disclose_income']
-                if config.get('source') != 'auto_implied_single_config':
-                    result['has_config'] = True
-                    result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
-                    result['source'] = 'Saved Configuration'
-                    result['is_saved'] = True
-        # Check legacy storage
-        if not result['has_config'] and hasattr(st.session_state, 'selected_disclose_income_config'):
-            config = st.session_state.selected_disclose_income_config
-            if config.get('source') != 'auto_implied_single_config':
-                result['has_config'] = True
-                result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
-                result['source'] = 'Saved Configuration'
-                result['is_saved'] = True
-        # Fallback to session state
+        config = get_decision_config('disclose_income')
+        if config and config.get('source') != 'auto_implied_single_config':
+            result['has_config'] = True
+            result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+            result['source'] = 'Saved Configuration'
+            result['is_saved'] = True
         if not result['has_config']:
             result['has_config'] = True
             result['income_mode'] = st.session_state.get('di_income_mode', 'Categorical only')
@@ -138,52 +125,29 @@ def render_results_page():
 def render_single_run_results():
     """Render single run simulation results"""
     
-    # Check if we're using a selected donation configuration
-    # NOTE: This only affects donation_default - other decisions use their own settings
-    if hasattr(st.session_state, '_using_selected_config') and st.session_state._using_selected_config:
-        config = st.session_state.selected_donation_config
-        # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
-        donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'categorical only'))
-        # Get population_mode from saved config
-        donation_population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+    # Show saved configuration info if donation_default has an explicitly saved config
+    dd_saved_config = get_decision_config('donation_default')
+    _has_explicit_donation_config = (dd_saved_config is not None and dd_saved_config.get('source') != 'auto_implied_single_config')
+    
+    if _has_explicit_donation_config:
+        donation_income_mode = dd_saved_config.get('donation_income_mode', dd_saved_config.get('income_spec_mode', 'categorical only'))
+        donation_population_mode = dd_saved_config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
         st.info(f"🎯 **Donation Default used saved configuration:** {donation_population_mode} + {donation_income_mode}")
         
-        # Also show disclose_income mode if it was MANUALLY configured (not just run with defaults)
-        # Only show if: in custom_decisions OR has a saved config (not auto-implied)
+        # Also show disclose_income mode if it was MANUALLY configured
         di_was_manually_configured = (
             hasattr(st.session_state, 'custom_decisions') and 
             'disclose_income' in st.session_state.custom_decisions
         )
-        di_has_saved_config = False
-        # Check unified storage for saved config
-        if 'selected_decision_configs' in st.session_state:
-            if 'disclose_income' in st.session_state.selected_decision_configs:
-                di_config = st.session_state.selected_decision_configs['disclose_income']
-                if di_config.get('source') != 'auto_implied_single_config':
-                    di_has_saved_config = True
-        # Check legacy storage for saved config
-        if not di_has_saved_config and hasattr(st.session_state, 'selected_disclose_income_config'):
-            di_config = st.session_state.selected_disclose_income_config
-            if di_config and di_config.get('source') != 'auto_implied_single_config':
-                di_has_saved_config = True
+        di_saved_config = get_decision_config('disclose_income')
+        di_has_saved_config = (di_saved_config is not None and di_saved_config.get('source') != 'auto_implied_single_config')
         
         if di_was_manually_configured or di_has_saved_config:
             di_mode = None
             di_population_mode = None
-            # Check unified storage
-            if 'selected_decision_configs' in st.session_state:
-                if 'disclose_income' in st.session_state.selected_decision_configs:
-                    di_config = st.session_state.selected_decision_configs['disclose_income']
-                    if di_config.get('source') != 'auto_implied_single_config':
-                        di_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
-                        di_population_mode = di_config.get('population_mode')
-            # Check legacy storage
-            if di_mode is None and hasattr(st.session_state, 'selected_disclose_income_config'):
-                di_config = st.session_state.selected_disclose_income_config
-                if di_config and di_config.get('source') != 'auto_implied_single_config':
-                    di_mode = di_config.get('income_mode', di_config.get('params', {}).get('income_mode'))
-                    di_population_mode = di_config.get('population_mode')
-            # Fallback to session state
+            if di_has_saved_config:
+                di_mode = di_saved_config.get('income_mode', di_saved_config.get('params', {}).get('income_mode'))
+                di_population_mode = di_saved_config.get('population_mode')
             if di_mode is None:
                 di_mode = st.session_state.get('di_income_mode', 'Categorical only')
             if di_population_mode is None:
@@ -384,7 +348,7 @@ def render_single_run_results():
         
         if not has_donation_default_in_dropdown:
             # Check if we're using a selected configuration (should not show overview)
-            using_selected_config = hasattr(st.session_state, '_using_selected_config') and st.session_state._using_selected_config
+            using_selected_config = _has_explicit_donation_config
             
             # Check if this is a donation_default custom parameters run (should not show overview)
             is_donation_custom_only = (
@@ -489,19 +453,15 @@ def render_single_run_results():
     # Raw data download
     if not df.empty:
         # Check if we're using a selected configuration (from new simulation)
-        using_selected_config_from_sim = (
-            hasattr(st.session_state, '_using_selected_config') and 
-            st.session_state._using_selected_config
-        )
+        using_selected_config_from_sim = _has_explicit_donation_config
         
-        # ALSO check if user just selected a config from current results (without re-running)
-        # In this case, filter results_dict to only show the selected config
-        has_selected_config = hasattr(st.session_state, 'selected_donation_config')
+        # Check if user has a selected config
+        has_selected_config = has_decision_config('donation_default')
         
         # Determine which results to export
         if has_selected_config and not using_selected_config_from_sim:
             # User selected a config from current results - export only that config
-            selected_key = st.session_state.selected_donation_config.get('result_key')
+            selected_key = dd_saved_config.get('result_key') if dd_saved_config else None
             
             # Filter results_dict to only include selected config AND update df to match
             if selected_key and selected_key in results_dict:
@@ -515,6 +475,4 @@ def render_single_run_results():
             # Pass full results_dict for multi-config export (if not using selected config)
             render_export_section(df, results_dict=results_dict, using_selected_config=using_selected_config_from_sim)
     
-    # Clear the selected config flag at the very end
-    if hasattr(st.session_state, '_using_selected_config'):
-        delattr(st.session_state, '_using_selected_config')
+    # No flag cleanup needed - we read directly from unified config storage

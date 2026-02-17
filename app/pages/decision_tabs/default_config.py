@@ -399,9 +399,10 @@ def render_numeric_default_config(decision_name, default_value):
     """Render UI for numeric default decisions"""
     
     # Special handling for final_donation_rate when donation config is selected
-    # Check that key exists AND value is not None
-    if decision_name == "final_donation_rate" and st.session_state.get('selected_donation_config') is not None:
-        render_final_donation_rate_with_config(default_value)
+    from app.pages.decision_execution import get_decision_config
+    dd_config = get_decision_config('donation_default')
+    if decision_name == "final_donation_rate" and dd_config is not None:
+        render_final_donation_rate_with_config(default_value, dd_config)
         return
     
     # Session state key for this decision's value
@@ -462,13 +463,17 @@ def render_numeric_default_config(decision_name, default_value):
             st.caption("✓ Default")
 
 
-def render_final_donation_rate_with_config(default_value):
+def render_final_donation_rate_with_config(default_value, config=None):
     """Render final_donation_rate UI when a donation configuration is selected.
     
     Shows the slider synced to the selected donation configuration's mean rate.
     """
-    config = st.session_state.selected_donation_config
-    mean_donation = config['metrics']['mean_donation']
+    if config is None:
+        from app.pages.decision_execution import get_decision_config
+        config = get_decision_config('donation_default')
+    if config is None:
+        return
+    mean_donation = config.get('metrics', {}).get('mean_donation', default_value)
     
     # Session state key for this decision's value
     value_key = "final_donation_rate_default_value"

@@ -8,7 +8,7 @@ from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, auto_populate_single_donation_config, migrate_legacy_configs_to_unified
+from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, auto_populate_single_donation_config, migrate_legacy_configs_to_unified, get_decision_config, clear_decision_config
 
 
 def initialize_page2_widget_keys():
@@ -22,39 +22,23 @@ def initialize_page2_widget_keys():
     Similar to Page 1's initialize_widget_keys(), but for donation-specific parameters.
     """
     
-    # Initialize donation widget keys (checkboxes and sliders)
-    # These are the widget keys that store UI state
+    # Initialize canonical donation widget keys (mode-independent, one set)
     if "tab_sigma_in_copula" not in st.session_state:
         st.session_state.tab_sigma_in_copula = st.session_state.get('sigma_in_copula', False)
     
     if "tab_sigma_in_research" not in st.session_state:
         st.session_state.tab_sigma_in_research = st.session_state.get('sigma_in_research', True)
     
-    if "tab_sigma_in_copula_compare" not in st.session_state:
-        st.session_state.tab_sigma_in_copula_compare = st.session_state.get('sigma_in_copula', False)
-    
-    if "tab_sigma_in_research_compare" not in st.session_state:
-        st.session_state.tab_sigma_in_research_compare = st.session_state.get('sigma_in_research', True)
-    
-    # Initialize slider widget keys for different population modes
-    if "tab_sigma_coefficient" not in st.session_state:
-        st.session_state.tab_sigma_coefficient = st.session_state.get('sigma_coefficient', 1.0)
-    
-    if "tab_sigma_coefficient_research" not in st.session_state:
-        st.session_state.tab_sigma_coefficient_research = st.session_state.get('sigma_coefficient', 1.0)
-    
-    if "tab_sigma_coefficient_compare" not in st.session_state:
-        st.session_state.tab_sigma_coefficient_compare = st.session_state.get('sigma_coefficient', 1.0)
+    # Unified slider widget key (no more mode-specific variants)
+    if "tab_sigma_coefficient_stochastic" not in st.session_state:
+        st.session_state.tab_sigma_coefficient_stochastic = st.session_state.get('sigma_coefficient', 1.0)
     
     if "tab_anchor_weight" not in st.session_state:
         st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
     
-    # Initialize disclose_income copula widget keys
+    # Initialize canonical disclose_income copula widget key
     if "di_tab_sigma_in_copula" not in st.session_state:
         st.session_state.di_tab_sigma_in_copula = st.session_state.get('di_sigma_in_copula', False)
-    
-    if "di_tab_sigma_in_copula_compare" not in st.session_state:
-        st.session_state.di_tab_sigma_in_copula_compare = st.session_state.get('di_sigma_in_copula', False)
     
     # Initialize income spec mode widget key
     if "page2_tab_income_spec_mode" not in st.session_state:
@@ -67,80 +51,35 @@ def initialize_page2_widget_keys():
         else:
             st.session_state.page2_tab_income_spec_mode = "categorical only"
     
-    # CRITICAL: ALWAYS sync non-prefixed variables from widget keys
-    # These non-prefixed variables are what the simulation actually reads
-    # We MUST sync them on every page load to preserve user's values after navigation
+    # CRITICAL: Sync non-prefixed variables from canonical widget keys.
+    # These non-prefixed variables are what the simulation actually reads.
+    # With the unified key architecture, this is mode-independent -- the same
+    # canonical widget keys are used regardless of population mode.
     
-    population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
-    
-    # Sync sigma coefficient based on current population mode
-    # ALWAYS sync if widget key exists, regardless of whether non-prefixed variable exists
-    if population_mode == "Copula (synthetic)":
-        # Use Copula widget key
-        if 'tab_sigma_coefficient' in st.session_state:
-            st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient
-            st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient
-        if 'tab_sigma_in_copula' in st.session_state:
-            st.session_state.sigma_in_copula = st.session_state.tab_sigma_in_copula
-        else:
-            # If widget key doesn't exist, ensure non-prefixed variable exists
-            if 'sigma_coefficient' not in st.session_state:
-                st.session_state.sigma_coefficient = 1.0
-                st.session_state.sigma_value_ui = 9.8995
-            if 'sigma_in_copula' not in st.session_state:
-                st.session_state.sigma_in_copula = False
-        # Sync disclose_income copula stochastic
-        if 'di_tab_sigma_in_copula' in st.session_state:
-            st.session_state.di_sigma_in_copula = st.session_state.di_tab_sigma_in_copula
-        elif 'di_sigma_in_copula' not in st.session_state:
-            st.session_state.di_sigma_in_copula = False
-    elif population_mode == "Research Specification":
-        # Use Research widget key
-        if 'tab_sigma_coefficient_research' in st.session_state:
-            st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient_research
-            st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient_research
-        if 'tab_sigma_in_research' in st.session_state:
-            st.session_state.sigma_in_research = st.session_state.tab_sigma_in_research
-        else:
-            # If widget key doesn't exist, ensure non-prefixed variable exists
-            if 'sigma_coefficient' not in st.session_state:
-                st.session_state.sigma_coefficient = 1.0
-                st.session_state.sigma_value_ui = 9.8995
-            if 'sigma_in_research' not in st.session_state:
-                st.session_state.sigma_in_research = True
-        # DI copula not applicable in Research mode
-        st.session_state.di_sigma_in_copula = False
-    elif population_mode == "Research Baseline":
-        # Research Baseline has no stochastic component - ALWAYS set to 0
-        st.session_state.sigma_coefficient = 0.0
-        st.session_state.sigma_value_ui = 0.0
+    # Sync donation sigma coefficient from unified widget key
+    if 'tab_sigma_coefficient_stochastic' in st.session_state:
+        st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient_stochastic
+        st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient_stochastic
+    elif 'sigma_coefficient' not in st.session_state:
+        st.session_state.sigma_coefficient = 1.0
+        st.session_state.sigma_value_ui = 9.8995
+
+    # Sync donation sigma checkboxes from canonical widget keys
+    if 'tab_sigma_in_copula' in st.session_state:
+        st.session_state.sigma_in_copula = st.session_state.tab_sigma_in_copula
+    elif 'sigma_in_copula' not in st.session_state:
         st.session_state.sigma_in_copula = False
-        st.session_state.sigma_in_research = False
-        # DI copula not applicable in Baseline mode
+
+    if 'tab_sigma_in_research' in st.session_state:
+        st.session_state.sigma_in_research = st.session_state.tab_sigma_in_research
+    elif 'sigma_in_research' not in st.session_state:
+        st.session_state.sigma_in_research = True
+
+    # Sync disclose_income copula stochastic from canonical widget key
+    if 'di_tab_sigma_in_copula' in st.session_state:
+        st.session_state.di_sigma_in_copula = st.session_state.di_tab_sigma_in_copula
+    elif 'di_sigma_in_copula' not in st.session_state:
         st.session_state.di_sigma_in_copula = False
-    elif population_mode == "Compare all":
-        # Use Compare widget key
-        if 'tab_sigma_coefficient_compare' in st.session_state:
-            st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient_compare
-            st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient_compare
-        if 'tab_sigma_in_copula_compare' in st.session_state:
-            st.session_state.sigma_in_copula = st.session_state.tab_sigma_in_copula_compare
-        if 'tab_sigma_in_research_compare' in st.session_state:
-            st.session_state.sigma_in_research = st.session_state.tab_sigma_in_research_compare
-        else:
-            # If widget key doesn't exist, ensure non-prefixed variable exists
-            if 'sigma_coefficient' not in st.session_state:
-                st.session_state.sigma_coefficient = 1.0
-                st.session_state.sigma_value_ui = 9.8995
-            if 'sigma_in_copula' not in st.session_state:
-                st.session_state.sigma_in_copula = False
-            if 'sigma_in_research' not in st.session_state:
-                st.session_state.sigma_in_research = True
-        # Sync disclose_income copula stochastic from compare widget key
-        if 'di_tab_sigma_in_copula_compare' in st.session_state:
-            st.session_state.di_sigma_in_copula = st.session_state.di_tab_sigma_in_copula_compare
-        elif 'di_sigma_in_copula' not in st.session_state:
-            st.session_state.di_sigma_in_copula = False
     
     # ALWAYS sync anchor weight (common across all modes)
     if 'tab_anchor_weight' in st.session_state:
@@ -331,11 +270,11 @@ def render_overview_tab(selected_decisions):
 3. Select your preferred configuration from results
 4. Return here to run complete simulation
                     """)
-        elif config_count > 1 and hasattr(st.session_state, 'selected_donation_config'):
-            # Show selected configuration info
-            config = st.session_state.selected_donation_config
-            donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'unknown'))
-            st.success(f"✅ **Using selected donation configuration**: {config['population_mode']} + {donation_income_mode}")
+        elif config_count > 1:
+            dd_config = get_decision_config('donation_default')
+            if dd_config and dd_config.get('source') != 'auto_implied_single_config':
+                donation_income_mode = dd_config.get('donation_income_mode', dd_config.get('income_spec_mode', 'unknown'))
+                st.success(f"✅ **Using selected donation configuration**: {dd_config['population_mode']} + {donation_income_mode}")
             
             if len(selected_decisions) == 0:
                 st.info(f"🎯 All {len(ALL_DECISIONS)} decisions will use default values")
@@ -468,21 +407,15 @@ def render_page2():
 def render_selected_donation_config_display():
     """Display the selected donation configuration in the overview tab"""
     
-    # Check if config exists (use 'in' operator for Streamlit session state)
-    has_config = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
+    config = get_decision_config('donation_default')
     
-    if not has_config:
+    if config is None:
         # No configuration - try auto-populate one more time
         auto_populate_single_donation_config()
-        # Re-check after auto-populate attempt
-        has_config = 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None
+        config = get_decision_config('donation_default')
     
-    if not has_config:
-        # Still no config - silently return (no message to avoid clutter)
-        # User will see instructions in the Complete Simulation section if needed
+    if config is None:
         return
-    
-    config = st.session_state.selected_donation_config
     is_auto_implied = config.get('source') == 'auto_implied_single_config'
     
     st.markdown("#### 3. Donation Default")
@@ -591,20 +524,14 @@ def render_selected_donation_config_display():
             # Only show Clear button for explicitly selected configs (not auto-implied)
             if not is_auto_implied:
                 if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_donation_config"):
-                    from app.pages.decision_execution import clear_selected_configuration
-                    clear_selected_configuration()
+                    clear_decision_config('donation_default')
                     st.rerun()
 
 
 def render_selected_disclose_income_config_display():
     """Display the selected disclose income configuration in the overview tab"""
-    from app.pages.decision_execution import get_decision_config, clear_decision_config
     
-    # Check if config exists in unified storage or legacy
     config = get_decision_config('disclose_income')
-    
-    if config is None and hasattr(st.session_state, 'selected_disclose_income_config'):
-        config = st.session_state.selected_disclose_income_config
     
     # Skip auto-implied configs - only show explicitly selected ones
     if config is None or config.get('source') == 'auto_implied_single_config':

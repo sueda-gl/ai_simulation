@@ -97,9 +97,9 @@ disclose_income:
     honesty_humility: 0.0295482
     religious: 0.0677157
   equation2_coefficients:
-    extraversion: 0.00674934
+    extraversion: 0.00680238
     neuroticism: 0.0173732
-    honesty_humility: 0.0295482
+    honesty_humility: 0.0163905
     income: -0.008988
   anchor_weights:
     observed_prosocial: 0.25
@@ -136,7 +136,7 @@ disclose_income:
       sd: 0.08608372
     weighted_disclosure_categorical:
       mean: 0.0
-      sd: 0.034560945
+      sd: 0.025040462
     anchored_pb:
       mean: 0.0
       sd: 0.7984211971
@@ -160,11 +160,11 @@ disclose_income:
     in_copula: false
   income_mode: Categorical only
   categorical_intercepts:
-    level_1: 0.0089094
-    level_2: 0.0055403
-    level_3: 0.002314
-    level_4: -0.0032145
-    level_5: -0.0145579
+    level_1: 0.0089007
+    level_2: 0.0055352
+    level_3: 0.0023109
+    level_4: -0.0032216
+    level_5: -0.0145324
 disclose_documents:
   uses_global_parameters: []
   placeholder: true

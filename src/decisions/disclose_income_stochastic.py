@@ -21,10 +21,10 @@ Equation 1: Prosocial Behavior (PB_i) - Mediating Variable
 
 Equation 2: Disclose Income (DI_i) - Dependent Variable
     For CONTINUOUS mode:
-        direct_effect = 0.00674934*z_E + 0.0173732*z_N + 0.0295482*z_HH - 0.008988*z_I
+        direct_effect = 0.00680238*z_E + 0.0173732*z_N + 0.0163905*z_HH - 0.008988*z_I
     
     For CATEGORICAL mode (level-specific intercepts, NO income coefficient):
-        direct_effect = intercept[level] + 0.00674934*z_E + 0.0173732*z_N + 0.0295482*z_HH
+        direct_effect = intercept[level] + 0.00680238*z_E + 0.0173732*z_N + 0.0163905*z_HH
     
     z_direct_effect = (direct_effect - mean_280) / sd_280  # Using fixed stats (categorical-specific)
     
@@ -40,11 +40,11 @@ from typing import Dict, Any, Optional, List
 # Level-specific intercepts for categorical mode (from regression in documentation)
 # These replace the income coefficient in categorical mode
 CATEGORICAL_INTERCEPTS = {
-    1: 0.0089094,                      # Base intercept for level 1
-    2: 0.0089094 - 0.0033691,          # = 0.0055403
-    3: 0.0089094 - 0.0065954,          # = 0.0023140
-    4: 0.0089094 - 0.0121239,          # = -0.0032145
-    5: 0.0089094 - 0.0234673,          # = -0.0145579
+    1: 0.0089007,                      # Base intercept for level 1
+    2: 0.0089007 - 0.0033655,          # = 0.0055352
+    3: 0.0089007 - 0.0065898,          # = 0.0023109
+    4: 0.0089007 - 0.0121223,          # = -0.0032216
+    5: 0.0089007 - 0.0234331,          # = -0.0145324
 }
 
 
@@ -162,7 +162,7 @@ def compute_pass1_values(
     composite_z = params.get('composite_z_scoring', {})
     wp_z_params = composite_z.get('weighted_prosocial', {})
     wp_mean = wp_z_params.get('mean', 0)
-    wp_sd = wp_z_params.get('sd', 0.0859299558)
+    wp_sd = wp_z_params.get('sd', 0.08608372)
 
     if wp_sd > 0:
         z_weighted_prosocial = (weighted_prosocial - wp_mean) / wp_sd
@@ -222,15 +222,15 @@ def compute_pass1_values(
             intercept = cat_intercepts.get(f'level_{level}', 
                         cat_intercepts.get(str(level),
                         cat_intercepts.get(level, 
-                        CATEGORICAL_INTERCEPTS.get(level, 0.0089094))))
+                        CATEGORICAL_INTERCEPTS.get(level, 0.0089007))))
         else:
-            intercept = CATEGORICAL_INTERCEPTS.get(level, 0.0089094)
+            intercept = CATEGORICAL_INTERCEPTS.get(level, 0.0089007)
         
         direct_effect = (
             intercept +
-            eq2_coeffs.get('extraversion', 0.00674934) * z_extraversion +
+            eq2_coeffs.get('extraversion', 0.00680238) * z_extraversion +
             eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
-            eq2_coeffs.get('honesty_humility', 0.0295482) * z_honesty_humility
+            eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility
             # NO income coefficient in categorical mode!
         )
     else:
@@ -248,9 +248,9 @@ def compute_pass1_values(
             z_income = 0.0
         
         direct_effect = (
-            eq2_coeffs.get('extraversion', 0.00674934) * z_extraversion +
+            eq2_coeffs.get('extraversion', 0.00680238) * z_extraversion +
             eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
-            eq2_coeffs.get('honesty_humility', 0.0295482) * z_honesty_humility +
+            eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility +
             eq2_coeffs.get('income', -0.008988) * z_income
         )
     
@@ -465,19 +465,27 @@ def disclose_income_stochastic(
     
     composite_z = params.get('composite_z_scoring', {})
     
-    # z_direct_effect using fixed stats from original 280 (categorical mode)
-    de_stats = composite_z.get('weighted_disclosure_categorical', {'mean': 0, 'sd': 0.0344991747})
+    # z_direct_effect: use mode-appropriate stats
+    # - Categorical: fixed YAML stats from original 280 participants
+    # - Continuous: runtime-computed stats (because income is stochastic)
+    income_mode = params.get('income_mode', 'categorical')
+    is_continuous = 'continuous' in str(income_mode).lower()
+    
+    if is_continuous and simulation_config and 'di_cont_de_stats' in simulation_config:
+        de_stats = simulation_config['di_cont_de_stats']
+    else:
+        de_stats = composite_z.get('weighted_disclosure_categorical', {'mean': 0, 'sd': 0.025040462})
     de_mean = de_stats.get('mean', 0)
-    de_sd = de_stats.get('sd', 0.0344991747)
+    de_sd = de_stats.get('sd', 0.025040462)
     if de_sd > 0:
         z_direct_effect = (direct_effect - de_mean) / de_sd
     else:
         z_direct_effect = direct_effect
     
     # z_anchored_pb using fixed stats from original 280 (uses stochastic value)
-    ap_stats = composite_z.get('anchored_pb', {'mean': 0, 'sd': 0.2594725501})
+    ap_stats = composite_z.get('anchored_pb', {'mean': 0, 'sd': 0.7984211971})
     ap_mean = ap_stats.get('mean', 0)
-    ap_sd = ap_stats.get('sd', 0.2594725501)
+    ap_sd = ap_stats.get('sd', 0.7984211971)
     if ap_sd > 0:
         z_anchored_pb = (stochastic_anchored_pb - ap_mean) / ap_sd
     else:
@@ -554,4 +562,54 @@ def compute_disclose_income_raw_values(
     return {
         **pass1_values,
         'anchored_pb': anchored_pb,
+    }
+
+
+def compute_continuous_de_stats(agents_df, all_incomes: List[float], di_params: Dict, simulation_config: Dict) -> Dict[str, float]:
+    """
+    Compute mean and SD of the continuous direct_effect across the population.
+    
+    Called from orchestrators after income_stats are computed, so that
+    continuous mode can z-score direct_effect using population-specific stats
+    (matching the Stata approach: egen z_weighted_cont = std(weighted_disclosure_cont)).
+    
+    Args:
+        agents_df: DataFrame of all agents in the population
+        all_incomes: List of generated income values (one per agent, same order as agents_df)
+        di_params: disclose_income config from decisions.yaml
+        simulation_config: Must already contain 'income_stats' (mean, sd)
+        
+    Returns:
+        dict with 'mean' and 'sd' of continuous direct_effect across population
+    """
+    z_params = di_params.get('z_scoring', {})
+    eq2_coeffs = di_params.get('equation2_coefficients', {})
+    income_stats = simulation_config.get('income_stats', {})
+    income_mean = income_stats.get('mean', 0)
+    income_sd = income_stats.get('sd', 1)
+    
+    all_de = []
+    for i, (_, row) in enumerate(agents_df.iterrows()):
+        z_e = _z_score_trait(row.get('ExtraversionBig5', 0), 'ExtraversionBig5', z_params)
+        z_n = _z_score_trait(row.get('NeuroticismBig5', 0), 'NeuroticismBig5', z_params)
+        z_hh = _z_score_trait(row.get('Honesty_Humility', 0), 'Honesty_Humility', z_params)
+        
+        agent_income = all_incomes[i] if i < len(all_incomes) else 0
+        if income_sd > 0:
+            z_income = (agent_income - income_mean) / income_sd
+        else:
+            z_income = 0.0
+        
+        de = (
+            eq2_coeffs.get('extraversion', 0.00680238) * z_e +
+            eq2_coeffs.get('neuroticism', 0.0173732) * z_n +
+            eq2_coeffs.get('honesty_humility', 0.0163905) * z_hh +
+            eq2_coeffs.get('income', -0.008988) * z_income
+        )
+        all_de.append(de)
+    
+    all_de = np.array(all_de)
+    return {
+        'mean': float(np.mean(all_de)),
+        'sd': float(np.std(all_de, ddof=1))  # ddof=1 to match Stata's egen std()
     }

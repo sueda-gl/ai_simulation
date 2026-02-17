@@ -49,10 +49,9 @@ def render_configuration_selection_ui(results_dict):
     
     # Check if config is already selected (only count explicitly saved configs, not auto-implied)
     has_selected_config = False
-    if 'selected_donation_config' in st.session_state and st.session_state.selected_donation_config is not None:
-        config = st.session_state.selected_donation_config
-        # Only count as "selected" if it was explicitly saved, not auto-implied
-        has_selected_config = config.get('source') != 'auto_implied_single_config'
+    dd_config = get_decision_config('donation_default')
+    if dd_config is not None:
+        has_selected_config = dd_config.get('source') != 'auto_implied_single_config'
     
     # SINGLE CONFIG SCENARIO: Show save button when only one config exists and not yet explicitly saved
     if len(results_dict) == 1 and not has_selected_config:
@@ -106,8 +105,7 @@ def render_configuration_selection_ui(results_dict):
     # MULTIPLE CONFIGS or ALREADY SAVED: Show selected config and "Run Complete Simulation"
     if has_selected_config:
         st.markdown("---")
-        config = st.session_state.selected_donation_config
-        # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
+        config = dd_config
         donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'unknown'))
         with st.container():
             st.success(f"✅ **Selected Donation Configuration**: {format_result_name(config['result_key'])}")
@@ -157,21 +155,10 @@ def render_disclose_income_config_selection_ui(results_dict):
     di_config = get_decision_config('disclose_income')
     has_selected_config = di_config is not None and di_config.get('source') != 'auto_implied_single_config'
     
-    if not has_selected_config:
-        legacy_config = st.session_state.get('selected_disclose_income_config')
-        has_selected_config = (
-            legacy_config is not None and 
-            legacy_config.get('source') != 'auto_implied_single_config'
-        )
-    
     # If config is selected, show the selected config info and potentially the Run Complete Simulation button
     if has_selected_config:
         st.markdown("---")
-        
-        # Get config from unified storage first, then legacy
-        config = get_decision_config('disclose_income')
-        if config is None:
-            config = st.session_state.selected_disclose_income_config
+        config = di_config
         
         income_mode = config.get('params', {}).get('income_mode', config.get('income_mode', 'Unknown'))
         

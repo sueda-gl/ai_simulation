@@ -165,11 +165,17 @@ class Orchestrator:
         print(f"[Copula] Computed income median: ${self.simulation_config['income_median']:,.2f}")
         print(f"[Copula] Computed income stats: mean=${self.simulation_config['income_stats']['mean']:,.2f}, sd=${self.simulation_config['income_stats']['sd']:,.2f}")
         
-        # Log disclose_income mode if running
+        # Log disclose_income mode if running, and compute continuous DE stats if needed
         if 'disclose_income' in decisions_to_run and 'disclose_income' in self.decision_modules:
             disclose_income_params = self.config.get('disclose_income', {})
             di_income_mode = disclose_income_params.get('income_mode', 'categorical')
             print(f"[Copula] disclose_income income_mode: {di_income_mode}")
+            
+            if 'continuous' in str(di_income_mode).lower():
+                from src.decisions.disclose_income_stochastic import compute_continuous_de_stats
+                di_cont_stats = compute_continuous_de_stats(agents_df, all_incomes, disclose_income_params, self.simulation_config)
+                self.simulation_config['di_cont_de_stats'] = di_cont_stats
+                print(f"[Copula] Computed continuous DE stats: mean={di_cont_stats['mean']:.6f}, sd={di_cont_stats['sd']:.6f}")
         
         # ============================================================================
         # PASS 2: Process agents and run decisions

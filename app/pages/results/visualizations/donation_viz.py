@@ -418,7 +418,9 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
     """Visualization for final_donation_rate with 3-case logic for donation configs"""
     
     # CASE 3: Check if a donation configuration has been selected
-    has_selected_config = hasattr(st.session_state, 'selected_donation_config')
+    from app.pages.decision_execution import get_decision_config
+    _donation_config = get_decision_config('donation_default')
+    has_selected_config = _donation_config is not None
     
     # CASE 1: Check if exactly one donation config exists (auto-use it)
     is_single_donation_run = (
@@ -500,10 +502,9 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
             
             st.markdown("---")
             st.markdown("**ℹ️ Source:**")
-            if hasattr(st.session_state, 'selected_donation_config'):
-                config = st.session_state.selected_donation_config
-                st.caption(f"Population: {config['population_mode']}")
-                st.caption(f"Income: {config['income_spec_mode']}")
+            if _donation_config:
+                st.caption(f"Population: {_donation_config.get('population_mode', 'Unknown')}")
+                st.caption(f"Income: {_donation_config.get('donation_income_mode', _donation_config.get('income_spec_mode', 'Unknown'))}")
     
     else:
         # Fall back to slider if no donation_default data available

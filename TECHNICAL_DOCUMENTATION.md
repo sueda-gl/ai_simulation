@@ -237,7 +237,7 @@ Purchase request schema (per element of `purchase_requests`):
 
 - Source of truth is `Assigned Allowance Level` in {1..5} coming from traits.
 - Two derived values are generated once per agent and cached:
-  - `actual_allowance` (deterministic 12–200 mapping: {1:16, 2:32, 3:72, 4:128, 5:200}) used by `donation_default` regression when running with continuous income mode.
+  - `actual_allowance` (deterministic 12–200 mapping: {1:12, 2:32, 3:72, 4:128, 5:200}) used by `donation_default` regression when running with continuous income mode.
   - `income` (dollar-scale) sampled by mapping the level to its percentile bucket and applying the inverse CDF (PPF) of the selected income distribution with UI-provided parameters and optional max clipping.
 - Percentile buckets: [0–20), [20–40), [40–60), [60–80), [80–100].
 - Customer type derivation (after disclosure decisions):

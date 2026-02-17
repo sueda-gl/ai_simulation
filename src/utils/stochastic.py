@@ -26,7 +26,7 @@ DEFAULT_SIGMA_OVERALL = 9.899547
 
 # Quintile-specific sigma values (SD of TWT+Sospeso within each income quintile)
 DEFAULT_SIGMA_QUINTILE = {
-    '1': 5.705052,   # Level 1 (€16)
+    '1': 5.705052,   # Level 1 (€12)
     '2': 3.069326,   # Level 2 (€32)
     '3': 3.532226,   # Level 3 (€72)
     '4': 12.219622,  # Level 4 (€128)

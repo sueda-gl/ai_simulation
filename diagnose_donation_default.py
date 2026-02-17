@@ -132,7 +132,7 @@ def calculate_donation_default_step_by_step(
     # Add income effect
     if income_mode == 'continuous':
         # Linear income effect (use actual allowance values for levels 1-5)
-        allowance_map = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
+        allowance_map = {1: 12, 2: 32, 3: 72, 4: 128, 5: 200}
         actual_allowance = allowance_map.get(income_level, 100)
         beta_lin = coeffs.get('beta_income_linear', 0.0)
         income_effect = beta_lin * actual_allowance

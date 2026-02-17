@@ -1446,8 +1446,8 @@ BUDGET_SHOP,5.25,50,0""")
             """Clear selected donation config when population mode changes"""
             st.session_state.population_mode = st.session_state.page1_population_mode
             # Clear selected config since mode change may invalidate it
-            if hasattr(st.session_state, 'selected_donation_config'):
-                delattr(st.session_state, 'selected_donation_config')
+            from app.pages.decision_execution import clear_decision_config
+            clear_decision_config('donation_default')
         
         population_mode = st.radio(
             "Population Mode",

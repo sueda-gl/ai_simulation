@@ -74,28 +74,16 @@ def initialize_donation_widget_keys():
     if "donation_tab_persistence" not in st.session_state:
         st.session_state.donation_tab_persistence = {}
 
-    # Initialize checkbox widget keys
+    # Initialize canonical checkbox widget keys (one set, mode-independent)
     if "tab_sigma_in_copula" not in st.session_state:
         st.session_state.tab_sigma_in_copula = st.session_state.get('sigma_in_copula', False)
 
     if "tab_sigma_in_research" not in st.session_state:
         st.session_state.tab_sigma_in_research = st.session_state.get('sigma_in_research', True)
 
-    if "tab_sigma_in_copula_compare" not in st.session_state:
-        st.session_state.tab_sigma_in_copula_compare = st.session_state.get('sigma_in_copula', False)
-
-    if "tab_sigma_in_research_compare" not in st.session_state:
-        st.session_state.tab_sigma_in_research_compare = st.session_state.get('sigma_in_research', True)
-
-    # Initialize slider widget keys
-    if "tab_sigma_coefficient" not in st.session_state:
-        st.session_state.tab_sigma_coefficient = st.session_state.get('sigma_coefficient', 1.0)
-
-    if "tab_sigma_coefficient_research" not in st.session_state:
-        st.session_state.tab_sigma_coefficient_research = st.session_state.get('sigma_coefficient', 1.0)
-
-    if "tab_sigma_coefficient_compare" not in st.session_state:
-        st.session_state.tab_sigma_coefficient_compare = st.session_state.get('sigma_coefficient', 1.0)
+    # Initialize canonical slider widget key (unified across all modes)
+    if "tab_sigma_coefficient_stochastic" not in st.session_state:
+        st.session_state.tab_sigma_coefficient_stochastic = st.session_state.get('sigma_coefficient', 1.0)
 
     if "tab_anchor_weight" not in st.session_state:
         st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
@@ -134,7 +122,7 @@ def render_donation_sigma_controls(mode_suffix: str):
     """
     # Base sigma values per quintile (from empirical data)
     BASE_SIGMAS = {
-        '1': 5.705052,   # Level 1 (€16)
+        '1': 5.705052,   # Level 1 (€12)
         '2': 3.069326,   # Level 2 (€32)
         '3': 3.532226,   # Level 3 (€72)
         '4': 12.219622,  # Level 4 (€128)
@@ -142,7 +130,7 @@ def render_donation_sigma_controls(mode_suffix: str):
     }
 
     LEVEL_LABELS = {
-        '1': 'Level 1 (€16)',
+        '1': 'Level 1 (€12)',
         '2': 'Level 2 (€32)',
         '3': 'Level 3 (€72)',
         '4': 'Level 4 (€128)',
@@ -370,15 +358,8 @@ def render_donation_default_tab():
                 save_to_donation_storage('page2_tab_income_spec_mode', 'income_spec_mode')
                 reload_coefficients_for_income_mode()
                 clear_input_field_cache()
-                # FIX: Clear selected config from BOTH legacy AND unified storage
-                # This prevents stale configs from persisting when user changes income mode
-                # Legacy storage
-                if hasattr(st.session_state, 'selected_donation_config'):
-                    delattr(st.session_state, 'selected_donation_config')
-                # Unified storage - must also clear to prevent migration from restoring stale config
-                if 'selected_decision_configs' in st.session_state:
-                    if 'donation_default' in st.session_state.selected_decision_configs:
-                        del st.session_state.selected_decision_configs['donation_default']
+                from app.pages.decision_execution import clear_decision_config
+                clear_decision_config('donation_default')
             
             # Restore income spec mode
             income_val = restore_widget_from_storage(
@@ -409,121 +390,51 @@ def render_donation_default_tab():
         # Stochastic component option
         st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
         
-        if population_mode == "Copula (synthetic)":
-            # Show only Copula controls
+        if population_mode == "Research Baseline":
+            st.info("📊 Research Baseline always uses anchor values only (deterministic). "
+                    "Configure stochastic settings below for Copula / Research Specification runs.")
 
-            # Restore widget value
-            copula_val = restore_widget_from_storage(
-                'tab_sigma_in_copula',
-                st.session_state.donation_tab_persistence,
-                'sigma_in_copula',
-                False
-            )
+        # --- Copula sigma checkbox (always visible) ---
+        st.markdown("**Copula Mode:**")
+        copula_val = restore_widget_from_storage(
+            'tab_sigma_in_copula',
+            st.session_state.donation_tab_persistence,
+            'sigma_in_copula',
+            False
+        )
+        sigma_in_copula = st.checkbox(
+            "Add Normal(anchor, σ) draw to Copula runs",
+            value=copula_val,
+            help="When enabled, Copula mode will also use the stochastic component",
+            key="tab_sigma_in_copula",
+            on_change=lambda: save_to_donation_storage('tab_sigma_in_copula', 'sigma_in_copula')
+        )
+        st.session_state.sigma_in_copula = sigma_in_copula
 
-            sigma_in_copula = st.checkbox(
-                "Add Normal(anchor, σ) draw to Copula runs",
-                value=copula_val,
-                help="When enabled, Copula mode will also use the stochastic component",
-                key="tab_sigma_in_copula",
-                on_change=lambda: save_to_donation_storage('tab_sigma_in_copula', 'sigma_in_copula')
-            )
-            st.session_state.sigma_in_copula = sigma_in_copula
-            st.session_state.sigma_in_research = True  # Default for research mode
+        # --- Research Specification sigma checkbox (always visible) ---
+        st.markdown("**Research Specification Mode:**")
+        res_val = restore_widget_from_storage(
+            'tab_sigma_in_research',
+            st.session_state.donation_tab_persistence,
+            'sigma_in_research',
+            True
+        )
+        sigma_in_research = st.checkbox(
+            "Use Normal(anchor, σ) draw in Research Specification mode",
+            value=res_val,
+            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
+            key="tab_sigma_in_research",
+            on_change=lambda: save_to_donation_storage('tab_sigma_in_research', 'sigma_in_research')
+        )
+        st.session_state.sigma_in_research = sigma_in_research
 
-            if sigma_in_copula:
-                # Show sigma strategy selector
-                render_donation_sigma_controls('copula')
-            
-        elif population_mode == "Research Specification":
-            # Show only Research controls
+        st.caption("Research Baseline always uses anchor values only (deterministic).")
 
-            # Restore research checkbox
-            res_val = restore_widget_from_storage(
-                'tab_sigma_in_research',
-                st.session_state.donation_tab_persistence,
-                'sigma_in_research',
-                True
-            )
-
-            sigma_in_research = st.checkbox(
-                "Use Normal(anchor, σ) draw in Research mode",
-                value=res_val,
-                help="When enabled, Research mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
-                key="tab_sigma_in_research",
-                on_change=lambda: save_to_donation_storage('tab_sigma_in_research', 'sigma_in_research')
-            )
-            st.session_state.sigma_in_research = sigma_in_research
-            st.session_state.sigma_in_copula = False  # Not applicable
-
-            # Show sigma controls only if stochastic component is enabled
-            if sigma_in_research:
-                render_donation_sigma_controls('research')
-            else:
-                st.info("Stochastic component disabled - using anchor values directly")
-                # Set sigma to 0 when disabled to ensure no variability
-                st.session_state.sigma_coefficient = 0.0
-                st.session_state.sigma_value_ui = 0.0
-                
-        elif population_mode == "Research Baseline":
-            # Research Baseline mode - no stochastic component, anchor values only
-            st.session_state.sigma_in_copula = False  # Not applicable
-            st.session_state.sigma_in_research = False  # No stochastic component
-            st.session_state.sigma_coefficient = 0.0
-            st.session_state.sigma_value_ui = 0.0
-            
-            st.info("📊 Research Baseline Mode: Uses original 280 participants with anchor values only (no stochastic component)")
-            st.caption("🎯 This mode returns the deterministic anchor = 0.75 × observed + 0.25 × predicted")
-                
-        else:  # Compare all
-            # Show controls for all three modes
-            st.markdown("**Copula Mode Controls:**")
-
-            # Restore copula checkbox for compare
-            copula_comp_val = restore_widget_from_storage(
-                'tab_sigma_in_copula_compare',
-                st.session_state.donation_tab_persistence,
-                'sigma_in_copula_compare',
-                False
-            )
-
-            sigma_in_copula = st.checkbox(
-                "Add Normal(anchor, σ) draw to Copula runs",
-                value=copula_comp_val,
-                help="When enabled, Copula mode will also use the stochastic component",
-                key="tab_sigma_in_copula_compare",
-                on_change=lambda: save_to_donation_storage('tab_sigma_in_copula_compare', 'sigma_in_copula_compare')
-            )
-            st.session_state.sigma_in_copula = sigma_in_copula
-
-            st.markdown("**Research Specification Controls:**")
-
-            # Restore research checkbox for compare
-            res_comp_val = restore_widget_from_storage(
-                'tab_sigma_in_research_compare',
-                st.session_state.donation_tab_persistence,
-                'sigma_in_research_compare',
-                True
-            )
-
-            sigma_in_research = st.checkbox(
-                "Use Normal(anchor, σ) draw in Research Specification mode",
-                value=res_comp_val,
-                help="When enabled, Research Specification mode will add stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
-                key="tab_sigma_in_research_compare",
-                on_change=lambda: save_to_donation_storage('tab_sigma_in_research_compare', 'sigma_in_research_compare')
-            )
-            st.session_state.sigma_in_research = sigma_in_research
-
-            st.markdown("**Research Baseline:** Always uses anchor values only (no stochastic component)")
-            st.caption("Research Baseline = deterministic anchor = 0.75 × observed + 0.25 × predicted")
-
-            # Show sigma controls if either mode has stochastic enabled
-            if sigma_in_copula or sigma_in_research:
-                render_donation_sigma_controls('compare')
-            else:
-                st.info("Stochastic component disabled for both modes - using anchor values directly")
-                st.session_state.sigma_coefficient = 0.0
-                st.session_state.sigma_value_ui = 0.0
+        # --- Shared sigma controls (strategy, coefficient, quintiles) ---
+        if sigma_in_copula or sigma_in_research:
+            render_donation_sigma_controls('stochastic')
+        else:
+            st.info("Stochastic component disabled for all modes - using anchor values directly")
         
         # Anchor weights
         if population_mode != "Dependent variable resampling":
@@ -732,9 +643,9 @@ def render_continuous_formula():
         st.caption("Effect = β_linear × actual_allowance_amount")
         
         # Show linear effect for actual allowance amounts (not level numbers)
-        allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
+        allowance_mapping = {1: 12, 2: 32, 3: 72, 4: 128, 5: 200}
         linear_data = {
-            'Income Level': ['1 (€16)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
+            'Income Level': ['1 (€12)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
             'Effect': [linear_coeff * allowance_mapping[i] for i in range(1, 6)]
         }
         linear_df = pd.DataFrame(linear_data)
@@ -742,8 +653,8 @@ def render_continuous_formula():
         st.dataframe(linear_df, hide_index=True, use_container_width=True)
         
         # Show total range effect using actual allowances
-        total_range = linear_coeff * (200 - 16)  # from €16 to €200
-        st.metric("Total Range Effect (€16→€200)", f"{total_range:.6f}")
+        total_range = linear_coeff * (200 - 12)  # from €12 to €200
+        st.metric("Total Range Effect (€12→€200)", f"{total_range:.6f}")
 
 
 def render_variable_definitions():
@@ -902,7 +813,7 @@ def render_categorical_formula_specific():
     with col2:
         st.markdown("**💰 Income Quintile Effects (β_income_q):**")
         income_data = {
-            'Quintile': ['Q1 (Level 16, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
+            'Quintile': ['Q1 (Level 12, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
             'Intercept': [
                 get_coefficient('q1', 'cat'),
                 get_coefficient('q2', 'cat'),
@@ -972,9 +883,9 @@ def render_continuous_formula_specific():
         st.caption("Effect = β_linear × actual_allowance_amount")
         
         # Show linear effect for actual allowance amounts (not level numbers)
-        allowance_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
+        allowance_mapping = {1: 12, 2: 32, 3: 72, 4: 128, 5: 200}
         linear_data = {
-            'Income Level': ['1 (€16)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
+            'Income Level': ['1 (€12)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
             'Effect': [
                 f"{linear_coeff * allowance_mapping[1]:.6f}",
                 f"{linear_coeff * allowance_mapping[2]:.6f}",
@@ -987,8 +898,8 @@ def render_continuous_formula_specific():
         st.dataframe(linear_df, hide_index=True, use_container_width=True)
         
         # Show total range effect using actual allowances
-        total_range = linear_coeff * (200 - 16)  # from €16 to €200
-        st.metric("Total Range Effect (€16→€200)", f"{total_range:.6f}")
+        total_range = linear_coeff * (200 - 12)  # from €12 to €200
+        st.metric("Total Range Effect (€12→€200)", f"{total_range:.6f}")
 
 
 def render_intercept_override_section():

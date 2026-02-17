@@ -84,7 +84,7 @@ def donation_default_stochastic(agent_state: dict, params: dict, rng: np.random.
         predicted += beta_lin * actual_allowance
     else:
         # Categorical income effect
-        # Map income levels to quintiles (level 1/16 is reference, levels 2-5 are 32,72,128,200)
+        # Map income levels to quintiles (level 1/12 is reference, levels 2-5 are 32,72,128,200)
         income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4', 5: 'Q5'}
         income_q = income_quintiles.get(int(income_level), 'Q5')
         beta_income_q = coeffs.get('beta_income_q', {})

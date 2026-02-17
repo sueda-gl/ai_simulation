@@ -13,7 +13,7 @@ All tasks from the implementation plan have been successfully completed and test
 **Status**: ✅ Complete
 
 **Changes**:
-- Added `ALLOWANCE_CREDIT_MAPPING` constant (1→16, 2→32, 3→72, 4→128, 5→200)
+- Added `ALLOWANCE_CREDIT_MAPPING` constant (1→12, 2→32, 3→72, 4→128, 5→200)
 - Implemented `get_percentile_boundaries()` using PPF (inverse CDF) for all 3 distributions
 - Implemented `_get_percentile_range_for_level()` to map levels to percentile buckets
 - Implemented `_generate_income_within_percentile_range()` for PPF-based sampling

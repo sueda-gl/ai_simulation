@@ -79,6 +79,15 @@ def initialize_disclose_income_session_state():
         if key not in st.session_state:
             st.session_state[key] = default
 
+    # Proactively seed persistence dict with initial values for critical keys.
+    # This ensures there is ALWAYS a fallback even if the user never interacts
+    # with a widget (on_change callbacks only fire on explicit user interaction).
+    # Without this, navigating away and back can lose default values because
+    # Streamlit garbage-collects widget keys for unrendered widgets.
+    persistence = st.session_state.disclose_income_tab_persistence
+    if 'sigma_enabled' not in persistence:
+        persistence['sigma_enabled'] = st.session_state.get('di_sigma_enabled', False)
+
     # Initialize quintile scale factors
     if 'di_quintile_scale_factors' not in st.session_state:
         default_scale = stochastic.get('scale_factor', 1.0)
@@ -92,12 +101,9 @@ def initialize_disclose_income_session_state():
     if 'di_sigma_in_copula' not in st.session_state:
         st.session_state.di_sigma_in_copula = False
 
-    # Initialize widget keys for copula stochastic checkboxes
+    # Initialize canonical widget key for copula stochastic checkbox
     if 'di_tab_sigma_in_copula' not in st.session_state:
         st.session_state.di_tab_sigma_in_copula = st.session_state.get('di_sigma_in_copula', False)
-
-    if 'di_tab_sigma_in_copula_compare' not in st.session_state:
-        st.session_state.di_tab_sigma_in_copula_compare = st.session_state.get('di_sigma_in_copula', False)
 
 
 def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
@@ -135,7 +141,7 @@ def render_di_sigma_controls(mode_suffix: str):
     """
     # Base sigma values per quintile (from empirical data)
     BASE_SIGMAS = {
-        '1': 5.705052,   # Level 1 (€16)
+        '1': 5.705052,   # Level 1 (€12)
         '2': 3.069326,   # Level 2 (€32)
         '3': 3.532226,   # Level 3 (€72)
         '4': 12.219622,  # Level 4 (€128)
@@ -143,7 +149,7 @@ def render_di_sigma_controls(mode_suffix: str):
     }
 
     LEVEL_LABELS = {
-        '1': 'Level 1 (€16)',
+        '1': 'Level 1 (€12)',
         '2': 'Level 2 (€32)',
         '3': 'Level 3 (€72)',
         '4': 'Level 4 (€128)',
@@ -196,21 +202,31 @@ def render_di_sigma_controls(mode_suffix: str):
         coeff_widget_key = f'di_tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'di_sigma_coefficient_{mode_suffix}'
 
+        # Fallback to 1.0 (the true default coefficient), never 0.0.
+        # di_scale_factor could have been corrupted in older versions; guard against it.
+        scale_fallback = st.session_state.get('di_scale_factor', 1.0)
+        if scale_fallback == 0.0:
+            scale_fallback = 1.0
+
         coeff_val = restore_widget_from_storage(
             coeff_widget_key,
             st.session_state.disclose_income_tab_persistence,
             coeff_storage_key,
-            st.session_state.get('di_scale_factor', 1.0)
+            scale_fallback
         )
 
-        # Clamp value to valid range [0, 2]
+        # Clamp value to valid range [0, 2]; treat 0.0 as "never intentionally set"
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
+        if coeff_val == 0.0:
+            coeff_val = 1.0
+            # Also fix the widget key so Streamlit picks up the corrected value
+            st.session_state[coeff_widget_key] = coeff_val
 
         sigma_coefficient = st.slider(
             "σ Coefficient (multiplier)",
             min_value=0.0,
             max_value=2.0,
-            value=coeff_val if coeff_val != 0.0 else 1.0,
+            value=coeff_val,
             step=0.01,
             help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
             key=coeff_widget_key,
@@ -224,17 +240,19 @@ def render_di_sigma_controls(mode_suffix: str):
     else:
         # QUINTILE MODE: 5 sliders (one per income level)
         current_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+        overall_coeff = st.session_state.get('di_scale_factor', 1.0)
+        effective_sigma = 9.8995 * overall_coeff
         if 'continuous' in str(current_income_mode).lower() and 'compare' not in str(current_income_mode).lower():
             st.warning(
                 "**Continuous mode uses overall σ.** "
                 "Per-quintile σ values are based on categorical budget levels and are "
                 "not applicable to the continuous income specification. "
-                "The simulation will use the overall σ (9.8995 × coefficient) for continuous runs."
+                f"The simulation will use the overall σ ({overall_coeff:.2f} × 9.8995 = {effective_sigma:.4f}) for continuous runs."
             )
         elif 'compare' in str(current_income_mode).lower():
             st.info(
                 "**Note:** Per-quintile σ values will only apply to the **categorical** run. "
-                "The continuous run will use the overall σ (9.8995 × coefficient)."
+                f"The continuous run will use the overall σ ({overall_coeff:.2f} × 9.8995 = {effective_sigma:.4f})."
             )
         st.markdown("**Per-Quintile σ Coefficients**")
         st.caption("Each level has its own base σ from empirical data:")
@@ -330,15 +348,8 @@ def render_disclose_income_tab():
             new_mode = st.session_state.di_tab_income_mode
             st.session_state.di_income_mode = new_mode
             save_to_disclose_income_storage('di_tab_income_mode', 'income_mode')
-            # FIX: Clear saved disclose_income config from BOTH legacy AND unified storage
-            # This prevents stale configs from persisting when user changes income mode
-            # Legacy storage
-            if hasattr(st.session_state, 'selected_disclose_income_config'):
-                delattr(st.session_state, 'selected_disclose_income_config')
-            # Unified storage
-            if 'selected_decision_configs' in st.session_state:
-                if 'disclose_income' in st.session_state.selected_decision_configs:
-                    del st.session_state.selected_decision_configs['disclose_income']
+            from app.pages.decision_execution import clear_decision_config
+            clear_decision_config('disclose_income')
 
         # Restore income mode from storage
         income_val = restore_widget_from_storage(
@@ -385,116 +396,53 @@ def render_disclose_income_tab():
         # Stochastic Component
         st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
 
-        stochastic = config.get('stochastic', {})
-        current_sigma_enabled = stochastic.get('sigma_value', 0) > 0
-
         population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
 
-        if population_mode == "Copula (synthetic)":
-            # Show only Copula controls
-            copula_val = restore_widget_from_storage(
-                'di_tab_sigma_in_copula',
-                st.session_state.disclose_income_tab_persistence,
-                'di_sigma_in_copula',
-                False
-            )
+        if population_mode == "Research Baseline":
+            st.info("📊 Research Baseline always uses anchor values only (deterministic). "
+                    "Configure stochastic settings below for Copula / Research Specification runs.")
 
-            sigma_in_copula = st.checkbox(
-                "Add Normal(anchor, σ) draw to Copula runs",
-                value=copula_val,
-                help="When enabled, Copula mode will also use the stochastic component",
-                key="di_tab_sigma_in_copula",
-                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_in_copula', 'di_sigma_in_copula')
-            )
-            st.session_state.di_sigma_in_copula = sigma_in_copula
-            st.session_state.di_sigma_enabled = True  # Default for research mode
+        # --- Copula sigma checkbox (always visible) ---
+        st.markdown("**Copula Mode:**")
+        copula_val = restore_widget_from_storage(
+            'di_tab_sigma_in_copula',
+            st.session_state.disclose_income_tab_persistence,
+            'di_sigma_in_copula',
+            False
+        )
+        sigma_in_copula = st.checkbox(
+            "Add Normal(anchor, σ) draw to Copula runs",
+            value=copula_val,
+            help="When enabled, Copula mode will also use the stochastic component",
+            key="di_tab_sigma_in_copula",
+            on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_in_copula', 'di_sigma_in_copula')
+        )
+        st.session_state.di_sigma_in_copula = sigma_in_copula
 
-            if sigma_in_copula:
-                render_di_sigma_controls('copula')
-            else:
-                st.info("Stochastic component disabled - using anchor values directly")
-                st.session_state.di_scale_factor = 0.0
+        # --- Research Specification sigma checkbox (always visible) ---
+        st.markdown("**Research Specification Mode:**")
+        res_val = restore_widget_from_storage(
+            'di_tab_sigma_enabled',
+            st.session_state.disclose_income_tab_persistence,
+            'sigma_enabled',
+            False
+        )
+        sigma_enabled = st.checkbox(
+            "Use Normal(anchor, σ) draw in Research Specification mode",
+            value=res_val,
+            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
+            key="di_tab_sigma_enabled",
+            on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled', 'sigma_enabled')
+        )
+        st.session_state.di_sigma_enabled = sigma_enabled
 
-        elif population_mode == "Research Specification":
-            # Show only Research controls
-            sigma_val = restore_widget_from_storage(
-                'di_tab_sigma_enabled',
-                st.session_state.disclose_income_tab_persistence,
-                'sigma_enabled',
-                current_sigma_enabled
-            )
+        st.caption("Research Baseline always uses anchor values only (deterministic).")
 
-            sigma_enabled = st.checkbox(
-                "Use Normal(anchor, σ) draw in Research mode",
-                value=sigma_val,
-                help="When enabled, adds stochastic variation via Normal(anchor, σ) draws. When disabled, only the anchor value is used.",
-                key="di_tab_sigma_enabled",
-                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled', 'sigma_enabled')
-            )
-            st.session_state.di_sigma_enabled = sigma_enabled
-            st.session_state.di_sigma_in_copula = False  # Not applicable
-
-            if sigma_enabled:
-                render_di_sigma_controls('research')
-            else:
-                st.info("Stochastic component disabled - using anchor values directly")
-                st.session_state.di_scale_factor = 0.0
-
-        elif population_mode == "Research Baseline":
-            # Research Baseline mode - no stochastic component, anchor values only
-            st.session_state.di_sigma_in_copula = False
-            st.session_state.di_sigma_enabled = False
-            st.session_state.di_scale_factor = 0.0
-
-            st.info("📊 Research Baseline Mode: Uses original 280 participants with anchor values only (no stochastic component)")
-            st.caption("🎯 This mode returns the deterministic anchor values")
-
-        else:  # Compare all
-            # Show controls for both modes
-            st.markdown("**Copula Mode Controls:**")
-
-            copula_comp_val = restore_widget_from_storage(
-                'di_tab_sigma_in_copula_compare',
-                st.session_state.disclose_income_tab_persistence,
-                'di_sigma_in_copula_compare',
-                False
-            )
-
-            sigma_in_copula = st.checkbox(
-                "Add Normal(anchor, σ) draw to Copula runs",
-                value=copula_comp_val,
-                help="When enabled, Copula mode will also use the stochastic component",
-                key="di_tab_sigma_in_copula_compare",
-                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_in_copula_compare', 'di_sigma_in_copula_compare')
-            )
-            st.session_state.di_sigma_in_copula = sigma_in_copula
-
-            st.markdown("**Research Specification Controls:**")
-
-            res_comp_val = restore_widget_from_storage(
-                'di_tab_sigma_enabled_compare',
-                st.session_state.disclose_income_tab_persistence,
-                'sigma_enabled_compare',
-                True
-            )
-
-            sigma_enabled = st.checkbox(
-                "Use Normal(anchor, σ) draw in Research Specification mode",
-                value=res_comp_val,
-                help="When enabled, Research Specification mode will add stochastic variation via Normal(anchor, σ) draws.",
-                key="di_tab_sigma_enabled_compare",
-                on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled_compare', 'sigma_enabled_compare')
-            )
-            st.session_state.di_sigma_enabled = sigma_enabled
-
-            st.markdown("**Research Baseline:** Always uses anchor values only (no stochastic component)")
-            st.caption("Research Baseline = deterministic anchor values")
-
-            if sigma_in_copula or sigma_enabled:
-                render_di_sigma_controls('compare')
-            else:
-                st.info("Stochastic component disabled for both modes - using anchor values directly")
-                st.session_state.di_scale_factor = 0.0
+        # --- Shared sigma controls (strategy, coefficient, quintiles) ---
+        if sigma_in_copula or sigma_enabled:
+            render_di_sigma_controls('stochastic')
+        else:
+            st.info("Stochastic component disabled for all modes - using anchor values directly")
 
         # Anchor Mix
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
@@ -626,8 +574,9 @@ def render_formula_display(config):
         # Final decision (same for all modes)
         st.markdown("### Final Decision")
         st.markdown("""
-        - If stochastic enabled: `draw ~ Normal(DI_i, σ × coefficient)`
-        - **disclose_income = "Y"** if draw > 0, else **"N"**
+        - If stochastic enabled: `PB_i ~ Normal(μ = Anchor_i, σ)` where σ = sd(TWT+Sospeso) × coefficient (overall or per quintile)
+        - The stochastic PB_i is then z-scored and used in the DI equation above
+        - **disclose_income = "Y"** if DI_i > 0, else **"N"**
         """)
 
     with st.expander("Variable Definitions", expanded=False):
@@ -657,19 +606,19 @@ def render_categorical_di_formula(config):
     
     # Show full expanded formula (per professor's specification - no separate "direct effects" line)
     st.latex(f"""
-    DiscloseIncome_i = \\beta_{{income\\_q}}[quintile_i] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0295482 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
+    DiscloseIncome_i = \\beta_{{income\\_q}}[quintile_i] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00680238 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
     
     # Show level-specific intercepts table
     st.markdown("**Income Quintile Effects (β_income_q):**")
     intercept_data = {
-        'Quintile': ['Q1 (€16)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)'],
+        'Quintile': ['Q1 (€12)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)'],
         'Intercept': [
-            '0.0089094',
-            '0.0055403',
-            '0.0023140',
-            '-0.0032145',
-            '-0.0145579'
+            '0.0089007',
+            '0.0055352',
+            '0.0023109',
+            '-0.0032216',
+            '-0.0145324'
         ]
     }
     intercept_df = pd.DataFrame(intercept_data)
@@ -687,7 +636,7 @@ def render_continuous_di_formula(config):
     
     # Show full expanded formula only (per professor's specification)
     st.latex(f"""
-    DiscloseIncome_i = [\\beta_0 = {beta0}] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0295482 \\times z_{{HH_i}} - 0.008988 \\times z_{{I_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
+    DiscloseIncome_i = [\\beta_0 = {beta0}] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00680238 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}} - 0.008988 \\times z_{{I_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
     st.caption("z_I: Z-scored actual income of the agent (continuous)")
 
@@ -713,12 +662,12 @@ def render_variable_definitions(income_mode):
         """)
     elif income_mode == "Categorical only":
         st.markdown("""
-        | β_income_q | Quintile-specific intercept based on income category (5 quintiles: €16, €32, €72, €128, €200) |
+        | β_income_q | Quintile-specific intercept based on income category (5 quintiles: €12, €32, €72, €128, €200) |
         """)
     else:  # Compare both
         st.markdown("""
         **Categorical mode:**
-        | β_income_q | Quintile-specific intercept based on income category (5 quintiles: €16, €32, €72, €128, €200) |
+        | β_income_q | Quintile-specific intercept based on income category (5 quintiles: €12, €32, €72, €128, €200) |
         
         **Continuous mode:**
         | z_I | Z-scored actual income of the agent (continuous) |

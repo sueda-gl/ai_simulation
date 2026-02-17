@@ -240,7 +240,7 @@ class TestDualIncomeVariables:
     
     def test_actual_allowance_mapping(self):
         """Test that actual_allowance follows the correct mapping."""
-        expected_mapping = {1: 16, 2: 32, 3: 72, 4: 128, 5: 200}
+        expected_mapping = {1: 12, 2: 32, 3: 72, 4: 128, 5: 200}
         
         simulation_config = {
             'simulation': {
