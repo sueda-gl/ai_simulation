@@ -926,8 +926,10 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 for key, config_df in results_dict.items()
             }
         
-        # Check if we have multiple configurations to compare
-        export_all_configs = results_dict is not None and len(results_dict) > 1 and not using_selected_config
+        # Check if we have multiple configurations to compare.
+        # For donation-only runs, the using_selected_config flag (which may reflect a stale
+        # saved config) is irrelevant -- always export all computed configs.
+        export_all_configs = results_dict is not None and len(results_dict) > 1
         
         # Check if this is "Compare all" mode (different population modes with different agents)
         is_compare_all = _is_compare_all_mode(results_dict)

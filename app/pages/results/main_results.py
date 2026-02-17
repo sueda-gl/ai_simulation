@@ -452,20 +452,22 @@ def render_single_run_results():
     
     # Raw data download
     if not df.empty:
-        # Detect if this is a disclose_income-only run
-        _is_disclose_income_only_run = (
+        # Detect if this is an individual decision run (single decision, no defaults).
+        # For individual decision runs, saved config state should NOT filter the export --
+        # all computed configs should always be available for download.
+        _is_individual_decision_run = (
             hasattr(st.session_state, 'custom_decisions') and 
-            st.session_state.custom_decisions == ['disclose_income'] and
+            len(st.session_state.custom_decisions) == 1 and
             hasattr(st.session_state, 'default_decisions') and
             len(st.session_state.default_decisions) == 0
         )
         
-        if _is_disclose_income_only_run:
-            # For disclose_income-only runs, donation_default config state is irrelevant.
-            # Always pass the full results_dict so all computed configs are exported.
+        if _is_individual_decision_run:
+            # Individual decision runs: always pass full results_dict, never filter by saved config.
+            # Saved configs are for the "Run Complete Simulation" workflow, not for export filtering.
             render_export_section(df, results_dict=results_dict, using_selected_config=False)
         else:
-            # Donation-only and full simulation runs: apply donation-specific config logic
+            # Combined/full simulation runs: apply donation-specific config logic
             using_selected_config_from_sim = _has_explicit_donation_config
             
             # Check if user has a selected config
