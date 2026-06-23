@@ -330,16 +330,6 @@ def render_formula_display(config):
     income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
 
     with st.expander("Current Model Equation", expanded=True):
-        st.markdown("""
-        **Decision 2: Disclose Documents** uses a Privacy-Calculus model (Bansal et al. 2016 +
-        Dinev & Hart 2006). Personality affects disclosure through **Privacy Concern** and
-        **Trust**, plus a **Personal Incentive** (inverse income). The meta-analytic weights are
-        already folded into the reduced-form coefficients below (Extraversion, Neuroticism,
-        Agreeableness — no Honesty-Humility, Openness, Religiosity, or prosocial anchoring).
-
-        Output: "Y" if the standardized score > 0 after the optional stochastic draw, "N" otherwise.
-        """)
-
         if income_mode == "Categorical only":
             render_categorical_dd_formula(config)
         elif income_mode == "Continuous only":
