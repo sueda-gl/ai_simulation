@@ -29,9 +29,17 @@ disclose_income:
   - Assigned Allowance Level
   - TWT+Sospeso [=AW2+AX2]{Periods 1+2}
 
-disclose_documents: 
-  # Decision 2: Disclose documents for Discount status
-  - placeholder_trait
+disclose_documents:
+  # Decision 2: Disclose documents (Privacy-Calculus model: Bansal 2016 + Dinev & Hart 2006)
+  # Traits: Extraversion, Neuroticism, Agreeableness (z-scored).
+  # Income/allowance handled via Assigned Allowance Level (categorical) or the generated
+  # `income` (continuous). NOTE: Total Allowance is DERIVED from Assigned Allowance Level
+  # (not sampled), and the stochastic sigma is a fixed config constant (not a per-agent
+  # trait) - so no extra copula columns are required. See notes.md.
+  - ExtraversionBig5
+  - NeuroticismBig5
+  - Agreeable
+  - Assigned Allowance Level
 
 rejected_transaction_defaults:
   # Decision 4: Select prioritized defaults for handling rejected transactions

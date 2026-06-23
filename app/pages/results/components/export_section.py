@@ -327,9 +327,13 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
         disclose_income_raw = row.get('disclose_income', '')
         agent_record['disclose_income'] = 1 if disclose_income_raw == 'Y' else 0
         
-        # Decision 2: Disclose Documents & Customer Type (convert Y/N to 1/0 for consistency)
+        # Decision 2: Disclose Documents & Customer Type
+        # Three-state outcome: Y=disclosed (1), N=asked-but-declined (0), NA=never-eligible (gated out).
+        # Preserve NA so the qualified-disclosure denominator is recoverable (do NOT collapse N and NA to 0).
         disclose_documents_raw = row.get('disclose_documents', '')
-        agent_record['disclose_documents'] = 1 if disclose_documents_raw == 'Y' else 0
+        agent_record['disclose_documents'] = (
+            1 if disclose_documents_raw == 'Y' else (0 if disclose_documents_raw == 'N' else 'NA')
+        )
         agent_record['customer_type'] = row.get('customer_type', '')
         
         # Decision 3: Donation Default (exclude raw/intermediate columns)
@@ -620,9 +624,12 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
         disclose_income_raw = row.get('disclose_income', '')
         income_disclosed = 1 if disclose_income_raw == 'Y' else 0
 
-        # Decision 2: Documents disclosed (convert Y/N/NA to 1/0)
+        # Decision 2: Documents disclosed. Preserve the three-state outcome:
+        # Y=disclosed (1), N=asked-but-declined (0), NA=never-eligible. Do NOT collapse N and NA to 0.
         disclose_documents_raw = row.get('disclose_documents', '')
-        documents_disclosed = 1 if disclose_documents_raw == 'Y' else 0
+        documents_disclosed = (
+            1 if disclose_documents_raw == 'Y' else (0 if disclose_documents_raw == 'N' else 'NA')
+        )
 
         # Decision 4: Rejected Transaction Defaults - 5 priority columns
         rejected_defaults = row.get('rejected_transaction_defaults', '')
@@ -1149,8 +1156,16 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     
     # Check if this is a disclose_income-only run (special simplified export)
     is_disclose_income_only_run = (
-        hasattr(st.session_state, 'custom_decisions') and 
+        hasattr(st.session_state, 'custom_decisions') and
         st.session_state.custom_decisions == ['disclose_income'] and
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) == 0
+    )
+
+    # Check if this is a disclose_documents-only run (focused export, mirrors disclose_income)
+    is_disclose_documents_only_run = (
+        hasattr(st.session_state, 'custom_decisions') and
+        st.session_state.custom_decisions == ['disclose_documents'] and
         hasattr(st.session_state, 'default_decisions') and
         len(st.session_state.default_decisions) == 0
     )
@@ -1374,7 +1389,92 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
-    
+
+    elif is_disclose_documents_only_run:
+        # DISCLOSE DOCUMENTS-ONLY EXPORT: focused DD Excel (mirror of the disclose_income-only export).
+        # A DD-only run has no purchases (transaction-level export would be empty) and no other
+        # decisions (agent-level export would be sparse), so we export a focused DD sheet instead.
+        from app.pages.results.visualizations.disclosure_viz import (
+            _prepare_disclose_documents_excel_data,
+            _apply_price_formatting_disclosure,
+        )
+        export_all_configs = results_dict is not None and len(results_dict) > 1
+        is_compare_all = _is_compare_all_mode(results_dict)
+
+        if export_all_configs and is_compare_all:
+            st.markdown(f"**Disclose Documents Results Export (Compare All - {len(results_dict)} configurations):** one sheet per population × income mode, full privacy-calculus calculation chain.")
+        elif export_all_configs:
+            st.markdown(f"**Disclose Documents Results Export (Compare Both - {len(results_dict)} configurations):** one sheet per income mode.")
+        else:
+            st.markdown("**Disclose Documents Results Export:** full privacy-calculus calculation chain (z-scores, weighted_dd, score, decision, customer type).")
+
+        try:
+            buffer = BytesIO()
+            if export_all_configs:
+                if is_compare_all:
+                    config_sheet_mapping = [
+                        ('copula_categorical', 'Copula_Cat'), ('copula_continuous', 'Copula_Cont'),
+                        ('research_spec_categorical', 'ResSpec_Cat'), ('research_spec_continuous', 'ResSpec_Cont'),
+                        ('research_baseline_categorical', 'ResBase_Cat'), ('research_baseline_continuous', 'ResBase_Cont'),
+                    ]
+                    items = [(results_dict.get(k), name) for k, name in config_sheet_mapping]
+                else:
+                    items = [(cdf, ('Categorical' if 'categorical' in k.lower() else ('Continuous' if 'continuous' in k.lower() else k)))
+                             for k, cdf in results_dict.items()]
+                sheets_data = {}
+                for cdf, name in items:
+                    if cdf is None or cdf.empty:
+                        continue
+                    sdf = _prepare_disclose_documents_excel_data(cdf)
+                    if sdf is not None:
+                        sheets_data[name] = sdf
+                if not sheets_data:
+                    st.warning("⚠️ No disclose documents data available for export")
+                else:
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        for name, sdf in sheets_data.items():
+                            sdf.to_excel(writer, index=False, sheet_name=name)
+                            _apply_price_formatting_disclosure(writer, name, sdf)
+                    first = next(iter(sheets_data.values()))
+                    c1, c2, c3 = st.columns(3)
+                    with c1: st.metric("Sheets", len(sheets_data))
+                    with c2: st.metric("Agents per Sheet", len(first))
+                    with c3: st.metric("Columns per Sheet", len(first.columns))
+                    st.download_button(
+                        label=f"📄 Download Disclose Documents Excel ({len(sheets_data)} Sheets)",
+                        data=buffer.getvalue(),
+                        file_name=f"disclose_documents_compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Each configuration (population × income mode) has its own sheet",
+                    )
+                    with st.expander("📋 Preview Disclose Documents Data (first 5 rows per sheet)"):
+                        for name, sdf in sheets_data.items():
+                            st.markdown(f"**{name} Sheet:**")
+                            st.dataframe(sdf.head(), use_container_width=True)
+            else:
+                export_df = _prepare_disclose_documents_excel_data(df)
+                if export_df is None or export_df.empty:
+                    st.warning("⚠️ No disclose documents data available for export")
+                else:
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        export_df.to_excel(writer, index=False, sheet_name='Disclose Documents')
+                        _apply_price_formatting_disclosure(writer, 'Disclose Documents', export_df)
+                    c1, c2 = st.columns(2)
+                    with c1: st.metric("Agents", len(export_df))
+                    with c2: st.metric("Columns", len(export_df.columns))
+                    st.download_button(
+                        label="📄 Download Disclose Documents Excel",
+                        data=buffer.getvalue(),
+                        file_name=f"disclose_documents_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Disclose documents results with the full calculation chain",
+                    )
+                    with st.expander("📋 Preview Disclose Documents Data (first 5 rows)"):
+                        st.dataframe(export_df.head(), use_container_width=True)
+                        st.caption(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns)}")
+        except ImportError:
+            st.caption("⚠️ Excel export requires openpyxl")
+
     elif not is_donation_only_run:
         # FULL TWO-LEVEL EXPORT: For all other simulations
         st.markdown("""

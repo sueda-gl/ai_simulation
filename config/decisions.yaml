@@ -167,9 +167,57 @@ disclose_income:
     level_5: -0.0145324
 disclose_documents:
   uses_global_parameters: []
-  placeholder: true
+  placeholder: false
   output_field: disclose_documents
   default_value: NA
+  equation_coefficients:
+    extraversion: 0.015584630336545
+    neuroticism: -0.022306825775166
+    agreeable: -0.016604320441445
+    personal_incentive: 0.14735467793568
+  intercept: -0.5
+  income_mode: Categorical only
+  z_scoring:
+    ExtraversionBig5:
+      mean: 3.557857
+      sd: 0.6989565
+    NeuroticismBig5:
+      mean: 2.702143
+      sd: 0.6839657
+    Agreeable:
+      mean: 3.546071
+      sd: 0.3732712
+  categorical_intercepts:
+    level_1: 0.1464773
+    level_2: 0.0902694
+    level_3: 0.0384204
+    level_4: -0.0522756
+    level_5: -0.2393718
+  composite_z_scoring:
+    weighted_dd_categorical:
+      mean: 0.0
+      sd: 0.13755775490611996
+    weighted_dd_cont:
+      mean: 0.0
+      sd: 0.1509454399  # fallback only; recomputed at runtime (matches professor .dta std ddof=1)
+  stochastic:
+    sigma_strategy: overall
+    sigma_overall: 0.1606568355
+    sigma_quintile:
+      '1': 0.1690045319
+      '2': 0.1909536245
+      '3': 0.1077552751
+      '4': 0.1436159112
+      '5': 0.1562794728
+    sigma_value: 0
+    scale_factor: 1.0
+    quintile_scale_factors:
+      '1': 1.0
+      '2': 1.0
+      '3': 1.0
+      '4': 1.0
+      '5': 1.0
+    in_copula: false
 rejected_transaction_defaults:
   uses_global_parameters: []
   placeholder: true

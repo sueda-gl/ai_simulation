@@ -92,7 +92,11 @@ def can_run_complete_simulation():
     # Disclose income modes: "Compare both" generates 2, others generate 1
     di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
     di_income_count = 2 if ('compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()) else 1
-    
+
+    # Disclose documents income modes: "Compare both" generates 2, others generate 1
+    dd_income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
+    dd_income_count = 2 if ('compare' in str(dd_income_mode).lower() or 'both' in str(dd_income_mode).lower()) else 1
+
     # Donation default income modes: "Compare both" generates 2, others generate 1
     # FIX: Get donation_default's ACTUAL income mode from its dedicated storage
     # The global income_spec_mode can be contaminated when running disclose_income with "Compare both"
@@ -137,9 +141,34 @@ def can_run_complete_simulation():
             })
     
     # ========================================================================
+    # CHECK DISCLOSE_DOCUMENTS (only if selected) - mirrors disclose_income
+    # ========================================================================
+
+    disclose_documents_selected = 'disclose_documents' in selected_decisions
+    dd_total_configs = population_count * dd_income_count
+    has_disclose_documents_config = False
+    dd_saved_mode = None
+
+    if disclose_documents_selected:
+        if 'disclose_documents' in configs:
+            ddc = configs['disclose_documents']
+            if ddc.get('source') != 'auto_implied_single_config':
+                has_disclose_documents_config = True
+                dd_saved_mode = ddc.get('params', {}).get('income_mode',
+                    ddc.get('income_mode', 'Unknown'))
+
+        if dd_total_configs > 1 and not has_disclose_documents_config:
+            blocking_issues.append({
+                'decision': 'disclose_documents',
+                'block_type': 'disclose_documents',
+                'config_count': dd_total_configs,
+                'reason': f"Disclose Documents has {dd_total_configs} configurations (population: {population_count}, income: {dd_income_count}) - please run disclose_documents only and select one"
+            })
+
+    # ========================================================================
     # CHECK DONATION_DEFAULT (only if selected)
     # ========================================================================
-    
+
     donation_default_selected = 'donation_default' in selected_decisions
     donation_total_configs = population_count * donation_income_count
     has_donation_config = False
@@ -189,10 +218,15 @@ def can_run_complete_simulation():
     # Show donation_default config if selected and saved
     if has_donation_config and donation_saved_info:
         config_parts.append(f"Donation Default: {donation_saved_info}")
-    
+
+    # Show disclose_documents config if selected and saved
+    if has_disclose_documents_config and dd_saved_mode:
+        config_parts.append(f"Disclose Documents: {dd_saved_mode}")
+
     # Determine total config count for display
     total_configs = max(di_total_configs if disclose_income_selected else 1,
-                       donation_total_configs if donation_default_selected else 1)
+                       donation_total_configs if donation_default_selected else 1,
+                       dd_total_configs if disclose_documents_selected else 1)
     
     if config_parts:
         return (True, f"Using saved configuration(s): {', '.join(config_parts)}", total_configs, None, [])
@@ -465,6 +499,17 @@ def render_simulation_buttons(decision_name, selected_decisions):
 2. Run **disclose_income only** and select one configuration
 3. Or change to **"Categorical only"** or **"Continuous only"** mode
                         """)
+                    elif issue['block_type'] == "disclose_documents":
+                        st.warning(f"""
+**Issue {i}: Disclose Documents**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration
+3. Or change to **"Categorical only"** or **"Continuous only"** mode
+                        """)
                     else:
                         # donation_config block type
                         st.warning(f"""
@@ -488,6 +533,20 @@ def render_simulation_buttons(decision_name, selected_decisions):
 
 1. Go to the **Disclose Income** tab
 2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+3. Return here and click **Run Complete Simulation**
+
+This ensures all decisions produce a single result set.
+                    """)
+                elif block_type == "disclose_documents":
+                    st.warning(f"""
+⚠️ **Disclose Documents Configuration Required**
+
+{reason}
+
+**Action Required:**
+
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
 3. Return here and click **Run Complete Simulation**
 
 This ensures all decisions produce a single result set.
@@ -792,7 +851,7 @@ def run_individual_decision(decision_name):
             }
             
             # Clear any saved configuration to allow fresh run with current tab settings
-            if decision_name in ("donation_default", "disclose_income"):
+            if decision_name in ("donation_default", "disclose_income", "disclose_documents"):
                 if has_decision_config(decision_name):
                     st.info(f"🔄 Clearing saved {decision_name} configuration - will use current tab settings")
                     clear_decision_config(decision_name)
@@ -1376,6 +1435,66 @@ def calculate_disclose_income_metrics(result_df):
     return metrics
 
 
+def extract_disclose_documents_configuration_details(result_key):
+    """Extract income mode from result key for disclose documents"""
+    if 'categorical' in result_key.lower():
+        income_mode = 'Categorical only'
+    elif 'continuous' in result_key.lower():
+        income_mode = 'Continuous only'
+    else:
+        income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
+    return {'income_mode': income_mode}
+
+
+def get_current_disclose_documents_params():
+    """Collect current disclose documents parameters from session state.
+
+    NOTE: disclose_documents has NO prosocial anchoring, so (unlike disclose_income)
+    there is no anchor_weights block.
+    """
+    return {
+        'intercept': st.session_state.get('dd_intercept', -0.5),
+        'income_mode': st.session_state.get('dd_income_mode', 'Categorical only'),
+        'stochastic': {
+            'sigma_enabled': st.session_state.get('dd_sigma_enabled', False),
+            'sigma_in_copula': st.session_state.get('dd_sigma_in_copula', False),
+            'scale_factor': st.session_state.get('dd_scale_factor', 1.0),
+            'sigma_strategy': st.session_state.get('dd_sigma_strategy', 'overall'),
+            'quintile_scale_factors': st.session_state.get('dd_quintile_scale_factors', {})
+        }
+    }
+
+
+def calculate_disclose_documents_metrics(result_df):
+    """Calculate key metrics from a disclose documents result DataFrame.
+
+    Y/N rates are computed over QUALIFIED (non-NA) agents only; NA agents are tracked
+    separately so they do not dilute the disclosure rate.
+    """
+    metrics = {}
+    if 'disclose_documents' in result_df.columns:
+        qualified = result_df.loc[result_df['disclose_documents'] != 'NA', 'disclose_documents']
+        total_q = len(qualified)
+        y_count = int((qualified == 'Y').sum())
+        n_count = int((qualified == 'N').sum())
+        metrics['y_rate'] = y_count / total_q if total_q > 0 else 0
+        metrics['n_rate'] = n_count / total_q if total_q > 0 else 0
+        metrics['y_count'] = y_count
+        metrics['n_count'] = n_count
+        metrics['na_count'] = int((result_df['disclose_documents'] == 'NA').sum())
+        metrics['qualified_count'] = total_q
+
+    if 'disclose_documents_raw' in result_df.columns:
+        raw_values = result_df['disclose_documents_raw'].dropna()
+        if len(raw_values) > 0:
+            metrics['raw_mean'] = float(raw_values.mean())
+            metrics['raw_std'] = float(raw_values.std())
+            metrics['raw_median'] = float(raw_values.median())
+            metrics['raw_min'] = float(raw_values.min())
+            metrics['raw_max'] = float(raw_values.max())
+    return metrics
+
+
 def is_disclose_income_configuration_selected(result_key):
     """Check if a specific disclose income configuration is currently selected."""
     return is_decision_config_selected('disclose_income', result_key)
@@ -1509,11 +1628,11 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     if extra_data:
         config.update(extra_data)
     
-    # For disclose_income, ensure population_mode is stored
-    if decision_name == 'disclose_income' and 'population_mode' not in config:
+    # For disclose_income / disclose_documents, ensure population_mode is stored
+    if decision_name in ('disclose_income', 'disclose_documents') and 'population_mode' not in config:
         config_details = extract_configuration_details(result_key)
         config['population_mode'] = config_details['population_mode']
-    
+
     # Store in unified configs dict (SINGLE source of truth)
     configs = get_selected_decision_configs()
     configs[decision_name] = config

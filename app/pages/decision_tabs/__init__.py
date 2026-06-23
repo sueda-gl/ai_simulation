@@ -5,6 +5,7 @@ Decision tabs module for the Enhanced AI Agent Simulation.
 import streamlit as st
 from app.pages.decision_tabs.donation_default import render_donation_default_tab
 from app.pages.decision_tabs.disclose_income import render_disclose_income_tab
+from app.pages.decision_tabs.disclose_documents import render_disclose_documents_tab
 from app.pages.decision_tabs.generic_decision import render_generic_decision_tab
 # Rejected transaction functionality moved to results page
 from app.pages.decision_tabs.global_parameters import (
@@ -20,6 +21,8 @@ def render_decision_tab(decision_name):
         render_donation_default_tab()
     elif decision_name == "disclose_income":
         render_disclose_income_tab()
+    elif decision_name == "disclose_documents":
+        render_disclose_documents_tab()
     elif decision_name == "bid_value":
         # Use dedicated bid_value tab with formula visualization
         from app.pages.decision_tabs.bid_value_tab import render_bid_value_tab
@@ -41,6 +44,7 @@ def render_decision_tab(decision_name):
 __all__ = [
     'render_decision_tab',
     'render_donation_default_tab',
+    'render_disclose_documents_tab',
     'render_generic_decision_tab',
     'render_global_parameters_readonly',
     'render_global_parameters_tab',

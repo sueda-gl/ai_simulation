@@ -37,6 +37,7 @@ from app.pages.results.decision_visualizations import (
 from app.pages.results.config_selection import (
     render_configuration_selection_ui,
     render_disclose_income_config_selection_ui,
+    render_disclose_documents_config_selection_ui,
     render_configuration_card,
     extract_configuration_details_from_key
 )
@@ -77,7 +78,18 @@ def get_decision_config_display(decision_name):
             result['has_config'] = True
             result['income_mode'] = st.session_state.get('di_income_mode', 'Categorical only')
             result['source'] = 'Page 2 Settings'
-    
+    elif decision_name == 'disclose_documents':
+        config = get_decision_config('disclose_documents')
+        if config and config.get('source') != 'auto_implied_single_config':
+            result['has_config'] = True
+            result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+            result['source'] = 'Saved Configuration'
+            result['is_saved'] = True
+        if not result['has_config']:
+            result['has_config'] = True
+            result['income_mode'] = st.session_state.get('dd_income_mode', 'Categorical only')
+            result['source'] = 'Page 2 Settings'
+
     return result
 
 
@@ -211,7 +223,7 @@ def render_single_run_results():
                 # If it does, we should show results even in "comparison mode"
                 # because the user explicitly selected a specific configuration
                 decision_has_saved_config = False
-                if decision in ['donation_default', 'disclose_income']:
+                if decision in ['donation_default', 'disclose_income', 'disclose_documents']:
                     config_info = get_decision_config_display(decision)
                     decision_has_saved_config = config_info.get('is_saved', False)
                 
@@ -229,7 +241,7 @@ def render_single_run_results():
                     with st.expander(f"✅ {decision_title} (Custom Parameters)", expanded=False):
                         st.success("This decision was configured with custom parameters on Page 2")
                         # Show selected config badge for relevant decisions
-                        if decision in ['donation_default', 'disclose_income']:
+                        if decision in ['donation_default', 'disclose_income', 'disclose_documents']:
                             render_decision_config_badge(decision)
                         
                         # Show decision-specific results if available
@@ -255,7 +267,7 @@ def render_single_run_results():
                     st.markdown(f'<h4 class="subsection-header">✅ {decision_title} (Custom Parameters)</h4>', unsafe_allow_html=True)
                     st.success("This decision was configured with custom parameters on Page 2")
                     # Show selected config badge for relevant decisions
-                    if decision in ['donation_default', 'disclose_income']:
+                    if decision in ['donation_default', 'disclose_income', 'disclose_documents']:
                         render_decision_config_badge(decision)
                     
                     # Show decision-specific results if available
@@ -425,7 +437,10 @@ def render_single_run_results():
     
     # Disclose Income configuration selection UI
     render_disclose_income_config_selection_ui(results_dict)
-    
+
+    # Disclose Documents configuration selection UI
+    render_disclose_documents_config_selection_ui(results_dict)
+
     # Get DataFrame for individual agent analysis
     # ROBUST FIX: Always try to get a valid DataFrame, falling back if expected keys don't match
     df = pd.DataFrame()

@@ -195,6 +195,17 @@ class OrchestratorDocMode:
                 di_cont_stats = compute_continuous_de_stats(agents_df, agent_incomes, disclose_income_params, self.simulation_config)
                 self.simulation_config['di_cont_de_stats'] = di_cont_stats
                 print(f"[DocMode] Computed continuous DE stats: mean={di_cont_stats['mean']:.6f}, sd={di_cont_stats['sd']:.6f}")
+
+        # Compute continuous DD composite stats if disclose_documents runs in continuous mode
+        if 'disclose_documents' in decisions_to_run and 'disclose_documents' in self.decision_modules:
+            dd_params = self.config.get('disclose_documents', {})
+            dd_income_mode = dd_params.get('income_mode', 'categorical')
+            if 'continuous' in str(dd_income_mode).lower():
+                from src.decisions.disclose_documents_stochastic import compute_continuous_dd_stats
+                agent_incomes = all_incomes[::outcome_draws] if outcome_draws > 1 else all_incomes
+                dd_cont_stats = compute_continuous_dd_stats(agents_df, agent_incomes, dd_params, self.simulation_config)
+                self.simulation_config['dd_cont_stats'] = dd_cont_stats
+                print(f"[DocMode] Computed continuous DD stats: mean={dd_cont_stats['mean']:.6f}, sd={dd_cont_stats['sd']:.6f}")
         
         # Process agents and run decisions (single-pass)
         results = []
@@ -235,10 +246,10 @@ class OrchestratorDocMode:
                                 agent_state, params, decision_rng, pop_context=self.pop_context, 
                                 simulation_config=self.simulation_config
                             )
-                        elif decision_name == 'disclose_income':
-                            # Pass pop_context to disclose_income for stochastic control
+                        elif decision_name in ('disclose_income', 'disclose_documents'):
+                            # Pass pop_context to disclose_income/disclose_documents for stochastic control
                             decision_output = self.decision_modules[decision_name](
-                                agent_state, params, decision_rng, 
+                                agent_state, params, decision_rng,
                                 simulation_config=self.simulation_config,
                                 pop_context=self.pop_context
                             )

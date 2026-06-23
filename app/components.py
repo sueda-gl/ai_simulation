@@ -63,6 +63,11 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         elif 'disclose_income' in df.columns:
             y_rate = (df['disclose_income'] == 'Y').mean()
             st.metric("Disclose Income (Y)", f"{y_rate:.2%}")
+        elif 'disclose_documents' in df.columns:
+            # Rate over QUALIFIED (non-NA) agents only; NA agents must not dilute it
+            qualified = df.loc[df['disclose_documents'] != 'NA', 'disclose_documents']
+            y_rate = qualified.eq('Y').mean() if len(qualified) > 0 else 0
+            st.metric("Disclose Documents (Y)", f"{y_rate:.2%}")
     
     # Donation rate analysis (if available) - always use truncated
     donation_col = 'donation_default'
@@ -148,8 +153,40 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             breakdown_df = pd.DataFrame(ordered_data)
             st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
     
+    # Disclose Documents analysis (if available)
+    if 'disclose_documents' in df.columns:
+        st.subheader(f"📊 Disclose Documents Analysis{title_suffix}")
+        if 'disclose_documents_raw' in df.columns:
+            # DETAILED ANALYSIS: histogram of raw scores (qualified agents only)
+            show_disclose_documents_rate_analysis(df, title_suffix, result_key, enable_selection)
+        else:
+            # BASIC ANALYSIS: Y/N pie over qualified (non-NA) agents only
+            qualified = df.loc[df['disclose_documents'] != 'NA', 'disclose_documents']
+            value_counts = qualified.value_counts()
+            if len(value_counts) > 0:
+                fig = px.pie(
+                    values=value_counts.values,
+                    names=value_counts.index,
+                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
+                )
+                chart_key = f"disclose_documents_pie_{result_key}" if result_key else f"disclose_documents_pie_{title_suffix}"
+                st.plotly_chart(fig, use_container_width=True, key=chart_key)
+            st.markdown("**📊 Choice Breakdown (qualified agents)**")
+            total_q = len(qualified)
+            ordered_data = []
+            for choice in ['Y', 'N']:
+                if choice in value_counts.index:
+                    count = value_counts[choice]
+                    ordered_data.append({
+                        'Choice': choice, 'Count': int(count),
+                        'Percentage': f"{(count/total_q)*100:.2f}%" if total_q else "0.00%"
+                    })
+            st.dataframe(pd.DataFrame(ordered_data), use_container_width=True, hide_index=True)
+            if enable_selection and result_key:
+                render_disclose_documents_selection_button(result_key, df)
+
     # Add inline selection button if enabled (only for donation_default results)
-    # Disclose income has its own selection button in show_disclose_income_rate_analysis
+    # Disclose income/documents have their own selection buttons in their rate-analysis helpers
     if enable_selection and result_key and 'donation_default' in df.columns:
         render_inline_selection_button(result_key, df)
 
@@ -548,6 +585,119 @@ def render_disclose_income_selection_button(result_key, result_df):
                 else:
                     # Show seed mismatch error
                     render_seed_mismatch_error('disclose_income', error_info)
+
+
+def show_disclose_documents_rate_analysis(df, title_suffix="", result_key=None, enable_selection=False):
+    """
+    Display Disclose Documents Rate Analysis: histogram of raw DD scores BEFORE the
+    >0 -> Y, <=0 -> N threshold. NA (ineligible) agents have no raw value and are dropped.
+    Mirrors show_disclose_income_rate_analysis but with DD keys and NA handling.
+    """
+    raw_col = 'disclose_documents_raw'
+    if raw_col not in df.columns:
+        st.warning("Raw DD values not available - showing basic Y/N analysis only")
+        return
+
+    # NA (ineligible) agents lack a raw score -> NaN -> dropped (only qualified agents)
+    raw_values = df[raw_col].dropna()
+    if len(raw_values) == 0:
+        st.warning("No qualified agents (all income >= discount threshold) - no raw DD values")
+        return
+
+    mean_val = raw_values.mean(); std_val = raw_values.std()
+    min_val = raw_values.min(); max_val = raw_values.max(); median_val = raw_values.median()
+    y_count = int((raw_values > 0).sum()); n_count = int((raw_values <= 0).sum())
+    total = len(raw_values)
+    y_pct = (y_count / total) * 100 if total > 0 else 0
+    n_pct = (n_count / total) * 100 if total > 0 else 0
+
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=raw_values, nbinsx=40, name='DD Raw Values',
+                               marker_color='steelblue', opacity=0.7))
+    fig.add_vline(x=0, line_dash="solid", line_color="red", line_width=3,
+                  annotation_text="Threshold (0)", annotation_position="top", annotation_font_color="red")
+    fig.add_vline(x=mean_val, line_dash="dash", line_color="green", line_width=2,
+                  annotation_text=f"Mean: {mean_val:.3f}", annotation_position="bottom", annotation_font_color="green")
+    fig.update_layout(
+        title=f"Raw Disclose Documents Distribution{title_suffix}",
+        xaxis_title="Raw DD Value (>0 → Y, ≤0 → N)", yaxis_title="Qualified Agents",
+        showlegend=False, height=300, margin=dict(l=40, r=40, t=40, b=40),
+        xaxis=dict(zeroline=True, zerolinecolor='red', zerolinewidth=2)
+    )
+    chart_key = f"dd_raw_hist_{result_key}" if result_key else f"dd_raw_hist_{title_suffix}"
+    st.plotly_chart(fig, use_container_width=True, key=chart_key)
+
+    col_stats, col_class = st.columns(2)
+    with col_stats:
+        st.markdown("**📈 Statistics** (qualified agents)")
+        st.dataframe(pd.DataFrame({
+            'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+            'Value': [f"{mean_val:.4f}", f"{std_val:.4f}", f"{median_val:.4f}", f"{min_val:.4f}", f"{max_val:.4f}"]
+        }), hide_index=True, use_container_width=True)
+    with col_class:
+        st.markdown("**📊 Classification** (qualified agents)")
+        st.dataframe(pd.DataFrame({
+            'Choice': ['Y (disclose)', 'N (not disclose)'],
+            'Count': [y_count, n_count],
+            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%"]
+        }), hide_index=True, use_container_width=True)
+
+    if mean_val > 0:
+        st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")
+    elif mean_val < 0:
+        st.warning(f"⚠️ Mean ({mean_val:.4f}) < 0: Distribution favors non-disclosure")
+    else:
+        st.info("ℹ️ Mean ≈ 0: Distribution is balanced")
+
+    if enable_selection and result_key:
+        render_disclose_documents_selection_button(result_key, df)
+
+
+def render_disclose_documents_selection_button(result_key, result_df):
+    """Render the 'Use This Config' selection button for a disclose documents cell."""
+    from app.pages.decision_execution import (
+        save_decision_config,
+        is_decision_config_selected,
+        get_current_disclose_documents_params,
+        calculate_disclose_documents_metrics,
+        extract_disclose_documents_configuration_details,
+    )
+
+    is_selected = is_decision_config_selected('disclose_documents', result_key)
+    st.markdown("---")
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        raw_col = 'disclose_documents_raw'
+        if raw_col in result_df.columns and result_df[raw_col].notna().any():
+            raw_vals = result_df[raw_col].dropna()
+            mean_raw = raw_vals.mean()
+            y_rate = (raw_vals > 0).mean() * 100
+            st.caption(f"📊 Quick Summary: {len(raw_vals):,} qualified agents, mean DD={mean_raw:.4f}, Y rate={y_rate:.2f}%")
+        else:
+            qualified = result_df.loc[result_df['disclose_documents'] != 'NA', 'disclose_documents']
+            y_rate = (qualified == 'Y').mean() * 100 if len(qualified) > 0 else 0
+            st.caption(f"📊 Quick Summary: {len(qualified):,} qualified agents, Y rate={y_rate:.2f}%")
+
+    with col2:
+        if is_selected:
+            st.success("✅ Selected")
+        else:
+            if st.button("🎯 Use This Config", key=f"dd_inline_select_{result_key}", type="primary",
+                         use_container_width=True,
+                         help="Select this disclose documents configuration for combined simulations"):
+                params = get_current_disclose_documents_params()
+                metrics = calculate_disclose_documents_metrics(result_df)
+                config_details = extract_disclose_documents_configuration_details(result_key)
+                extra_data = {'income_mode': config_details['income_mode']}
+                success, config, error_info = save_decision_config(
+                    'disclose_documents', result_key, result_df, params, metrics, extra_data
+                )
+                if success:
+                    st.success("Disclose Documents configuration selected!")
+                    st.rerun()
+                else:
+                    render_seed_mismatch_error('disclose_documents', error_info)
 
 
 def show_parameter_applicability_analysis(selected_decisions):

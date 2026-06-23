@@ -74,8 +74,8 @@ class OrchestratorBaseline:
         self.decision_modules = {}
         for decision_name in self.decision_order:
             try:
-                if decision_name == 'disclose_income':
-                    # Use stochastic version for disclose_income (it handles baseline mode via pop_context)
+                if decision_name in ('disclose_income', 'disclose_documents'):
+                    # Use stochastic version (it handles baseline mode via pop_context)
                     module = importlib.import_module(f'src.decisions.{decision_name}_stochastic')
                     self.decision_modules[decision_name] = getattr(module, f'{decision_name}_stochastic')
                 else:
@@ -196,6 +196,16 @@ class OrchestratorBaseline:
                 di_cont_stats = compute_continuous_de_stats(agents_df, all_incomes, disclose_income_params, self.simulation_config)
                 self.simulation_config['di_cont_de_stats'] = di_cont_stats
                 print(f"[Baseline] Computed continuous DE stats: mean={di_cont_stats['mean']:.6f}, sd={di_cont_stats['sd']:.6f}")
+
+        # Compute continuous DD composite stats if disclose_documents runs in continuous mode
+        if 'disclose_documents' in decisions_to_run and 'disclose_documents' in self.decision_modules:
+            dd_params = self.config.get('disclose_documents', {})
+            dd_income_mode = dd_params.get('income_mode', 'categorical')
+            if 'continuous' in str(dd_income_mode).lower():
+                from src.decisions.disclose_documents_stochastic import compute_continuous_dd_stats
+                dd_cont_stats = compute_continuous_dd_stats(agents_df, all_incomes, dd_params, self.simulation_config)
+                self.simulation_config['dd_cont_stats'] = dd_cont_stats
+                print(f"[Baseline] Computed continuous DD stats: mean={dd_cont_stats['mean']:.6f}, sd={dd_cont_stats['sd']:.6f}")
         
         # Process agents and run decisions (single-pass)
         results = []
@@ -242,8 +252,8 @@ class OrchestratorBaseline:
                     
                     try:
                         # Call decision function with baseline context
-                        # Pass pop_context to decisions that support it (donation_default, disclose_income)
-                        if decision_name in ('donation_default', 'disclose_income'):
+                        # Pass pop_context to decisions that support it (donation_default, disclose_income, disclose_documents)
+                        if decision_name in ('donation_default', 'disclose_income', 'disclose_documents'):
                             decision_output = decision_func(
                                 agent_state, 
                                 decision_params, 

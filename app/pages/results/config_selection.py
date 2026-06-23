@@ -189,9 +189,61 @@ def render_disclose_income_config_selection_ui(results_dict):
         render_complete_simulation_section()
 
 
+def render_disclose_documents_config_selection_ui(results_dict):
+    """Render configuration selection UI for disclose_documents results (mirrors disclose_income)."""
+
+    if not results_dict:
+        return
+
+    has_dd_results = any(
+        'disclose_documents' in df.columns
+        for df in results_dict.values()
+        if isinstance(df, pd.DataFrame) and not df.empty
+    )
+    if not has_dd_results:
+        return
+
+    is_individual_dd_run = (
+        hasattr(st.session_state, 'custom_decisions') and
+        st.session_state.custom_decisions == ['disclose_documents'] and
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) == 0
+    )
+    if not is_individual_dd_run:
+        return
+
+    dd_config = get_decision_config('disclose_documents')
+    has_selected_config = dd_config is not None and dd_config.get('source') != 'auto_implied_single_config'
+
+    if has_selected_config:
+        st.markdown("---")
+        config = dd_config
+        income_mode = config.get('params', {}).get('income_mode', config.get('income_mode', 'Unknown'))
+
+        with st.container():
+            st.success(f"✅ **Selected Disclose Documents Configuration**: {income_mode}")
+            metrics = config.get('metrics', {})
+            if metrics:
+                col1, col2, col3 = st.columns([2, 2, 1])
+                with col1:
+                    y_rate = metrics.get('y_rate', 0)
+                    st.caption(f"Y Rate (qualified): {y_rate:.2%}")
+                with col2:
+                    timestamp = config.get('selected_timestamp')
+                    if timestamp:
+                        st.caption(f"Selected at {timestamp.strftime('%H:%M:%S')}")
+                with col3:
+                    if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_dd_selection"):
+                        clear_decision_config('disclose_documents')
+                        st.rerun()
+
+        can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
+        render_complete_simulation_section()
+
+
 def render_configuration_card(result_key, result_df):
     """Render a single configuration selection card"""
-    
+
     if result_df.empty or 'donation_default' not in result_df.columns:
         return
     
@@ -309,6 +361,16 @@ def render_complete_simulation_section():
 1. Run **Disclose Income Only** from the Disclose Income tab
 2. Click **"Use This Config"** on the result you want to use
                     """)
+                elif issue['block_type'] == "disclose_documents":
+                    st.warning(f"""
+**Issue {i}: Disclose Documents**
+
+{issue['reason']}
+
+**Action Required:**
+1. Run **Disclose Documents Only** from the Disclose Documents tab
+2. Click **"Use This Config"** on the result you want to use
+                    """)
                 else:
                     # donation_config block type
                     st.warning(f"""
@@ -344,6 +406,17 @@ def render_complete_simulation_section():
 2. Click **"Use This Config"** on the result you want to use
 3. Return here to run complete simulation
                 """)
+            elif block_type == "disclose_documents":
+                st.warning(f"""
+⚠️ **Disclose Documents Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Run **Disclose Documents Only** from the Disclose Documents tab
+2. Click **"Use This Config"** on the result you want to use
+3. Return here to run complete simulation
+                """)
             else:
                 st.warning(f"""
 ⚠️ **Configuration Issue**
@@ -352,7 +425,7 @@ def render_complete_simulation_section():
                 """)
         
         # Disabled button
-        help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Select a Disclose Income config first" if block_type == "disclose_income" else ("Select a Donation Default config first" if block_type == "donation_config" else "Configuration issue detected"))
+        help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Select a Disclose Income config first" if block_type == "disclose_income" else ("Select a Donation Default config first" if block_type == "donation_config" else ("Select a Disclose Documents config first" if block_type == "disclose_documents" else "Configuration issue detected")))
             
         st.button(
             "🚀 Run Complete Simulation",
@@ -385,6 +458,11 @@ def render_complete_simulation_section():
                         config.get('income_mode', 'Unknown'))
                     y_rate = config.get('metrics', {}).get('y_rate', 0)
                     st.caption(f"  ✅ {decision_title}: {income_mode} (Y rate: {y_rate:.2%})")
+                elif decision_name == 'disclose_documents':
+                    income_mode = config.get('params', {}).get('income_mode',
+                        config.get('income_mode', 'Unknown'))
+                    y_rate = config.get('metrics', {}).get('y_rate', 0)
+                    st.caption(f"  ✅ {decision_title}: {income_mode} (Y rate qualified: {y_rate:.2%})")
                 else:
                     st.caption(f"  ✅ {decision_title}")
         else:

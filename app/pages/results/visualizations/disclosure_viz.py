@@ -698,8 +698,81 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     export_df['Disclose Income (Y=1)'] = df['disclose_income'].apply(
         lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
     )
-    
+
     return export_df
+
+
+def _prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prepare disclose DOCUMENTS data for Excel export (mirror of the disclose income exporter).
+
+    Includes the full privacy-calculus calculation chain:
+    - Raw traits: Extraversion, Neuroticism, Agreeableness
+    - Income info: Assigned Allowance Level, income (continuous)
+    - Standardized inputs: z_E, z_N, z_A, z_PersonalIncentive (= -z_income)
+    - Composite: trait_terms, weighted_dd, z_weighted_dd
+    - Config/score: Intercept (beta0), DD score (deterministic), DD raw (post-stochastic), sigma
+    - Final decision: Disclose Documents (Y=1), customer_type
+
+    Returns a DataFrame for export, or None if disclose_documents is absent.
+    """
+    if 'disclose_documents' not in df.columns:
+        return None
+
+    e = pd.DataFrame()
+
+    # Agent ID
+    if 'agent_id' in df.columns:
+        e['Agent ID'] = df['agent_id']
+    elif 'index' in df.columns:
+        e['Agent ID'] = df['index'] + 1
+    else:
+        e['Agent ID'] = range(1, len(df) + 1)
+
+    # Raw traits
+    e['Extraversion'] = df['ExtraversionBig5'] if 'ExtraversionBig5' in df.columns else ''
+    e['Neuroticism'] = df['NeuroticismBig5'] if 'NeuroticismBig5' in df.columns else ''
+    e['Agreeable'] = df['Agreeable'] if 'Agreeable' in df.columns else ''
+
+    # Income / allowance
+    e['Assigned Allowance Level'] = df['Assigned Allowance Level'] if 'Assigned Allowance Level' in df.columns else ''
+    e['Income'] = df['income'] if 'income' in df.columns else ''
+
+    # Standardized model inputs (emitted by the DD model)
+    e['z_Extraversion'] = df.get('disclose_documents_z_extraversion', '')
+    e['z_Neuroticism'] = df.get('disclose_documents_z_neuroticism', '')
+    e['z_Agreeable'] = df.get('disclose_documents_z_agreeable', '')
+    # z_PersonalIncentive (inverse-income term) is ONLY used in continuous income mode.
+    # In categorical mode the income effect comes from the per-allowance-level intercept
+    # instead, so show "N/A" there rather than a misleading 0.
+    _zpi = df.get('disclose_documents_z_picont', None)
+    _im = df.get('disclose_documents_income_mode', None)
+    if _zpi is not None and _im is not None:
+        e['z_PersonalIncentive'] = [
+            (zp if str(im).lower().startswith('continuous') else 'N/A')
+            for zp, im in zip(_zpi, _im)
+        ]
+    else:
+        e['z_PersonalIncentive'] = _zpi if _zpi is not None else ''
+
+    # Composite + score
+    e['trait_terms'] = df.get('disclose_documents_trait_terms', '')
+    e['weighted_dd'] = df.get('disclose_documents_weighted_dd', '')
+    e['z_weighted_dd'] = df.get('disclose_documents_z_weighted_dd', '')
+    e['Intercept'] = df.get('disclose_documents_intercept', '')
+    e['DD_score'] = df.get('disclose_documents_score', '')
+    e['DD_raw'] = df.get('disclose_documents_raw', '')
+    e['sigma_used'] = df.get('disclose_documents_sigma_used', '')
+    e['income_mode'] = df.get('disclose_documents_income_mode', '')
+
+    # Final decision (Y=1, N=0, NA preserved) + customer type
+    e['Disclose Documents (Y=1)'] = df['disclose_documents'].apply(
+        lambda x: 1 if x == 'Y' else (0 if x == 'N' else 'NA')
+    )
+    if 'customer_type' in df.columns:
+        e['customer_type'] = df['customer_type']
+
+    return e
 
 
 def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:

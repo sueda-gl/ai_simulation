@@ -550,6 +550,64 @@ def _apply_disclose_income_from_session_state(orchestrator, pop_mode: str, inc_m
         di_config['stochastic']['in_copula'] = False
 
 
+def _apply_disclose_documents_config(orchestrator, pop_mode: str, inc_mode: str = None):
+    """
+    Apply disclose_documents-specific configuration to the orchestrator.
+
+    The model coefficients/intercepts are fixed (verified vs Stata); only the income mode,
+    optional intercept override, and stochastic settings are user-configurable. Mirrors the
+    disclose_income three-way stochastic rule (baseline off / documentation on / copula via
+    flag). The sigma magnitude itself lives in config (sigma_overall = 0.1606568355).
+    """
+    if not hasattr(orchestrator, 'config') or 'disclose_documents' not in orchestrator.config:
+        return
+    if pop_mode == "depvar":
+        return
+
+    dd_config = orchestrator.config['disclose_documents']
+    SIGMA_OVERALL = 0.1606568355  # enable sentinel (>0); actual sigma read from config
+
+    # Income mode: explicit inc_mode (Compare both) > session state > config default
+    if inc_mode is not None:
+        dd_config['income_mode'] = 'continuous' if 'continuous' in str(inc_mode).lower() else 'categorical'
+    elif 'dd_income_mode' in st.session_state:
+        session_mode = st.session_state.dd_income_mode
+        if 'compare' in str(session_mode).lower() or 'both' in str(session_mode).lower():
+            dd_config['income_mode'] = 'categorical'  # safeguard; runner passes explicit mode
+        else:
+            dd_config['income_mode'] = session_mode
+
+    # Optional intercept override (default -0.5 lives in config)
+    if 'dd_intercept' in st.session_state:
+        dd_config['intercept'] = st.session_state.dd_intercept
+
+    # Stochastic settings (mirror disclose_income three-way rule)
+    if 'stochastic' not in dd_config:
+        dd_config['stochastic'] = {}
+    sigma_enabled = st.session_state.get('dd_sigma_enabled', False)
+    dd_sigma_in_copula = st.session_state.get('dd_sigma_in_copula', False)
+
+    if pop_mode == "baseline":
+        dd_config['stochastic']['sigma_value'] = 0.0
+        dd_config['stochastic']['in_copula'] = False
+    elif pop_mode == "copula":
+        dd_config['stochastic']['in_copula'] = dd_sigma_in_copula
+        dd_config['stochastic']['sigma_value'] = SIGMA_OVERALL if dd_sigma_in_copula else 0.0
+    elif sigma_enabled:
+        dd_config['stochastic']['sigma_value'] = SIGMA_OVERALL
+        dd_config['stochastic']['in_copula'] = False
+    else:
+        dd_config['stochastic']['sigma_value'] = 0.0
+        dd_config['stochastic']['in_copula'] = False
+
+    if 'dd_sigma_strategy' in st.session_state:
+        dd_config['stochastic']['sigma_strategy'] = st.session_state.dd_sigma_strategy
+    if 'dd_scale_factor' in st.session_state:
+        dd_config['stochastic']['scale_factor'] = st.session_state.dd_scale_factor
+    if 'dd_quintile_scale_factors' in st.session_state:
+        dd_config['stochastic']['quintile_scale_factors'] = st.session_state.dd_quintile_scale_factors
+
+
 def apply_all_selected_configs(orchestrator, pop_mode: str, inc_mode: str = None):
     """
     Apply all saved decision configurations to the orchestrator.
@@ -649,6 +707,7 @@ def run_copula_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: 
     # 3. Apply configurations
     _apply_donation_config(orchestrator, "copula", inc_mode)
     _apply_disclose_income_config(orchestrator, "copula", inc_mode)  # Pass inc_mode for disclose_income
+    _apply_disclose_documents_config(orchestrator, "copula", inc_mode)  # Pass inc_mode for disclose_documents
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
@@ -674,6 +733,7 @@ def run_research_spec_mode(n_agents: int, seed: int, inc_mode: str, decision_set
     # 3. Apply configurations
     _apply_donation_config(orchestrator, "documentation", inc_mode)
     _apply_disclose_income_config(orchestrator, "documentation", inc_mode)  # Pass inc_mode for disclose_income
+    _apply_disclose_documents_config(orchestrator, "documentation", inc_mode)  # Pass inc_mode for disclose_documents
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
@@ -699,6 +759,7 @@ def run_research_baseline_mode(n_agents: int, seed: int, inc_mode: str, decision
     # 3. Apply configurations
     _apply_donation_config(orchestrator, "baseline", inc_mode)
     _apply_disclose_income_config(orchestrator, "baseline", inc_mode)  # Pass inc_mode for disclose_income
+    _apply_disclose_documents_config(orchestrator, "baseline", inc_mode)  # Pass inc_mode for disclose_documents
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
@@ -1142,6 +1203,13 @@ def run_simulation_from_sidebar():
                 # The results page checks income_spec_mode to decide whether to show side-by-side comparison
                 st.session_state.income_spec_mode = effective_income_mode
                 st.caption(f"🎯 Using Disclose Income specific mode: {effective_income_mode}")
+            elif single_decision == ['disclose_documents']:
+                # Running ONLY disclose_documents - use its specific mode
+                effective_income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
+                # CRITICAL: Sync dd_income_mode to income_spec_mode so the results page
+                # renders the correct (3x2) side-by-side comparison grid (mirrors disclose_income).
+                st.session_state.income_spec_mode = effective_income_mode
+                st.caption(f"🎯 Using Disclose Documents specific mode: {effective_income_mode}")
             elif single_decision == ['donation_default']:
                 # Running ONLY donation_default - check for saved config first
                 dd_config = get_decision_config('donation_default')
