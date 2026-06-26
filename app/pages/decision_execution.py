@@ -1485,7 +1485,12 @@ def calculate_disclose_documents_metrics(result_df):
         metrics['qualified_count'] = total_q
 
     if 'disclose_documents_raw' in result_df.columns:
-        raw_values = result_df['disclose_documents_raw'].dropna()
+        # Qualified subgroup only (decision != NA). The model now emits a raw score for every
+        # agent (incl. gated NAs) for export, so a bare .dropna() would include ineligibles.
+        if 'disclose_documents' in result_df.columns:
+            raw_values = result_df.loc[result_df['disclose_documents'] != 'NA', 'disclose_documents_raw'].dropna()
+        else:
+            raw_values = result_df['disclose_documents_raw'].dropna()
         if len(raw_values) > 0:
             metrics['raw_mean'] = float(raw_values.mean())
             metrics['raw_std'] = float(raw_values.std())

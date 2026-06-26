@@ -49,6 +49,21 @@ B_AGREE = -0.016604320441445    # z_A coefficient (published reduced-form)
 B_PI = 0.14735467793568         # z_picont (Personal Incentive) coefficient
 BETA0 = -0.5                    # final intercept (document line 415/460: betadd0)
 
+# ---------------------------------------------------------------------------
+# MEDIATOR path coefficients (document Formulas 2 & 3, Bansal et al. 2016 SEM).
+# These build the two mediators that the reduced-form (bE/bN/bA above) folds in.
+# They are emitted (NOT used to change the decision) for export/inspection.
+#   Formula 2  Privacy Concern = 0.14*Agreeable + 0.12*Neuroticism   (+ beta0; drops out when standardized)
+#   Formula 3  Trust           = 0.13*Extraversion + 0.0762*Agreeable - 0.0204*Neuroticism (+ beta0)
+# We emit only the TRAIT part of each mediator (no beta0): the document's Eq1/Eq2 beta0
+# intercepts are baseline constants identical for every agent, so they cancel out when the
+# mediator is standardized (z-scored) over the population for export. See compute_dd_score().
+PC_AGREE = 0.14    # Agreeableness -> Privacy Concern  (Bansal 2016, reported)
+PC_NEURO = 0.12    # Neuroticism   -> Privacy Concern  (Bansal 2016, reported)
+TR_EXTRA = 0.13    # Extraversion  -> Trust            (Bansal 2016, reported)
+TR_AGREE = 0.0762  # Agreeableness -> Trust            (Sobel-calculated path)
+TR_NEURO = -0.0204 # Neuroticism   -> Trust            (Sobel-calculated path)
+
 # Per-allowance-LEVEL categorical intercepts (added to the trait composite before
 # standardization). Verified vs professor: weighted_dd_categorical - trait_terms by level.
 #   level 1 (TA 12) +0.1464773 ; level 2 (TA 32) +0.0902694 ; level 3 (TA 72) +0.0384204
@@ -122,6 +137,14 @@ def compute_dd_score(
     z_A = _z_score_trait(agent_state.get('Agreeable', 0), 'Agreeable', z_params)
     trait_terms = bE * z_E + bN * z_N + bA * z_A
 
+    # --- MEDIATORS (document Formulas 2 & 3): TRAIT part only (no beta0). ---------
+    # Emitted for export/inspection; they do NOT alter the disclosure decision (the
+    # reduced-form bE/bN/bA already folds these in). The Eq1/Eq2 beta0 intercepts are
+    # baseline constants identical for every agent, so they drop out once Privacy
+    # Concern / Trust are standardized (z-scored) over the population for export.
+    privacy_concern = PC_AGREE * z_A + PC_NEURO * z_N
+    trust = TR_EXTRA * z_E + TR_AGREE * z_A + TR_NEURO * z_N
+
     level = int(agent_state.get('Assigned Allowance Level', 3))
     total_allowance = float(ALLOWANCE_CREDIT_MAPPING.get(level, 200))
 
@@ -129,17 +152,25 @@ def compute_dd_score(
     is_continuous = 'continuous' in str(income_mode).lower()
     composite_z = params.get('composite_z_scoring', {})
 
+    # Agent's raw income (used to surface PersonalIncentive = max_income - income for
+    # export). PersonalIncentive itself needs the population max, which is NOT visible
+    # at the per-agent level here, so we emit the agent's income and let the population
+    # exporter subtract it from max_income. (In continuous mode the income also feeds
+    # z_picont below; in categorical mode the income effect comes from the level
+    # intercept, but PersonalIncentive is still emitted from the agent's income.)
+    agent_income = agent_state.get('income', None)
+    if agent_income is None:
+        # Fallback only (orchestrator pre-generates income in Pass 1/2).
+        agent_income = get_agent_income(agent_state, simulation_config, np.random.default_rng(0))
+    agent_income = float(agent_income)
+
     z_picont = 0.0
     if is_continuous:
         # picont = max_income - income  =>  z(picont) = -z(income); max cancels in std.
-        income = agent_state.get('income', None)
         income_stats = (simulation_config or {}).get('income_stats', {})
         income_mean = income_stats.get('mean', 0)
         income_sd = income_stats.get('sd', 1)
-        if income is None:
-            # Fallback only (orchestrator pre-generates income in Pass 1/2).
-            income = get_agent_income(agent_state, simulation_config, np.random.default_rng(0))
-        z_income = (income - income_mean) / income_sd if income_sd > 0 else 0.0
+        z_income = (agent_income - income_mean) / income_sd if income_sd > 0 else 0.0
         z_picont = -z_income
         weighted_dd = trait_terms + bPI * z_picont
         # composite stats: runtime (population) if available, else fixed config / module default
@@ -166,6 +197,11 @@ def compute_dd_score(
         'z_neuroticism': float(z_N),
         'z_agreeable': float(z_A),
         'z_picont': float(z_picont),
+        # Mediators (document Formulas 2 & 3, trait part only; standardized at export).
+        'privacy_concern': float(privacy_concern),
+        'trust': float(trust),
+        # Agent income, so the exporter can build PersonalIncentive = max_income - income.
+        'agent_income': float(agent_income),
         'intercept': float(beta0),
         'is_continuous': bool(is_continuous),
         'level': level,
@@ -218,6 +254,35 @@ def _apply_stochastic(dd_det: float, params: Dict, pop_context: str,
     return float(rng.normal(dd_det, sigma_scaled)), sigma_scaled
 
 
+def _analytic_columns(score: Dict[str, Any], final_value: float, sigma_used: float) -> Dict[str, Any]:
+    """Build the export/inspection columns from a computed DD score.
+
+    Attached to EVERY return path (gated 'NA', default short-circuit, full model) so the
+    privacy-calculus columns (Intercept, PrivacyConcern, Trust, Disclosure Document, z-scores)
+    are populated for ALL agents. The underlying ungated model score exists regardless of the
+    platform eligibility gate, so we surface it even when the *decision* is 'NA' (the gate is
+    still enforced on the 'disclose_documents' value itself). For gated / default agents no
+    stochastic draw is applied: final_value is the deterministic score and sigma_used is 0.
+    """
+    return {
+        'disclose_documents_raw': float(final_value),
+        'disclose_documents_score': float(score['dd_deterministic']),
+        'disclose_documents_intercept': float(score['intercept']),
+        'disclose_documents_trait_terms': float(score['trait_terms']),
+        'disclose_documents_z_extraversion': float(score['z_extraversion']),
+        'disclose_documents_z_neuroticism': float(score['z_neuroticism']),
+        'disclose_documents_z_agreeable': float(score['z_agreeable']),
+        'disclose_documents_z_picont': float(score['z_picont']),
+        'disclose_documents_privacy_concern': float(score['privacy_concern']),
+        'disclose_documents_trust': float(score['trust']),
+        'disclose_documents_agent_income': float(score['agent_income']),
+        'disclose_documents_weighted_dd': float(score['weighted_dd']),
+        'disclose_documents_z_weighted_dd': float(score['z_weighted_dd']),
+        'disclose_documents_sigma_used': float(sigma_used),
+        'disclose_documents_income_mode': 'continuous' if score['is_continuous'] else 'categorical',
+    }
+
+
 def disclose_documents_stochastic(
     agent_state: Dict[str, Any],
     params: Dict[str, Any],
@@ -238,6 +303,17 @@ def disclose_documents_stochastic(
     sim = simulation_config or {}
     pop_context = kwargs.get('pop_context', 'documentation')
 
+    # ---- UNGATED MODEL DECISION (validation reference, computed for EVERY agent) --------
+    # Compute the deterministic privacy-calculus score for ALL agents, including ones the
+    # platform gate sends to "NA". This drives 'disclose_documents_model_y' (1 if the
+    # ungated deterministic model would disclose), which reproduces the DOCUMENT's all-agent
+    # validation rate (categorical 110/280 = 39.29%, continuous 102/280 = 36.43%). It does
+    # NOT affect the gated 'disclose_documents' decision below. No stochastic draw is applied
+    # here, so the validation number stays deterministic. The same `score` is reused in the
+    # full-model path to avoid recomputing.
+    score = compute_dd_score(agent_state, params, simulation_config)
+    model_y = 1 if score['dd_deterministic'] > 0 else 0
+
     # ---- STEP 1: ELIGIBILITY GATE (only when disclose_income was actually computed) -----
     # In a COMBINED run, disclose_income (Decision 1) runs first and writes agent_state
     # ['disclose_income'], so the platform gate applies: NA unless the agent disclosed income
@@ -249,23 +325,29 @@ def disclose_documents_stochastic(
     if 'disclose_income' in agent_state:
         if agent_state.get('disclose_income', 'N') != 'Y':
             agent_state['disclose_documents'] = 'NA'
-            return {'disclose_documents': 'NA', 'customer_type': get_customer_type(agent_state, simulation_config)}
+            return {'disclose_documents': 'NA', 'disclose_documents_model_y': model_y,
+                    'customer_type': get_customer_type(agent_state, simulation_config),
+                    **_analytic_columns(score, score['dd_deterministic'], 0.0)}
 
         income = get_agent_income(agent_state, simulation_config, rng)
         threshold = get_simulation_param(simulation_config, 'discount_income_threshold', 12500.0)
         if income >= threshold:
             agent_state['disclose_documents'] = 'NA'
-            return {'disclose_documents': 'NA', 'customer_type': get_customer_type(agent_state, simulation_config)}
+            return {'disclose_documents': 'NA', 'disclose_documents_model_y': model_y,
+                    'customer_type': get_customer_type(agent_state, simulation_config),
+                    **_analytic_columns(score, score['dd_deterministic'], 0.0)}
 
     # ---- STEP 2: DEFAULT short-circuit (DD unconfigured) -------------------
     if 'disclose_documents' in sim.get('default_decisions_list', []):
         default_config = sim.get('default_decisions', {}).get('disclose_documents')
         choice = _resolve_default_choice(default_config, rng)
         agent_state['disclose_documents'] = choice
-        return {'disclose_documents': choice, 'customer_type': get_customer_type(agent_state, simulation_config)}
+        return {'disclose_documents': choice, 'disclose_documents_model_y': model_y,
+                'customer_type': get_customer_type(agent_state, simulation_config),
+                **_analytic_columns(score, score['dd_deterministic'], 0.0)}
 
     # ---- STEP 3: FULL PRIVACY-CALCULUS MODEL ------------------------------
-    score = compute_dd_score(agent_state, params, simulation_config)
+    # Reuse the `score` already computed at the top (ungated, no stochastic draw).
     dd_det = score['dd_deterministic']
     final_value, sigma_used = _apply_stochastic(dd_det, params, pop_context, agent_state, rng)
 
@@ -275,20 +357,10 @@ def disclose_documents_stochastic(
 
     return {
         'disclose_documents': choice,
+        'disclose_documents_model_y': model_y,
         'customer_type': customer_type,
-        # raw values for Excel export / inspection
-        'disclose_documents_raw': float(final_value),
-        'disclose_documents_score': float(dd_det),
-        'disclose_documents_intercept': float(score['intercept']),
-        'disclose_documents_trait_terms': float(score['trait_terms']),
-        'disclose_documents_z_extraversion': float(score['z_extraversion']),
-        'disclose_documents_z_neuroticism': float(score['z_neuroticism']),
-        'disclose_documents_z_agreeable': float(score['z_agreeable']),
-        'disclose_documents_z_picont': float(score['z_picont']),
-        'disclose_documents_weighted_dd': float(score['weighted_dd']),
-        'disclose_documents_z_weighted_dd': float(score['z_weighted_dd']),
-        'disclose_documents_sigma_used': float(sigma_used),
-        'disclose_documents_income_mode': 'continuous' if score['is_continuous'] else 'categorical',
+        # raw values for Excel export / inspection (same column set on every return path)
+        **_analytic_columns(score, final_value, sigma_used),
     }
 
 

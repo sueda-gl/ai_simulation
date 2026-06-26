@@ -1441,7 +1441,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     with c2: st.metric("Agents per Sheet", len(first))
                     with c3: st.metric("Columns per Sheet", len(first.columns))
                     st.download_button(
-                        label=f"📄 Download Disclose Documents Excel ({len(sheets_data)} Sheets)",
+                        label=f"📄 Download Agent Disclose Documents Data ({len(sheets_data)} Sheets)",
                         data=buffer.getvalue(),
                         file_name=f"disclose_documents_compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1463,7 +1463,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     with c1: st.metric("Agents", len(export_df))
                     with c2: st.metric("Columns", len(export_df.columns))
                     st.download_button(
-                        label="📄 Download Disclose Documents Excel",
+                        label="📄 Download Agent Disclose Documents Data",
                         data=buffer.getvalue(),
                         file_name=f"disclose_documents_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -22,6 +22,8 @@ def _apply_price_formatting_disclosure(writer, sheet_name: str, df: pd.DataFrame
         'Religious', 'TWT+Sospeso', 'calc_PB', 'WOPB', 'WPB', 'Intercept', 'PB_i', 'Disclosure Income',
         'income', 'Income', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
         'Assigned income from the distribution',
+        # Disclose Documents (item-22 layout)
+        'PersonalIncentive', 'PrivacyConcern', 'Trust', 'Disclosure Document',
     ]
     
     workbook = writer.book
@@ -173,9 +175,9 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                 
                 st.plotly_chart(fig_hist, use_container_width=True)
                 
-                # Statistics and Classification side by side below histogram
-                col_stats, col_class = st.columns(2)
-                
+                # Statistics below histogram (Classification table removed - redundant with the Choice Breakdown table)
+                col_stats, _ = st.columns(2)
+
                 with col_stats:
                     st.markdown("**📈 Statistics**")
                     stats_df = pd.DataFrame({
@@ -189,15 +191,6 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                         ]
                     })
                     st.dataframe(stats_df, hide_index=True, use_container_width=True)
-                
-                with col_class:
-                    st.markdown("**📊 Classification**")
-                    classification_df = pd.DataFrame({
-                        'Choice': ['Y (disclose)', 'N (not disclose)'],
-                        'Count': [y_count_raw, n_count_raw],
-                        '%': [f"{y_pct_raw:.2f}%", f"{n_pct_raw:.2f}%"]
-                    })
-                    st.dataframe(classification_df, hide_index=True, use_container_width=True)
             else:
                 st.warning("No raw DI values available for histogram")
     
@@ -704,15 +697,31 @@ def _prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def _prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Prepare disclose DOCUMENTS data for Excel export (mirror of the disclose income exporter).
+    Prepare disclose DOCUMENTS data for Excel export (privacy-calculus model, item-22 layout).
 
-    Includes the full privacy-calculus calculation chain:
-    - Raw traits: Extraversion, Neuroticism, Agreeableness
-    - Income info: Assigned Allowance Level, income (continuous)
-    - Standardized inputs: z_E, z_N, z_A, z_PersonalIncentive (= -z_income)
-    - Composite: trait_terms, weighted_dd, z_weighted_dd
-    - Config/score: Intercept (beta0), DD score (deterministic), DD raw (post-stochastic), sigma
-    - Final decision: Disclose Documents (Y=1), customer_type
+    Column order (per professor feedback item 22):
+        Agent ID,
+        Extraversion, Neuroticism, Agreeable          (raw traits),
+        Assigned Allowance Level, Income,
+        TWT+Sospeso                                    (right after Income),
+        PersonalIncentive = max_income - income        (document Personal Incentive),
+        Intercept (beta0)                              (BEFORE the DD columns),
+        PrivacyConcern, Trust                          (standardized, Eq 2 & 3, AFTER Intercept),
+        Disclosure Document                            (the FINAL DD value = DD raw, post-stochastic),
+        Disclose Income (Y=1),
+        Disclose Documents (Y=1)                       (N/A unless qualified: DI=1 AND income<=threshold),
+        customer_type                                  (Discount/Fixed/Regular).
+
+    Standardization note: PrivacyConcern and Trust are the TRAIT parts of the document's
+    Equation 1 (Privacy Concern) and Equation 2 (Trust). The model emits them WITHOUT the
+    Eq1/Eq2 beta0 baseline intercepts, which are constants identical for every agent and
+    therefore drop out of the z-scored (standardized) values exported here. We z-score over
+    the population (ddof=1, matching Stata's egen std).
+
+    NOTE on the DD outcome: 'Disclosure Document' is the FINAL value = DD raw (after the
+    optional Normal draw). The deterministic pre-draw score (DD_score) is intentionally NOT
+    exported. (Reminder of the distinction: DD_score = deterministic; DD_raw = after draw;
+    they coincide when the stochastic component is off.)
 
     Returns a DataFrame for export, or None if disclose_documents is absent.
     """
@@ -721,7 +730,7 @@ def _prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
 
     e = pd.DataFrame()
 
-    # Agent ID
+    # --- Agent ID -----------------------------------------------------------
     if 'agent_id' in df.columns:
         e['Agent ID'] = df['agent_id']
     elif 'index' in df.columns:
@@ -729,46 +738,100 @@ def _prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     else:
         e['Agent ID'] = range(1, len(df) + 1)
 
-    # Raw traits
+    # --- Raw traits ---------------------------------------------------------
     e['Extraversion'] = df['ExtraversionBig5'] if 'ExtraversionBig5' in df.columns else ''
     e['Neuroticism'] = df['NeuroticismBig5'] if 'NeuroticismBig5' in df.columns else ''
     e['Agreeable'] = df['Agreeable'] if 'Agreeable' in df.columns else ''
 
-    # Income / allowance
+    # --- Income / allowance -------------------------------------------------
     e['Assigned Allowance Level'] = df['Assigned Allowance Level'] if 'Assigned Allowance Level' in df.columns else ''
-    e['Income'] = df['income'] if 'income' in df.columns else ''
+    income_series = None
+    if 'income' in df.columns:
+        income_series = pd.to_numeric(df['income'], errors='coerce')
+    elif 'disclose_documents_agent_income' in df.columns:
+        income_series = pd.to_numeric(df['disclose_documents_agent_income'], errors='coerce')
+    e['Income'] = income_series if income_series is not None else ''
 
-    # Standardized model inputs (emitted by the DD model)
-    e['z_Extraversion'] = df.get('disclose_documents_z_extraversion', '')
-    e['z_Neuroticism'] = df.get('disclose_documents_z_neuroticism', '')
-    e['z_Agreeable'] = df.get('disclose_documents_z_agreeable', '')
-    # z_PersonalIncentive (inverse-income term) is ONLY used in continuous income mode.
-    # In categorical mode the income effect comes from the per-allowance-level intercept
-    # instead, so show "N/A" there rather than a misleading 0.
-    _zpi = df.get('disclose_documents_z_picont', None)
-    _im = df.get('disclose_documents_income_mode', None)
-    if _zpi is not None and _im is not None:
-        e['z_PersonalIncentive'] = [
-            (zp if str(im).lower().startswith('continuous') else 'N/A')
-            for zp, im in zip(_zpi, _im)
-        ]
+    # --- TWT+Sospeso (right AFTER income) -----------------------------------
+    twt_col = 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}'
+    e['TWT+Sospeso'] = df[twt_col] if twt_col in df.columns else ''
+
+    # --- PersonalIncentive = max_income - income (document Personal Incentive) -----
+    # max_income is taken over the population (the maximum observed income in the sample).
+    if income_series is not None and income_series.notna().any():
+        max_income = income_series.max()
+        e['PersonalIncentive'] = max_income - income_series
     else:
-        e['z_PersonalIncentive'] = _zpi if _zpi is not None else ''
+        e['PersonalIncentive'] = ''
 
-    # Composite + score
-    e['trait_terms'] = df.get('disclose_documents_trait_terms', '')
-    e['weighted_dd'] = df.get('disclose_documents_weighted_dd', '')
-    e['z_weighted_dd'] = df.get('disclose_documents_z_weighted_dd', '')
+    # --- Intercept (beta0), BEFORE the DD columns ---------------------------
     e['Intercept'] = df.get('disclose_documents_intercept', '')
-    e['DD_score'] = df.get('disclose_documents_score', '')
-    e['DD_raw'] = df.get('disclose_documents_raw', '')
-    e['sigma_used'] = df.get('disclose_documents_sigma_used', '')
-    e['income_mode'] = df.get('disclose_documents_income_mode', '')
 
-    # Final decision (Y=1, N=0, NA preserved) + customer type
-    e['Disclose Documents (Y=1)'] = df['disclose_documents'].apply(
-        lambda x: 1 if x == 'Y' else (0 if x == 'N' else 'NA')
-    )
+    # --- Mediators: PrivacyConcern, Trust (standardized) AFTER Intercept ----
+    def _standardize(col_name):
+        if col_name not in df.columns:
+            return None
+        vals = pd.to_numeric(df[col_name], errors='coerce')
+        valid = vals.dropna()
+        if len(valid) < 2:
+            return vals  # nothing to standardize against
+        sd = valid.std(ddof=1)
+        if sd == 0 or pd.isna(sd):
+            return vals - valid.mean()
+        return (vals - valid.mean()) / sd
+
+    pc_std = _standardize('disclose_documents_privacy_concern')
+    tr_std = _standardize('disclose_documents_trust')
+    e['PrivacyConcern'] = pc_std if pc_std is not None else ''
+    e['Trust'] = tr_std if tr_std is not None else ''
+
+    # --- Single DD outcome: the FINAL value (DD raw, post-stochastic) -------
+    e['Disclosure Document'] = df.get('disclose_documents_raw', '')
+
+    # --- Disclose Income (Y=1) ----------------------------------------------
+    if 'disclose_income' in df.columns:
+        e['Disclose Income (Y=1)'] = df['disclose_income'].apply(
+            lambda x: 1 if x == 'Y' else (0 if x == 'N' else 'N/A')
+        )
+    else:
+        # Standalone DD run: disclose_income was not computed (ungated model).
+        e['Disclose Income (Y=1)'] = 'N/A'
+
+    # --- Disclose Documents (Y=1): N/A unless QUALIFIED ----------------------
+    # Qualified gate = Disclose Income == 'Y' AND income <= discount threshold.
+    # For every agent failing that gate (DI != Y, or income above threshold), force N/A.
+    from src.decisions.income_utils import get_simulation_param
+    threshold = None
+    try:
+        sim_cfg = df.attrs.get('simulation_config') if hasattr(df, 'attrs') else None
+        if sim_cfg is not None:
+            threshold = get_simulation_param(sim_cfg, 'discount_income_threshold', 12500.0)
+    except Exception:
+        threshold = None
+    if threshold is None:
+        threshold = 12500.0
+
+    def _dd_y(idx, raw):
+        # Base mapping of the model's choice.
+        base = 1 if raw == 'Y' else (0 if raw == 'N' else 'N/A')
+        if base == 'N/A':
+            return 'N/A'
+        # Apply the qualified gate explicitly.
+        if 'disclose_income' in df.columns:
+            di = df['disclose_income'].iloc[idx]
+            if di != 'Y':
+                return 'N/A'
+        if income_series is not None:
+            inc = income_series.iloc[idx]
+            if pd.notna(inc) and inc > threshold:
+                return 'N/A'
+        return base
+
+    e['Disclose Documents (Y=1)'] = [
+        _dd_y(i, raw) for i, raw in enumerate(df['disclose_documents'].tolist())
+    ]
+
+    # --- customer_type (Discount / Fixed / Regular) -------------------------
     if 'customer_type' in df.columns:
         e['customer_type'] = df['customer_type']
 

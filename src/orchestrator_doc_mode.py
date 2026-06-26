@@ -275,7 +275,11 @@ class OrchestratorDocMode:
         # Attach vendor data to DataFrame attrs for access in results visualization
         if 'vendors' in self.simulation_config:
             df.attrs['vendors'] = self.simulation_config['vendors']
-        
+
+        # Expose the resolved sim config (incl. Page-1 discount_income_threshold) so the Excel
+        # export's eligibility re-check uses the same threshold the model actually gated on.
+        df.attrs['simulation_config'] = self.simulation_config
+
         return df
     
     def _initialize_vendors(self, rng: np.random.Generator):

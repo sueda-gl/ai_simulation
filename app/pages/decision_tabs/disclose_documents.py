@@ -329,7 +329,29 @@ def render_formula_display(config):
     """Render the mathematical model formula based on selected income mode."""
     income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
 
+    # Dynamically read the discount threshold from the Main Parameters page so the
+    # eligibility-gate text tracks whatever the user set there (config/simulation.yaml
+    # discount_income_threshold -> st.session_state.sim_params.discount_income_threshold).
+    sim_params = st.session_state.get('sim_params', None)
+    discount_threshold = getattr(sim_params, 'discount_income_threshold', 12500.0) if sim_params else 12500.0
+
     with st.expander("Current Model Equation", expanded=True):
+        st.markdown("""
+        **Decision 2: Disclose Documents** applies only to qualified agents (income below the
+        discount threshold) who decided to disclose income. It uses a two-stage mediation model
+        with three equations:
+        - **Equation 1: Privacy Concern (Mediating Variable)** based on intercept, Neuroticism and
+          Agreeableness – same for both modes
+        - **Equation 2: Trust (Mediating Variable)** based on intercept, Neuroticism, Extraversion,
+          and Agreeableness – same for both modes
+        - **Equation 3: Disclose Document (Dependent Variable)** based on β₀ intercept, Privacy
+          Concern, Trust, and Personal Incentive (inverse of income = maximum income − personal
+          income) – different for categorical vs continuous modes
+
+        Output: "Y" if DD > 0 after stochastic draw, "N" otherwise.
+        """)
+        render_mediator_equations(config)
+
         if income_mode == "Categorical only":
             render_categorical_dd_formula(config)
         elif income_mode == "Continuous only":
@@ -340,14 +362,11 @@ def render_formula_display(config):
             st.markdown("---"); st.markdown("### Continuous Income Specification")
             render_continuous_dd_formula(config)
 
-        beta0 = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
         st.markdown("### Final Decision")
         st.markdown(f"""
-        - Standardize the composite: `z_weighted_dd = (weighted_dd − mean) / sd` (over the population)
-        - `dd_i = β₀ + z_weighted_dd_i`  (β₀ = {beta0})
-        - If stochastic enabled: `dd_i ~ Normal(μ = dd_i, σ)` where σ = sd(consumed transfers+sospeso, 0–1 scaled) × coefficient (overall or per quintile)
+        - If stochastic enabled: `dd_i ~ Normal(μ = dd_i, σ)` where σ = sd(consumed transfers+sospeso over two periods, 0–1 scaled) × coefficient (overall or per quintile)
         - **disclose_documents = "Y"** if dd_i > 0, else **"N"**
-        - **Eligibility gate:** only agents who disclosed income (`disclose_income = Y`) AND have income below the discount threshold are asked; everyone else is **"NA"**.
+        - **Eligibility gate:** only agents who disclosed income (`disclose_income = Y`) AND have income below the discount threshold of {discount_threshold:,.0f} are considered; everyone else is **"NA"**.
         """)
 
     with st.expander("Variable Definitions", expanded=False):
@@ -357,10 +376,23 @@ def render_formula_display(config):
         | z_E | Z-scored Extraversion |
         | z_N | Z-scored Neuroticism |
         | z_A | Z-scored Agreeableness |
-        | z_picont | Z-scored Personal Incentive (inverse income); equals −z_income |
-        | β_level | Per-allowance-level intercept (categorical mode) |
-        | β₀ | Baseline disclosure tendency after standardization (default −0.5) |
+        | z_picont | Standardized Personal Incentive (picont = maximum income − personal income) |
+        | β_income_q | Income quintile effect / intercept (categorical mode, Quintiles 1-5) |
+        | β₀ | Baseline disclosure tendency (default −0.5) |
         """)
+
+
+def render_mediator_equations(config):
+    """Render Equation 1 (Privacy Concern) and Equation 2 (Trust) - same for both modes."""
+    beta0 = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
+    st.markdown("### Equation 1: Privacy Concern (PC)")
+    st.latex(
+        rf"PC_i = \beta_0 + 0.12\,z_{{N_i}} + 0.14\,z_{{A_i}} \quad (\beta_0 = {beta0})"
+    )
+    st.markdown("### Equation 2: Trust (T)")
+    st.latex(
+        rf"T_i = \beta_0 - 0.0204\,z_{{N_i}} + 0.13\,z_{{E_i}} + 0.0762\,z_{{A_i}} \quad (\beta_0 = {beta0})"
+    )
 
 
 def render_categorical_dd_formula(config):
@@ -369,14 +401,15 @@ def render_categorical_dd_formula(config):
     bE = coeffs.get('extraversion', 0.015584630336545)
     bN = coeffs.get('neuroticism', -0.022306825775166)
     bA = coeffs.get('agreeable', -0.016604320441445)
-    st.markdown("### Composite score (Categorical)")
+    st.markdown("### Equation 3: Disclosure Documents (Categorical)")
     st.latex(
-        rf"weighted\_dd_i = {bE:.6f}\,z_{{E_i}} {bN:.6f}\,z_{{N_i}} {bA:.6f}\,z_{{A_i}} + \beta_{{level}}[level_i]"
+        rf"DiscloseDocuments_i = {bE:.6f}\,z_{{E_i}} {bN:.6f}\,z_{{N_i}} {bA:.6f}\,z_{{A_i}} + \beta_{{income\_q}}[Q_i]"
     )
     icpts = config.get('categorical_intercepts', {})
-    st.markdown("**Per-allowance-level intercepts (β_level):**")
+    st.markdown("**PIcat = 200 if income-level = 12; 128 if = 32; 72 if = 72; 32 if = 128; 12 if = 200**")
+    st.markdown("**Income Quintile Effects (β_income_q):**")
     df = pd.DataFrame({
-        'Level': ['Level 1 (€12)', 'Level 2 (€32)', 'Level 3 (€72)', 'Level 4 (€128)', 'Level 5 (€200)'],
+        'Q': ['Q1 (€12)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)'],
         'Intercept': [
             f"{icpts.get('level_1', 0.1464773):.7f}",
             f"{icpts.get('level_2', 0.0902694):.7f}",
@@ -386,7 +419,11 @@ def render_categorical_dd_formula(config):
         ]
     })
     st.dataframe(df, hide_index=True, use_container_width=True)
-    st.caption("Lower allowance → higher intercept → greater incentive to disclose for a discount.")
+    st.caption(
+        "Each value = regression base (_cons = −0.2393718) + the income-quintile dummy, "
+        "so it matches the document's regression table."
+    )
+    st.caption("β_income_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
 
 
 def render_continuous_dd_formula(config):
@@ -396,12 +433,13 @@ def render_continuous_dd_formula(config):
     bN = coeffs.get('neuroticism', -0.022306825775166)
     bA = coeffs.get('agreeable', -0.016604320441445)
     bPI = coeffs.get('personal_incentive', 0.14735467793568)
-    st.markdown("### Composite score (Continuous)")
+    beta0 = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
+    st.markdown("### Equation 3: Disclosure Documents (Continuous)")
     st.latex(
-        rf"weighted\_dd_i = {bE:.6f}\,z_{{E_i}} {bN:.6f}\,z_{{N_i}} {bA:.6f}\,z_{{A_i}} + {bPI:.6f}\,z_{{picont_i}}"
+        rf"DiscloseDocuments_i = [\beta_0 = {beta0:.2f}] + [{bE:.6f}\times z_{{E_i}} {bN:.6f}\times z_{{N_i}} {bA:.6f}\times z_{{A_i}} + {bPI:.6f}\times z_{{PIcont_i}}]"
     )
-    st.caption("z_picont = −z_income (the inverse-income Personal Incentive). Income is drawn fresh each run; "
-               "confirmed against Stata using a frozen income realization (see notes.md).")
+    st.caption("z_PIcont = standardized Personal Incentive (picont), where picont = maximum income − personal income. "
+               "Confirmed against Stata using a frozen income realization (see notes.md).")
 
 
 def get_current_yaml_intercept():

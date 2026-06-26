@@ -200,6 +200,9 @@ disclose_documents:
     weighted_dd_cont:
       mean: 0.0
       sd: 0.1509454399  # fallback only; recomputed at runtime (matches professor .dta std ddof=1)
+  # sigma derived from consumedtransferssospeso2periods (two-period sospeso + transfer consumption).
+  # Reconstruct/verify these constants from the raw experiment files: `python -m src.build_dd_sigma`.
+  # NOTE: Period 2 is merged by ROW POSITION, not Participant ID — see notes.md / build_dd_sigma.py.
   stochastic:
     sigma_strategy: overall
     sigma_overall: 0.1606568355

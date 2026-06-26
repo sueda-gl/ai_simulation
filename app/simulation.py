@@ -239,7 +239,18 @@ def _apply_decision_settings(orchestrator, decision_settings: dict):
         if not hasattr(orchestrator, 'simulation_config'):
             orchestrator.simulation_config = {}
         orchestrator.simulation_config['custom_decisions'] = st.session_state.custom_decisions
-        orchestrator.simulation_config['default_decisions_list'] = st.session_state.default_decisions
+
+        default_decisions_list = list(st.session_state.default_decisions)
+        # STANDALONE disclose_documents run with NO selected disclose_income config:
+        # force disclose_income to use its DEFAULT 50/50 probability (its default-decisions
+        # short-circuit) so we only assign Y/N for eligibility, WITHOUT running the full DI
+        # model. We add it to the orchestrator's default_decisions_list ONLY (not to
+        # st.session_state.default_decisions), so the results layer still detects a DD-only
+        # run (custom_decisions == ['disclose_documents'], default_decisions == []).
+        if st.session_state.get('_dd_standalone_force_di_default') and 'disclose_income' not in default_decisions_list:
+            default_decisions_list.append('disclose_income')
+
+        orchestrator.simulation_config['default_decisions_list'] = default_decisions_list
 
 
 def _apply_donation_config(orchestrator, pop_mode: str, inc_mode: str):
@@ -1140,6 +1151,19 @@ def run_simulation_from_sidebar():
             
             # Determine which decisions to run
             single_decision = None if len(st.session_state.decision_params.selected_decisions) == len(ALL_DECISIONS) else st.session_state.decision_params.selected_decisions
+
+            # execution_single_decision is the list actually passed to the orchestrator.
+            # It usually equals single_decision, but for a STANDALONE disclose_documents run
+            # we additionally execute disclose_income FIRST so the platform eligibility gate
+            # (qualified = income < threshold AND disclose_income == 'Y') can be applied.
+            # single_decision itself is kept untouched so it still works as the branch
+            # discriminator below and so the results layer still sees a DD-only run
+            # (custom_decisions == ['disclose_documents']).
+            execution_single_decision = single_decision
+
+            # Clear any standalone-DD eligibility flag from a previous run (avoid leaking state).
+            if '_dd_standalone_force_di_default' in st.session_state:
+                del st.session_state['_dd_standalone_force_di_default']
             
             # Collect current decision settings
             decision_settings = collect_decision_settings()
@@ -1210,6 +1234,38 @@ def run_simulation_from_sidebar():
                 # renders the correct (3x2) side-by-side comparison grid (mirrors disclose_income).
                 st.session_state.income_spec_mode = effective_income_mode
                 st.caption(f"🎯 Using Disclose Documents specific mode: {effective_income_mode}")
+
+                # ---- ELIGIBILITY (qualified subgroup) for the STANDALONE DD run ----------
+                # Decision 2 only applies to agents QUALIFIED for the discount:
+                #   qualified = income < discount_income_threshold AND disclose_income == 'Y'.
+                # Non-qualified agents -> disclose_documents == 'NA'.
+                #
+                # The eligibility gate inside disclose_documents_stochastic only fires when
+                # 'disclose_income' is present in agent_state, so we must compute Decision 1
+                # FIRST in this standalone run. Two cases (professor's spec):
+                #   (i)  No disclose_income config selected -> assign disclose_income using its
+                #        DEFAULT probability (50% via the default-decisions config) so ~half of
+                #        the income<threshold agents disclose. We force the DI default
+                #        short-circuit by flagging it (read in _apply_decision_settings) so the
+                #        FULL DI model is NOT run; the simple 50/50 draw is used instead.
+                #   (ii) A disclose_income config WAS selected/run separately -> USE it. The
+                #        runners already apply it via _apply_disclose_income_config, so we just
+                #        execute the full DI model (no default short-circuit).
+                execution_single_decision = ['disclose_income', 'disclose_documents']
+                di_selected_cfg = get_decision_config('disclose_income')
+                if di_selected_cfg is None:
+                    # Case (i): use disclose_income's default 50/50 probability for the gate.
+                    st.session_state['_dd_standalone_force_di_default'] = True
+                    st.caption(
+                        "🔐 Eligibility: assigning Disclose Income via its default probability "
+                        f"({decision_settings.get('disclose_income', {}).get('probability_y', 0.5):.0%} Y) "
+                        "to identify the qualified subgroup (income < threshold AND disclosed income)."
+                    )
+                else:
+                    st.caption(
+                        "🔐 Eligibility: using the selected Disclose Income configuration to "
+                        "identify the qualified subgroup (income < threshold AND disclosed income)."
+                    )
             elif single_decision == ['donation_default']:
                 # Running ONLY donation_default - check for saved config first
                 dd_config = get_decision_config('donation_default')
@@ -1271,16 +1327,16 @@ def run_simulation_from_sidebar():
                     runner = MODE_RUNNERS[pop_type]
                     
                     if effective_income_mode == "Compare both":
-                        results[f"{result_name}_categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
-                        results[f"{result_name}_continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
+                        results[f"{result_name}_categorical"] = runner(n_agents, seed, "categorical", decision_settings, execution_single_decision)
+                        results[f"{result_name}_continuous"] = runner(n_agents, seed, "continuous", decision_settings, execution_single_decision)
                     elif "continuous" in effective_income_mode.lower():
-                        results[f"{result_name}_continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
+                        results[f"{result_name}_continuous"] = runner(n_agents, seed, "continuous", decision_settings, execution_single_decision)
                     else:  # categorical only
-                        results[f"{result_name}_categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
-            
+                        results[f"{result_name}_categorical"] = runner(n_agents, seed, "categorical", decision_settings, execution_single_decision)
+
             elif effective_pop_mode == "Dependent variable resampling":
                 # DepVar mode
-                results["depvar"] = run_depvar_mode(n_agents, seed, "categorical", decision_settings, single_decision)
+                results["depvar"] = run_depvar_mode(n_agents, seed, "categorical", decision_settings, execution_single_decision)
             
             else:
                 # Single population mode - use the appropriate runner
@@ -1294,12 +1350,12 @@ def run_simulation_from_sidebar():
                     st.info(f"📊 Using original 280 participants")
                     
                 if effective_income_mode == "Compare both":
-                    results["categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
-                    results["continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
+                    results["categorical"] = runner(n_agents, seed, "categorical", decision_settings, execution_single_decision)
+                    results["continuous"] = runner(n_agents, seed, "continuous", decision_settings, execution_single_decision)
                 elif "continuous" in effective_income_mode.lower():
-                    results["continuous"] = runner(n_agents, seed, "continuous", decision_settings, single_decision)
+                    results["continuous"] = runner(n_agents, seed, "continuous", decision_settings, execution_single_decision)
                 else:  # categorical only
-                    results["categorical"] = runner(n_agents, seed, "categorical", decision_settings, single_decision)
+                    results["categorical"] = runner(n_agents, seed, "categorical", decision_settings, execution_single_decision)
             
             # Assign global transaction IDs to ensure consistency across exports
             for key in results:

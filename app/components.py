@@ -67,7 +67,17 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             # Rate over QUALIFIED (non-NA) agents only; NA agents must not dilute it
             qualified = df.loc[df['disclose_documents'] != 'NA', 'disclose_documents']
             y_rate = qualified.eq('Y').mean() if len(qualified) > 0 else 0
-            st.metric("Disclose Documents (Y)", f"{y_rate:.2%}")
+            st.metric("Disclose Documents (Y) — qualified subgroup", f"{y_rate:.2%}")
+            # Model-validation reference: the document's all-agent rate (ungated, deterministic
+            # model decision over EVERY agent, including gated NAs). ~39.29% categorical /
+            # ~36.43% continuous. Two valid views: this is the model-validation number, the
+            # metric above is the platform (qualified-subgroup) reality.
+            if 'disclose_documents_model_y' in df.columns:
+                model_rate = df['disclose_documents_model_y'].mean()
+                st.caption(
+                    f"🔬 Model validation rate (all agents): **{model_rate:.2%}** — "
+                    f"matches the document (~39.29% categorical / ~36.43% continuous)"
+                )
     
     # Donation rate analysis (if available) - always use truncated
     donation_col = 'donation_default'
@@ -140,22 +150,29 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             st.markdown("**📊 Choice Breakdown**")
             # Ensure Y appears before N in the breakdown
             ordered_choices = ['Y', 'N']
+            choice_labels = {'Y': 'Y (disclose income)', 'N': 'N (not disclose)'}
             ordered_data = []
             for choice in ordered_choices:
                 if choice in value_counts.index:
                     count = value_counts[choice]
                     ordered_data.append({
-                        'Choice': choice,
+                        'Choice': choice_labels[choice],
                         'Count': count,
                         'Percentage': f"{(count/total)*100:.2f}%"
                     })
-            
+
             breakdown_df = pd.DataFrame(ordered_data)
             st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
-    
+
     # Disclose Documents analysis (if available)
     if 'disclose_documents' in df.columns:
         st.subheader(f"📊 Disclose Documents Analysis{title_suffix}")
+        if 'disclose_documents_model_y' in df.columns:
+            model_rate = df['disclose_documents_model_y'].mean()
+            st.caption(
+                f"🔬 Model validation (all agents): **{model_rate:.2%}**. "
+                f"The charts/stats below are the qualified subgroup."
+            )
         if 'disclose_documents_raw' in df.columns:
             # DETAILED ANALYSIS: histogram of raw scores (qualified agents only)
             show_disclose_documents_rate_analysis(df, title_suffix, result_key, enable_selection)
@@ -173,12 +190,13 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
                 st.plotly_chart(fig, use_container_width=True, key=chart_key)
             st.markdown("**📊 Choice Breakdown (qualified agents)**")
             total_q = len(qualified)
+            choice_labels = {'Y': 'Y (disclose documents)', 'N': 'N (not disclose)'}
             ordered_data = []
             for choice in ['Y', 'N']:
                 if choice in value_counts.index:
                     count = value_counts[choice]
                     ordered_data.append({
-                        'Choice': choice, 'Count': int(count),
+                        'Choice': choice_labels[choice], 'Count': int(count),
                         'Percentage': f"{(count/total_q)*100:.2f}%" if total_q else "0.00%"
                     })
             st.dataframe(pd.DataFrame(ordered_data), use_container_width=True, hide_index=True)
@@ -483,32 +501,21 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
     chart_key = f"di_raw_hist_{result_key}" if result_key else f"di_raw_hist_{title_suffix}"
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
     
-    # Statistics and Classification side by side BELOW the graph
-    col_stats, col_class = st.columns(2)
-    
-    with col_stats:
-        st.markdown("**📈 Statistics**")
-        stats_df = pd.DataFrame({
-            'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
-            'Value': [
-                f"{mean_val:.4f}",
-                f"{std_val:.4f}",
-                f"{median_val:.4f}",
-                f"{min_val:.4f}",
-                f"{max_val:.4f}"
-            ]
-        })
-        st.dataframe(stats_df, hide_index=True, use_container_width=True)
-    
-    with col_class:
-        st.markdown("**📊 Classification**")
-        classification_df = pd.DataFrame({
-            'Choice': ['Y (disclose)', 'N (not disclose)'],
-            'Count': [y_count, n_count],
-            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%"]
-        })
-        st.dataframe(classification_df, hide_index=True, use_container_width=True)
-    
+    # Statistics panel BELOW the graph
+    # (Classification table removed - redundant with the Choice Breakdown table.)
+    st.markdown("**📈 Statistics**")
+    stats_df = pd.DataFrame({
+        'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+        'Value': [
+            f"{mean_val:.4f}",
+            f"{std_val:.4f}",
+            f"{median_val:.4f}",
+            f"{min_val:.4f}",
+            f"{max_val:.4f}"
+        ]
+    })
+    st.dataframe(stats_df, hide_index=True, use_container_width=True)
+
     # Show key insight about distribution relative to threshold
     if mean_val > 0:
         st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")
@@ -598,8 +605,15 @@ def show_disclose_documents_rate_analysis(df, title_suffix="", result_key=None, 
         st.warning("Raw DD values not available - showing basic Y/N analysis only")
         return
 
-    # NA (ineligible) agents lack a raw score -> NaN -> dropped (only qualified agents)
-    raw_values = df[raw_col].dropna()
+    # Qualified subgroup = agents the gate did NOT send to NA (disclosed income AND income <
+    # threshold). Identify them by the DECISION column, NOT by raw being NaN: the model now
+    # emits a raw score for EVERY agent (including gated NAs) for export, so a bare
+    # raw.dropna() would wrongly include ineligible agents (showing the all-agent model rate
+    # instead of the qualified subgroup).
+    if 'disclose_documents' in df.columns:
+        raw_values = df.loc[df['disclose_documents'] != 'NA', raw_col].dropna()
+    else:
+        raw_values = df[raw_col].dropna()
     if len(raw_values) == 0:
         st.warning("No qualified agents (all income >= discount threshold) - no raw DD values")
         return
@@ -626,6 +640,15 @@ def show_disclose_documents_rate_analysis(df, title_suffix="", result_key=None, 
     )
     chart_key = f"dd_raw_hist_{result_key}" if result_key else f"dd_raw_hist_{title_suffix}"
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
+
+    # Model-validation reference: the document's all-agent (ungated) rate. The histogram /
+    # stats here are the qualified subgroup; this caption surfaces the validation number.
+    if 'disclose_documents_model_y' in df.columns:
+        model_rate = df['disclose_documents_model_y'].mean()
+        st.caption(
+            f"🔬 Model validation (all agents): **{model_rate:.2%}**; "
+            f"the histogram/stats above are the qualified subgroup."
+        )
 
     col_stats, col_class = st.columns(2)
     with col_stats:
@@ -665,19 +688,7 @@ def render_disclose_documents_selection_button(result_key, result_df):
 
     is_selected = is_decision_config_selected('disclose_documents', result_key)
     st.markdown("---")
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        raw_col = 'disclose_documents_raw'
-        if raw_col in result_df.columns and result_df[raw_col].notna().any():
-            raw_vals = result_df[raw_col].dropna()
-            mean_raw = raw_vals.mean()
-            y_rate = (raw_vals > 0).mean() * 100
-            st.caption(f"📊 Quick Summary: {len(raw_vals):,} qualified agents, mean DD={mean_raw:.4f}, Y rate={y_rate:.2f}%")
-        else:
-            qualified = result_df.loc[result_df['disclose_documents'] != 'NA', 'disclose_documents']
-            y_rate = (qualified == 'Y').mean() * 100 if len(qualified) > 0 else 0
-            st.caption(f"📊 Quick Summary: {len(qualified):,} qualified agents, Y rate={y_rate:.2f}%")
+    _, col2 = st.columns([2, 1])
 
     with col2:
         if is_selected:
