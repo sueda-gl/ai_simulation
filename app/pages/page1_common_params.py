@@ -863,7 +863,7 @@ BUDGET_SHOP,5.25,50,0""")
         
         # Sync the widget's state to sim_params
         st.session_state.sim_params.income_distribution = st.session_state.page1_income_distribution
-        
+
         # Distribution-specific parameters
         if st.session_state.page1_income_distribution == "lognormal":
             st.markdown("**Lognormal Distribution Parameters**")

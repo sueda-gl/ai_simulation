@@ -172,10 +172,10 @@ disclose_documents:
   default_value: NA
   equation_coefficients:
     extraversion: 0.015584630336545
-    neuroticism: -0.022306825775166
-    agreeable: -0.016604320441445
+    neuroticism: -0.024781455105683    # CORRECTED (was -0.022306825775166)
+    agreeable: -0.016923520441338      # CORRECTED (was -0.016604320441445)
     personal_incentive: 0.14735467793568
-  intercept: -0.5
+  intercept: -0.75                     # professor's updated default (was -0.5)
   income_mode: Categorical only
   z_scoring:
     ExtraversionBig5:
@@ -196,10 +196,10 @@ disclose_documents:
   composite_z_scoring:
     weighted_dd_categorical:
       mean: 0.0
-      sd: 0.13755775490611996
+      sd: 0.13783441040509267   # CORRECTED coeffs (was 0.13755775490611996)
     weighted_dd_cont:
       mean: 0.0
-      sd: 0.1509454399  # fallback only; recomputed at runtime (matches professor .dta std ddof=1)
+      sd: 0.15115619105427494   # CORRECTED coeffs; fallback only, recomputed at runtime (was 0.1509454399)
   # sigma derived from consumedtransferssospeso2periods (two-period sospeso + transfer consumption).
   # Reconstruct/verify these constants from the raw experiment files: `python -m src.build_dd_sigma`.
   # NOTE: Period 2 is merged by ROW POSITION, not Participant ID — see notes.md / build_dd_sigma.py.

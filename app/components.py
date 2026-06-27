@@ -28,6 +28,14 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     
     # Check if this is dependent variable mode (only has donation_default column)
     is_depvar_mode = len(df.columns) == 1 and 'donation_default' in df.columns
+
+    # Disclose-Documents-only run: the disclose_income column is present solely to drive the
+    # eligibility gate, so none of its metrics/graphs/analysis should appear on the Disclose
+    # Documents results page (per professor feedback). Detected via the DD-only run flag.
+    is_dd_focus = (
+        hasattr(st.session_state, 'custom_decisions')
+        and st.session_state.custom_decisions == ['disclose_documents']
+    )
     
     # Display anchor weights info (not for depvar mode)
     if not is_depvar_mode:
@@ -60,7 +68,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         donation_col = 'donation_default'
         if donation_col in df.columns:
             st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
-        elif 'disclose_income' in df.columns:
+        elif 'disclose_income' in df.columns and not is_dd_focus:
             y_rate = (df['disclose_income'] == 'Y').mean()
             st.metric("Disclose Income (Y)", f"{y_rate:.2%}")
         elif 'disclose_documents' in df.columns:
@@ -69,14 +77,14 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             y_rate = qualified.eq('Y').mean() if len(qualified) > 0 else 0
             st.metric("Disclose Documents (Y) — qualified subgroup", f"{y_rate:.2%}")
             # Model-validation reference: the document's all-agent rate (ungated, deterministic
-            # model decision over EVERY agent, including gated NAs). ~39.29% categorical /
-            # ~36.43% continuous. Two valid views: this is the model-validation number, the
-            # metric above is the platform (qualified-subgroup) reality.
+            # model decision over EVERY agent, including gated NAs). ~27.14% categorical /
+            # ~22.50% continuous (corrected model). Two valid views: this is the model-validation
+            # number, the metric above is the platform (qualified-subgroup) reality.
             if 'disclose_documents_model_y' in df.columns:
                 model_rate = df['disclose_documents_model_y'].mean()
                 st.caption(
                     f"🔬 Model validation rate (all agents): **{model_rate:.2%}** — "
-                    f"matches the document (~39.29% categorical / ~36.43% continuous)"
+                    f"matches the corrected document (~27.14% categorical / ~22.50% continuous)"
                 )
     
     # Donation rate analysis (if available) - always use truncated
@@ -121,8 +129,9 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             })
             st.dataframe(stats_df, hide_index=True)
     
-    # Disclose Income analysis (if available)
-    if 'disclose_income' in df.columns:
+    # Disclose Income analysis (if available; hidden on Disclose-Documents-only runs, where the
+    # disclose_income column exists only to drive the eligibility gate)
+    if 'disclose_income' in df.columns and not is_dd_focus:
         st.subheader(f"📊 Disclose Income Analysis{title_suffix}")
         
         # Check if we have raw DI values for detailed analysis

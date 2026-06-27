@@ -29,7 +29,7 @@ LEVEL_LABELS = {
     '1': 'Level 1 (€12)', '2': 'Level 2 (€32)', '3': 'Level 3 (€72)',
     '4': 'Level 4 (€128)', '5': 'Level 5 (€200)',
 }
-RESEARCH_DEFAULT_INTERCEPT = -0.5
+RESEARCH_DEFAULT_INTERCEPT = -0.75
 
 
 def load_disclose_documents_config():
@@ -377,21 +377,22 @@ def render_formula_display(config):
         | z_N | Z-scored Neuroticism |
         | z_A | Z-scored Agreeableness |
         | z_picont | Standardized Personal Incentive (picont = maximum income − personal income) |
-        | β_income_q | Income quintile effect / intercept (categorical mode, Quintiles 1-5) |
-        | β₀ | Baseline disclosure tendency (default −0.5) |
+        | β_PIcat_q | Income quintile effect / intercept (categorical mode, Quintiles 1-5) |
+        | β₀ | Baseline disclosure tendency (default −0.75) |
         """)
 
 
 def render_mediator_equations(config):
     """Render Equation 1 (Privacy Concern) and Equation 2 (Trust) - same for both modes."""
-    beta0 = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
+    # Mediators (Privacy Concern, Trust) carry NO beta0 — the beta0 adjustment is applied
+    # only in Equation 3 (per professor feedback).
     st.markdown("### Equation 1: Privacy Concern (PC)")
     st.latex(
-        rf"PC_i = \beta_0 + 0.12\,z_{{N_i}} + 0.14\,z_{{A_i}} \quad (\beta_0 = {beta0})"
+        rf"PC_i = 0.12\,z_{{N_i}} + 0.14\,z_{{A_i}}"
     )
     st.markdown("### Equation 2: Trust (T)")
     st.latex(
-        rf"T_i = \beta_0 - 0.0204\,z_{{N_i}} + 0.13\,z_{{E_i}} + 0.0762\,z_{{A_i}} \quad (\beta_0 = {beta0})"
+        rf"T_i = -0.0204\,z_{{N_i}} + 0.13\,z_{{E_i}} + 0.0762\,z_{{A_i}}"
     )
 
 
@@ -399,18 +400,20 @@ def render_categorical_dd_formula(config):
     """Render the categorical-income DD formula."""
     coeffs = config.get('equation_coefficients', {})
     bE = coeffs.get('extraversion', 0.015584630336545)
-    bN = coeffs.get('neuroticism', -0.022306825775166)
-    bA = coeffs.get('agreeable', -0.016604320441445)
+    bN = coeffs.get('neuroticism', -0.024781455105683)
+    bA = coeffs.get('agreeable', -0.016923520441338)
     st.markdown("### Equation 3: Disclosure Documents (Categorical)")
     st.latex(
-        rf"DiscloseDocuments_i = {bE:.6f}\,z_{{E_i}} {bN:.6f}\,z_{{N_i}} {bA:.6f}\,z_{{A_i}} + \beta_{{income\_q}}[Q_i]"
+        rf"DiscloseDocuments_i = \beta_0 + {bE:.6f}\,z_{{E_i}} {bN:.6f}\,z_{{N_i}} {bA:.6f}\,z_{{A_i}} + \beta_{{PIcat\_q}}[quintile_i]"
     )
     icpts = config.get('categorical_intercepts', {})
     st.markdown("**PIcat = 200 if income-level = 12; 128 if = 32; 72 if = 72; 32 if = 128; 12 if = 200**")
-    st.markdown("**Income Quintile Effects (β_income_q):**")
+    st.markdown("**Income Quintile Effects (β_PIcat_q):**")
     df = pd.DataFrame({
-        'Q': ['Q1 (€12)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)'],
-        'Intercept': [
+        # €-values are the INVERSE of income (PIcat), per professor: "we use the inverse of
+        # income throughout" — so income-12 agents show as €200, income-200 as €12, etc.
+        'Quintile': ['Q1 (€200)', 'Q2 (€128)', 'Q3 (€72)', 'Q4 (€32)', 'Q5 (€12)'],
+        'β_PIcat_q Intercept': [
             f"{icpts.get('level_1', 0.1464773):.7f}",
             f"{icpts.get('level_2', 0.0902694):.7f}",
             f"{icpts.get('level_3', 0.0384204):.7f}",
@@ -423,15 +426,15 @@ def render_categorical_dd_formula(config):
         "Each value = regression base (_cons = −0.2393718) + the income-quintile dummy, "
         "so it matches the document's regression table."
     )
-    st.caption("β_income_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
+    st.caption("β_PIcat_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
 
 
 def render_continuous_dd_formula(config):
     """Render the continuous-income DD formula."""
     coeffs = config.get('equation_coefficients', {})
     bE = coeffs.get('extraversion', 0.015584630336545)
-    bN = coeffs.get('neuroticism', -0.022306825775166)
-    bA = coeffs.get('agreeable', -0.016604320441445)
+    bN = coeffs.get('neuroticism', -0.024781455105683)
+    bA = coeffs.get('agreeable', -0.016923520441338)
     bPI = coeffs.get('personal_incentive', 0.14735467793568)
     beta0 = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
     st.markdown("### Equation 3: Disclosure Documents (Continuous)")
@@ -470,7 +473,7 @@ def render_intercept_override_section(config):
             new_intercept = st.number_input(
                 "Baseline disclosure tendency", min_value=-5.0, max_value=5.0,
                 value=float(int_val), step=0.01, format="%.4f",
-                help="β₀ = −0.5 in the disclose documents equation. Higher values increase baseline probability of disclosure.",
+                help="β₀ = −0.75 in the disclose documents equation. Higher values increase baseline probability of disclosure.",
                 key="dd_override_intercept",
                 on_change=lambda: auto_save_intercept(st.session_state.dd_override_intercept)
             )
@@ -561,12 +564,12 @@ def render_actions_and_management_section(config):
     with col2:
         st.markdown("**🔄 Reset Intercept**")
         if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True,
-                     help="Reset intercept value to research default (−0.5)", key="dd_reload_btn"):
+                     help="Reset intercept value to research default (−0.75)", key="dd_reload_btn"):
             if save_disclose_documents_config({'intercept': RESEARCH_DEFAULT_INTERCEPT}):
                 st.session_state.dd_intercept = RESEARCH_DEFAULT_INTERCEPT
                 if 'dd_intercept_override_values' in st.session_state:
                     st.session_state.dd_intercept_override_values['intercept'] = RESEARCH_DEFAULT_INTERCEPT
-                st.toast("✅ Intercept reset to research default (−0.5)", icon="🔄")
+                st.toast("✅ Intercept reset to research default (−0.75)", icon="🔄")
                 st.rerun()
             else:
                 st.toast("❌ Failed to reset intercept", icon="⚠️")

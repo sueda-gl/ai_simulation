@@ -1,15 +1,15 @@
 """
 Validation tests for Decision 2: Disclose Documents.
 
-The deterministic privacy-calculus model is validated against the professor's Stata
-Decision 2 results:
-- CATEGORICAL: 110/280 = 39.29% disclosure (every per-allowance-level cell).
-- CONTINUOUS:  102/280 = 36.43% disclosure, using the FROZEN income realization
+The deterministic privacy-calculus model is validated against the professor's CORRECTED
+Stata Decision 2 results (two document coefficient errors fixed + intercept beta0 = -0.75):
+- CATEGORICAL: 76/280 = 27.14% disclosure (every per-allowance-level cell).
+- CONTINUOUS:  63/280 = 22.50% disclosure, using the FROZEN income realization
   (data/stata_incomes.csv == the professor's `income` column). Continuous income is a
   fresh random draw at simulation time, so it is only reproducible bit-for-bit against
   the frozen income (see notes.md).
 
-If the professor's `.dta` is present locally, we also assert the model matches his
+If the professor's corrected `.dta` is present locally, we also assert the model matches his
 `disclosedoc_cont` / `disclosedoc_categorical` columns participant-by-participant.
 """
 import os
@@ -27,11 +27,11 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SURVEY = os.path.join(REPO, "Student Survey Results - Period 1.xlsx")
 EXPERIMENT = os.path.join(REPO, "Student Experiment Results - Period 1-2.xlsx")
 FROZEN_INCOME = os.path.join(REPO, "data", "stata_incomes.csv")
-PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 2_260326 - Final.dta"
+PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 2_260626 - CORRECTED.dta"
 
-# Document / professor gold targets
-DOC_CATEGORICAL = {12: 96.49, 32: 78.69, 72: 13.46, 128: 0.0, 200: 0.0}
-DOC_CONTINUOUS = {12: 94.74, 32: 68.85, 72: 11.54, 128: 0.0, 200: 0.0}
+# Document / professor gold targets (CORRECTED model: fixed coeffs + beta0 = -0.75)
+DOC_CATEGORICAL = {12: 89.47, 32: 39.34, 72: 1.92, 128: 0.0, 200: 0.0}
+DOC_CONTINUOUS = {12: 78.95, 32: 27.87, 72: 1.92, 128: 0.0, 200: 0.0}
 
 
 @pytest.fixture(scope="module")
@@ -59,7 +59,7 @@ def _rates_by_allowance(disclose, total_allowance):
 
 
 def test_categorical_reproduces_professor_table(merged, dd_params):
-    """Categorical model (no income) reproduces 110/280 = 39.29%, every cell."""
+    """Categorical model (no income) reproduces 76/280 = 27.14%, every cell."""
     params = copy.deepcopy(dd_params)
     params["income_mode"] = "Categorical only"
     ta = merged["Total Allowance"].astype(float).values
@@ -69,15 +69,15 @@ def test_categorical_reproduces_professor_table(merged, dd_params):
         for _, row in merged.iterrows()
     ])
 
-    assert disclose.sum() == 110, f"categorical total {disclose.sum()} != 110"
-    assert round(100 * disclose.mean(), 2) == 39.29
+    assert disclose.sum() == 76, f"categorical total {disclose.sum()} != 76"
+    assert round(100 * disclose.mean(), 2) == 27.14
     rates = _rates_by_allowance(disclose, ta)
     for level, expected in DOC_CATEGORICAL.items():
         assert rates[level] == expected, f"TA{level}: {rates[level]}% != {expected}%"
 
 
 def test_continuous_reproduces_professor_table_with_frozen_income(merged, dd_params):
-    """Continuous model with the FROZEN income realization reproduces 102/280 = 36.43%."""
+    """Continuous model with the FROZEN income realization reproduces 63/280 = 22.50%."""
     assert os.path.exists(FROZEN_INCOME), "data/stata_incomes.csv (frozen income) is required"
     frozen = pd.read_csv(FROZEN_INCOME).sort_values("original_index").reset_index(drop=True)
     incomes = frozen["income"].values
@@ -97,8 +97,8 @@ def test_continuous_reproduces_professor_table_with_frozen_income(merged, dd_par
         agent["income"] = float(incomes[i])  # inject frozen income (cached)
         disclose[i] = 1 if compute_dd_score(agent, params, sim_config)["dd_deterministic"] > 0 else 0
 
-    assert disclose.sum() == 102, f"continuous total {disclose.sum()} != 102"
-    assert round(100 * disclose.mean(), 2) == 36.43
+    assert disclose.sum() == 63, f"continuous total {disclose.sum()} != 63"
+    assert round(100 * disclose.mean(), 2) == 22.50
     rates = _rates_by_allowance(disclose, ta)
     for level, expected in DOC_CONTINUOUS.items():
         assert rates[level] == expected, f"TA{level}: {rates[level]}% != {expected}%"

@@ -123,7 +123,7 @@ def _load_original_participants(n_agents: int, seed: int, random_sample: bool = 
             full_repeats = n_agents // n_original
             remainder = n_agents % n_original
             indices = list(range(n_original)) * full_repeats + list(range(remainder))
-            
+
         df = temp_orchestrator.original_data.iloc[indices].copy()
         df.index = range(len(df))
         return df
@@ -747,7 +747,7 @@ def run_research_spec_mode(n_agents: int, seed: int, inc_mode: str, decision_set
     _apply_disclose_documents_config(orchestrator, "documentation", inc_mode)  # Pass inc_mode for disclose_documents
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
-    
+
     # 4. Run simulation
     return orchestrator.run_simulation(n_agents, seed, single_decision, agents_df=agents_df)
 
@@ -773,7 +773,7 @@ def run_research_baseline_mode(n_agents: int, seed: int, inc_mode: str, decision
     _apply_disclose_documents_config(orchestrator, "baseline", inc_mode)  # Pass inc_mode for disclose_documents
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
-    
+
     # 4. Run simulation
     return orchestrator.run_simulation(n_agents, seed, single_decision, agents_df=agents_df)
 

@@ -3,14 +3,17 @@
 Decision 2: Disclose Documents - Privacy-Calculus model.
 
 Source: "Decision 2 - Disclosure of Documents" design document (Bansal et al. 2016 +
-Dinev & Hart 2006). Validated bit-for-bit against the professor's Stata file
-`Stata_File_Decision 2_260326 - Final.dta` (disclosedoc_cont 280/280,
-disclosedoc_categorical 280/280; all intermediate columns agree to ~1e-7).
+Dinev & Hart 2006). The reduced-form trait coefficients here are the CORRECTED values:
+two transcription errors in the document's Equation 3 (a Privacy-Concern weight slip and a
+Neuroticism-via-Trust decimal slip) were fixed, and the intercept beta0 was updated to -0.75.
+Validated bit-for-bit against the corrected Stata file
+`Stata_File_Decision 2_260626 - CORRECTED.dta` (disclosedoc_cont 63/280 = 22.50%,
+disclosedoc_categorical 76/280 = 27.14%; matches 280/280, intermediates agree to ~1e-7).
 
 This is STRUCTURALLY DIFFERENT from Disclose Income (DI):
 - traits used: Extraversion, Neuroticism, Agreeableness ONLY
   (NO Honesty-Humility, NO Openness, NO Religiosity, NO prosocial anchoring)
-- income enters as INVERSE income ("Personal Incentive"); single intercept beta0 = -0.5
+- income enters as INVERSE income ("Personal Incentive"); single intercept beta0 = -0.75 (configurable)
 - the stochastic sigma is sourced from donation CONSUMPTION (receiving), not giving
 
 Reduced-form score (document lines 404/428; coefficients verified vs Stata):
@@ -44,10 +47,10 @@ from src.decisions.income_utils import (
 # Constants verified against the professor's Stata Decision 2 file
 # ---------------------------------------------------------------------------
 B_EXTRA = 0.015584630336545     # z_E coefficient (document line 404/428)
-B_NEURO = -0.022306825775166    # z_N coefficient (published reduced-form)
-B_AGREE = -0.016604320441445    # z_A coefficient (published reduced-form)
+B_NEURO = -0.024781455105683    # z_N coefficient (CORRECTED reduced-form: fixes PC-weight + Neuroticism-decimal doc errors; was -0.022306825775166)
+B_AGREE = -0.016923520441338    # z_A coefficient (CORRECTED reduced-form: fixes PC-weight doc error; was -0.016604320441445)
 B_PI = 0.14735467793568         # z_picont (Personal Incentive) coefficient
-BETA0 = -0.5                    # final intercept (document line 415/460: betadd0)
+BETA0 = -0.75                   # final intercept (betadd0; professor's updated default, was -0.5)
 
 # ---------------------------------------------------------------------------
 # MEDIATOR path coefficients (document Formulas 2 & 3, Bansal et al. 2016 SEM).
@@ -80,10 +83,10 @@ CATEGORICAL_INTERCEPTS = {
 # Categorical: matches the professor's .dta exactly and is used directly.
 # Continuous: this is only a FALLBACK — the orchestrators always recompute the population SD at
 # runtime via compute_continuous_dd_stats and inject it as simulation_config['dd_cont_stats'],
-# so this value is overridden before any agent is scored. Set to the professor's .dta value
-# (std(weighted_dd_cont) ddof=1 = 0.1509454399) so the fallback also matches the gold file.
-SD_WEIGHTED_DD_CONT = 0.1509454399
-SD_WEIGHTED_DD_CATEGORICAL = 0.13755775490611996
+# so this value is overridden before any agent is scored. Recomputed for the CORRECTED
+# coefficients (std(weighted_dd_cont) ddof=1) so the fallback also matches the corrected .dta.
+SD_WEIGHTED_DD_CONT = 0.15115619105427494          # corrected coeffs (was 0.1509454399)
+SD_WEIGHTED_DD_CATEGORICAL = 0.13783441040509267   # corrected coeffs (was 0.13755775490611996)
 
 
 def _z_score_trait(value: float, trait_name: str, z_params: Dict) -> float:
@@ -307,7 +310,7 @@ def disclose_documents_stochastic(
     # Compute the deterministic privacy-calculus score for ALL agents, including ones the
     # platform gate sends to "NA". This drives 'disclose_documents_model_y' (1 if the
     # ungated deterministic model would disclose), which reproduces the DOCUMENT's all-agent
-    # validation rate (categorical 110/280 = 39.29%, continuous 102/280 = 36.43%). It does
+    # validation rate (categorical 76/280 = 27.14%, continuous 63/280 = 22.50%). It does
     # NOT affect the gated 'disclose_documents' decision below. No stochastic draw is applied
     # here, so the validation number stays deterministic. The same `score` is reused in the
     # full-model path to avoid recomputing.
