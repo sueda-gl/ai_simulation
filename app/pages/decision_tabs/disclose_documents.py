@@ -146,7 +146,7 @@ def render_dd_sigma_controls(mode_suffix: str):
     st.markdown("---")
 
     if sigma_strategy == 'overall':
-        st.caption(f"Base σ = {BASE_SIGMA_OVERALL} (empirical from 280 participants)")
+        st.markdown(f"Base σ = {BASE_SIGMA_OVERALL} (empirical from 280 participants)")
         coeff_widget_key = f'dd_tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'dd_sigma_coefficient_{mode_suffix}'
         scale_fallback = st.session_state.get('dd_scale_factor', 1.0) or 1.0
@@ -164,7 +164,7 @@ def render_dd_sigma_controls(mode_suffix: str):
             on_change=lambda: save_to_dd_storage(coeff_widget_key, coeff_storage_key)
         )
         st.session_state.dd_scale_factor = sigma_coefficient
-        st.caption(f"Effective σ = {BASE_SIGMA_OVERALL} × {sigma_coefficient:.2f} = {BASE_SIGMA_OVERALL * sigma_coefficient:.4f}")
+        st.markdown(f"Effective σ = {BASE_SIGMA_OVERALL} × {sigma_coefficient:.2f} = {BASE_SIGMA_OVERALL * sigma_coefficient:.4f}")
     else:
         current_income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
         overall_coeff = st.session_state.get('dd_scale_factor', 1.0)
@@ -182,7 +182,7 @@ def render_dd_sigma_controls(mode_suffix: str):
                 f"The continuous run will use the overall σ ({overall_coeff:.2f} × {BASE_SIGMA_OVERALL} = {effective_sigma:.4f})."
             )
         st.markdown("**Per-Quintile σ Coefficients**")
-        st.caption("Each level has its own base σ from empirical data:")
+        st.markdown("Each level has its own base σ from empirical data:")
 
         quintile_coefficients = {}
         default_scale = st.session_state.get('dd_scale_factor', 1.0)
@@ -295,7 +295,7 @@ def render_disclose_documents_tab():
         )
         st.session_state.dd_sigma_enabled = sigma_enabled
 
-        st.caption("Research Baseline always uses anchor values only (deterministic).")
+        st.markdown("Research Baseline always uses anchor values only (deterministic).")
 
         if sigma_in_copula or sigma_enabled:
             render_dd_sigma_controls('stochastic')
@@ -384,15 +384,14 @@ def render_formula_display(config):
 
 def render_mediator_equations(config):
     """Render Equation 1 (Privacy Concern) and Equation 2 (Trust) - same for both modes."""
-    # Mediators (Privacy Concern, Trust) carry NO beta0 — the beta0 adjustment is applied
-    # only in Equation 3 (per professor feedback).
+    beta = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
     st.markdown("### Equation 1: Privacy Concern (PC)")
     st.latex(
-        rf"PC_i = 0.12\,z_{{N_i}} + 0.14\,z_{{A_i}}"
+        rf"PC_i = \beta + 0.12\,z_{{N_i}} + 0.14\,z_{{A_i}} \quad (\beta = {beta})"
     )
     st.markdown("### Equation 2: Trust (T)")
     st.latex(
-        rf"T_i = -0.0204\,z_{{N_i}} + 0.13\,z_{{E_i}} + 0.0762\,z_{{A_i}}"
+        rf"T_i = \beta - 0.0204\,z_{{N_i}} + 0.13\,z_{{E_i}} + 0.0762\,z_{{A_i}} \quad (\beta = {beta})"
     )
 
 
@@ -413,7 +412,7 @@ def render_categorical_dd_formula(config):
         # €-values are the INVERSE of income (PIcat), per professor: "we use the inverse of
         # income throughout" — so income-12 agents show as €200, income-200 as €12, etc.
         'Quintile': ['Q1 (€200)', 'Q2 (€128)', 'Q3 (€72)', 'Q4 (€32)', 'Q5 (€12)'],
-        'β_PIcat_q Intercept': [
+        'β_PIcat_q': [
             f"{icpts.get('level_1', 0.1464773):.7f}",
             f"{icpts.get('level_2', 0.0902694):.7f}",
             f"{icpts.get('level_3', 0.0384204):.7f}",
@@ -421,12 +420,12 @@ def render_categorical_dd_formula(config):
             f"{icpts.get('level_5', -0.2393718):.7f}",
         ]
     })
-    st.dataframe(df, hide_index=True, use_container_width=True)
-    st.caption(
+    st.dataframe(df, hide_index=True, use_container_width=False)
+    st.markdown(
         "Each value = regression base (_cons = −0.2393718) + the income-quintile dummy, "
         "so it matches the document's regression table."
     )
-    st.caption("β_PIcat_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
+    st.markdown("β_PIcat_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
 
 
 def render_continuous_dd_formula(config):
@@ -441,8 +440,7 @@ def render_continuous_dd_formula(config):
     st.latex(
         rf"DiscloseDocuments_i = [\beta_0 = {beta0:.2f}] + [{bE:.6f}\times z_{{E_i}} {bN:.6f}\times z_{{N_i}} {bA:.6f}\times z_{{A_i}} + {bPI:.6f}\times z_{{PIcont_i}}]"
     )
-    st.caption("z_PIcont = standardized Personal Incentive (picont), where picont = maximum income − personal income. "
-               "Confirmed against Stata using a frozen income realization (see notes.md).")
+    st.markdown("z_PIcont = standardized Personal Incentive (picont), where picont = maximum income − personal income.")
 
 
 def get_current_yaml_intercept():
@@ -463,7 +461,7 @@ def render_intercept_override_section(config):
         with col1:
             st.markdown(f"**Research Default: {research_default:.4f}**")
             st.markdown("Intercept (β₀)")
-            st.caption("Fixed reference value from original research")
+            st.markdown("Fixed reference value from original research")
         with col2:
             st.markdown("**Override Value**")
             int_val = restore_widget_from_storage(
@@ -471,7 +469,7 @@ def render_intercept_override_section(config):
                 'intercept', current_config_value
             )
             new_intercept = st.number_input(
-                "Baseline disclosure tendency", min_value=-5.0, max_value=5.0,
+                "Baseline disclosure tendency", min_value=-5.0, max_value=0.0,
                 value=float(int_val), step=0.01, format="%.4f",
                 help="β₀ = −0.75 in the disclose documents equation. Higher values increase baseline probability of disclosure.",
                 key="dd_override_intercept",

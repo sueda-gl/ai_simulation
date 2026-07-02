@@ -43,49 +43,43 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     else:
         st.caption("📊 Resampling from empirical distribution of 280 original donation rates")
     
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
-    
-    with col1:
-        st.metric("Total Agents", f"{len(df):,}")
-    
-    with col2:
-        if not is_depvar_mode:
-            trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
-                         'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
-            st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
+    # Headline decision drives the metric layout. "Traits Available" / "Decisions Computed"
+    # removed per professor feedback. Priority mirrors the old headline metric:
+    # donation > income > documents; is_dd_focus forces the documents layout on DD-only runs.
+    donation_col = 'donation_default'
+    has_donation = donation_col in df.columns
+    has_income = 'disclose_income' in df.columns and not is_dd_focus
+    has_documents = 'disclose_documents' in df.columns
+
+    if is_depvar_mode:
+        # Dependent-variable bootstrap mode keeps its descriptive layout.
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
+        col1.metric("Total Agents", f"{len(df):,}")
+        col2.metric("Source", "280 participants")
+        col3.metric("Method", "Bootstrap")
+        if has_donation:
+            col4.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
+    elif has_documents and not has_donation and not has_income:
+        # Decision 2 (Disclose Documents): all-agent disclosure rate, the qualified-agent
+        # count, and the disclosure rate among qualified agents only.
+        qualified = df.loc[df['disclose_documents'] != 'NA', 'disclose_documents']
+        qualified_rate = qualified.eq('Y').mean() if len(qualified) > 0 else 0
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
+        col1.metric("Total Agents", f"{len(df):,}")
+        if 'disclose_documents_model_y' in df.columns:
+            col2.metric("Disclosure Rate (all agents)", f"{df['disclose_documents_model_y'].mean():.2%}")
         else:
-            st.metric("Source", "280 participants")
-    
-    with col3:
-        if not is_depvar_mode:
-            decision_cols = [c for c in df.columns if c not in trait_cols]
-            st.metric("Decisions Computed", len(decision_cols))
-        else:
-            st.metric("Method", "Bootstrap")
-    
-    with col4:
-        # Show key metric - donation_default if available, otherwise disclose_income rate
-        donation_col = 'donation_default'
-        if donation_col in df.columns:
-            st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
-        elif 'disclose_income' in df.columns and not is_dd_focus:
-            y_rate = (df['disclose_income'] == 'Y').mean()
-            st.metric("Disclose Income (Y)", f"{y_rate:.2%}")
-        elif 'disclose_documents' in df.columns:
-            # Rate over QUALIFIED (non-NA) agents only; NA agents must not dilute it
-            qualified = df.loc[df['disclose_documents'] != 'NA', 'disclose_documents']
-            y_rate = qualified.eq('Y').mean() if len(qualified) > 0 else 0
-            st.metric("Disclose Documents (Y) — qualified subgroup", f"{y_rate:.2%}")
-            # Model-validation reference: the document's all-agent rate (ungated, deterministic
-            # model decision over EVERY agent, including gated NAs). ~27.14% categorical /
-            # ~22.50% continuous (corrected model). Two valid views: this is the model-validation
-            # number, the metric above is the platform (qualified-subgroup) reality.
-            if 'disclose_documents_model_y' in df.columns:
-                model_rate = df['disclose_documents_model_y'].mean()
-                st.caption(
-                    f"🔬 Model validation rate (all agents): **{model_rate:.2%}** — "
-                    f"matches the corrected document (~27.14% categorical / ~22.50% continuous)"
-                )
+            col2.metric("Disclosure Rate (all agents)", "N/A")
+        col3.metric("Qualified Agents", f"{len(qualified):,}")
+        col4.metric("Disclose Documents Rate (qualified)", f"{qualified_rate:.2%}")
+    else:
+        # Decisions 1 & 3 (and any other headline): Total Agents + the headline rate only.
+        col1, col2 = st.columns([1, 1.2])
+        col1.metric("Total Agents", f"{len(df):,}")
+        if has_donation:
+            col2.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
+        elif has_income:
+            col2.metric("Disclose Income (Y)", f"{(df['disclose_income'] == 'Y').mean():.2%}")
     
     # Donation rate analysis (if available) - always use truncated
     donation_col = 'donation_default'
@@ -116,8 +110,8 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             donation_stats = df[donation_col].describe()
             
             stats_df = pd.DataFrame({
-                'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                'Value': [
+                'Statistic': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
+                'Donation Rate': [
                     f"{donation_stats['mean']:.2%}",
                     f"{donation_stats['std']:.2%}",
                     f"{donation_stats['min']:.2%}",
@@ -159,7 +153,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
             st.markdown("**📊 Choice Breakdown**")
             # Ensure Y appears before N in the breakdown
             ordered_choices = ['Y', 'N']
-            choice_labels = {'Y': 'Y (disclose income)', 'N': 'N (not disclose)'}
+            choice_labels = {'Y': 'Y (disclose income)', 'N': 'N (not disclose income)'}
             ordered_data = []
             for choice in ordered_choices:
                 if choice in value_counts.index:
@@ -176,12 +170,6 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     # Disclose Documents analysis (if available)
     if 'disclose_documents' in df.columns:
         st.subheader(f"📊 Disclose Documents Analysis{title_suffix}")
-        if 'disclose_documents_model_y' in df.columns:
-            model_rate = df['disclose_documents_model_y'].mean()
-            st.caption(
-                f"🔬 Model validation (all agents): **{model_rate:.2%}**. "
-                f"The charts/stats below are the qualified subgroup."
-            )
         if 'disclose_documents_raw' in df.columns:
             # DETAILED ANALYSIS: histogram of raw scores (qualified agents only)
             show_disclose_documents_rate_analysis(df, title_suffix, result_key, enable_selection)
@@ -199,7 +187,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
                 st.plotly_chart(fig, use_container_width=True, key=chart_key)
             st.markdown("**📊 Choice Breakdown (qualified agents)**")
             total_q = len(qualified)
-            choice_labels = {'Y': 'Y (disclose documents)', 'N': 'N (not disclose)'}
+            choice_labels = {'Y': 'Y (disclose documents)', 'N': 'N (not disclose documents)'}
             ordered_data = []
             for choice in ['Y', 'N']:
                 if choice in value_counts.index:
@@ -510,20 +498,28 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
     chart_key = f"di_raw_hist_{result_key}" if result_key else f"di_raw_hist_{title_suffix}"
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
     
-    # Statistics panel BELOW the graph
-    # (Classification table removed - redundant with the Choice Breakdown table.)
-    st.markdown("**📈 Statistics**")
-    stats_df = pd.DataFrame({
-        'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
-        'Value': [
-            f"{mean_val:.4f}",
-            f"{std_val:.4f}",
-            f"{median_val:.4f}",
-            f"{min_val:.4f}",
-            f"{max_val:.4f}"
-        ]
-    })
-    st.dataframe(stats_df, hide_index=True, use_container_width=True)
+    # Statistics + classification panels BELOW the graph
+    col_stats, col_class = st.columns(2)
+    with col_stats:
+        st.markdown("**📈 Statistics**")
+        stats_df = pd.DataFrame({
+            'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+            'Raw Disclose Income Value': [
+                f"{mean_val:.4f}",
+                f"{std_val:.4f}",
+                f"{median_val:.4f}",
+                f"{min_val:.4f}",
+                f"{max_val:.4f}"
+            ]
+        })
+        st.dataframe(stats_df, hide_index=True, use_container_width=True)
+    with col_class:
+        st.markdown("**📊 Classification**")
+        st.dataframe(pd.DataFrame({
+            'Choice': ['Y (disclose income)', 'N (not disclose income)', 'Total'],
+            'Count': [int(y_count), int(n_count), int(total)],
+            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%", "100.00%"]
+        }), hide_index=True, use_container_width=True)
 
     # Show key insight about distribution relative to threshold
     if mean_val > 0:
@@ -650,28 +646,20 @@ def show_disclose_documents_rate_analysis(df, title_suffix="", result_key=None, 
     chart_key = f"dd_raw_hist_{result_key}" if result_key else f"dd_raw_hist_{title_suffix}"
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
-    # Model-validation reference: the document's all-agent (ungated) rate. The histogram /
-    # stats here are the qualified subgroup; this caption surfaces the validation number.
-    if 'disclose_documents_model_y' in df.columns:
-        model_rate = df['disclose_documents_model_y'].mean()
-        st.caption(
-            f"🔬 Model validation (all agents): **{model_rate:.2%}**; "
-            f"the histogram/stats above are the qualified subgroup."
-        )
 
     col_stats, col_class = st.columns(2)
     with col_stats:
         st.markdown("**📈 Statistics** (qualified agents)")
         st.dataframe(pd.DataFrame({
-            'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
-            'Value': [f"{mean_val:.4f}", f"{std_val:.4f}", f"{median_val:.4f}", f"{min_val:.4f}", f"{max_val:.4f}"]
+            'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+            'Raw Disclose Documents Value': [f"{mean_val:.4f}", f"{std_val:.4f}", f"{median_val:.4f}", f"{min_val:.4f}", f"{max_val:.4f}"]
         }), hide_index=True, use_container_width=True)
     with col_class:
         st.markdown("**📊 Classification** (qualified agents)")
         st.dataframe(pd.DataFrame({
-            'Choice': ['Y (disclose)', 'N (not disclose)'],
-            'Count': [y_count, n_count],
-            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%"]
+            'Choice': ['Y (disclose documents)', 'N (not disclose documents)', 'Total'],
+            'Count': [y_count, n_count, total],
+            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%", "100.00%"]
         }), hide_index=True, use_container_width=True)
 
     if mean_val > 0:

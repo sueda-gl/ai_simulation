@@ -390,22 +390,13 @@ def render_single_run_results():
                 df = next(iter(results_dict.values()))
                 mode_name = next(iter(results_dict.keys()))
                 
-                # Show high-level metrics only
-                col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
-                
+                # Show high-level metrics only (Traits Available / Decisions Computed removed)
+                col1, col2 = st.columns([1, 1.2])
+
                 with col1:
                     st.metric("Total Agents", f"{len(df):,}")
-                
+
                 with col2:
-                    trait_cols = ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
-                                 'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
-                    st.metric("Traits Available", len([c for c in trait_cols if c in df.columns]))
-                
-                with col3:
-                    decision_cols = [c for c in df.columns if c not in trait_cols]
-                    st.metric("Decisions Computed", len(decision_cols))
-                
-                with col4:
                     # Show overall donation rate if available - always use truncated
                     donation_col = 'donation_default'
                     if donation_col in df.columns:

@@ -331,8 +331,8 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
                 st.markdown("**📈 Statistics**")
                 stats = numeric_data.describe()
                 stats_df = pd.DataFrame({
-                    'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                    'Value': [f"{stats[key]:.2%}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
+                    'Statistic': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
+                    'Donation Rate': [f"{stats[key]:.2%}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
                 })
                 st.dataframe(stats_df, use_container_width=True, hide_index=True)
             
@@ -399,8 +399,8 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
                             )
                         
                         with col_info:
-                            st.caption(f"📋 Export includes {len(export_df):,} agents with {len(export_columns)} columns")
-                            st.caption(f"✅ Fields: Agent ID, traits, and {decision_name}")
+                            st.markdown(f"📋 Export includes {len(export_df):,} agents with {len(export_columns)} columns")
+                            st.markdown(f"✅ Fields: Agent ID, traits, and {decision_name}")
                     
                     except ImportError:
                         st.warning("⚠️ Excel export requires openpyxl package")
@@ -446,10 +446,10 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         # Show the actual donation distribution - distinguish between cases
         if has_selected_config:
             st.success("📊 **Using Distribution from Selected Donation Configuration**")
-            st.caption("✅ The final_donation_rate values in your export match the donation_default distribution shown below")
+            st.markdown("✅ The final_donation_rate values in your export match the donation_default distribution shown below")
         elif has_only_one_config:
             st.success("📊 **Using Distribution from Only Available Donation Configuration**")
-            st.caption("✅ Only one donation configuration was generated - final_donation_rate values match donation_default")
+            st.markdown("✅ Only one donation configuration was generated - final_donation_rate values match donation_default")
         
         donation_data = df['donation_default']
         
@@ -503,13 +503,13 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
             st.markdown("---")
             st.markdown("**ℹ️ Source:**")
             if _donation_config:
-                st.caption(f"Population: {_donation_config.get('population_mode', 'Unknown')}")
-                st.caption(f"Income: {_donation_config.get('donation_income_mode', _donation_config.get('income_spec_mode', 'Unknown'))}")
+                st.markdown(f"Population: {_donation_config.get('population_mode', 'Unknown')}")
+                st.markdown(f"Income: {_donation_config.get('donation_income_mode', _donation_config.get('income_spec_mode', 'Unknown'))}")
     
     else:
         # Fall back to slider if no donation_default data available
         st.info("💡 **No donation configuration selected** - Using simple rate configuration")
-        st.caption("Select a donation configuration on Page 2 to see the full distribution")
+        st.markdown("Select a donation configuration on Page 2 to see the full distribution")
         
         # Use _default_value key (consistent with Page 2 for numeric defaults)
         slider_key = f"{decision_name}_default_value"
@@ -543,7 +543,7 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
     if 'purchase_requests' in df.columns:
         st.markdown("---")
         st.markdown("**💾 Transaction-Level Export**")
-        st.caption("Download detailed purchase request data with donation rates (one row per request)")
+        st.markdown("Download detailed purchase request data with donation rates (one row per request)")
         
         try:
             # Build transaction records

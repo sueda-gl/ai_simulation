@@ -54,11 +54,11 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
     with col2:
         yes_count = value_counts.get('Y', 0)
         pct_yes = (yes_count/total)*100
-        st.metric("Disclosed (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
+        st.metric("Disclosed income (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
     with col3:
         no_count = value_counts.get('N', 0)
         pct_no = (no_count/total)*100
-        st.metric("Not Disclosed (N)", f"{no_count:,} ({pct_no:.2f}%)")
+        st.metric("Not disclosed income (N)", f"{no_count:,} ({pct_no:.2f}%)")
     with col4:
         disclosure_rate = (yes_count/total)*100
         st.metric("Disclosure Rate", f"{disclosure_rate:.2f}%")
@@ -71,7 +71,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         col_pie, col_hist = st.columns(2)
         
         with col_pie:
-            st.markdown(f"**1. {decision_title} Distribution**")
+            st.markdown(f"**{decision_title} Distribution**")
             if len(value_counts) > 0:
                 fig_pie = px.pie(
                     values=value_counts.values,
@@ -79,21 +79,6 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                     color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
                 )
                 st.plotly_chart(fig_pie, use_container_width=True)
-            
-            # Choice breakdown table below pie chart
-            st.markdown("**📊 Choice Breakdown**")
-            ordered_choices = ['Y', 'N']
-            ordered_data = []
-            for choice in ordered_choices:
-                if choice in value_counts.index:
-                    count = value_counts[choice]
-                    ordered_data.append({
-                        'Choice': choice,
-                        'Count': count,
-                        'Percentage': f"{(count/total)*100:.2f}%"
-                    })
-            breakdown_df = pd.DataFrame(ordered_data)
-            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
         
         with col_hist:
             # Get raw values for histogram
@@ -175,14 +160,14 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                 
                 st.plotly_chart(fig_hist, use_container_width=True)
                 
-                # Statistics below histogram (Classification table removed - redundant with the Choice Breakdown table)
+                # Statistics below histogram
                 col_stats, _ = st.columns(2)
 
                 with col_stats:
                     st.markdown("**📈 Statistics**")
                     stats_df = pd.DataFrame({
-                        'Metric': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
-                        'Value': [
+                        'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+                        'Raw Disclose Income Value': [
                             f"{mean_val:.4f}",
                             f"{std_val:.4f}",
                             f"{median_val:.4f}",
@@ -195,35 +180,15 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                 st.warning("No raw DI values available for histogram")
     
     else:
-        # ORIGINAL LAYOUT: Pie chart + Choice breakdown (no raw values available)
-        col_plot, col_stats = st.columns([2, 1])
-        
-        with col_plot:
-            if len(value_counts) > 0:
-                st.markdown(f"**{decision_title} Distribution**")
-                fig = px.pie(
-                    values=value_counts.values,
-                    names=value_counts.index,
-                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
-                )
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col_stats:
-            st.markdown("**📊 Choice Breakdown**")
-            # Ensure Y appears before N in the breakdown
-            ordered_choices = ['Y', 'N']
-            ordered_data = []
-            for choice in ordered_choices:
-                if choice in value_counts.index:
-                    count = value_counts[choice]
-                    ordered_data.append({
-                        'Choice': choice,
-                        'Count': count,
-                        'Percentage': f"{(count/total)*100:.2f}%"
-                    })
-            
-            breakdown_df = pd.DataFrame(ordered_data)
-            st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+        # No raw values available - show pie chart only
+        if len(value_counts) > 0:
+            st.markdown(f"**{decision_title} Distribution**")
+            fig = px.pie(
+                values=value_counts.values,
+                names=value_counts.index,
+                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
+            )
+            st.plotly_chart(fig, use_container_width=True)
     
     # Excel download section
     st.markdown("---")
@@ -254,7 +219,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         # Show preview of the Excel data
         with st.expander("📋 Preview Excel Data (first 10 rows)"):
             st.dataframe(excel_data.head(10), use_container_width=True)
-            st.caption(f"**Columns**: {', '.join(excel_data.columns)}")
+            st.markdown(f"**Columns**: {', '.join(excel_data.columns)}")
     else:
         st.warning("⚠️ Unable to prepare Excel data. Some required columns may be missing.")
 
@@ -289,7 +254,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
     # If there are qualified agents, show their Y/N choices
     if qualified_agents > 0:
         st.markdown("### Qualified Agents' Choices")
-        st.caption(f"📊 Among the {qualified_agents:,} agents qualified for discount (income < threshold)")
+        st.markdown(f"📊 Among the {qualified_agents:,} agents qualified for discount (income < threshold)")
         
         # Binary choice metrics for qualified agents only
         col1, col2, col3, col4 = st.columns(4)
@@ -301,49 +266,126 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
             st.metric("Qualified Agents", f"{qualified_agents:,}")
         with col2:
             pct_yes = (yes_count/qualified_agents)*100
-            st.metric("Disclosed (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
+            st.metric("Disclosed documents (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
         with col3:
             pct_no = (no_count/qualified_agents)*100
-            st.metric("Not Disclosed (N)", f"{no_count:,} ({pct_no:.2f}%)")
+            st.metric("Not disclosed documents (N)", f"{no_count:,} ({pct_no:.2f}%)")
         with col4:
             disclosure_rate = (yes_count/qualified_agents)*100
             st.metric("Disclosure Rate", f"{disclosure_rate:.2f}%",
                       help="Percentage of qualified agents who disclosed documents")
         
-        # Binary choice visualization - pie chart (only Y/N, excluding NA)
-        col_plot, col_stats = st.columns([2, 1])
-        
-        with col_plot:
+        # TWO-COLUMN LAYOUT: Pie chart on left, raw histogram on right (mirrors Disclose Income)
+        col_pie, col_hist = st.columns(2)
+
+        with col_pie:
             # Filter out NA for the pie chart
             qualified_counts = {k: v for k, v in value_counts.items() if k != 'NA'}
             if len(qualified_counts) > 0:
-                st.markdown(f"### {decision_title} - Qualified Agents Only")
+                st.markdown(f"**{decision_title} Distribution**")
                 fig = px.pie(
                     values=list(qualified_counts.values()),
                     names=list(qualified_counts.keys()),
                     color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
                 )
                 st.plotly_chart(fig, use_container_width=True)
-        
-        with col_stats:
-            st.markdown("**📊 Choice Breakdown (Qualified)**")
-            # Ensure Y appears before N in the breakdown
-            ordered_choices = ['Y', 'N']
-            ordered_data = []
-            for choice in ordered_choices:
-                if choice in qualified_counts:
-                    count = qualified_counts[choice]
-                    ordered_data.append({
-                        'Choice': choice,
-                        'Count': count,
-                        'Percentage': f"{(count/qualified_agents)*100:.2f}%"
+
+        with col_hist:
+            # Raw DD distribution for qualified agents (mirrors Disclose Income)
+            if 'disclose_documents_raw' in df.columns:
+                raw_values = df.loc[df['disclose_documents'] != 'NA', 'disclose_documents_raw'].dropna()
+            else:
+                raw_values = pd.Series([], dtype=float)
+
+            if len(raw_values) > 0:
+                mean_val = raw_values.mean()
+                std_val = raw_values.std()
+                median_val = raw_values.median()
+                min_val = raw_values.min()
+                max_val = raw_values.max()
+
+                income_mode = st.session_state.get('dd_income_mode', 'Categorical')
+                if 'categorical' in str(income_mode).lower():
+                    mode_suffix = " (Categorical)"
+                elif 'continuous' in str(income_mode).lower():
+                    mode_suffix = " (Continuous)"
+                else:
+                    mode_suffix = ""
+
+                st.markdown(f"**📈 Raw Disclose Documents Distribution{mode_suffix}**")
+
+                fig_hist = go.Figure()
+                fig_hist.add_trace(go.Histogram(
+                    x=raw_values,
+                    nbinsx=40,
+                    name='DD Raw Values',
+                    marker_color='steelblue',
+                    opacity=0.7
+                ))
+                fig_hist.add_vline(
+                    x=0, line_dash="solid", line_color="red", line_width=3,
+                    annotation_text="Threshold (0)", annotation_position="top",
+                    annotation_font_color="red"
+                )
+                fig_hist.add_vline(
+                    x=mean_val, line_dash="dash", line_color="green", line_width=2,
+                    annotation_text=f"Mean: {mean_val:.3f}", annotation_position="bottom",
+                    annotation_font_color="green"
+                )
+                fig_hist.update_layout(
+                    xaxis_title="Raw DD Value (>0 → Y, ≤0 → N)",
+                    yaxis_title="Agents",
+                    showlegend=False,
+                    height=300,
+                    margin=dict(l=40, r=40, t=40, b=40),
+                    xaxis=dict(zeroline=True, zerolinecolor='red', zerolinewidth=2)
+                )
+                st.plotly_chart(fig_hist, use_container_width=True)
+
+                # Statistics below histogram
+                col_stats, _ = st.columns(2)
+                with col_stats:
+                    st.markdown("**📈 Statistics**")
+                    stats_df = pd.DataFrame({
+                        'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+                        'Raw Disclose Documents Value': [
+                            f"{mean_val:.4f}",
+                            f"{std_val:.4f}",
+                            f"{median_val:.4f}",
+                            f"{min_val:.4f}",
+                            f"{max_val:.4f}"
+                        ]
                     })
-            
-            qualified_breakdown = pd.DataFrame(ordered_data)
-            st.dataframe(qualified_breakdown, use_container_width=True, hide_index=True)
+                    st.dataframe(stats_df, hide_index=True, use_container_width=True)
+            else:
+                st.info("Raw DD values not available for this run.")
     else:
         st.warning("⚠️ No agents qualified for discount (all agents have income ≥ threshold)")
     
+    # Excel download section — same agent-level file (same columns) as the individual-decision export
+    st.markdown("---")
+    st.markdown("### 📥 Download Agent Disclose Documents Data")
+    dd_excel_data = _prepare_disclose_documents_excel_data(df)
+    if dd_excel_data is not None:
+        from io import BytesIO
+        dd_output = BytesIO()
+        with pd.ExcelWriter(dd_output, engine='openpyxl') as writer:
+            dd_excel_data.to_excel(writer, index=False, sheet_name='Agent Disclose Documents Data')
+            _apply_price_formatting_disclosure(writer, 'Agent Disclose Documents Data', dd_excel_data)
+        dd_excel_bytes = dd_output.getvalue()
+        st.download_button(
+            label="📥 Download Agent Disclose Documents Data (Excel)",
+            data=dd_excel_bytes,
+            file_name="agent_disclose_documents_data.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Download detailed agent data including traits and disclose documents decision"
+        )
+        with st.expander("📋 Preview Excel Data (first 10 rows)"):
+            st.dataframe(dd_excel_data.head(10), use_container_width=True)
+            st.markdown(f"**Columns**: {', '.join(dd_excel_data.columns)}")
+    else:
+        st.warning("⚠️ Unable to prepare Excel data. Some required columns may be missing.")
+
     # CUSTOMER TYPE DISTRIBUTION - Comprehensive visualization
     st.markdown("---")
     st.markdown("### 👥 Customer Type Distribution")
@@ -437,7 +479,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
         
         with col_table:
             st.markdown("**📊 Customer Type Summary**")
-            st.caption("Breakdown by pricing model")
+            st.markdown("Breakdown by pricing model")
             
             # Create summary table
             summary_df = pd.DataFrame({
@@ -455,7 +497,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
             })
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
             
-            st.caption("💡 Only **Regular Customers** participate in Purchase Now vs Bid decisions (Decision 9)")
+            st.markdown("💡 Only **Regular Customers** participate in Purchase Now vs Bid decisions (Decision 9)")
         
         # Excel download section
         st.markdown("---")
@@ -1078,7 +1120,7 @@ def render_disclose_income_comparison_excel(results_dict, mode="compare_all"):
                 for sheet_name, sheet_df in sheets_data.items():
                     st.markdown(f"**{sheet_name} Sheet:**")
                     st.dataframe(sheet_df.head(), use_container_width=True)
-                    st.caption(f"Columns: {', '.join(sheet_df.columns[:10])}{'...' if len(sheet_df.columns) > 10 else ''}")
+                    st.markdown(f"Columns: {', '.join(sheet_df.columns[:10])}{'...' if len(sheet_df.columns) > 10 else ''}")
         
         except Exception as e:
             st.error(f"Error creating Excel export: {str(e)}")
@@ -1156,7 +1198,7 @@ def render_disclose_income_comparison_excel(results_dict, mode="compare_all"):
             # Show preview
             with st.expander("📋 Preview Disclose Income Data (first 5 rows)"):
                 st.dataframe(export_df.head(), use_container_width=True)
-                st.caption(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns[:10])}{'...' if len(export_df.columns) > 10 else ''}")
+                st.markdown(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns[:10])}{'...' if len(export_df.columns) > 10 else ''}")
         
         except Exception as e:
             st.error(f"Error creating Excel export: {str(e)}")

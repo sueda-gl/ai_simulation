@@ -188,7 +188,7 @@ def render_di_sigma_controls(mode_suffix: str):
 
     if sigma_strategy == 'overall':
         # OVERALL MODE: Single slider
-        st.caption("Base σ = 9.8995 (empirical from 280 participants)")
+        st.markdown("Base σ = 9.8995 (empirical from 280 participants)")
 
         coeff_widget_key = f'di_tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'di_sigma_coefficient_{mode_suffix}'
@@ -226,7 +226,7 @@ def render_di_sigma_controls(mode_suffix: str):
         st.session_state.di_scale_factor = sigma_coefficient
 
         effective_sigma = 9.8995 * sigma_coefficient
-        st.caption(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
+        st.markdown(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
 
     else:
         # QUINTILE MODE: 5 sliders (one per income level)
@@ -246,7 +246,7 @@ def render_di_sigma_controls(mode_suffix: str):
                 f"The continuous run will use the overall σ ({overall_coeff:.2f} × 9.8995 = {effective_sigma:.4f})."
             )
         st.markdown("**Per-Quintile σ Coefficients**")
-        st.caption("Each level has its own base σ from empirical data:")
+        st.markdown("Each level has its own base σ from empirical data:")
 
         quintile_coefficients = {}
         default_scale = st.session_state.get('di_scale_factor', 1.0)
@@ -427,7 +427,7 @@ def render_disclose_income_tab():
         )
         st.session_state.di_sigma_enabled = sigma_enabled
 
-        st.caption("Research Baseline always uses anchor values only (deterministic).")
+        st.markdown("Research Baseline always uses anchor values only (deterministic).")
 
         # --- Shared sigma controls (strategy, coefficient, quintiles) ---
         if sigma_in_copula or sigma_enabled:
@@ -461,7 +461,7 @@ def render_disclose_income_tab():
             key="di_wopb_widget",
             on_change=lambda: save_to_disclose_income_storage('di_wopb_widget', 'wopb')
         )
-        st.caption(f"Observed prosocial behavior weight: {new_wopb:.2f}")
+        st.markdown(f"Observed prosocial behavior weight: {new_wopb:.2f}")
         st.session_state.di_wopb = new_wopb
 
         # Restore WPB from storage
@@ -483,7 +483,7 @@ def render_disclose_income_tab():
             key="di_wpb_widget",
             on_change=lambda: save_to_disclose_income_storage('di_wpb_widget', 'wpb')
         )
-        st.caption(f"Prosocial behavior weight: {new_wpb:.2f}")
+        st.markdown(f"Prosocial behavior weight: {new_wpb:.2f}")
         st.session_state.di_wpb = new_wpb
 
     # Mathematical Model Formula Section
@@ -586,7 +586,7 @@ def render_equation1_and_combining(config):
     st.latex(f"""
     PB_i = {wopb:.2f} \\times z_{{obs\_PB_i}} + {1-wopb:.2f} \\times z_{{calc\_PB_i}}
     """)
-    st.caption("Note: Both observed and calculated PB are standardized (z-scored) before combining.")
+    st.markdown("Note: Both observed and calculated PB are standardized (z-scored) before combining.")
 
 
 def render_categorical_di_formula(config):
@@ -604,7 +604,7 @@ def render_categorical_di_formula(config):
     st.markdown("**Income Quintile Effects (β_income_q):**")
     intercept_data = {
         'Quintile': ['Q1 (€12)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)'],
-        'Intercept': [
+        'β_income_q': [
             '0.0089007',
             '0.0055352',
             '0.0023109',
@@ -615,7 +615,7 @@ def render_categorical_di_formula(config):
     intercept_df = pd.DataFrame(intercept_data)
     st.dataframe(intercept_df, hide_index=True, use_container_width=True)
     
-    st.caption("β_income_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
+    st.markdown("β_income_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
 
 
 def render_continuous_di_formula(config):
@@ -629,7 +629,7 @@ def render_continuous_di_formula(config):
     st.latex(f"""
     DiscloseIncome_i = [\\beta_0 = {beta0}] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00680238 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}} - 0.008988 \\times z_{{I_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
-    st.caption("z_I: Z-scored actual income of the agent (continuous)")
+    st.markdown("z_I: Z-scored actual income of the agent (continuous)")
 
 
 def render_variable_definitions(income_mode):
@@ -694,7 +694,7 @@ def render_intercept_override_section(config):
         with col1:
             st.markdown(f"**Research Default: {research_default:.4f}**")
             st.markdown("Intercept (β₀)")
-            st.caption("Fixed reference value from original research")
+            st.markdown("Fixed reference value from original research")
 
         with col2:
             st.markdown("**Override Value**")

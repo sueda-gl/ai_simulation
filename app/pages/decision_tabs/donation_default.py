@@ -176,7 +176,7 @@ def render_donation_sigma_controls(mode_suffix: str):
 
     if sigma_strategy == 'overall':
         # OVERALL MODE: Single slider
-        st.caption("Base σ = 9.8995 (empirical from 280 participants)")
+        st.markdown("Base σ = 9.8995 (empirical from 280 participants)")
 
         # Restore coefficient widget value
         coeff_widget_key = f'tab_sigma_coefficient_{mode_suffix}'
@@ -205,7 +205,7 @@ def render_donation_sigma_controls(mode_suffix: str):
         st.session_state.sigma_coefficient = sigma_coefficient
 
         effective_sigma = 9.8995 * sigma_coefficient
-        st.caption(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
+        st.markdown(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
         st.session_state.sigma_value_ui = effective_sigma
 
     else:
@@ -225,7 +225,7 @@ def render_donation_sigma_controls(mode_suffix: str):
                 "The continuous run will use the overall σ (9.8995 × coefficient)."
             )
         st.markdown("**Per-Quintile σ Coefficients**")
-        st.caption("Each level has its own base σ from empirical data:")
+        st.markdown("Each level has its own base σ from empirical data:")
 
         quintile_coefficients = {}
 
@@ -428,7 +428,7 @@ def render_donation_default_tab():
         )
         st.session_state.sigma_in_research = sigma_in_research
 
-        st.caption("Research Baseline always uses anchor values only (deterministic).")
+        st.markdown("Research Baseline always uses anchor values only (deterministic).")
 
         # --- Shared sigma controls (strategy, coefficient, quintiles) ---
         if sigma_in_copula or sigma_in_research:
@@ -459,7 +459,7 @@ def render_donation_default_tab():
                 on_change=lambda: save_to_donation_storage('tab_anchor_weight', 'anchor_weight')
             )
             st.session_state.anchor_observed_weight = anchor_observed_weight
-            st.caption(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
+            st.markdown(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
         else:
             st.session_state.anchor_observed_weight = 0.75
     
@@ -640,7 +640,7 @@ def render_continuous_formula():
     
     with col2:
         st.markdown("**📈 Linear Income Effect (β_linear):**")
-        st.caption("Effect = β_linear × actual_allowance_amount")
+        st.markdown("Effect = β_linear × actual_allowance_amount")
         
         # Show linear effect for actual allowance amounts (not level numbers)
         allowance_mapping = {1: 12, 2: 32, 3: 72, 4: 128, 5: 200}
@@ -880,7 +880,7 @@ def render_continuous_formula_specific():
     
     with col2:
         st.markdown("**📈 Linear Income Effect (β_linear):**")
-        st.caption("Effect = β_linear × actual_allowance_amount")
+        st.markdown("Effect = β_linear × actual_allowance_amount")
         
         # Show linear effect for actual allowance amounts (not level numbers)
         allowance_mapping = {1: 12, 2: 32, 3: 72, 4: 128, 5: 200}
@@ -1154,7 +1154,7 @@ def render_adjustment_override_section():
         with col1:
             st.markdown(f"**Research Default: {research_default:.3f}**")
             st.markdown("Adjustment Shift")
-            st.caption("Fixed reference value from original research")
+            st.markdown("Fixed reference value from original research")
         
         with col2:
             st.markdown("**✏️ Override Value**")
@@ -1188,7 +1188,7 @@ def render_adjustment_override_section():
             else:
                 st.metric("Change", "No change")
         
-        st.caption("💡 How it works: Positive values shift the distribution up (greater donation), negative values shift it down (smaller donation)")
+        st.markdown("💡 How it works: Positive values shift the distribution up (greater donation), negative values shift it down (smaller donation)")
         
     except Exception as e:
         st.error(f"Error loading adjustment values: {e}")
