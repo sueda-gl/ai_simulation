@@ -60,16 +60,15 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         if has_donation:
             col4.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
     elif has_documents and not has_donation and not has_income:
-        # Decision 2 (Disclose Documents): all-agent disclosure rate, the qualified-agent
-        # count, and the disclosure rate among qualified agents only.
+        # Decision 2 (Disclose Documents): the realized all-agent disclosure rate
+        # (agents who actually disclosed ÷ total agents — only qualified agents can disclose,
+        # everyone else is 'NA'/'N'), the qualified-agent count, and the rate among qualified only.
         qualified = df.loc[df['disclose_documents'] != 'NA', 'disclose_documents']
         qualified_rate = qualified.eq('Y').mean() if len(qualified) > 0 else 0
+        overall_rate = (df['disclose_documents'] == 'Y').mean() if len(df) > 0 else 0
         col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
         col1.metric("Total Agents", f"{len(df):,}")
-        if 'disclose_documents_model_y' in df.columns:
-            col2.metric("Disclosure Rate (all agents)", f"{df['disclose_documents_model_y'].mean():.2%}")
-        else:
-            col2.metric("Disclosure Rate (all agents)", "N/A")
+        col2.metric("Disclosure Rate (all agents)", f"{overall_rate:.2%}")
         col3.metric("Qualified Agents", f"{len(qualified):,}")
         col4.metric("Disclose Documents Rate (qualified)", f"{qualified_rate:.2%}")
     else:
@@ -499,27 +498,25 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
     
     # Statistics + classification panels BELOW the graph
-    col_stats, col_class = st.columns(2)
-    with col_stats:
-        st.markdown("**📈 Statistics**")
-        stats_df = pd.DataFrame({
-            'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
-            'Raw Disclose Income Value': [
-                f"{mean_val:.4f}",
-                f"{std_val:.4f}",
-                f"{median_val:.4f}",
-                f"{min_val:.4f}",
-                f"{max_val:.4f}"
-            ]
-        })
-        st.dataframe(stats_df, hide_index=True, use_container_width=True)
-    with col_class:
-        st.markdown("**📊 Classification**")
-        st.dataframe(pd.DataFrame({
-            'Choice': ['Y (disclose income)', 'N (not disclose income)', 'Total'],
-            'Count': [int(y_count), int(n_count), int(total)],
-            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%", "100.00%"]
-        }), hide_index=True, use_container_width=True)
+    # Stacked full-width tables (Classification under Statistics) so all numbers show fully.
+    st.markdown("**📈 Statistics**")
+    stats_df = pd.DataFrame({
+        'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+        'Raw Disclose Income Value': [
+            f"{mean_val:.4f}",
+            f"{std_val:.4f}",
+            f"{median_val:.4f}",
+            f"{min_val:.4f}",
+            f"{max_val:.4f}"
+        ]
+    })
+    st.dataframe(stats_df, hide_index=True, use_container_width=True)
+    st.markdown("**📊 Classification**")
+    st.dataframe(pd.DataFrame({
+        'Choice': ['Y (disclose income)', 'N (not disclose income)', 'Total'],
+        'Count': [int(y_count), int(n_count), int(total)],
+        '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%", "100.00%"]
+    }), hide_index=True, use_container_width=True)
 
     # Show key insight about distribution relative to threshold
     if mean_val > 0:
@@ -647,20 +644,18 @@ def show_disclose_documents_rate_analysis(df, title_suffix="", result_key=None, 
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
 
-    col_stats, col_class = st.columns(2)
-    with col_stats:
-        st.markdown("**📈 Statistics** (qualified agents)")
-        st.dataframe(pd.DataFrame({
-            'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
-            'Raw Disclose Documents Value': [f"{mean_val:.4f}", f"{std_val:.4f}", f"{median_val:.4f}", f"{min_val:.4f}", f"{max_val:.4f}"]
-        }), hide_index=True, use_container_width=True)
-    with col_class:
-        st.markdown("**📊 Classification** (qualified agents)")
-        st.dataframe(pd.DataFrame({
-            'Choice': ['Y (disclose documents)', 'N (not disclose documents)', 'Total'],
-            'Count': [y_count, n_count, total],
-            '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%", "100.00%"]
-        }), hide_index=True, use_container_width=True)
+    # Stacked full-width tables (Classification under Statistics) so all numbers show fully.
+    st.markdown("**📈 Statistics** (qualified agents)")
+    st.dataframe(pd.DataFrame({
+        'Statistic': ['Mean', 'Std Dev', 'Median', 'Min', 'Max'],
+        'Raw Disclose Documents Value': [f"{mean_val:.4f}", f"{std_val:.4f}", f"{median_val:.4f}", f"{min_val:.4f}", f"{max_val:.4f}"]
+    }), hide_index=True, use_container_width=True)
+    st.markdown("**📊 Classification** (qualified agents)")
+    st.dataframe(pd.DataFrame({
+        'Choice': ['Y (disclose documents)', 'N (not disclose documents)', 'Total'],
+        'Count': [y_count, n_count, total],
+        '%': [f"{y_pct:.2f}%", f"{n_pct:.2f}%", "100.00%"]
+    }), hide_index=True, use_container_width=True)
 
     if mean_val > 0:
         st.success(f"✅ Mean ({mean_val:.4f}) > 0: Distribution favors disclosure")

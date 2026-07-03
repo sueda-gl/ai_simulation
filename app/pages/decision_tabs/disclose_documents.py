@@ -384,14 +384,13 @@ def render_formula_display(config):
 
 def render_mediator_equations(config):
     """Render Equation 1 (Privacy Concern) and Equation 2 (Trust) - same for both modes."""
-    beta = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
     st.markdown("### Equation 1: Privacy Concern (PC)")
     st.latex(
-        rf"PC_i = \beta + 0.12\,z_{{N_i}} + 0.14\,z_{{A_i}} \quad (\beta = {beta})"
+        rf"PC_i = \beta + 0.12\,z_{{N_i}} + 0.14\,z_{{A_i}}"
     )
     st.markdown("### Equation 2: Trust (T)")
     st.latex(
-        rf"T_i = \beta - 0.0204\,z_{{N_i}} + 0.13\,z_{{E_i}} + 0.0762\,z_{{A_i}} \quad (\beta = {beta})"
+        rf"T_i = \beta - 0.0204\,z_{{N_i}} + 0.13\,z_{{E_i}} + 0.0762\,z_{{A_i}}"
     )
 
 
@@ -422,8 +421,7 @@ def render_categorical_dd_formula(config):
     })
     st.dataframe(df, hide_index=True, use_container_width=False)
     st.markdown(
-        "Each value = regression base (_cons = −0.2393718) + the income-quintile dummy, "
-        "so it matches the document's regression table."
+        "Each value = regression base intercept = −0.2393718 + differential income-quintile dummy."
     )
     st.markdown("β_PIcat_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
 
