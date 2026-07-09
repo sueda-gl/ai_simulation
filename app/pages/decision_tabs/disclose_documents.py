@@ -569,13 +569,3 @@ def render_actions_and_management_section(config):
                 st.rerun()
             else:
                 st.toast("❌ Failed to reset intercept", icon="⚠️")
-
-    with st.expander("Debug: Current Session State Values", expanded=False):
-        st.write("**Current values in session state:**")
-        st.write(f"- Intercept (dd_intercept): {st.session_state.get('dd_intercept', 'NOT SET')}")
-        st.write(f"- Income Mode (dd_income_mode): {st.session_state.get('dd_income_mode', 'NOT SET')}")
-        st.write(f"- Sigma Enabled (dd_sigma_enabled): {st.session_state.get('dd_sigma_enabled', 'NOT SET')}")
-        st.write(f"- Sigma in Copula (dd_sigma_in_copula): {st.session_state.get('dd_sigma_in_copula', 'NOT SET')}")
-        st.write(f"- σ mode (dd_sigma_strategy): {st.session_state.get('dd_sigma_strategy', 'NOT SET')}")
-        st.write(f"- σ Coefficient (dd_scale_factor): {st.session_state.get('dd_scale_factor', 'NOT SET')}")
-        st.write(f"- Quintile Scale Factors: {st.session_state.get('dd_quintile_scale_factors', 'NOT SET')}")

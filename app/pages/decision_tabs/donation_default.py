@@ -1250,37 +1250,6 @@ def render_actions_and_management_section():
                 st.rerun()
             else:
                 st.toast("❌ Failed to reset configuration", icon="⚠️")
-    
-    # Debug expander below the buttons
-    with st.expander("🔍 Debug: Current Session State Values", expanded=False):
-        st.write("**Current intercept values in session state:**")
-        st.write(f"- Main intercept: {st.session_state.get('donation_coeff_intercept', 'NOT SET')}")
-        st.write(f"- Categorical intercept: {st.session_state.get('donation_coeff_intercept_cat', 'NOT SET')}")
-        st.write(f"- Continuous intercept: {st.session_state.get('donation_coeff_intercept_cont', 'NOT SET')}")
-        
-        # Load current configuration values for comparison
-        try:
-            import yaml
-            from pathlib import Path
-            config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-            
-            yaml_cat = config['donation_default']['regression_coefficients']['categorical']['intercept']
-            yaml_cont = config['donation_default']['regression_coefficients']['continuous']['intercept']
-            
-            st.write("**Current configuration file values:**")
-            st.write(f"- Configuration categorical: {yaml_cat}")
-            st.write(f"- Configuration continuous: {yaml_cont}")
-            
-            # Check if they match
-            if st.session_state.get('donation_coeff_intercept_cat') != yaml_cat:
-                st.error("❌ Session state doesn't match configuration! Click 'Reload from Configuration' button.")
-            else:
-                st.success("✅ Session state matches configuration values")
-                
-        except Exception as e:
-            st.error(f"Error reading configuration: {e}")
 
 
 def get_current_yaml_adjustment():

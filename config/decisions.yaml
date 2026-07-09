@@ -150,7 +150,7 @@ disclose_income:
       '4': 12.219622
       '5': 16.854622
     sigma_value: 0
-    scale_factor: 1.0
+    scale_factor: 0.1
     quintile_scale_factors:
       '1': 1.0
       '2': 1.0

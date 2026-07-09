@@ -850,38 +850,3 @@ def render_actions_and_management_section(config):
                 st.rerun()
             else:
                 st.toast("❌ Failed to reset intercept", icon="⚠️")
-
-    # Debug expander below the buttons
-    with st.expander("Debug: Current Session State Values", expanded=False):
-        st.write("**Current values in session state:**")
-        st.write(f"- Intercept (di_intercept): {st.session_state.get('di_intercept', 'NOT SET')}")
-        st.write(f"- Income Mode (di_income_mode): {st.session_state.get('di_income_mode', 'NOT SET')}")
-        st.write(f"- WOPB (di_wopb): {st.session_state.get('di_wopb', 'NOT SET')}")
-        st.write(f"- WPB (di_wpb): {st.session_state.get('di_wpb', 'NOT SET')}")
-        st.write(f"- Sigma Enabled (di_sigma_enabled): {st.session_state.get('di_sigma_enabled', 'NOT SET')}")
-        st.write(f"- Sigma in Copula (di_sigma_in_copula): {st.session_state.get('di_sigma_in_copula', 'NOT SET')}")
-        st.write(f"- σ mode (di_sigma_strategy): {st.session_state.get('di_sigma_strategy', 'NOT SET')}")
-        st.write(f"- σ Coefficient (di_scale_factor): {st.session_state.get('di_scale_factor', 'NOT SET')}")
-        st.write(f"- Quintile Scale Factors: {st.session_state.get('di_quintile_scale_factors', 'NOT SET')}")
-
-        # Load current YAML values for comparison
-        try:
-            yaml_config = load_disclose_income_config()
-
-            st.write("**Current configuration values:**")
-            st.write(f"- Configuration intercept: {yaml_config.get('intercept', 'NOT SET')}")
-            st.write(f"- Configuration income_mode: {yaml_config.get('income_mode', 'NOT SET')}")
-            st.write(f"- Configuration anchor_weights: {yaml_config.get('anchor_weights', 'NOT SET')}")
-            st.write(f"- Configuration stochastic: {yaml_config.get('stochastic', 'NOT SET')}")
-
-            # Check if they match
-            yaml_intercept = yaml_config.get('intercept', 0.75)
-            session_intercept = st.session_state.get('di_intercept', 0.75)
-
-            if abs(yaml_intercept - session_intercept) > 0.0001:
-                st.error("Session state doesn't match configuration! Click 'Reload Configuration' button.")
-            else:
-                st.success("Session state matches configuration values")
-
-        except Exception as e:
-            st.error(f"Error reading configuration: {e}")
