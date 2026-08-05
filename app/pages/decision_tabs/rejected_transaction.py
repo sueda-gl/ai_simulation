@@ -153,10 +153,6 @@ def render_formula_section(config, mech):
         )
         st.latex(r"ttp06_i = (6 - 0.0001)\cdot\frac{TTP_i - \min(TTP)}{\max(TTP) - \min(TTP)}"
                  r"\quad\Rightarrow\quad length_i = \lfloor ttp06_i \rfloor \in \{0,\dots,5\}")
-        st.caption(
-            "Ed = 1 for graduate students, 0 for undergraduates. "
-            "min/max are computed over the simulated population."
-        )
         return
 
     seq = sequences.get(mech, [])

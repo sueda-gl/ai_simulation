@@ -670,13 +670,6 @@ def render_rtd_comparison_results(results_dict, decision_name):
         from app.pages.decision_execution import format_result_name
         labels = [format_result_name(k) for k in keys]
 
-    st.info(
-        "ℹ️ **Decision 4 model run**: four separate trait-based sub-decisions per agent - "
-        "the number of default options to pre-select (Tendency to Plan) and three priority "
-        "rankings (Loyalty, Willingness-to-Pay, Risk-Taking). Rank aggregation into a "
-        "single default list is a later, separate step, so no combined list is produced yet."
-    )
-
     # Rows of up to 3 mode columns (3x2 when Compare-both income doubles the keys)
     for start in range(0, len(keys), 3):
         row_keys = keys[start:start + 3]
@@ -699,14 +692,6 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
     once per result_key (comparison modes). compact=True stacks each section
     vertically for use inside a per-mode comparison column.
     """
-    if not compact:
-        st.info(
-            "ℹ️ **Decision 4 model run**: four separate trait-based sub-decisions per agent - "
-            "the number of default options to pre-select (Tendency to Plan) and three priority "
-            "rankings (Loyalty, Willingness-to-Pay, Risk-Taking). Rank aggregation into a "
-            "single default list is a later, separate step, so no combined list is produced yet."
-        )
-
     n = len(df)
     stochastic_mechs = [label for key, col, label, _ in
                         [('ttp', 'ttp', 'List Length', None)] + _RTD_MECHS
