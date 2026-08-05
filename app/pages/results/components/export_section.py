@@ -359,6 +359,18 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
                 agent_record[f'rejected_transaction_{priority_num}_choice'] = rejected_defaults[priority_num - 1]
             else:
                 agent_record[f'rejected_transaction_{priority_num}_choice'] = 'N/A'
+
+        # Decision 4 MODEL outputs (four trait-based sub-decision mechanisms; present only
+        # when Decision 4 ran as a custom decision). Rankings exported as 'a > b > c'
+        # option-number strings; the dedicated Decision 4 Excel has the full breakdown.
+        if 'rtd_choice_length' in row:
+            agent_record['rtd_choice_length'] = row.get('rtd_choice_length', np.nan)
+            for mech_col, export_name in [('loyalty', 'rtd_loyalty'), ('wtp', 'rtd_wtp'), ('rt', 'rtd_risk_taking')]:
+                agent_record[f'{export_name}_segment'] = row.get(f'rtd_{mech_col}_segment', np.nan)
+                ranking = row.get(f'rtd_{mech_col}_ranking', None)
+                agent_record[f'{export_name}_ranking'] = (
+                    ' > '.join(str(o) for o in ranking) if isinstance(ranking, list) else 'N/A'
+                )
         
         # Decision 5: Vendor Choice Weights (flatten dict to columns)
         vendor_weights = row.get('vendor_choice_weights', {})

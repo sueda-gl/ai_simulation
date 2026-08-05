@@ -206,6 +206,25 @@ class OrchestratorDocMode:
                 dd_cont_stats = compute_continuous_dd_stats(agents_df, agent_incomes, dd_params, self.simulation_config)
                 self.simulation_config['dd_cont_stats'] = dd_cont_stats
                 print(f"[DocMode] Computed continuous DD stats: mean={dd_cont_stats['mean']:.6f}, sd={dd_cont_stats['sd']:.6f}")
+
+        # Compute Decision 4 population stats (min/max/std of the four mechanism scores;
+        # egen min/max/std are population-level operations). With outcome_draws > 1 every
+        # rep is its own population member (each rep has its own base seed and income),
+        # so replicate the agent rows agent-major/rep-minor to match all_incomes order.
+        if 'rejected_transaction_defaults' in decisions_to_run and 'rejected_transaction_defaults' in self.decision_modules:
+            rtd_params = self.config.get('rejected_transaction_defaults', {})
+            if rtd_params.get('model_enabled') and 'rejected_transaction_defaults' not in self.simulation_config.get('default_decisions_list', []):
+                from src.decisions.rejected_transaction_defaults import compute_rtd_population_stats
+                rtd_agents_df = (agents_df.loc[agents_df.index.repeat(outcome_draws)]
+                                 if outcome_draws > 1 else agents_df)
+                rtd_stats = compute_rtd_population_stats(
+                    rtd_agents_df, all_incomes, rtd_params, self.simulation_config,
+                    pop_context=self.pop_context,
+                    agent_base_seeds=[int(s) for s in agent_base_seeds],
+                    decision_offset=decision_index['rejected_transaction_defaults'] * 1000)
+                self.simulation_config['rtd_population_stats'] = rtd_stats
+                print(f"[DocMode] Computed Decision 4 population stats: "
+                      f"wtp range [{rtd_stats['wtp']['min']:.6f}, {rtd_stats['wtp']['max']:.6f}]")
         
         # Process agents and run decisions (single-pass)
         results = []
@@ -246,8 +265,8 @@ class OrchestratorDocMode:
                                 agent_state, params, decision_rng, pop_context=self.pop_context, 
                                 simulation_config=self.simulation_config
                             )
-                        elif decision_name in ('disclose_income', 'disclose_documents'):
-                            # Pass pop_context to disclose_income/disclose_documents for stochastic control
+                        elif decision_name in ('disclose_income', 'disclose_documents', 'rejected_transaction_defaults'):
+                            # Pass pop_context to these decisions for stochastic control
                             decision_output = self.decision_modules[decision_name](
                                 agent_state, params, decision_rng,
                                 simulation_config=self.simulation_config,

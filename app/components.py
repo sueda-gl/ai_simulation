@@ -26,9 +26,6 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     """
     st.subheader(f"Simulation Overview{title_suffix}")
     
-    # Check if this is dependent variable mode (only has donation_default column)
-    is_depvar_mode = len(df.columns) == 1 and 'donation_default' in df.columns
-
     # Disclose-Documents-only run: the disclose_income column is present solely to drive the
     # eligibility gate, so none of its metrics/graphs/analysis should appear on the Disclose
     # Documents results page (per professor feedback). Detected via the DD-only run flag.
@@ -37,11 +34,8 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         and st.session_state.custom_decisions == ['disclose_documents']
     )
     
-    # Display anchor weights info (not for depvar mode)
-    if not is_depvar_mode:
-        st.caption(f"📊 Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
-    else:
-        st.caption("📊 Resampling from empirical distribution of 280 original donation rates")
+    # Display anchor weights info
+    st.caption(f"📊 Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
     
     # Headline decision drives the metric layout. "Traits Available" / "Decisions Computed"
     # removed per professor feedback. Priority mirrors the old headline metric:
@@ -51,15 +45,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     has_income = 'disclose_income' in df.columns and not is_dd_focus
     has_documents = 'disclose_documents' in df.columns
 
-    if is_depvar_mode:
-        # Dependent-variable bootstrap mode keeps its descriptive layout.
-        col1, col2, col3, col4 = st.columns([1, 1, 1, 1.2])
-        col1.metric("Total Agents", f"{len(df):,}")
-        col2.metric("Source", "280 participants")
-        col3.metric("Method", "Bootstrap")
-        if has_donation:
-            col4.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
-    elif has_documents and not has_donation and not has_income:
+    if has_documents and not has_donation and not has_income:
         # Decision 2 (Disclose Documents): the realized all-agent disclosure rate
         # (agents who actually disclosed ÷ total agents — only qualified agents can disclose,
         # everyone else is 'NA'/'N'), the qualified-agent count, and the rate among qualified only.
@@ -908,127 +894,6 @@ def show_monte_carlo_results(mc_data):
         if mc_data['log']:
             with st.expander("📋 Monte-Carlo Execution Log", expanded=False):
                 st.text(mc_data['log'])
-
-
-def show_dependent_variable_comparison(df):
-    """Show comparison between original and resampled distributions for dependent variable mode"""
-    try:
-        from src.orchestrator_depvar import OrchestratorDepVar
-        temp_orch = OrchestratorDepVar()
-        emp_stats = temp_orch.get_empirical_stats()
-        original_donations = temp_orch.get_empirical_distribution()
-        
-        # Use donation_default column
-        donation_col = 'donation_default'
-        
-        # Create two columns for side-by-side comparison
-        col_orig, col_resamp = st.columns(2)
-        
-        with col_orig:
-            st.subheader("📊 Original 280 Participants")
-            
-            # Stats
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Mean", f"{emp_stats['mean']:.2%}")
-                st.metric("Min", f"{emp_stats['min']:.2%}")
-            with col2:
-                st.metric("Std Dev", f"{emp_stats['std']:.4f}")
-                st.metric("Max", f"{emp_stats['max']:.2%}")
-            
-            # Histogram
-            fig_orig = px.histogram(
-                pd.DataFrame({donation_col: original_donations}),
-                x=donation_col,
-                nbins=30,
-                title="Original Distribution (n=280)",
-                labels={donation_col: 'Donation Rate', 'count': 'Number of Participants'},
-                marginal="box"
-            )
-            fig_orig.update_layout(
-                xaxis_tickformat='.0%',
-                showlegend=False,
-                height=400
-            )
-            st.plotly_chart(fig_orig, width="stretch")
-        
-        with col_resamp:
-            st.subheader(f"📊 Resampled ({len(df):,} agents)")
-            
-            # Stats
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Mean", f"{df[donation_col].mean():.2%}")
-                st.metric("Min", f"{df[donation_col].min():.2%}")
-            with col2:
-                st.metric("Std Dev", f"{df[donation_col].std():.2%}")
-                st.metric("Max", f"{df[donation_col].max():.2%}")
-            
-            # Histogram
-            fig_resamp = px.histogram(
-                df,
-                x=donation_col,
-                nbins=30,
-                title=f"Resampled Distribution (n={len(df):,})",
-                labels={donation_col: 'Donation Rate', 'count': 'Number of Agents'},
-                marginal="box"
-            )
-            fig_resamp.update_layout(
-                xaxis_tickformat='.0%',
-                showlegend=False,
-                height=400
-            )
-            st.plotly_chart(fig_resamp, width="stretch")
-        
-        # Additional info
-        st.caption(f"The resampled distribution is created by bootstrap sampling with replacement from the {len(original_donations)} original donation rates.")
-        
-        # Combined comparison plot
-        st.subheader("📊 Distribution Comparison")
-        
-        # Create combined dataframe for comparison
-        orig_df = pd.DataFrame({
-            donation_col: original_donations,
-            'source': 'Original (n=280)'
-        })
-        resamp_df = pd.DataFrame({
-            donation_col: df[donation_col].values,
-            'source': f'Resampled (n={len(df):,})'
-        })
-        combined_df = pd.concat([orig_df, resamp_df])
-        
-        # Create overlaid histogram
-        fig_combined = px.histogram(
-            combined_df,
-            x=donation_col,
-            color='source',
-            nbins=30,
-            barmode='overlay',
-            opacity=0.7,
-            title="Original vs Resampled Distribution Overlay",
-            labels={donation_col: 'Donation Rate', 'count': 'Count'}
-        )
-        fig_combined.update_layout(
-            xaxis_tickformat='.0%',
-            height=400
-        )
-        st.plotly_chart(fig_combined, width="stretch")
-        
-        # Show unique values info
-        st.markdown("### 📊 Distribution Details")
-        col1, col2 = st.columns(2)
-        with col1:
-            unique_orig = len(np.unique(original_donations))
-            st.metric("Unique values in original", unique_orig)
-            st.caption(f"Maximum possible unique values: {len(original_donations)}")
-        with col2:
-            unique_resamp = len(np.unique(df[donation_col]))
-            st.metric("Unique values in resampled", unique_resamp)
-            st.caption(f"Limited by original {unique_orig} unique values")
-        
-    except Exception as e:
-        st.caption(f"Error loading empirical distribution: {e}")
-        show_overview(df)
 
 
 def show_income_distribution_histogram(sim_params, n_samples: int = 1000, seed: int = None):

@@ -42,8 +42,19 @@ disclose_documents:
   - Assigned Allowance Level
 
 rejected_transaction_defaults:
-  # Decision 4: Select prioritized defaults for handling rejected transactions
-  - placeholder_trait
+  # Decision 4: Rejected Transaction Defaults - four trait-based mechanisms
+  # (TTP length, Loyalty / WTP / Risk-Taking rankings). Traits per the design doc:
+  # Big 5 z-scores + Education (reducation = Education - 1) + continuous income
+  # (runtime-generated from Assigned Allowance Level, like disclose_* decisions).
+  # NOTE: adding ConscientiousnessBig5/Education requires retraining the copula
+  # (scripts/train_copula.py) - synthetic populations change for ALL decisions.
+  - ExtraversionBig5
+  - Agreeable
+  - NeuroticismBig5
+  - ConscientiousnessBig5
+  - OpennessBig5
+  - Education
+  - Assigned Allowance Level
 
 vendor_choice_weights:
   # Decision 5: Select default weights for vendor/product choice

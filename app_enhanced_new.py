@@ -19,8 +19,7 @@ from app.pages import render_page1, render_page2, render_results_page
 st.set_page_config(
     page_title="COOPECON AI Agent Simulation",
     page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # Apply custom CSS styling

@@ -186,6 +186,23 @@ class Orchestrator:
                 dd_cont_stats = compute_continuous_dd_stats(agents_df, all_incomes, dd_params, self.simulation_config)
                 self.simulation_config['dd_cont_stats'] = dd_cont_stats
                 print(f"[Copula] Computed continuous DD stats: mean={dd_cont_stats['mean']:.6f}, sd={dd_cont_stats['sd']:.6f}")
+
+        # Compute Decision 4 population stats (min/max/std of the four mechanism scores;
+        # egen min/max/std are population-level operations). The stochastic aggregates
+        # replicate each agent's decision RNG stream, so pass the Pass-1 base seeds and
+        # this decision's RNG offset (decision_index * 1000, matching Pass 2).
+        if 'rejected_transaction_defaults' in decisions_to_run and 'rejected_transaction_defaults' in self.decision_modules:
+            rtd_params = self.config.get('rejected_transaction_defaults', {})
+            if rtd_params.get('model_enabled') and 'rejected_transaction_defaults' not in self.simulation_config.get('default_decisions_list', []):
+                from src.decisions.rejected_transaction_defaults import compute_rtd_population_stats
+                rtd_stats = compute_rtd_population_stats(
+                    agents_df, all_incomes, rtd_params, self.simulation_config,
+                    pop_context=self.pop_context,
+                    agent_base_seeds=[int(s) for s in agent_base_seeds],
+                    decision_offset=decision_index['rejected_transaction_defaults'] * 1000)
+                self.simulation_config['rtd_population_stats'] = rtd_stats
+                print(f"[Copula] Computed Decision 4 population stats: "
+                      f"wtp range [{rtd_stats['wtp']['min']:.6f}, {rtd_stats['wtp']['max']:.6f}]")
         
         # ============================================================================
         # PASS 2: Process agents and run decisions
@@ -225,7 +242,7 @@ class Orchestrator:
                     # Execute decision module
                     # Pass pop_context to modules that support it (donation_default, disclose_income)
                     # Pass simulation_config to all modules for global parameters
-                    if decision_name in ('donation_default', 'disclose_income', 'disclose_documents'):
+                    if decision_name in ('donation_default', 'disclose_income', 'disclose_documents', 'rejected_transaction_defaults'):
                         decision_output = self.decision_modules[decision_name](
                             agent_state, params, decision_rng, pop_context=self.pop_context, simulation_config=self.simulation_config
                         )

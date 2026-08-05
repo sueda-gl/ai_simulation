@@ -206,6 +206,23 @@ class OrchestratorBaseline:
                 dd_cont_stats = compute_continuous_dd_stats(agents_df, all_incomes, dd_params, self.simulation_config)
                 self.simulation_config['dd_cont_stats'] = dd_cont_stats
                 print(f"[Baseline] Computed continuous DD stats: mean={dd_cont_stats['mean']:.6f}, sd={dd_cont_stats['sd']:.6f}")
+
+        # Compute Decision 4 population stats (min/max/std of the four mechanism scores;
+        # egen min/max/std are population-level operations). Baseline mode is always
+        # deterministic (pop_context='baseline' disables the stochastic gate), so no
+        # stochastic aggregates are computed here.
+        if 'rejected_transaction_defaults' in decisions_to_run and 'rejected_transaction_defaults' in self.decision_modules:
+            rtd_params = self.config.get('rejected_transaction_defaults', {})
+            if rtd_params.get('model_enabled') and 'rejected_transaction_defaults' not in self.simulation_config.get('default_decisions_list', []):
+                from src.decisions.rejected_transaction_defaults import compute_rtd_population_stats
+                rtd_stats = compute_rtd_population_stats(
+                    agents_df, all_incomes, rtd_params, self.simulation_config,
+                    pop_context=self.pop_context,
+                    agent_base_seeds=[int(s) for s in agent_base_seeds],
+                    decision_offset=decision_index['rejected_transaction_defaults'] * 1000)
+                self.simulation_config['rtd_population_stats'] = rtd_stats
+                print(f"[Baseline] Computed Decision 4 population stats: "
+                      f"wtp range [{rtd_stats['wtp']['min']:.6f}, {rtd_stats['wtp']['max']:.6f}]")
         
         # Process agents and run decisions (single-pass)
         results = []
@@ -253,7 +270,7 @@ class OrchestratorBaseline:
                     try:
                         # Call decision function with baseline context
                         # Pass pop_context to decisions that support it (donation_default, disclose_income, disclose_documents)
-                        if decision_name in ('donation_default', 'disclose_income', 'disclose_documents'):
+                        if decision_name in ('donation_default', 'disclose_income', 'disclose_documents', 'rejected_transaction_defaults'):
                             decision_output = decision_func(
                                 agent_state, 
                                 decision_params, 

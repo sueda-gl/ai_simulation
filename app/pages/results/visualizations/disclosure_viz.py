@@ -751,7 +751,7 @@ def _prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
         PrivacyConcern, Trust                          (standardized, Eq 2 & 3, AFTER Intercept),
         Disclosure Document                            (the FINAL DD value = DD raw, post-stochastic),
         Disclose Income (Y=1),
-        Disclose Documents (Y=1)                       (N/A unless qualified: DI=1 AND income<=threshold),
+        Disclose Documents (Y=1)                       (N/A unless qualified: DI=1 AND income<threshold),
         customer_type                                  (Discount/Fixed/Regular).
 
     Standardization note: PrivacyConcern and Trust are the TRAIT parts of the document's
@@ -840,8 +840,9 @@ def _prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
         e['Disclose Income (Y=1)'] = 'N/A'
 
     # --- Disclose Documents (Y=1): N/A unless QUALIFIED ----------------------
-    # Qualified gate = Disclose Income == 'Y' AND income <= discount threshold.
-    # For every agent failing that gate (DI != Y, or income above threshold), force N/A.
+    # Qualified gate = Disclose Income == 'Y' AND income < discount threshold (strict).
+    # Matches the model gate (disclose_documents*.py: income >= threshold -> "NA").
+    # For every agent failing that gate (DI != Y, or income at/above threshold), force N/A.
     from src.decisions.income_utils import get_simulation_param
     threshold = None
     try:
@@ -865,7 +866,7 @@ def _prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
                 return 'N/A'
         if income_series is not None:
             inc = income_series.iloc[idx]
-            if pd.notna(inc) and inc > threshold:
+            if pd.notna(inc) and inc >= threshold:
                 return 'N/A'
         return base
 

@@ -321,7 +321,7 @@ def initialize_session_state():
     if 'mc_results' not in st.session_state:
         st.session_state.mc_results = None
     
-    # Add missing defaults used in configure_sidebar and simulation
+    # Add missing defaults used across the UI and simulation
     defaults = {
         'population_mode': 'Copula (synthetic)',
         'income_spec_mode': 'categorical only',

@@ -18,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.orchestrator import Orchestrator
 from src.orchestrator_doc_mode import OrchestratorDocMode
-from src.orchestrator_depvar import OrchestratorDepVar
 from src.orchestrator_baseline import OrchestratorBaseline
 from src.trait_engine import TraitEngine
 from app.models import ALL_DECISIONS
@@ -265,10 +264,7 @@ def _apply_donation_config(orchestrator, pop_mode: str, inc_mode: str):
     """
     if not hasattr(orchestrator, 'config') or 'donation_default' not in orchestrator.config:
         return
-    
-    if pop_mode == "depvar":
-        return  # depvar mode doesn't use these settings
-    
+
     donation_config = orchestrator.config['donation_default']
     
     # Determine the actual income mode for donation_default
@@ -354,7 +350,7 @@ def _apply_disclose_income_config(orchestrator, pop_mode: str, inc_mode: str = N
     
     Args:
         orchestrator: The orchestrator instance to configure
-        pop_mode: Population mode (documentation, copula, baseline, depvar)
+        pop_mode: Population mode (documentation, copula, baseline)
         inc_mode: Optional explicit income mode override (categorical/continuous).
                   If provided, this takes precedence over session state.
                   This is critical when running "Compare both" mode - the runner
@@ -362,10 +358,7 @@ def _apply_disclose_income_config(orchestrator, pop_mode: str, inc_mode: str = N
     """
     if not hasattr(orchestrator, 'config') or 'disclose_income' not in orchestrator.config:
         return
-    
-    if pop_mode == "depvar":
-        return  # depvar mode doesn't use these settings
-    
+
     di_config = orchestrator.config['disclose_income']
     
     # Check for saved config first (from unified config system)
@@ -387,7 +380,7 @@ def _apply_saved_disclose_income_config(orchestrator, pop_mode: str, saved_confi
     
     Args:
         orchestrator: The orchestrator instance to configure
-        pop_mode: Population mode (documentation, copula, baseline, depvar)
+        pop_mode: Population mode (documentation, copula, baseline)
         saved_config: The saved configuration dict with 'params' key
     """
     di_config = orchestrator.config['disclose_income']
@@ -572,8 +565,6 @@ def _apply_disclose_documents_config(orchestrator, pop_mode: str, inc_mode: str 
     """
     if not hasattr(orchestrator, 'config') or 'disclose_documents' not in orchestrator.config:
         return
-    if pop_mode == "depvar":
-        return
 
     dd_config = orchestrator.config['disclose_documents']
     SIGMA_OVERALL = 0.1606568355  # enable sentinel (>0); actual sigma read from config
@@ -619,6 +610,62 @@ def _apply_disclose_documents_config(orchestrator, pop_mode: str, inc_mode: str 
         dd_config['stochastic']['quintile_scale_factors'] = st.session_state.dd_quintile_scale_factors
 
 
+def _apply_rejected_transaction_config(orchestrator, pop_mode: str):
+    """
+    Apply Decision 4 (rejected_transaction_defaults) configuration to the orchestrator.
+
+    The four mechanisms' coefficients, priority sequences and sigma constants are fixed
+    (verified vs Stata_File_Decision4_050626.dta); user-configurable per mechanism are
+    the sigma strategy (overall vs per-allowance-group), the x0-2 scale factor(s), and
+    the stochastic anchor (continuous vs doc-literal binned). The stochastic enable
+    follows the disclose_documents three-way rule (baseline off / documentation via
+    checkbox / copula via flag). When the decision runs as a DEFAULT (unselected), the
+    decision function ignores all of this and applies the legacy priority template.
+    """
+    if not hasattr(orchestrator, 'config') or 'rejected_transaction_defaults' not in orchestrator.config:
+        return
+
+    rtd_config = orchestrator.config['rejected_transaction_defaults']
+    rtd_config['model_enabled'] = True   # model path when selected; defaults path otherwise
+
+    if 'stochastic' not in rtd_config:
+        rtd_config['stochastic'] = {}
+    stoch = rtd_config['stochastic']
+    # Fallback True matches the tab's initialize_rtd_session_state default, so a run
+    # behaves the same whether or not the Decision 4 tab was ever rendered.
+    sigma_enabled = st.session_state.get('rtd_sigma_enabled', True)
+    sigma_in_copula = st.session_state.get('rtd_sigma_in_copula', False)
+
+    if pop_mode == "baseline":
+        stoch['sigma_value'] = 0.0
+        stoch['in_copula'] = False
+    elif pop_mode == "copula":
+        stoch['in_copula'] = sigma_in_copula
+        stoch['sigma_value'] = 1.0 if sigma_in_copula else 0.0
+    elif sigma_enabled:
+        stoch['sigma_value'] = 1.0   # enable sentinel; per-mechanism sigmas live in config
+        stoch['in_copula'] = False
+    else:
+        stoch['sigma_value'] = 0.0
+        stoch['in_copula'] = False
+
+    mechanisms = stoch.setdefault('mechanisms', {})
+    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
+        mech_cfg = mechanisms.setdefault(mech, {})
+        strategy_key = f'rtd_sigma_strategy_{mech}'
+        scale_key = f'rtd_scale_factor_{mech}'
+        quintile_key = f'rtd_quintile_scale_factors_{mech}'
+        anchor_key = f'rtd_anchor_{mech}'
+        if strategy_key in st.session_state:
+            mech_cfg['sigma_strategy'] = st.session_state[strategy_key]
+        if scale_key in st.session_state:
+            mech_cfg['scale_factor'] = st.session_state[scale_key]
+        if quintile_key in st.session_state:
+            mech_cfg['quintile_scale_factors'] = st.session_state[quintile_key]
+        if anchor_key in st.session_state:
+            mech_cfg['anchor'] = st.session_state[anchor_key]
+
+
 def apply_all_selected_configs(orchestrator, pop_mode: str, inc_mode: str = None):
     """
     Apply all saved decision configurations to the orchestrator.
@@ -628,7 +675,7 @@ def apply_all_selected_configs(orchestrator, pop_mode: str, inc_mode: str = None
     
     Args:
         orchestrator: The orchestrator instance to configure
-        pop_mode: Population mode (documentation, copula, baseline, depvar)
+        pop_mode: Population mode (documentation, copula, baseline)
         inc_mode: Optional income mode override (for Compare both scenarios)
     """
     from app.pages.decision_execution import get_selected_decision_configs, get_all_saved_config_summary
@@ -719,6 +766,7 @@ def run_copula_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: 
     _apply_donation_config(orchestrator, "copula", inc_mode)
     _apply_disclose_income_config(orchestrator, "copula", inc_mode)  # Pass inc_mode for disclose_income
     _apply_disclose_documents_config(orchestrator, "copula", inc_mode)  # Pass inc_mode for disclose_documents
+    _apply_rejected_transaction_config(orchestrator, "copula")
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
@@ -745,6 +793,7 @@ def run_research_spec_mode(n_agents: int, seed: int, inc_mode: str, decision_set
     _apply_donation_config(orchestrator, "documentation", inc_mode)
     _apply_disclose_income_config(orchestrator, "documentation", inc_mode)  # Pass inc_mode for disclose_income
     _apply_disclose_documents_config(orchestrator, "documentation", inc_mode)  # Pass inc_mode for disclose_documents
+    _apply_rejected_transaction_config(orchestrator, "documentation")
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
 
@@ -771,32 +820,12 @@ def run_research_baseline_mode(n_agents: int, seed: int, inc_mode: str, decision
     _apply_donation_config(orchestrator, "baseline", inc_mode)
     _apply_disclose_income_config(orchestrator, "baseline", inc_mode)  # Pass inc_mode for disclose_income
     _apply_disclose_documents_config(orchestrator, "baseline", inc_mode)  # Pass inc_mode for disclose_documents
+    _apply_rejected_transaction_config(orchestrator, "baseline")
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
 
     # 4. Run simulation
     return orchestrator.run_simulation(n_agents, seed, single_decision, agents_df=agents_df)
-
-
-def run_depvar_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: dict,
-                    single_decision=None) -> pd.DataFrame:
-    """
-    Run simulation in Dependent Variable Resampling mode.
-    
-    - No agent sampling (resamples outcomes only)
-    - Uses OrchestratorDepVar
-    """
-    # 1. No agent sampling for depvar mode
-    
-    # 2. Create orchestrator
-    orchestrator = OrchestratorDepVar()
-    
-    # 3. Apply configurations (no donation config for depvar)
-    _apply_simulation_params(orchestrator)
-    _apply_decision_settings(orchestrator, decision_settings)
-    
-    # 4. Run simulation
-    return orchestrator.run_simulation(n_agents, seed, single_decision)
 
 
 # =============================================================================
@@ -807,7 +836,6 @@ MODE_RUNNERS = {
     "copula": run_copula_mode,
     "documentation": run_research_spec_mode,
     "baseline": run_research_baseline_mode,
-    "depvar": run_depvar_mode,
 }
 
 
@@ -817,7 +845,6 @@ def get_pop_type(population_mode: str) -> str:
         "Copula (synthetic)": "copula",
         "Research Specification": "documentation",
         "Research Baseline": "baseline",
-        "Dependent variable resampling": "depvar",
     }.get(population_mode, "copula")
 
 
@@ -839,8 +866,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         population_mode_map = {
             'Copula (synthetic)': 'copula',
             'Research Specification': 'documentation',
-            'Research Baseline': 'baseline',
-            'Dependent variable resampling': 'depvar'
+            'Research Baseline': 'baseline'
         }
         
         income_mode_map = {
@@ -1102,11 +1128,11 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         return None, None, None
 
 
-def run_simulation_from_sidebar():
+def run_full_simulation():
     """
     Run simulation using mode runner functions.
     
-    Each population mode (Copula, Research Spec, Research Baseline, DepVar) 
+    Each population mode (Copula, Research Spec, Research Baseline)
     uses its own dedicated runner function that encapsulates:
     - Agent sampling (mode-appropriate)
     - Orchestrator creation
@@ -1334,10 +1360,6 @@ def run_simulation_from_sidebar():
                     else:  # categorical only
                         results[f"{result_name}_categorical"] = runner(n_agents, seed, "categorical", decision_settings, execution_single_decision)
 
-            elif effective_pop_mode == "Dependent variable resampling":
-                # DepVar mode
-                results["depvar"] = run_depvar_mode(n_agents, seed, "categorical", decision_settings, execution_single_decision)
-            
             else:
                 # Single population mode - use the appropriate runner
                 pop_type = get_pop_type(effective_pop_mode)

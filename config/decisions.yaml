@@ -221,11 +221,135 @@ disclose_documents:
       '4': 1.0
       '5': 1.0
     in_copula: false
+# Decision 4: Rejected Transaction Defaults - FOUR trait-based sub-decision mechanisms
+# (TTP list length 0-5; Loyalty / WTP / Risk-Taking priority rankings). Rank aggregation
+# across the mechanisms is a later, separate step (not specified in the source document).
+# Source: "Decision 4 - Rejected Transaction Defaults" doc (100726); ground truth arbiter:
+# Stata_File_Decision4_050626.dta (data/stata_d4_verification.csv is the frozen extract).
+# All deterministic outputs verified 280/280 against the .dta.
 rejected_transaction_defaults:
   uses_global_parameters: []
-  placeholder: true
+  placeholder: false
   output_field: rejected_transaction_defaults
   default_value: NA
+  coefficients:
+    ttp:                       # Tendency to Plan -> number of pre-selected options (0-5)
+      extraversion: -0.0152556564
+      agreeable: 0.0177638642
+      neuroticism: 0.01959
+      conscientiousness: 0.00901465
+      education: 0.0297        # applies to reducation = Education - 1 (0/1)
+    loyalty:                   # priority sequence Option 3 > 1 > 4 > 5 > 2
+      extraversion: 0.09
+      openness: 0.0273
+      agreeable: 0.0045
+    wtp:                       # Hunter & Schmidt pooling; priority 3 > 2 > 1 > 4 > 5
+      extraversion: 0.0788796127824
+      agreeable: -0.012328716
+      income: 0.69814232
+    risk_taking:               # Hunter & Schmidt pooling; priority 4 > 2 > 1 > 3 > 5
+      extraversion: 0.025942386297
+      openness: 0.023699214948
+      agreeable: -0.038734315188
+      conscientiousness: -0.037739440732
+      neuroticism: -0.025388697852
+      income: 0.006874197106
+  priority_sequences:          # segment s (1..5) receives the tail seq[s-1:] (.dta-verified)
+    loyalty: [3, 1, 4, 5, 2]
+    wtp: [3, 2, 1, 4, 5]
+    risk_taking: [4, 2, 1, 3, 5]
+  z_scoring:                   # frozen original-280 mean/SD (Stata egen std semantics)
+    ExtraversionBig5:
+      mean: 3.557857
+      sd: 0.6989565
+    Agreeable:
+      mean: 3.546071
+      sd: 0.3732712
+    NeuroticismBig5:
+      mean: 2.702143
+      sd: 0.6839657
+    ConscientiousnessBig5:
+      mean: 3.657143
+      sd: 0.5596521
+    OpennessBig5:
+      mean: 4.060714
+      sd: 0.5068274
+  # sigma = (score range / 18) * mean(stdactions within allowance group); doc sigma tables.
+  # NOTES: loyalty quintile '2' corrects the doc's dropped-digit typo (0.04975281 ->
+  # 0.0304975281); risk_taking overall 0.332208167 = 5.979747/18 follows the doc as
+  # stated even though it omits the *mean(stdactions) factor the other mechanisms use.
+  stochastic:
+    sigma_value: 0             # >0 enables draws in Research Specification mode
+    in_copula: false           # enables draws in Copula mode
+    mechanisms:
+      ttp:
+        sigma_strategy: overall
+        sigma_overall: 0.395446
+        sigma_quintile:
+          '1': 0.3409411667
+          '2': 0.3788993667
+          '3': 0.4368824333
+          '4': 0.4085647667
+          '5': 0.4181633667
+        scale_factor: 1.0
+        quintile_scale_factors:
+          '1': 1.0
+          '2': 1.0
+          '3': 1.0
+          '4': 1.0
+          '5': 1.0
+        anchor: continuous     # weighted_ttp06 (doc line 191)
+      loyalty:
+        sigma_strategy: overall
+        sigma_overall: 0.0318293523
+        sigma_quintile:
+          '1': 0.0274422808
+          '2': 0.0304975281   # CORRECTED (doc table typo 0.04975281)
+          '3': 0.0351645726
+          '4': 0.0328852897
+          '5': 0.0336578789
+        scale_factor: 1.0
+        quintile_scale_factors:
+          '1': 1.0
+          '2': 1.0
+          '3': 1.0
+          '4': 1.0
+          '5': 1.0
+        anchor: continuous     # raw weighted_loyalty ('binned' = doc-literal alternative)
+      wtp:
+        sigma_strategy: overall
+        sigma_overall: 0.45265807275
+        sigma_quintile:
+          '1': 0.390267757
+          '2': 0.4337176628
+          '3': 0.5000895873
+          '4': 0.4676749852
+          '5': 0.4786622888
+        scale_factor: 1.0
+        quintile_scale_factors:
+          '1': 1.0
+          '2': 1.0
+          '3': 1.0
+          '4': 1.0
+          '5': 1.0
+        anchor: continuous     # raw WTP_calculated (.dta-verified: NOT the binned score)
+      risk_taking:
+        sigma_strategy: overall
+        sigma_overall: 0.332208167
+        sigma_quintile:
+          '1': 0.28639058
+          '2': 0.318275468
+          '3': 0.366981244
+          '4': 0.343194404
+          '5': 0.351257228
+        scale_factor: 1.0
+        quintile_scale_factors:
+          '1': 1.0
+          '2': 1.0
+          '3': 1.0
+          '4': 1.0
+          '5': 1.0
+        anchor: continuous     # population z of RT_calculated ('binned' = doc-literal)
 vendor_choice_weights:
   uses_global_parameters: []
   placeholder: true

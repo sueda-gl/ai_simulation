@@ -339,52 +339,49 @@ def render_donation_default_tab():
         population_mode = st.session_state.population_mode  # Use value from Page 1
         
         # Income specification selector
-        if population_mode != "Dependent variable resampling":
-            st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
-            
-            # Initialize the widget key if it doesn't exist
-            if "page2_tab_income_spec_mode" not in st.session_state:
-                # Map current income_spec_mode to radio button options
-                if st.session_state.income_spec_mode in ["Categorical only", "Continuous only", "Compare both"]:
-                    st.session_state.page2_tab_income_spec_mode = st.session_state.income_spec_mode
-                elif st.session_state.income_spec_mode in ["compare both", "compare side-by-side"]:
-                    st.session_state.page2_tab_income_spec_mode = "Compare both"
-                else:
-                    st.session_state.page2_tab_income_spec_mode = "Categorical only"
-            
-            def on_income_spec_mode_change():
-                """Handle income spec mode changes"""
-                setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
-                save_to_donation_storage('page2_tab_income_spec_mode', 'income_spec_mode')
-                reload_coefficients_for_income_mode()
-                clear_input_field_cache()
-                from app.pages.decision_execution import clear_decision_config
-                clear_decision_config('donation_default')
-            
-            # Restore income spec mode
-            income_val = restore_widget_from_storage(
-                'page2_tab_income_spec_mode',
-                st.session_state.donation_tab_persistence,
-                'income_spec_mode',
-                'categorical only'
-            )
-            
-            # Ensure index matches logic if needed, but for radio string value is enough if in options
-            # If value not in options, default to categorical
-            if income_val not in ["categorical only", "continuous only", "Compare both"]:
-                income_val = "categorical only"
-            
-            income_spec_mode = st.radio(
-                "Income Mode for Donation Model",
-                ["categorical only", "continuous only", "Compare both"],
-                help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
-                key="page2_tab_income_spec_mode",
-                on_change=on_income_spec_mode_change
-            )
-            # Ensure session state is synced if we just restored a value
-            st.session_state.income_spec_mode = income_spec_mode
-        else:
-            st.session_state.income_spec_mode = "categorical only"
+        st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
+
+        # Initialize the widget key if it doesn't exist
+        if "page2_tab_income_spec_mode" not in st.session_state:
+            # Map current income_spec_mode to radio button options
+            if st.session_state.income_spec_mode in ["Categorical only", "Continuous only", "Compare both"]:
+                st.session_state.page2_tab_income_spec_mode = st.session_state.income_spec_mode
+            elif st.session_state.income_spec_mode in ["compare both", "compare side-by-side"]:
+                st.session_state.page2_tab_income_spec_mode = "Compare both"
+            else:
+                st.session_state.page2_tab_income_spec_mode = "Categorical only"
+
+        def on_income_spec_mode_change():
+            """Handle income spec mode changes"""
+            setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
+            save_to_donation_storage('page2_tab_income_spec_mode', 'income_spec_mode')
+            reload_coefficients_for_income_mode()
+            clear_input_field_cache()
+            from app.pages.decision_execution import clear_decision_config
+            clear_decision_config('donation_default')
+
+        # Restore income spec mode
+        income_val = restore_widget_from_storage(
+            'page2_tab_income_spec_mode',
+            st.session_state.donation_tab_persistence,
+            'income_spec_mode',
+            'categorical only'
+        )
+
+        # Ensure index matches logic if needed, but for radio string value is enough if in options
+        # If value not in options, default to categorical
+        if income_val not in ["categorical only", "continuous only", "Compare both"]:
+            income_val = "categorical only"
+
+        income_spec_mode = st.radio(
+            "Income Mode for Donation Model",
+            ["categorical only", "continuous only", "Compare both"],
+            help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
+            key="page2_tab_income_spec_mode",
+            on_change=on_income_spec_mode_change
+        )
+        # Ensure session state is synced if we just restored a value
+        st.session_state.income_spec_mode = income_spec_mode
     
     with col2:
         # Stochastic component option
@@ -437,31 +434,28 @@ def render_donation_default_tab():
             st.info("Stochastic component disabled for all modes - using anchor values directly")
         
         # Anchor weights
-        if population_mode != "Dependent variable resampling":
-            st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
-            
-            # Restore anchor weight
-            anchor_val = restore_widget_from_storage(
-                'tab_anchor_weight',
-                st.session_state.donation_tab_persistence,
-                'anchor_weight',
-                0.75
-            )
-            
-            anchor_observed_weight = st.slider(
-                "Weight for observed vs modeled prosocial behavior",
-                min_value=0.0,
-                max_value=1.0,
-                value=float(anchor_val),
-                step=0.01,
-                help="Anchor = w × Observed + (1-w) × Predicted",
-                key="tab_anchor_weight",
-                on_change=lambda: save_to_donation_storage('tab_anchor_weight', 'anchor_weight')
-            )
-            st.session_state.anchor_observed_weight = anchor_observed_weight
-            st.markdown(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
-        else:
-            st.session_state.anchor_observed_weight = 0.75
+        st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
+
+        # Restore anchor weight
+        anchor_val = restore_widget_from_storage(
+            'tab_anchor_weight',
+            st.session_state.donation_tab_persistence,
+            'anchor_weight',
+            0.75
+        )
+
+        anchor_observed_weight = st.slider(
+            "Weight for observed vs modeled prosocial behavior",
+            min_value=0.0,
+            max_value=1.0,
+            value=float(anchor_val),
+            step=0.01,
+            help="Anchor = w × Observed + (1-w) × Predicted",
+            key="tab_anchor_weight",
+            on_change=lambda: save_to_donation_storage('tab_anchor_weight', 'anchor_weight')
+        )
+        st.session_state.anchor_observed_weight = anchor_observed_weight
+        st.markdown(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
     
     
     # NEW: Mathematical Formula Display Section

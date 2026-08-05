@@ -44,3 +44,16 @@ coverage.xml
 
 # Outputs directory
 outputs/
+
+# Local experiments / one-off test & debug scripts (not pushed)
+experiments/
+
+# Claude Code local settings
+.claude/
+
+# Virtual environments
+.venv/
+prosocial_analysis_env/
+
+# MS Office lock files
+~$*

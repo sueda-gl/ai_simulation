@@ -5,7 +5,7 @@ Decision execution functions for running individual and combined simulations.
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from app.simulation import run_simulation_from_sidebar
+from app.simulation import run_full_simulation
 from app.models import ALL_DECISIONS
 
 
@@ -842,7 +842,7 @@ def run_individual_decision(decision_name):
             original_default_decisions = getattr(st.session_state, 'default_decisions', [])
             
             # FIX: Store in session state for restoration after st.rerun()
-            # This is needed because run_simulation_from_sidebar() may call st.rerun()
+            # This is needed because run_full_simulation() may call st.rerun()
             # BEFORE this function's restoration code can execute
             # NOTE: Only store selected_decisions - custom_decisions/default_decisions should
             # reflect the current run (needed for should_enable_selection())
@@ -917,7 +917,7 @@ def run_individual_decision(decision_name):
                     st.error("❌ Monte Carlo simulation returned no results")
             else:
                 # Run single simulation
-                run_simulation_from_sidebar()
+                run_full_simulation()
             
             # Store in individual results (only for single run mode)
             if st.session_state.sim_params.simulation_mode != "Monte-Carlo Study" and st.session_state.simulation_results:
@@ -1126,7 +1126,7 @@ def run_combined_simulation(selected_decisions):
                     st.error("❌ Monte Carlo simulation returned no results")
             else:
                 # Run single simulation
-                run_simulation_from_sidebar()
+                run_full_simulation()
             
             # Restore original selected decisions
             st.session_state.decision_params.selected_decisions = original_decisions

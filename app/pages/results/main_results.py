@@ -8,7 +8,6 @@ from app.pages.navigation import render_navigation
 from app.components import show_overview, show_monte_carlo_results
 from app.pages.results.comparisons import (
     render_all_modes_comparison,
-    render_dependent_variable_results,
     render_income_comparison,
     render_population_comparison
 )
@@ -128,7 +127,7 @@ def render_results_page():
     # Show message if no results available
     else:
         st.info("🔍 No simulation results available yet.")
-        st.write("Please configure your simulation parameters and click '🚀 Run Simulation' in the sidebar.")
+        st.write("Please configure your simulation parameters and click '🚀 Run Complete Simulation' on the Decisions page.")
     
     # Always show navigation
     render_navigation('results')
@@ -171,7 +170,6 @@ def render_single_run_results():
     # OR when in single mode (not comparison modes)
     is_comparison_mode = (
         st.session_state.population_mode == "Compare all" or
-        st.session_state.population_mode == "Dependent variable resampling" or
         st.session_state.income_spec_mode == "Compare both"
     )
     
@@ -182,7 +180,15 @@ def render_single_run_results():
         len(st.session_state.default_decisions) > 0  # Only show if there are actual default decisions
     )
     
-    if (not is_comparison_mode or has_combined_simulation) and hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
+    # Decision 4 has no comparison grid of its own, so an individual Decision 4 run must
+    # keep the Decision Results section even in comparison modes (it then renders its
+    # model view once per population mode / result key).
+    is_individual_rtd_run = (
+        getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults'] and
+        not getattr(st.session_state, 'default_decisions', [])
+    )
+
+    if (not is_comparison_mode or has_combined_simulation or is_individual_rtd_run) and hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
         st.markdown('<h3 class="section-header">📋 Decision Results</h3>', unsafe_allow_html=True)
         
         # Create individual dropdowns for each decision with full results
@@ -256,6 +262,11 @@ def render_single_run_results():
                                     render_all_modes_comparison(results_dict)
                                 elif st.session_state.income_spec_mode == "Compare both":
                                     render_income_comparison(results_dict)
+                            elif is_comparison_mode and decision == "rejected_transaction_defaults":
+                                # Decision 4: one tab per configuration, mirroring the other decisions' comparison labels
+                                from app.pages.results.visualizations.transaction_viz import render_rtd_comparison_results
+                                if not render_rtd_comparison_results(results_dict, decision):
+                                    st.info("📊 Custom decision results are shown in the comparison grids below")
                             elif is_comparison_mode and not has_combined_simulation:
                                 st.info("📊 Custom decision results are shown in the comparison grids below")
                             else:
@@ -282,6 +293,11 @@ def render_single_run_results():
                                 render_all_modes_comparison(results_dict)
                             elif st.session_state.income_spec_mode == "Compare both":
                                 render_income_comparison(results_dict)
+                        elif is_comparison_mode and decision == "rejected_transaction_defaults":
+                            # Decision 4: one tab per configuration, mirroring the other decisions' comparison labels
+                            from app.pages.results.visualizations.transaction_viz import render_rtd_comparison_results
+                            if not render_rtd_comparison_results(results_dict, decision):
+                                st.info("📊 Custom decision results are shown in the comparison grids below")
                         elif is_comparison_mode and not has_combined_simulation:
                             st.info("📊 Custom decision results are shown in the comparison grids below")
                         else:
@@ -380,8 +396,6 @@ def render_single_run_results():
             
             if st.session_state.population_mode == "Compare all" and has_compare_all_results and not is_full_simulation:
                 render_all_modes_comparison(results_dict)
-            elif st.session_state.population_mode == "Dependent variable resampling" and not is_full_simulation:
-                render_dependent_variable_results(results_dict)
             elif st.session_state.income_spec_mode == "Compare both" and not is_full_simulation:
                 render_income_comparison(results_dict)
             elif not is_full_simulation and not using_selected_config and not is_donation_custom_only:

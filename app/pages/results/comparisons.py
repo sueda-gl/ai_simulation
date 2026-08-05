@@ -3,7 +3,7 @@
 Comparison functions for different simulation modes.
 """
 import streamlit as st
-from app.components import show_overview, show_dependent_variable_comparison
+from app.components import show_overview
 
 
 def should_enable_selection():
@@ -231,15 +231,6 @@ def render_all_modes_comparison(results_dict):
                 )
             else:
                 st.caption(f"Research Baseline {income_type} results not available")
-
-
-def render_dependent_variable_results(results_dict):
-    """Render dependent variable resampling results"""
-    st.markdown("### 📊 Dependent Variable Resampling")
-    st.caption("This mode resamples from the empirical distribution of donation rates computed from the original 280 participants. No trait information is preserved.")
-    
-    df = results_dict["depvar"]
-    show_dependent_variable_comparison(df)
 
 
 def render_income_comparison(results_dict):
