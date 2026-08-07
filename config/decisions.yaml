@@ -258,6 +258,15 @@ rejected_transaction_defaults:
     loyalty: [3, 1, 4, 5, 2]
     wtp: [3, 2, 1, 4, 5]
     risk_taking: [4, 2, 1, 3, 5]
+  # Intercepts: beta0 (TTP, on the composite), beta0 (loyalty, on the composite),
+  # beta1 (WTP, on the standardized score), beta2 (risk_taking, on the standardized
+  # score). Defaults 0 (doc placeholders 'XXX', TBD). They shift each element's score
+  # distribution only - allocations use population min-max rescaling and are invariant.
+  intercepts:
+    ttp: 0.0
+    loyalty: 0.0
+    wtp: 0.0
+    risk_taking: 0.0
   z_scoring:                   # frozen original-280 mean/SD (Stata egen std semantics)
     ExtraversionBig5:
       mean: 3.557857

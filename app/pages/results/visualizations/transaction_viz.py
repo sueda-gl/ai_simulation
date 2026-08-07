@@ -631,14 +631,32 @@ _RTD_MECHS = [
 ]
 
 
-def _rtd_segment_bar(series, title, chart_key, x_title):
-    """Discrete-distribution bar chart used by all Decision 4 mechanism sections."""
-    counts = series.value_counts().sort_index()
-    fig = px.bar(x=counts.index.astype(int), y=counts.values,
-                 labels={'x': x_title, 'y': 'Number of agents'}, title=title)
+def _rtd_density_hist(series, title, x_title, chart_key):
+    """Density histogram of a continuous score (matches Stata's `histogram` output:
+    y-axis is density, so the bar areas sum to 1)."""
+    fig = px.histogram(x=series, nbins=30, histnorm='probability density', title=title)
     fig.update_traces(marker_color='steelblue')
-    fig.update_layout(xaxis=dict(dtick=1), height=300, margin=dict(t=40, b=10))
+    fig.update_layout(xaxis_title=x_title, yaxis_title='Density', height=320,
+                      margin=dict(t=40, b=10), showlegend=False, bargap=0.05)
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
+
+
+def _rtd_fraction_bar(x_labels, fractions, title, x_title, chart_key):
+    """Discrete allocation chart: fraction of agents per category, in the given order."""
+    fig = px.bar(x=x_labels, y=fractions, title=title)
+    fig.update_traces(marker_color='steelblue')
+    fig.update_layout(xaxis_title=x_title, yaxis_title='Fraction of agents', height=320,
+                      margin=dict(t=40, b=10), yaxis_tickformat='.0%',
+                      xaxis=dict(type='category', categoryorder='array',
+                                 categoryarray=list(x_labels)))
+    st.plotly_chart(fig, use_container_width=True, key=chart_key)
+
+
+def _rtd_score_stats_caption(series):
+    """Summary line matching Stata's `summarize` output for the score variable."""
+    s = pd.Series(series).astype(float)
+    st.caption(f"Mean {s.mean():.4f} · SD {s.std(ddof=1):.4f} · "
+               f"Min {s.min():.4f} · Max {s.max():.4f} · N {s.notna().sum():,}")
 
 
 def render_rtd_comparison_results(results_dict, decision_name):
@@ -694,77 +712,77 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
     """
     n = len(df)
     stochastic_mechs = [label for key, col, label, _ in
-                        [('ttp', 'ttp', 'List Length', None)] + _RTD_MECHS
+                        [('ttp', 'ttp', 'Options List Length', None)] + _RTD_MECHS
                         if f'rtd_sigma_used_{col}' in df.columns
                         and (df[f'rtd_sigma_used_{col}'] > 0).any()]
-    if compact:
-        m1, m2 = st.columns(2)
-        with m1:
-            st.metric("Total Agents", f"{n:,}")
-        with m2:
-            st.metric("Avg. # of Options", f"{df['rtd_choice_length'].mean():.2f}")
-        st.caption("Stochastic: " + (", ".join(stochastic_mechs) if stochastic_mechs else "None (deterministic)"))
-    else:
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Agents", f"{n:,}")
-        with col2:
-            st.metric("Avg. # of Pre-selected Options", f"{df['rtd_choice_length'].mean():.2f}")
-        with col3:
-            st.metric("Stochastic Mechanisms", ", ".join(stochastic_mechs) if stochastic_mechs else "None (deterministic)")
+    st.caption(f"{n:,} agents · Stochastic: "
+               + (", ".join(stochastic_mechs) if stochastic_mechs else "None (deterministic)"))
 
-    def _length_stats():
-        length_counts = df['rtd_choice_length'].value_counts().sort_index()
-        for length, count in length_counts.items():
-            st.caption(f"• {int(length)} option(s): {count:,} agents ({count / n * 100:.1f}%)")
-        if 'rtd_weighted_ttp' in df.columns:
-            st.caption(f"TTP score range: [{df['rtd_weighted_ttp'].min():.4f}, "
-                       f"{df['rtd_weighted_ttp'].max():.4f}]")
+    def _element_section(chart_a, chart_b):
+        """Chart A (score distribution) and Chart B (allocation) side by side, or
+        stacked in compact comparison columns."""
+        if compact:
+            chart_a()
+            chart_b()
+        else:
+            col_a, col_b = st.columns(2)
+            with col_a:
+                chart_a()
+            with col_b:
+                chart_b()
 
-    # ---- Sub-decision 1: list length (Tendency to Plan) ----
+    # ---- Element 1: Options List Length (Tendency to Plan) ----
     st.markdown("---")
-    st.markdown("**1️⃣ List Length (Tendency to Plan)** - how many default options each customer pre-selects (0-5)")
-    if compact:
-        _rtd_segment_bar(df['rtd_choice_length'], "Number of pre-selected options",
-                         f"{decision_name}_rtd_length_chart{chart_suffix}", "Options pre-selected")
-        _length_stats()
-    else:
-        col_chart, col_stats = st.columns([2, 1])
-        with col_chart:
-            _rtd_segment_bar(df['rtd_choice_length'], "Number of pre-selected options",
-                             f"{decision_name}_rtd_length_chart{chart_suffix}", "Options pre-selected")
-        with col_stats:
-            _length_stats()
+    st.markdown("**1️⃣ Options List Length (Tendency to Plan)**")
 
-    # ---- Sub-decisions 2-4: priority rankings ----
+    def _ttp_score_chart():
+        _rtd_density_hist(df['rtd_weighted_ttp'], "Score distribution (weighted_ttp)",
+                          "Tendency-to-Plan score",
+                          f"{decision_name}_rtd_ttp_score{chart_suffix}")
+        _rtd_score_stats_caption(df['rtd_weighted_ttp'])
+
+    def _ttp_alloc_chart():
+        counts = df['rtd_choice_length'].astype(int).value_counts()
+        lengths = list(range(0, 6))
+        fractions = [counts.get(l, 0) / n for l in lengths]
+        _rtd_fraction_bar([str(l) for l in lengths], fractions,
+                          "Options list length (after conversion)",
+                          "Number of pre-selected options",
+                          f"{decision_name}_rtd_length_chart{chart_suffix}")
+
+    _element_section(_ttp_score_chart, _ttp_alloc_chart)
+
+    # ---- Elements 2-4: priority rankings ----
+    score_specs = {
+        'loyalty': ('rtd_loyalty_score', "Score distribution (weighted_loyalty)", "Loyalty score"),
+        'wtp': ('rtd_wtp_z', "Score distribution (z_WTP_calculated)", "Willingness-to-Pay score"),
+        'risk_taking': ('rtd_rt_z', "Score distribution (z_RT_calculated_hs)", "Risk-Taking score"),
+    }
     for idx, (mech, col_key, label, seq) in enumerate(_RTD_MECHS, start=2):
         seg_col = f'rtd_{col_key}_segment'
         if seg_col not in df.columns:
             continue
         st.markdown("---")
-        st.markdown(f"**{idx}️⃣ {label} Ranking** - priority sequence "
+        st.markdown(f"**{idx}️⃣ {label} Ranking** - rejected transaction options sequence: "
                     f"{' > '.join('Option ' + str(o) for o in seq)}")
 
-        def _first_choice_stats():
-            st.markdown("**First-choice distribution:**")
-            first_choice = df[seg_col].astype(int).map(lambda s: seq[s - 1])
-            for opt, count in first_choice.value_counts().sort_index().items():
-                st.caption(f"• {_RTD_OPTION_SHORT[int(opt)]}: {count:,} ({count / n * 100:.1f}%)")
-            if not compact:
-                st.caption(f"Segment s receives the tail of the sequence from position s "
-                           f"(segment 1 → all 5 options, segment 5 → 1 option).")
+        score_col, score_title, score_x = score_specs[mech]
 
-        if compact:
-            _rtd_segment_bar(df[seg_col], f"{label} score segment",
-                             f"{decision_name}_rtd_{col_key}_seg_chart{chart_suffix}", "Score segment")
-            _first_choice_stats()
-        else:
-            col_chart, col_first = st.columns([2, 1])
-            with col_chart:
-                _rtd_segment_bar(df[seg_col], f"{label} score segment (1 = lowest fifth of range)",
-                                 f"{decision_name}_rtd_{col_key}_seg_chart{chart_suffix}", "Score segment")
-            with col_first:
-                _first_choice_stats()
+        def _score_chart(sc=score_col, ti=score_title, xt=score_x, ck=col_key):
+            _rtd_density_hist(df[sc], ti, xt,
+                              f"{decision_name}_rtd_{ck}_score{chart_suffix}")
+            _rtd_score_stats_caption(df[sc])
+
+        def _alloc_chart(sq=seq, sgc=seg_col, ck=col_key, lb=label):
+            first_choice = df[sgc].astype(int).map(lambda s: sq[s - 1])
+            counts = first_choice.value_counts()
+            fractions = [counts.get(o, 0) / n for o in sq]
+            _rtd_fraction_bar([f"Option {o}" for o in sq], fractions,
+                              "First-choice allocation (ordered by priority sequence)",
+                              "Option (priority-sequence order)",
+                              f"{decision_name}_rtd_{ck}_seg_chart{chart_suffix}")
+
+        _element_section(_score_chart, _alloc_chart)
 
     # ---- Per-agent Excel export (Stata-aligned column names) ----
     st.markdown("---")

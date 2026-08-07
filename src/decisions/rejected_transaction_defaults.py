@@ -250,6 +250,16 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
                      + c_rt["agreeable"] * z_A + c_rt["conscientiousness"] * z_C
                      + c_rt["neuroticism"] * z_N + c_rt["income"] * z_I)
 
+    # Intercepts (doc: TTP beta0 on the composite, loyalty beta0 on the composite).
+    # WTP beta1 / RT beta2 apply on the STANDARDIZED scale (doc lines 1338/2431) and are
+    # added downstream where z is computed - adding them to the raw composite here would
+    # be cancelled by the population standardization. All four intercepts shift the score
+    # scale only: every allocation uses population min-max rescaling, which is invariant
+    # to a constant shift.
+    icpt = params.get("intercepts") or {}
+    weighted_ttp += float(icpt.get("ttp", 0.0) or 0.0)
+    weighted_loyalty += float(icpt.get("loyalty", 0.0) or 0.0)
+
     return {
         "ttp": float(weighted_ttp),
         "loyalty": float(weighted_loyalty),
@@ -325,14 +335,14 @@ def _draw_noise(rng: np.random.Generator) -> Dict[str, float]:
 
 
 def _anchor_value(mechanism: str, stoch_m: Dict, raw: float, det_segment: int,
-                  pop: Dict) -> float:
+                  pop: Dict, intercept: float = 0.0) -> float:
     """
     Anchor of the stochastic draw.
 
     'continuous' (default): the mechanism's continuous operative score - raw composite
-    for ttp/loyalty/wtp, the population-z score for risk_taking (whose sigma is derived
-    from the z-score range). This is the .dta-verified behaviour for WTP and the doc's
-    stated behaviour for TTP.
+    for ttp/loyalty/wtp, the population-z score (+ beta2 intercept) for risk_taking
+    (whose sigma is derived from the z-score range). This is the .dta-verified
+    behaviour for WTP and the doc's stated behaviour for TTP.
     'binned': the deterministic 1-5 segment (doc-literal reading for loyalty/RT).
     Note ttp's continuous anchor is the 0-6 rescaled weighted_ttp06 (doc line 191).
     """
@@ -343,7 +353,7 @@ def _anchor_value(mechanism: str, stoch_m: Dict, raw: float, det_segment: int,
         return _rescale(raw, 0.0, 6.0, pop["ttp"]["min"], pop["ttp"]["max"])
     if mechanism == "risk_taking":
         sd = pop["risk_taking"].get("sd", 1.0) or 1.0
-        return (raw - pop["risk_taking"].get("mean", 0.0)) / sd
+        return (raw - pop["risk_taking"].get("mean", 0.0)) / sd + float(intercept)
     return raw   # loyalty, wtp: raw composite (dta-verified for wtp)
 
 
@@ -403,7 +413,8 @@ def compute_rtd_population_stats(agents_df, all_incomes: List[float], params: Di
                 sigma = _resolve_sigma(stoch_m, state, m)
                 det_seg = _segment(raws[m][i], m, pop[m]["min"], pop[m]["max"]) \
                     if m != "ttp" else 0
-                anchor = _anchor_value(m, stoch_m, raws[m][i], det_seg, pop)
+                icpt_m = float((params.get("intercepts") or {}).get(m, 0.0) or 0.0)
+                anchor = _anchor_value(m, stoch_m, raws[m][i], det_seg, pop, intercept=icpt_m)
                 draws[m].append(anchor + sigma * noise[m])
         for m in MECHANISMS:
             arr = np.asarray(draws[m], dtype=float)
@@ -501,14 +512,17 @@ def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str,
         det_seg = _segment(raw, m, vmin, vmax)
         # z-score of the composite over the current population (reporting; and the
         # risk_taking continuous anchor). Matches the .dta's z_WTP/z_RT columns.
+        # WTP beta1 / RT beta2 intercepts apply on this standardized scale (doc
+        # lines 1338/2431); allocations are min-max-invariant to them.
         sd = pop[m].get("sd", 1.0) or 1.0
-        z_val = (raw - pop[m].get("mean", 0.0)) / sd
+        icpt_m = float((params.get("intercepts") or {}).get(m, 0.0) or 0.0)
+        z_val = (raw - pop[m].get("mean", 0.0)) / sd + (icpt_m if m in ("wtp", "risk_taking") else 0.0)
 
         final_seg = det_seg
         draw_val = None
         drawn = use_stochastic and sigma > 0 and "s_min" in pop[m]
         if drawn:
-            anchor = _anchor_value(m, stoch_m, raw, det_seg, pop)
+            anchor = _anchor_value(m, stoch_m, raw, det_seg, pop, intercept=icpt_m)
             draw_val = anchor + sigma * noise[m]
             low, span = _RESCALE[m]
             rescaled = _rescale(draw_val, low, span, pop[m]["s_min"], pop[m]["s_max"])

@@ -324,6 +324,75 @@ def test_baseline_mode_never_stochastic(gold, model_params, sim_config):
         assert a["rtd_sigma_used_wtp"] == 0.0
 
 
+def test_intercepts_shift_scores_but_not_allocations(gold, model_params, sim_config):
+    """Per-element intercepts (beta0/beta0/beta1/beta2) shift each element's score
+    distribution but leave every allocation invariant (min-max rescaling)."""
+    import copy
+    base = _run_model(gold, model_params, sim_config, stochastic=False)
+
+    p = copy.deepcopy(model_params)
+    p['intercepts'] = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0}
+    agents_df = pd.DataFrame([_agent_state(r) for _, r in gold.iterrows()])
+    incomes = gold["income"].tolist()
+    sim = dict(sim_config)
+    sim["rtd_population_stats"] = compute_rtd_population_stats(
+        agents_df, incomes, p, sim, pop_context="documentation")
+    shifted = []
+    for i, (_, r) in enumerate(gold.iterrows()):
+        rng = np.random.default_rng(i)
+        shifted.append(rejected_transaction_defaults(
+            _agent_state(r), p, rng, sim, pop_context="documentation"))
+
+    for b, s in zip(base, shifted):
+        # scores shift by exactly the intercept
+        np.testing.assert_allclose(s["rtd_weighted_ttp"] - b["rtd_weighted_ttp"], 0.7, rtol=1e-9)
+        np.testing.assert_allclose(s["rtd_loyalty_score"] - b["rtd_loyalty_score"], -0.3, rtol=1e-9)
+        np.testing.assert_allclose(s["rtd_wtp_z"] - b["rtd_wtp_z"], 1.5, rtol=1e-7)
+        np.testing.assert_allclose(s["rtd_rt_z"] - b["rtd_rt_z"], -2.0, rtol=1e-7)
+        # allocations are bit-identical
+        assert s["rtd_choice_length"] == b["rtd_choice_length"]
+        assert s["rtd_loyalty_segment"] == b["rtd_loyalty_segment"]
+        assert s["rtd_wtp_segment"] == b["rtd_wtp_segment"]
+        assert s["rtd_rt_segment"] == b["rtd_rt_segment"]
+        assert s["rtd_loyalty_ranking"] == b["rtd_loyalty_ranking"]
+
+
+def test_intercepts_invariant_under_stochastic(gold, model_params, sim_config):
+    """With stochastic draws ON, intercepts still cannot move any allocation: the
+    anchor and the population s_min/s_max shift by the same constant (hook and
+    per-agent path must apply the intercept identically)."""
+    import copy
+    base = _run_model(gold, model_params, sim_config, stochastic=True, seed=321)
+
+    p = copy.deepcopy(model_params)
+    p['intercepts'] = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0}
+    p.setdefault("stochastic", {})["sigma_value"] = 1.0
+    p["stochastic"]["in_copula"] = False
+    for m in MECHANISMS:
+        p["stochastic"].setdefault("mechanisms", {}).setdefault(m, {})["scale_factor"] = 1.0
+
+    agents_df = pd.DataFrame([_agent_state(r) for _, r in gold.iterrows()])
+    incomes = gold["income"].tolist()
+    rng_seeds = np.random.default_rng(321).integers(0, 1_000_000_000, len(gold))
+    sim = dict(sim_config)
+    sim["rtd_population_stats"] = compute_rtd_population_stats(
+        agents_df, incomes, p, sim, pop_context="documentation",
+        agent_base_seeds=list(rng_seeds), decision_offset=4000)
+    shifted = []
+    for i, (_, r) in enumerate(gold.iterrows()):
+        rng = np.random.default_rng(int(rng_seeds[i]) + 4000)
+        shifted.append(rejected_transaction_defaults(
+            _agent_state(r), p, rng, sim, pop_context="documentation"))
+
+    for b, s in zip(base, shifted):
+        assert s["rtd_choice_length"] == b["rtd_choice_length"]
+        assert s["rtd_loyalty_segment"] == b["rtd_loyalty_segment"]
+        assert s["rtd_wtp_segment"] == b["rtd_wtp_segment"]
+        assert s["rtd_rt_segment"] == b["rtd_rt_segment"]
+        # RT draw itself shifts by exactly beta2 (anchor includes the intercept)
+        np.testing.assert_allclose(s["rtd_rt_draw"] - b["rtd_rt_draw"], -2.0, rtol=1e-7)
+
+
 def test_default_template_path_unchanged(gold, model_params, sim_config):
     """Unselected decision keeps the legacy template behaviour."""
     sim = {"default_decisions_list": ["rejected_transaction_defaults"],

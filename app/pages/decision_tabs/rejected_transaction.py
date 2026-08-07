@@ -6,10 +6,10 @@ Four trait-based sub-decision mechanisms (per the "Decision 4 - Rejected Transac
 Defaults" design document, verified against the professor's Stata file
 Stata_File_Decision4_050626.dta):
 
-  1. List Length (Tendency to Plan)   - how many default options to pre-select (0-5)
-  2. Loyalty ranking                  - priority sequence Option 3 > 1 > 4 > 5 > 2
-  3. Willingness-to-Pay ranking       - priority sequence Option 3 > 2 > 1 > 4 > 5
-  4. Risk-Taking ranking              - priority sequence Option 4 > 2 > 1 > 3 > 5
+  1. Options List Length (Tendency to Plan) - how many default options to pre-select (0-5)
+  2. Loyalty ranking                        - priority sequence Option 3 > 1 > 4 > 5 > 2
+  3. Willingness-to-Pay ranking             - priority sequence Option 3 > 2 > 1 > 4 > 5
+  4. Risk-Taking ranking                    - priority sequence Option 4 > 2 > 1 > 3 > 5
 
 Each mechanism yields its own per-agent output; rank aggregation across the mechanisms
 is a later, separate step (explicitly out of scope in the source document), so no
@@ -30,7 +30,7 @@ CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions
 MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking')
 
 MECH_TITLES = {
-    'ttp': "1. List Length (Tendency to Plan)",
+    'ttp': "1. Options List Length (Tendency to Plan)",
     'loyalty': "2. Loyalty Ranking",
     'wtp': "3. Willingness-to-Pay Ranking",
     'risk_taking': "4. Risk-Taking Ranking",
@@ -74,29 +74,29 @@ def initialize_rtd_session_state():
     if 'rejected_transaction_tab_persistence' not in st.session_state:
         st.session_state.rejected_transaction_tab_persistence = {}
 
+    # Sigma is a DECISION-WIDE setting (one strategy + coefficient applied to all four
+    # elements; each element keeps its own base sigma from config). Anchors and
+    # intercepts remain per element.
     defaults = {
         'rtd_sigma_enabled': True,
         'rtd_sigma_in_copula': False,
+        'rtd_sigma_strategy': 'overall',
+        'rtd_scale_factor': 1.0,
     }
+    intercepts_cfg = config.get('intercepts') or {}
     for mech in MECHANISMS:
         mech_cfg = _mech_stoch_config(config, mech)
-        defaults[f'rtd_sigma_strategy_{mech}'] = mech_cfg.get('sigma_strategy', 'overall')
-        defaults[f'rtd_scale_factor_{mech}'] = mech_cfg.get('scale_factor', 1.0)
         defaults[f'rtd_anchor_{mech}'] = mech_cfg.get('anchor', 'continuous')
+        defaults[f'rtd_intercept_{mech}'] = float(intercepts_cfg.get(mech, 0.0) or 0.0)
 
     for key, default in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = default
 
-    for mech in MECHANISMS:
-        q_key = f'rtd_quintile_scale_factors_{mech}'
-        if q_key not in st.session_state:
-            mech_cfg = _mech_stoch_config(config, mech)
-            default_scale = mech_cfg.get('scale_factor', 1.0)
-            st.session_state[q_key] = mech_cfg.get('quintile_scale_factors', {
-                '1': default_scale, '2': default_scale, '3': default_scale,
-                '4': default_scale, '5': default_scale,
-            })
+    if 'rtd_quintile_scale_factors' not in st.session_state:
+        st.session_state.rtd_quintile_scale_factors = {
+            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0,
+        }
 
 
 def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
@@ -118,7 +118,7 @@ def save_to_rtd_storage(widget_key, storage_key):
         st.session_state.rejected_transaction_tab_persistence[storage_key] = st.session_state[widget_key]
 
 
-def _segment_mapping_df(sequence):
+def _segment_mapping_df(sequence, element_name):
     """Segment -> priority list table for a ranking mechanism (dta-verified tails)."""
     rows = []
     for seg in range(1, 6):
@@ -126,7 +126,7 @@ def _segment_mapping_df(sequence):
         label = {1: '1 (lowest fifth of score range)', 5: '5 (highest fifth of score range)'}.get(
             seg, str(seg))
         rows.append({
-            'Score segment': label,
+            f'{element_name} score segment': label,
             'Priority list (option numbers)': ' > '.join(str(o) for o in tail),
             'List length': len(tail),
         })
@@ -140,55 +140,62 @@ def render_formula_section(config, mech):
 
     if mech == 'ttp':
         st.markdown(
-            "Estimates each customer's **Tendency to Plan** from Big-5 traits and "
-            "education, then converts it into the number of pre-selected default "
-            "options (0-5)."
+            "Estimates each customer's **Tendency to Plan** based on Big-5 "
+            "personality traits and education, and then converts it into the "
+            "number of pre-selected default options (0-5)."
         )
         st.latex(
-            rf"TTP_i = {coeffs.get('extraversion', -0.0152556564):.10f}\,z_{{E_i}}"
-            rf" + {coeffs.get('agreeable', 0.0177638642):.10f}\,z_{{A_i}}"
-            rf" + {coeffs.get('neuroticism', 0.01959):.5f}\,z_{{N_i}}"
-            rf" + {coeffs.get('conscientiousness', 0.00901465):.8f}\,z_{{C_i}}"
-            rf" + {coeffs.get('education', 0.0297):.4f}\,Ed_i"
+            rf"TendencyToPlan_i\ (TTP_i) = \beta_0"
+            rf" {coeffs.get('extraversion', -0.0152556564):.9f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs.get('agreeable', 0.0177638642):.8f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs.get('neuroticism', 0.01959):.5f} \times z_{{Neuroticism_i}}"
+            rf" + {coeffs.get('conscientiousness', 0.00901465):.8f} \times z_{{Conscientiousness_i}}"
+            rf" + {coeffs.get('education', 0.0297):.4f} \times Education_i"
         )
-        st.latex(r"ttp06_i = (6 - 0.0001)\cdot\frac{TTP_i - \min(TTP)}{\max(TTP) - \min(TTP)}"
-                 r"\quad\Rightarrow\quad length_i = \lfloor ttp06_i \rfloor \in \{0,\dots,5\}")
+        st.latex(r"OptionsListLength05_i = \left\lfloor (6 - 0.0001) \times"
+                 r" \frac{TTP_i - \min(TTP)}{\max(TTP) - \min(TTP)} \right\rfloor \in \{0,\dots,5\}")
         return
 
     seq = sequences.get(mech, [])
     construct = {'loyalty': 'Loyalty to the vendor', 'wtp': 'Willingness to Pay',
                  'risk_taking': 'Risk-Taking propensity'}[mech]
     if mech == 'loyalty':
-        st.markdown(f"Estimates **{construct}** from Big-5 traits.")
+        st.markdown(f"Estimates **{construct}** based on Big-5 personality traits.")
         st.latex(
-            rf"Loyalty_i = {coeffs.get('extraversion', 0.09):.4f}\,z_{{E_i}}"
-            rf" + {coeffs.get('openness', 0.0273):.4f}\,z_{{O_i}}"
-            rf" + {coeffs.get('agreeable', 0.0045):.4f}\,z_{{A_i}}"
+            rf"Loyalty_i = \beta_0"
+            rf" + {coeffs.get('extraversion', 0.09):.4f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs.get('openness', 0.0273):.4f} \times z_{{Openness_i}}"
+            rf" + {coeffs.get('agreeable', 0.0045):.4f} \times z_{{Agreeableness_i}}"
         )
     elif mech == 'wtp':
-        st.markdown(f"Estimates **{construct}** from traits and income.")
+        st.markdown(f"Estimates **{construct}** based on personality traits and income.")
         st.latex(
-            rf"WTP_i = {coeffs.get('extraversion', 0.0788796127824):.10f}\,z_{{E_i}}"
-            rf" {coeffs.get('agreeable', -0.012328716):.9f}\,z_{{A_i}}"
-            rf" + {coeffs.get('income', 0.69814232):.8f}\,z_{{I_i}}"
+            rf"WTP_i = \beta_0"
+            rf" + {coeffs.get('extraversion', 0.0788796127824):.10f} \times z_{{Extroversion_i}}"
+            rf" {coeffs.get('agreeable', -0.012328716):.9f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs.get('income', 0.69814232):.8f} \times z_{{Income_i}}"
         )
-        st.caption("z_I = standardized continuous income (population-level stats, "
-                   "mirroring the disclose-decisions' continuous-income handling).")
     else:
-        st.markdown(f"Estimates **{construct}** from all Big-5 traits and income.")
+        st.markdown(f"Estimates **{construct}** based on Big-5 personality traits and income.")
         st.latex(
-            rf"RT_i = {coeffs.get('extraversion', 0.025942386297):.12f}\,z_{{E_i}}"
-            rf" + {coeffs.get('openness', 0.023699214948):.12f}\,z_{{O_i}}"
-            rf" {coeffs.get('agreeable', -0.038734315188):.12f}\,z_{{A_i}}"
-            rf" {coeffs.get('conscientiousness', -0.037739440732):.12f}\,z_{{C_i}}"
-            rf" {coeffs.get('neuroticism', -0.025388697852):.12f}\,z_{{N_i}}"
-            rf" + {coeffs.get('income', 0.006874197106):.12f}\,z_{{I_i}}"
+            rf"RiskTaking_i = \beta_0"
+            rf" + {coeffs.get('extraversion', 0.025942386297):.10f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs.get('openness', 0.023699214948):.10f} \times z_{{Openness_i}}"
+            rf" {coeffs.get('agreeable', -0.038734315188):.10f} \times z_{{Agreeableness_i}}"
+            rf" {coeffs.get('conscientiousness', -0.037739440732):.10f} \times z_{{Conscientiousness_i}}"
+            rf" {coeffs.get('neuroticism', -0.025388697852):.10f} \times z_{{Neuroticism_i}}"
+            rf" + {coeffs.get('income', 0.006874197106):.10f} \times z_{{Income_i}}"
         )
 
-    st.latex(r"segment_i = \left\lfloor 1 + (5 - 0.0001)\cdot"
-             r"\frac{score_i - \min(score)}{\max(score) - \min(score)} \right\rfloor \in \{1,\dots,5\}")
-    st.markdown(f"**Priority sequence:** {' > '.join('Option ' + str(o) for o in seq)}")
-    st.dataframe(_segment_mapping_df(seq), hide_index=True, use_container_width=True)
+    seg_name = {'loyalty': 'Loyalty', 'wtp': 'WTP', 'risk_taking': 'RiskTaking'}[mech]
+    st.latex(
+        rf"{seg_name}15_i = \left\lfloor 1 + (5 - 0.0001) \times"
+        rf" \frac{{{seg_name}_i - \min({seg_name})}}{{\max({seg_name}) - \min({seg_name})}}"
+        rf" \right\rfloor \in \{{1,\dots,5\}}"
+    )
+    st.markdown(f"**{ELEMENT_SHORT[mech]} rejected transaction options sequence:** "
+                f"{' > '.join('Option ' + str(o) for o in seq)}")
+    st.dataframe(_segment_mapping_df(seq, ELEMENT_SHORT[mech]), hide_index=True, use_container_width=True)
     st.caption(
         "Segment s receives the tail of the priority sequence starting at position s: "
         "segment 1 gets all five options, segment 5 gets only the last option."
@@ -198,15 +205,22 @@ def render_formula_section(config, mech):
             st.markdown(f"- **{OPTION_LABELS[num]}**")
 
 
-def render_sigma_controls(config, mech):
-    """Per-mechanism sigma controls: strategy radio + x0-2 coefficient slider(s)."""
-    mech_cfg = _mech_stoch_config(config, mech)
-    base_overall = float(mech_cfg.get('sigma_overall', FALLBACK_SIGMA_OVERALL[mech]))
-    base_quintiles = {str(k): float(v) for k, v in (mech_cfg.get('sigma_quintile', {}) or {}).items()}
+ELEMENT_SHORT = {'ttp': 'Options List Length', 'loyalty': 'Loyalty',
+                 'wtp': 'Willingness-to-Pay', 'risk_taking': 'Risk-Taking'}
+
+
+def render_decision_sigma_controls(config):
+    """Decision-wide sigma controls: one strategy + coefficient applied to all four
+    elements (each element keeps its own base sigma from config)."""
+    bases = {m: float(_mech_stoch_config(config, m).get('sigma_overall', FALLBACK_SIGMA_OVERALL[m]))
+             for m in MECHANISMS}
+    base_quintiles = {m: {str(k): float(v) for k, v in
+                          (_mech_stoch_config(config, m).get('sigma_quintile', {}) or {}).items()}
+                      for m in MECHANISMS}
 
     st.markdown("**σ mode**")
-    strategy_widget_key = f'rtd_tab_sigma_strategy_{mech}'
-    strategy_storage_key = f'rtd_sigma_strategy_{mech}'
+    strategy_widget_key = 'rtd_tab_sigma_strategy'
+    strategy_storage_key = 'rtd_sigma_strategy'
     current_strategy = st.session_state.get(strategy_storage_key, 'overall')
 
     strategy_val = restore_widget_from_storage(
@@ -214,24 +228,27 @@ def render_sigma_controls(config, mech):
         strategy_storage_key, current_strategy)
     strategy_val = 'quintile' if 'quintile' in str(strategy_val).lower() else 'overall'
 
-    def on_strategy_change(m=mech):
-        st.session_state[f'rtd_sigma_strategy_{m}'] = st.session_state[f'rtd_tab_sigma_strategy_{m}']
-        save_to_rtd_storage(f'rtd_tab_sigma_strategy_{m}', f'rtd_sigma_strategy_{m}')
+    def on_strategy_change():
+        st.session_state.rtd_sigma_strategy = st.session_state.rtd_tab_sigma_strategy
+        save_to_rtd_storage('rtd_tab_sigma_strategy', 'rtd_sigma_strategy')
 
     sigma_strategy = st.radio(
         "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
-        format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Per budget level (σ per allowance group)',
+        format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
         index=0 if strategy_val == 'overall' else 1,
         key=strategy_widget_key, on_change=on_strategy_change, horizontal=True,
     )
-    st.session_state[f'rtd_sigma_strategy_{mech}'] = sigma_strategy
+    st.session_state.rtd_sigma_strategy = sigma_strategy
+
+    st.markdown("---")
 
     if sigma_strategy == 'overall':
-        st.markdown(f"Base σ = {base_overall:.6g}")
-        coeff_widget_key = f'rtd_tab_sigma_coefficient_{mech}'
-        coeff_storage_key = f'rtd_sigma_coefficient_{mech}'
-        scale_fallback = st.session_state.get(f'rtd_scale_factor_{mech}', 1.0)
+        for m in MECHANISMS:
+            st.markdown(f"{ELEMENT_SHORT[m]}: Base σ = {bases[m]:.6g} (empirical from 280 participants)")
+        coeff_widget_key = 'rtd_tab_sigma_coefficient'
+        coeff_storage_key = 'rtd_sigma_coefficient'
+        scale_fallback = st.session_state.get('rtd_scale_factor', 1.0)
 
         coeff_val = restore_widget_from_storage(
             coeff_widget_key, st.session_state.rejected_transaction_tab_persistence,
@@ -240,84 +257,135 @@ def render_sigma_controls(config, mech):
 
         sigma_coefficient = st.slider(
             "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, value=coeff_val, step=0.01,
-            help=f"Final σ = {base_overall:.6g} × coefficient. Set to 0 to make this mechanism deterministic.",
+            help="Coefficient to multiply each element's base σ. Applies to all elements "
+                 "of the decision. Final σ per element = base σ × coefficient.",
             key=coeff_widget_key,
-            on_change=lambda m=mech: save_to_rtd_storage(
-                f'rtd_tab_sigma_coefficient_{m}', f'rtd_sigma_coefficient_{m}'),
+            on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_coefficient', 'rtd_sigma_coefficient'),
         )
-        st.session_state[f'rtd_scale_factor_{mech}'] = sigma_coefficient
-        st.markdown(f"Effective σ = {base_overall:.6g} × {sigma_coefficient:.2f} = {base_overall * sigma_coefficient:.6g}")
+        st.session_state.rtd_scale_factor = sigma_coefficient
+        for m in MECHANISMS:
+            st.markdown(f"{ELEMENT_SHORT[m]}: Effective σ = {bases[m]:.6g} × "
+                        f"{sigma_coefficient:.2f} = {bases[m] * sigma_coefficient:.6g}")
     else:
-        st.markdown("**Per-budget-level σ coefficients:**")
+        st.markdown("**Per-Quintile σ Coefficients**")
+        st.markdown("Each budget level has its own base σ per element (empirical from 280 participants):")
+
         quintile_coefficients = {}
-        default_scale = st.session_state.get(f'rtd_scale_factor_{mech}', 1.0)
-        current_scales = st.session_state.get(f'rtd_quintile_scale_factors_{mech}', {
+        default_scale = st.session_state.get('rtd_scale_factor', 1.0)
+        current_scales = st.session_state.get('rtd_quintile_scale_factors', {
             '1': default_scale, '2': default_scale, '3': default_scale,
             '4': default_scale, '5': default_scale})
         for level in ['1', '2', '3', '4', '5']:
             level_scale = max(0.0, min(float(current_scales.get(level, default_scale)), 2.0))
-            storage_key = f'rtd_sigma_quintile_{level}_{mech}'
-            widget_key = f'rtd_tab_sigma_q{level}_{mech}'
+            storage_key = f'rtd_sigma_quintile_{level}'
+            widget_key = f'rtd_tab_sigma_q{level}'
             q_val = restore_widget_from_storage(
                 widget_key, st.session_state.rejected_transaction_tab_persistence,
                 storage_key, level_scale)
             q_val = max(0.0, min(float(q_val), 2.0))
-            base_sigma = base_quintiles.get(level, base_overall)
 
-            col_slider, col_result = st.columns([3, 1])
-            with col_slider:
-                q_coeff = st.slider(
-                    f"{LEVEL_LABELS[level]} (base σ={base_sigma:.6g})",
-                    min_value=0.0, max_value=2.0, value=q_val, step=0.01,
-                    key=widget_key,
-                    on_change=lambda l=level, m=mech: save_to_rtd_storage(
-                        f'rtd_tab_sigma_q{l}_{m}', f'rtd_sigma_quintile_{l}_{m}'),
-                )
-            with col_result:
-                st.metric("Effective σ", f"{base_sigma * q_coeff:.6g}")
+            q_coeff = st.slider(
+                f"{LEVEL_LABELS[level]}", min_value=0.0, max_value=2.0, value=q_val, step=0.01,
+                help="Coefficient applied to this budget level's base σ for all elements of the decision.",
+                key=widget_key,
+                on_change=lambda l=level: save_to_rtd_storage(
+                    f'rtd_tab_sigma_q{l}', f'rtd_sigma_quintile_{l}'),
+            )
             quintile_coefficients[level] = q_coeff
-        st.session_state[f'rtd_quintile_scale_factors_{mech}'] = quintile_coefficients
+        st.session_state.rtd_quintile_scale_factors = quintile_coefficients
 
-    # Stochastic anchor (loyalty / risk_taking only: the doc's literal text anchors the
-    # draw on the binned 1-5 segment, but the only mechanism with stochastic ground
-    # truth in the .dta (WTP) provably anchors on the continuous score).
-    if mech in ('loyalty', 'risk_taking'):
-        with st.expander("Advanced: stochastic anchor", expanded=False):
-            anchor_widget_key = f'rtd_tab_anchor_{mech}'
-            anchor_storage_key = f'rtd_anchor_{mech}'
-            anchor_val = restore_widget_from_storage(
-                anchor_widget_key, st.session_state.rejected_transaction_tab_persistence,
-                anchor_storage_key, st.session_state.get(anchor_storage_key, 'continuous'))
-            anchor_val = 'binned' if str(anchor_val) == 'binned' else 'continuous'
-
-            def on_anchor_change(m=mech):
-                st.session_state[f'rtd_anchor_{m}'] = st.session_state[f'rtd_tab_anchor_{m}']
-                save_to_rtd_storage(f'rtd_tab_anchor_{m}', f'rtd_anchor_{m}')
-
-            anchor = st.radio(
-                "Anchor of the Normal(anchor, σ) draw",
-                options=['continuous', 'binned'],
-                format_func=lambda x: ('Continuous score (default)'
-                                       if x == 'continuous' else 'Binned 1-5 segment'),
-                index=0 if anchor_val == 'continuous' else 1,
-                key=anchor_widget_key, on_change=on_anchor_change,
-            )
-            st.session_state[f'rtd_anchor_{mech}'] = anchor
-            st.caption(
-                "'Continuous' anchors the draw on the mechanism's continuous score; "
-                "'binned' anchors it on the deterministic 1-5 segment."
-            )
+        eff = pd.DataFrame(
+            {ELEMENT_SHORT[m]: [base_quintiles[m].get(level, bases[m]) * quintile_coefficients[level]
+                                for level in ['1', '2', '3', '4', '5']]
+             for m in MECHANISMS},
+            index=[LEVEL_LABELS[level] for level in ['1', '2', '3', '4', '5']])
+        st.markdown("**Effective σ per budget level:**")
+        st.dataframe(eff.round(6), use_container_width=True)
 
 
-def render_mechanism_subtab(config, mech, stochastic_active):
-    """Render one mechanism's sub-tab: formula + sigma controls."""
+def render_anchor_control(mech):
+    """Advanced stochastic-anchor option (loyalty / risk_taking only)."""
+    with st.expander("Advanced: stochastic anchor", expanded=False):
+        anchor_widget_key = f'rtd_tab_anchor_{mech}'
+        anchor_storage_key = f'rtd_anchor_{mech}'
+        anchor_val = restore_widget_from_storage(
+            anchor_widget_key, st.session_state.rejected_transaction_tab_persistence,
+            anchor_storage_key, st.session_state.get(anchor_storage_key, 'continuous'))
+        anchor_val = 'binned' if str(anchor_val) == 'binned' else 'continuous'
+
+        def on_anchor_change(m=mech):
+            st.session_state[f'rtd_anchor_{m}'] = st.session_state[f'rtd_tab_anchor_{m}']
+            save_to_rtd_storage(f'rtd_tab_anchor_{m}', f'rtd_anchor_{m}')
+
+        anchor = st.radio(
+            "Anchor of the Normal(anchor, σ) draw",
+            options=['continuous', 'binned'],
+            format_func=lambda x: ('Continuous score (default)'
+                                   if x == 'continuous' else 'Binned 1-5 segment'),
+            index=0 if anchor_val == 'continuous' else 1,
+            key=anchor_widget_key, on_change=on_anchor_change,
+        )
+        st.session_state[f'rtd_anchor_{mech}'] = anchor
+        st.caption(
+            "'Continuous' anchors the draw on the mechanism's continuous score; "
+            "'binned' anchors it on the deterministic 1-5 segment."
+        )
+
+
+INTERCEPT_SYMBOLS = {'ttp': 'β₀', 'loyalty': 'β₀', 'wtp': 'β₀', 'risk_taking': 'β₀'}
+
+
+def render_intercept_control(config, mech):
+    """Per-element intercept override (beta0/beta0/beta1/beta2), mirroring the
+    Research Default / Override Value / Impact Preview layout of the other decisions."""
+    symbol = INTERCEPT_SYMBOLS[mech]
+    research_default = float((config.get('intercepts') or {}).get(mech, 0.0) or 0.0)
+
+    st.markdown("**Intercept Override**")
+    widget_key = f'rtd_tab_intercept_{mech}'
+    storage_key = f'rtd_intercept_{mech}'
+    current = restore_widget_from_storage(
+        widget_key, st.session_state.rejected_transaction_tab_persistence,
+        storage_key, st.session_state.get(storage_key, research_default))
+
+    def on_change(m=mech):
+        st.session_state[f'rtd_intercept_{m}'] = st.session_state[f'rtd_tab_intercept_{m}']
+        save_to_rtd_storage(f'rtd_tab_intercept_{m}', f'rtd_intercept_{m}')
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(f"**Research Default: {research_default:.4f} (TBD)**")
+        st.markdown(f"Intercept ({symbol})")
+        st.markdown("Baseline value; final research default to be determined")
+    with col2:
+        st.markdown("**Override Value**")
+        value = st.number_input(
+            f"Baseline {ELEMENT_SHORT[mech]} tendency", min_value=-5.0, max_value=5.0,
+            value=float(current), step=0.01, format="%.4f",
+            key=widget_key, on_change=on_change,
+            help=f"{symbol} baseline for this element (default 0, TBD). Shifts the element's "
+                 "score distribution; the allocation to options uses the min-max rescaled "
+                 "score, which is unaffected by a uniform shift.",
+        )
+        st.session_state[storage_key] = float(value)
+    with col3:
+        st.markdown("**Impact Preview**")
+        change = float(value) - research_default
+        if abs(change) > 0.00001:
+            impact = "Higher baseline" if change > 0 else "Lower baseline"
+            st.metric("Change", f"{change:+.4f}", delta=impact)
+        else:
+            st.metric("Change", "No change")
+
+
+def render_mechanism_subtab(config, mech):
+    """Render one mechanism's sub-tab: formula + intercept (+ anchor option)."""
     render_formula_section(config, mech)
     st.markdown("---")
-    if stochastic_active:
-        render_sigma_controls(config, mech)
-    else:
-        st.info("Stochastic component disabled for all modes - this mechanism uses the "
-                "deterministic score directly.")
+    render_intercept_control(config, mech)
+    if mech in ('loyalty', 'risk_taking'):
+        st.markdown("---")
+        render_anchor_control(mech)
 
 
 def reset_rtd_to_defaults():
@@ -352,7 +420,7 @@ def render_rejected_transaction_defaults_tab():
             help="""
             **Continuous only**: The model uses the generated monetary income (z-scored)
             in the Willingness-to-Pay and Risk-Taking equations.
-            List Length (Tendency to Plan) and Loyalty do not use income.
+            Options List Length (Tendency to Plan) and Loyalty do not use income.
             """,
         )
         st.session_state.rtd_income_mode = "Continuous only"
@@ -370,7 +438,7 @@ def render_rejected_transaction_defaults_tab():
             'rtd_tab_sigma_in_copula', st.session_state.rejected_transaction_tab_persistence,
             'rtd_sigma_in_copula', False)
         sigma_in_copula = st.checkbox(
-            "Add Normal(anchor, σ) draws to Copula runs", value=copula_val,
+            "Add Normal(anchor, σ) draw to Copula runs", value=copula_val,
             key="rtd_tab_sigma_in_copula",
             on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_in_copula', 'rtd_sigma_in_copula'))
         st.session_state.rtd_sigma_in_copula = sigma_in_copula
@@ -380,27 +448,31 @@ def render_rejected_transaction_defaults_tab():
             'rtd_tab_sigma_enabled', st.session_state.rejected_transaction_tab_persistence,
             'rtd_sigma_enabled', True)
         sigma_enabled = st.checkbox(
-            "Use Normal(anchor, σ) draws in Research Specification mode", value=res_val,
+            "Use Normal(anchor, σ) draw in Research Specification mode", value=res_val,
             key="rtd_tab_sigma_enabled",
             on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_enabled', 'rtd_sigma_enabled'))
         st.session_state.rtd_sigma_enabled = sigma_enabled
 
         st.markdown("Research Baseline always uses anchor values only (deterministic).")
-        st.caption("Each mechanism has its own σ — configure it inside each sub-decision "
-                   "tab below. Set a mechanism's σ coefficient to 0 to keep that mechanism "
-                   "deterministic while others draw.")
 
-    stochastic_active = sigma_in_copula or sigma_enabled
+        # Decision-wide sigma settings: shown only when the Research Specification
+        # stochastic checkbox is on; the settings apply to all elements of the decision.
+        if sigma_enabled:
+            render_decision_sigma_controls(config)
+        elif sigma_in_copula:
+            st.caption("Copula draws use each element's base σ (coefficient 1.0). "
+                       "Check the Research Specification box to configure σ settings.")
+        else:
+            st.info("Stochastic component disabled - deterministic scores are used.")
 
     # ---- Four mechanism sub-tabs ----
     st.markdown('<h4 class="subsection-header">Sub-Decision Mechanisms</h4>', unsafe_allow_html=True)
     sub_tabs = st.tabs([MECH_TITLES[m] for m in MECHANISMS])
     for tab, mech in zip(sub_tabs, MECHANISMS):
         with tab:
-            render_mechanism_subtab(config, mech, stochastic_active)
+            render_mechanism_subtab(config, mech)
 
-    # ---- Actions ----
-    st.markdown('<h4 class="subsection-header">Actions & Management</h4>', unsafe_allow_html=True)
+    # ---- Reset ----
     if st.button("Reset Decision 4 Settings to Defaults", type="secondary",
                  help="Reset all Decision 4 stochastic settings to research defaults",
                  key="rtd_reset_btn"):

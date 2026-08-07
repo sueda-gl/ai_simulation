@@ -628,6 +628,13 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str):
     rtd_config = orchestrator.config['rejected_transaction_defaults']
     rtd_config['model_enabled'] = True   # model path when selected; defaults path otherwise
 
+    # Per-element intercepts (beta0/beta0/beta1/beta2, defaults 0/TBD)
+    intercepts = rtd_config.setdefault('intercepts', {})
+    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
+        key = f'rtd_intercept_{mech}'
+        if key in st.session_state:
+            intercepts[mech] = float(st.session_state[key])
+
     if 'stochastic' not in rtd_config:
         rtd_config['stochastic'] = {}
     stoch = rtd_config['stochastic']
@@ -649,19 +656,19 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str):
         stoch['sigma_value'] = 0.0
         stoch['in_copula'] = False
 
+    # Sigma settings are DECISION-WIDE (one strategy + coefficient for all four
+    # elements); each element keeps its own base sigma from config. Anchors stay
+    # per element.
     mechanisms = stoch.setdefault('mechanisms', {})
     for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
         mech_cfg = mechanisms.setdefault(mech, {})
-        strategy_key = f'rtd_sigma_strategy_{mech}'
-        scale_key = f'rtd_scale_factor_{mech}'
-        quintile_key = f'rtd_quintile_scale_factors_{mech}'
+        if 'rtd_sigma_strategy' in st.session_state:
+            mech_cfg['sigma_strategy'] = st.session_state['rtd_sigma_strategy']
+        if 'rtd_scale_factor' in st.session_state:
+            mech_cfg['scale_factor'] = st.session_state['rtd_scale_factor']
+        if 'rtd_quintile_scale_factors' in st.session_state:
+            mech_cfg['quintile_scale_factors'] = st.session_state['rtd_quintile_scale_factors']
         anchor_key = f'rtd_anchor_{mech}'
-        if strategy_key in st.session_state:
-            mech_cfg['sigma_strategy'] = st.session_state[strategy_key]
-        if scale_key in st.session_state:
-            mech_cfg['scale_factor'] = st.session_state[scale_key]
-        if quintile_key in st.session_state:
-            mech_cfg['quintile_scale_factors'] = st.session_state[quintile_key]
         if anchor_key in st.session_state:
             mech_cfg['anchor'] = st.session_state[anchor_key]
 
