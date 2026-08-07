@@ -123,12 +123,12 @@ def _segment_mapping_df(sequence, element_name):
     rows = []
     for seg in range(1, 6):
         tail = sequence[seg - 1:]
-        label = {1: '1 (lowest fifth of score range)', 5: '5 (highest fifth of score range)'}.get(
-            seg, str(seg))
+        label = {1: f'1 (Lowest 20% of {element_name} score segment)',
+                 5: f'5 (Highest 20% of {element_name} score segment)'}.get(seg, str(seg))
         rows.append({
             f'{element_name} score segment': label,
-            'Priority list (option numbers)': ' > '.join(str(o) for o in tail),
-            'List length': len(tail),
+            'Priority list for rejected transaction options': ' > '.join(str(o) for o in tail),
+            'Options list length': len(tail),
         })
     return pd.DataFrame(rows)
 
@@ -196,13 +196,8 @@ def render_formula_section(config, mech):
     st.markdown(f"**{ELEMENT_SHORT[mech]} rejected transaction options sequence:** "
                 f"{' > '.join('Option ' + str(o) for o in seq)}")
     st.dataframe(_segment_mapping_df(seq, ELEMENT_SHORT[mech]), hide_index=True, use_container_width=True)
-    st.caption(
-        "Segment s receives the tail of the priority sequence starting at position s: "
-        "segment 1 gets all five options, segment 5 gets only the last option."
-    )
-    with st.expander("Option definitions", expanded=False):
-        for num in range(1, 6):
-            st.markdown(f"- **{OPTION_LABELS[num]}**")
+    for num in range(1, 6):
+        st.caption(OPTION_LABELS[num])
 
 
 ELEMENT_SHORT = {'ttp': 'Options List Length', 'loyalty': 'Loyalty',
