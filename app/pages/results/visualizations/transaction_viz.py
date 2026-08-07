@@ -632,11 +632,21 @@ _RTD_MECHS = [
 
 
 def _rtd_density_hist(series, title, x_title, chart_key):
-    """Density histogram of a continuous score (matches Stata's `histogram` output:
-    y-axis is density, so the bar areas sum to 1)."""
-    fig = px.histogram(x=series, nbins=30, histnorm='probability density', title=title)
-    fig.update_traces(marker_color='steelblue')
-    fig.update_layout(xaxis_title=x_title, yaxis_title='Density', height=320,
+    """Density histogram of a continuous score matching Stata's `histogram` output:
+    y-axis is density and the binning follows Stata's default rule -
+    k = min(sqrt(N), 10*log10(N)) equal-width bins spanning min..max - so an n=280
+    run reproduces the design document's Stata graphs bar-for-bar."""
+    import plotly.graph_objects as go
+    s = pd.Series(series).dropna().astype(float)
+    n = len(s)
+    vmin, vmax = float(s.min()), float(s.max())
+    k = max(1, int(min(np.sqrt(n), 10 * np.log10(n)))) if n > 1 else 1
+    size = (vmax - vmin) / k if vmax > vmin else 1.0
+    fig = go.Figure(go.Histogram(
+        x=s, histnorm='probability density',
+        xbins=dict(start=vmin, end=vmax + size * 1e-9, size=size),
+        marker_color='steelblue'))
+    fig.update_layout(title=title, xaxis_title=x_title, yaxis_title='Density', height=320,
                       margin=dict(t=40, b=10), showlegend=False, bargap=0.05)
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
