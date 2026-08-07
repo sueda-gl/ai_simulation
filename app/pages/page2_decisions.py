@@ -355,17 +355,26 @@ def render_page2():
         # Set all decisions as selected
         selected_decisions = ALL_DECISIONS
     else:
-        # Manual selection mode
+        # Manual selection mode.
+        # CRITICAL: do NOT pass a changing `default=` together with a stable `key=` -
+        # when the default changes between reruns, Streamlit treats the multiselect as
+        # a NEW widget and resets it, silently dropping the user's in-flight click
+        # (symptom: every second decision selected gets automatically unselected).
+        # Instead, seed the widget's keyed state once from the persisted mirror.
+        if "page2_manual_multiselect" not in st.session_state:
+            st.session_state.page2_manual_multiselect = [
+                d for d in st.session_state.page2_manual_selections if d in ALL_DECISIONS
+            ]
         selected_decisions = st.multiselect(
             "Select Decisions to Run",
             ALL_DECISIONS,
-            default=st.session_state.page2_manual_selections,
             format_func=lambda d: format_decision_title(d, include_number=True),
             key="page2_manual_multiselect",
             help="Select one or more decisions to run",
             placeholder="Choose decisions..."
         )
-        # Update manual selections for persistence
+        # Update manual selections for persistence (survives the Select-All branch
+        # un-rendering the widget, which clears keyed state)
         st.session_state.page2_manual_selections = selected_decisions
     
     # Store the final selected decisions (sorted in chronological order)
