@@ -415,6 +415,10 @@ def render_single_run_results():
                     donation_col = 'donation_default'
                     if donation_col in df.columns:
                         st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
+                    elif 'rtd_choice_length' in df.columns:
+                        # Decision 4 model run: options-list-length headline metric
+                        st.metric("Avg. Options List Length",
+                                  f"{df['rtd_choice_length'].mean():.2f}")
                 
                 st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
                 

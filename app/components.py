@@ -44,8 +44,15 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     has_donation = donation_col in df.columns
     has_income = 'disclose_income' in df.columns and not is_dd_focus
     has_documents = 'disclose_documents' in df.columns
+    has_rtd = 'rtd_choice_length' in df.columns
 
-    if has_documents and not has_donation and not has_income:
+    if has_rtd and not has_donation and not has_income and not has_documents:
+        # Decision 4 (Rejected Transaction Defaults) model run: no donation /
+        # disclosure metrics exist - show the D4-relevant headline metrics instead.
+        col1, col2 = st.columns([1, 1.2])
+        col1.metric("Total Agents", f"{len(df):,}")
+        col2.metric("Avg. Options List Length", f"{df['rtd_choice_length'].mean():.2f}")
+    elif has_documents and not has_donation and not has_income:
         # Decision 2 (Disclose Documents): the realized all-agent disclosure rate
         # (agents who actually disclosed ÷ total agents — only qualified agents can disclose,
         # everyone else is 'NA'/'N'), the qualified-agent count, and the rate among qualified only.

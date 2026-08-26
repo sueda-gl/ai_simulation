@@ -16,9 +16,11 @@ is a later, separate step (explicitly out of scope in the source document), so n
 combined default list is produced yet.
 
 The model coefficients and sigma constants are fixed (dta-verified); the tab exposes
-the stochastic settings per mechanism (sigma strategy, x0-2 coefficient, and the
-stochastic anchor). Persistence follows the disclose_documents triple-layer pattern:
-canonical rtd_* read keys + rtd_tab_* widget keys + a tab-persistence dict.
+the income specification (categorical / continuous / compare both; WTP and
+Risk-Taking are the only income-using elements) and the stochastic settings per
+mechanism (sigma strategy, x0-2 coefficient, and the stochastic anchor).
+Persistence follows the disclose_documents triple-layer pattern: canonical rtd_*
+read keys + rtd_tab_* widget keys + a tab-persistence dict.
 """
 import streamlit as st
 import yaml
@@ -55,6 +57,15 @@ FALLBACK_SIGMA_OVERALL = {
     'wtp': 0.45265807275, 'risk_taking': 0.332208167,
 }
 
+# Fallback categorical-income effects (config/decisions.yaml is the source of truth).
+# Level 1 (EUR 12) is the base level: intercept only; level_2..5 = EUR 32/72/128/200.
+FALLBACK_CATEGORICAL_EFFECTS = {
+    'wtp': {'intercept': -0.6919842, 'level_2': 0.2672136, 'level_3': 0.5058749,
+            'level_4': 0.9413666, 'level_5': 1.822843},
+    'risk_taking': {'intercept': -0.0068307, 'level_2': 0.0026128, 'level_3': 0.0050555,
+                    'level_4': 0.0092738, 'level_5': 0.0179812},
+}
+
 
 def load_rtd_config():
     """Load rejected_transaction_defaults configuration from YAML."""
@@ -78,10 +89,14 @@ def initialize_rtd_session_state():
     # elements; each element keeps its own base sigma from config). Anchors and
     # intercepts remain per element.
     defaults = {
+        'rtd_income_mode': 'Continuous only',
         'rtd_sigma_enabled': True,
         'rtd_sigma_in_copula': False,
         'rtd_sigma_strategy': 'overall',
         'rtd_scale_factor': 1.0,
+        # Element selected via a per-element Run button (None = whole decision).
+        # Controls display + export only; the model always computes all four elements.
+        'rtd_run_element': None,
     }
     intercepts_cfg = config.get('intercepts') or {}
     for mech in MECHANISMS:
@@ -119,10 +134,15 @@ def save_to_rtd_storage(widget_key, storage_key):
 
 
 def _segment_mapping_df(sequence, element_name):
-    """Segment -> priority list table for a ranking mechanism (dta-verified tails)."""
+    """Segment -> priority list table for a ranking mechanism.
+
+    Mirrored mapping (professor's ruling): segment s receives the tail of the priority
+    sequence from position 6-s, so the HIGHEST segment gets the full list starting
+    with the top option and the lowest segment gets only the last option.
+    """
     rows = []
     for seg in range(1, 6):
-        tail = sequence[seg - 1:]
+        tail = sequence[5 - seg:]
         label = {1: f'1 (Lowest 20% of {element_name} score segment)',
                  5: f'5 (Highest 20% of {element_name} score segment)'}.get(seg, str(seg))
         rows.append({
@@ -152,6 +172,7 @@ def render_formula_section(config, mech):
             rf" + {coeffs.get('conscientiousness', 0.00901465):.8f} \times z_{{Conscientiousness_i}}"
             rf" + {coeffs.get('education', 0.0297):.4f} \times Education_i"
         )
+        st.markdown(r"where $Education_i \in \{0,1\}$ is a binary 0-1 variable.")
         st.latex(r"OptionsListLength05_i = \left\lfloor (6 - 0.0001) \times"
                  r" \frac{TTP_i - \min(TTP)}{\max(TTP) - \min(TTP)} \right\rfloor \in \{0,\dots,5\}")
         return
@@ -169,6 +190,59 @@ def render_formula_section(config, mech):
         )
     elif mech == 'wtp':
         st.markdown(f"Estimates **{construct}** based on personality traits and income.")
+        _render_income_element_formula(config, coeffs, 'wtp')
+    else:
+        st.markdown(f"Estimates **{construct}** based on Big-5 personality traits and income.")
+        _render_income_element_formula(config, coeffs, 'risk_taking')
+
+    seg_name = {'loyalty': 'Loyalty', 'wtp': 'WTP', 'risk_taking': 'RiskTaking'}[mech]
+    st.latex(
+        rf"{seg_name}15_i = \left\lfloor 1 + (5 - 0.0001) \times"
+        rf" \frac{{{seg_name}_i - \min({seg_name})}}{{\max({seg_name}) - \min({seg_name})}}"
+        rf" \right\rfloor \in \{{1,\dots,5\}}"
+    )
+    st.markdown(f"**{ELEMENT_SHORT[mech]} rejected transaction options sequence:** "
+                f"{' > '.join('Option ' + str(o) for o in seq)}")
+    map_col, _ = st.columns(2)
+    with map_col:
+        st.dataframe(_segment_mapping_df(seq, ELEMENT_SHORT[mech]), hide_index=True,
+                     use_container_width=True)
+    for num in range(1, 6):
+        st.caption(OPTION_LABELS[num])
+
+
+def _categorical_effects(config, mech):
+    """Per-budget-level income effects for wtp / risk_taking (YAML with fallbacks)."""
+    cfg = (config.get('categorical_income_effects', {}) or {}).get(mech, {}) or {}
+    return {k: float(cfg.get(k, v)) for k, v in FALLBACK_CATEGORICAL_EFFECTS[mech].items()}
+
+
+def render_categorical_effects_table(config, mech):
+    """Per-level effects table for the categorical income specification (base
+    intercept + budget-level dummies), mirroring the disclose_documents layout."""
+    eff = _categorical_effects(config, mech)
+    base = eff['intercept']
+    st.markdown("**Budget-Level Effects (β_budget):**")
+    table = pd.DataFrame({
+        'Budget Level': [LEVEL_LABELS[str(l)] for l in range(1, 6)],
+        'β_budget': [
+            f"{base:.7f}",
+            f"{base + eff['level_2']:.7f}",
+            f"{base + eff['level_3']:.7f}",
+            f"{base + eff['level_4']:.7f}",
+            f"{base + eff['level_5']:.7f}",
+        ],
+    })
+    st.dataframe(table, hide_index=True, use_container_width=False)
+    st.markdown(
+        f"Each value = base intercept ({base:.7f}) + the level's differential "
+        "budget-level effect (Level 1 is the base level)."
+    )
+
+
+def _render_continuous_equation(coeffs, mech):
+    """Continuous-income equation for wtp / risk_taking."""
+    if mech == 'wtp':
         st.latex(
             rf"WTP_i = \beta_0"
             rf" + {coeffs.get('extraversion', 0.0788796127824):.10f} \times z_{{Extroversion_i}}"
@@ -176,7 +250,6 @@ def render_formula_section(config, mech):
             rf" + {coeffs.get('income', 0.69814232):.8f} \times z_{{Income_i}}"
         )
     else:
-        st.markdown(f"Estimates **{construct}** based on Big-5 personality traits and income.")
         st.latex(
             rf"RiskTaking_i = \beta_0"
             rf" + {coeffs.get('extraversion', 0.025942386297):.10f} \times z_{{Extroversion_i}}"
@@ -187,17 +260,43 @@ def render_formula_section(config, mech):
             rf" + {coeffs.get('income', 0.006874197106):.10f} \times z_{{Income_i}}"
         )
 
-    seg_name = {'loyalty': 'Loyalty', 'wtp': 'WTP', 'risk_taking': 'RiskTaking'}[mech]
-    st.latex(
-        rf"{seg_name}15_i = \left\lfloor 1 + (5 - 0.0001) \times"
-        rf" \frac{{{seg_name}_i - \min({seg_name})}}{{\max({seg_name}) - \min({seg_name})}}"
-        rf" \right\rfloor \in \{{1,\dots,5\}}"
-    )
-    st.markdown(f"**{ELEMENT_SHORT[mech]} rejected transaction options sequence:** "
-                f"{' > '.join('Option ' + str(o) for o in seq)}")
-    st.dataframe(_segment_mapping_df(seq, ELEMENT_SHORT[mech]), hide_index=True, use_container_width=True)
-    for num in range(1, 6):
-        st.caption(OPTION_LABELS[num])
+
+def _render_categorical_equation(config, coeffs, mech):
+    """Categorical-income equation for wtp / risk_taking: the income term is replaced
+    by a per-budget-level effect (base intercept + level dummy)."""
+    if mech == 'wtp':
+        st.latex(
+            rf"WTP_i = \beta_0"
+            rf" + {coeffs.get('extraversion', 0.0788796127824):.10f} \times z_{{Extroversion_i}}"
+            rf" {coeffs.get('agreeable', -0.012328716):.9f} \times z_{{Agreeableness_i}}"
+            rf" + \beta_{{budget}}[BudgetLevel_i]"
+        )
+    else:
+        st.latex(
+            rf"RiskTaking_i = \beta_0"
+            rf" + {coeffs.get('extraversion', 0.025942386297):.10f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs.get('openness', 0.023699214948):.10f} \times z_{{Openness_i}}"
+            rf" {coeffs.get('agreeable', -0.038734315188):.10f} \times z_{{Agreeableness_i}}"
+            rf" {coeffs.get('conscientiousness', -0.037739440732):.10f} \times z_{{Conscientiousness_i}}"
+            rf" {coeffs.get('neuroticism', -0.025388697852):.10f} \times z_{{Neuroticism_i}}"
+            rf" + \beta_{{budget}}[BudgetLevel_i]"
+        )
+    render_categorical_effects_table(config, mech)
+
+
+def _render_income_element_formula(config, coeffs, mech):
+    """Render the wtp / risk_taking equation(s) following the tab's Income
+    Specification selection (categorical / continuous / both)."""
+    income_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
+    if income_mode == "Categorical only":
+        _render_categorical_equation(config, coeffs, mech)
+    elif income_mode == "Compare both":
+        st.markdown("**Categorical Income Specification**")
+        _render_categorical_equation(config, coeffs, mech)
+        st.markdown("**Continuous Income Specification**")
+        _render_continuous_equation(coeffs, mech)
+    else:
+        _render_continuous_equation(coeffs, mech)
 
 
 ELEMENT_SHORT = {'ttp': 'Options List Length', 'loyalty': 'Loyalty',
@@ -206,7 +305,10 @@ ELEMENT_SHORT = {'ttp': 'Options List Length', 'loyalty': 'Loyalty',
 
 def render_decision_sigma_controls(config):
     """Decision-wide sigma controls: one strategy + coefficient applied to all four
-    elements (each element keeps its own base sigma from config)."""
+    elements (each element keeps its own base sigma from config).
+
+    Returns the per-budget-level sigma table (quintile mode) as a DataFrame so the
+    caller can render it at full page width, or None in uniform mode."""
     bases = {m: float(_mech_stoch_config(config, m).get('sigma_overall', FALLBACK_SIGMA_OVERALL[m]))
              for m in MECHANISMS}
     base_quintiles = {m: {str(k): float(v) for k, v in
@@ -239,8 +341,6 @@ def render_decision_sigma_controls(config):
     st.markdown("---")
 
     if sigma_strategy == 'overall':
-        for m in MECHANISMS:
-            st.markdown(f"{ELEMENT_SHORT[m]}: Base σ = {bases[m]:.6g} (empirical from 280 participants)")
         coeff_widget_key = 'rtd_tab_sigma_coefficient'
         coeff_storage_key = 'rtd_sigma_coefficient'
         scale_fallback = st.session_state.get('rtd_scale_factor', 1.0)
@@ -259,11 +359,13 @@ def render_decision_sigma_controls(config):
         )
         st.session_state.rtd_scale_factor = sigma_coefficient
         for m in MECHANISMS:
-            st.markdown(f"{ELEMENT_SHORT[m]}: Effective σ = {bases[m]:.6g} × "
+            st.markdown(f"{ELEMENT_SHORT[m]}: Effective σ = Base σ (empirical from 280 "
+                        f"participants) × multiplier = {bases[m]:.6g} × "
                         f"{sigma_coefficient:.2f} = {bases[m] * sigma_coefficient:.6g}")
+        return None
     else:
         st.markdown("**Per-Quintile σ Coefficients**")
-        st.markdown("Each budget level has its own base σ per element (empirical from 280 participants):")
+        st.markdown("Each level has its own base σ from empirical data:")
 
         quintile_coefficients = {}
         default_scale = st.session_state.get('rtd_scale_factor', 1.0)
@@ -281,7 +383,6 @@ def render_decision_sigma_controls(config):
 
             q_coeff = st.slider(
                 f"{LEVEL_LABELS[level]}", min_value=0.0, max_value=2.0, value=q_val, step=0.01,
-                help="Coefficient applied to this budget level's base σ for all elements of the decision.",
                 key=widget_key,
                 on_change=lambda l=level: save_to_rtd_storage(
                     f'rtd_tab_sigma_q{l}', f'rtd_sigma_quintile_{l}'),
@@ -289,13 +390,15 @@ def render_decision_sigma_controls(config):
             quintile_coefficients[level] = q_coeff
         st.session_state.rtd_quintile_scale_factors = quintile_coefficients
 
-        eff = pd.DataFrame(
-            {ELEMENT_SHORT[m]: [base_quintiles[m].get(level, bases[m]) * quintile_coefficients[level]
-                                for level in ['1', '2', '3', '4', '5']]
-             for m in MECHANISMS},
-            index=[LEVEL_LABELS[level] for level in ['1', '2', '3', '4', '5']])
-        st.markdown("**Effective σ per budget level:**")
-        st.dataframe(eff.round(6), use_container_width=True)
+        eff_rows = []
+        for level in ['1', '2', '3', '4', '5']:
+            row = {'Budget Level': LEVEL_LABELS[level]}
+            for m in MECHANISMS:
+                base = base_quintiles[m].get(level, bases[m])
+                row[f'{ELEMENT_SHORT[m]} base σ'] = round(base, 6)
+                row[f'{ELEMENT_SHORT[m]} effective σ'] = round(base * quintile_coefficients[level], 6)
+            eff_rows.append(row)
+        return pd.DataFrame(eff_rows)
 
 
 def render_anchor_control(mech):
@@ -359,8 +462,10 @@ def render_intercept_control(config, mech):
             value=float(current), step=0.01, format="%.4f",
             key=widget_key, on_change=on_change,
             help=f"{symbol} baseline for this element (default 0, TBD). Shifts the element's "
-                 "score distribution; the allocation to options uses the min-max rescaled "
-                 "score, which is unaffected by a uniform shift.",
+                 "score distribution and thereby the allocation: the segment boundaries are "
+                 "fixed from the intercept-free population scores, so a nonzero intercept "
+                 "moves agents across them (a negative value shifts agents toward the lower "
+                 "segments, a positive value toward the higher ones, capped at the end bins).",
         )
         st.session_state[storage_key] = float(value)
     with col3:
@@ -373,14 +478,75 @@ def render_intercept_control(config, mech):
             st.metric("Change", "No change")
 
 
+def render_stochastic_explanation(mech):
+    """Short stochastic-component explanation, phrased consistently with the other
+    decisions' Final Decision text (same structure for all four elements)."""
+    score = {'ttp': 'TTP_i', 'loyalty': 'Loyalty_i', 'wtp': 'WTP_i',
+             'risk_taking': 'RiskTaking_i'}[mech]
+    bins = {'ttp': 'the 0-5 options list length',
+            'loyalty': 'the 1-5 Loyalty segment',
+            'wtp': 'the 1-5 WTP segment',
+            'risk_taking': 'the 1-5 Risk-Taking segment'}[mech]
+    anchor = (f"the continuous {score} score (or the binned segment, see Advanced below)"
+              if mech in ('loyalty', 'risk_taking') else f"the continuous {score} score")
+    st.markdown("**Stochastic Component:**")
+    st.markdown(
+        f"- If stochastic enabled: `{score} ~ Normal(μ = anchor, σ)` where the anchor is "
+        f"{anchor} and σ = base σ × coefficient (overall or per budget level); the drawn "
+        f"values are re-rescaled over the population and re-binned into {bins}."
+    )
+
+
+def render_element_reset_button(mech):
+    """Per-element reset: restores only this element's settings (intercept and,
+    where applicable, stochastic anchor). Decision-wide σ settings are untouched."""
+    if st.button(f"Reset {ELEMENT_SHORT[mech]} to Defaults", type="secondary",
+                 help="Reset this element's settings to research defaults "
+                      "(decision-wide σ settings are not affected)",
+                 key=f"rtd_reset_{mech}_btn"):
+        if reset_rtd_element_to_defaults(mech):
+            st.toast(f"{ELEMENT_SHORT[mech]} settings reset to defaults", icon="🔄")
+            st.rerun()
+
+
+ELEMENT_RUN_TITLES = {
+    'ttp': 'Options List Length (Tendency to Plan)',
+    'loyalty': 'Loyalty Ranking',
+    'wtp': 'Willingness-to-Pay Ranking',
+    'risk_taking': 'Risk-Taking Ranking',
+}
+
+
+def render_element_run_button(mech):
+    """Per-element Run button: runs the SAME individual Decision 4 simulation as the
+    whole-decision button (the model always computes all four elements) but flags
+    st.session_state.rtd_run_element so the results page shows and exports only
+    this element's results. The whole-decision / complete-simulation buttons clear
+    the flag again (see render_rejected_transaction_defaults_tab)."""
+    title = ELEMENT_RUN_TITLES[mech]
+    if st.button(f"🔬 Run {title} Only", type="primary",
+                 key=f"rtd_run_{mech}_btn",
+                 help=f"Run the Decision 4 simulation with the current settings and "
+                      f"present only the {title} results and Excel"):
+        st.session_state.rtd_run_element = mech
+        from app.pages.decision_execution import run_individual_decision
+        run_individual_decision('rejected_transaction_defaults')
+
+
 def render_mechanism_subtab(config, mech):
-    """Render one mechanism's sub-tab: formula + intercept (+ anchor option)."""
+    """Render one mechanism's sub-tab: formula + stochastic explanation + intercept
+    (+ anchor option) + per-element reset + per-element run."""
     render_formula_section(config, mech)
+    render_stochastic_explanation(mech)
     st.markdown("---")
     render_intercept_control(config, mech)
     if mech in ('loyalty', 'risk_taking'):
         st.markdown("---")
         render_anchor_control(mech)
+    st.markdown("---")
+    render_element_reset_button(mech)
+    st.markdown("---")
+    render_element_run_button(mech)
 
 
 def reset_rtd_to_defaults():
@@ -395,6 +561,24 @@ def reset_rtd_to_defaults():
     return True
 
 
+def reset_rtd_element_to_defaults(mech):
+    """Reset ONLY one element's settings (intercept + anchor) to research defaults.
+
+    Surgical version of reset_rtd_to_defaults: deletes only this element's canonical
+    rtd_* keys, its rtd_tab_* widget keys, and its persistence-dict entries, then
+    re-initializes so the widgets revert on rerun. Sigma is decision-wide and is
+    deliberately NOT touched here (the whole-page reset covers it)."""
+    for key in (f'rtd_intercept_{mech}', f'rtd_anchor_{mech}',
+                f'rtd_tab_intercept_{mech}', f'rtd_tab_anchor_{mech}'):
+        if key in st.session_state:
+            del st.session_state[key]
+    persistence = st.session_state.get('rejected_transaction_tab_persistence', {})
+    for storage_key in (f'rtd_intercept_{mech}', f'rtd_anchor_{mech}'):
+        persistence.pop(storage_key, None)
+    initialize_rtd_session_state()
+    return True
+
+
 def render_rejected_transaction_defaults_tab():
     """Render the Decision 4 (Rejected Transaction Defaults) configuration tab."""
     initialize_rtd_session_state()
@@ -403,22 +587,44 @@ def render_rejected_transaction_defaults_tab():
     st.markdown('<h3 class="section-header">Rejected Transaction Defaults Configuration</h3>',
                 unsafe_allow_html=True)
 
+    quintile_sigma_table = None
     col1, col2 = st.columns(2)
 
     with col1:
         st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
-        st.radio(
+
+        mode_options = ["Categorical only", "Continuous only", "Compare both"]
+        if "rtd_tab_income_mode" not in st.session_state:
+            current_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
+            st.session_state.rtd_tab_income_mode = current_mode if current_mode in mode_options else "Continuous only"
+
+        def on_rtd_income_mode_change():
+            st.session_state.rtd_income_mode = st.session_state.rtd_tab_income_mode
+            save_to_rtd_storage('rtd_tab_income_mode', 'rtd_income_mode')
+
+        income_val = restore_widget_from_storage(
+            'rtd_tab_income_mode', st.session_state.rejected_transaction_tab_persistence,
+            'rtd_income_mode', 'Continuous only')
+        if income_val not in mode_options:
+            income_val = next((o for o in mode_options if str(income_val).lower() == o.lower()),
+                              "Continuous only")
+            st.session_state.rtd_tab_income_mode = income_val
+
+        income_mode = st.radio(
             "Income Specification for Rejected Transaction Model",
-            ["Continuous only"],
-            index=0,
-            key="rtd_tab_income_mode",
+            mode_options,
             help="""
-            **Continuous only**: The model uses the generated monetary income (z-scored)
-            in the Willingness-to-Pay and Risk-Taking equations.
+            **Categorical only**: Willingness-to-Pay and Risk-Taking use fitted
+            budget-level effects (5 levels)
+            **Continuous only**: Willingness-to-Pay and Risk-Taking use the generated
+            monetary income (z-scored)
+            **Compare both**: Run both specifications for comparison
+
             Options List Length (Tendency to Plan) and Loyalty do not use income.
             """,
+            key="rtd_tab_income_mode", on_change=on_rtd_income_mode_change,
         )
-        st.session_state.rtd_income_mode = "Continuous only"
+        st.session_state.rtd_income_mode = income_mode
 
     with col2:
         st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
@@ -434,6 +640,7 @@ def render_rejected_transaction_defaults_tab():
             'rtd_sigma_in_copula', False)
         sigma_in_copula = st.checkbox(
             "Add Normal(anchor, σ) draw to Copula runs", value=copula_val,
+            help="When enabled, Copula mode will also use the stochastic component",
             key="rtd_tab_sigma_in_copula",
             on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_in_copula', 'rtd_sigma_in_copula'))
         st.session_state.rtd_sigma_in_copula = sigma_in_copula
@@ -444,6 +651,7 @@ def render_rejected_transaction_defaults_tab():
             'rtd_sigma_enabled', True)
         sigma_enabled = st.checkbox(
             "Use Normal(anchor, σ) draw in Research Specification mode", value=res_val,
+            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="rtd_tab_sigma_enabled",
             on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_enabled', 'rtd_sigma_enabled'))
         st.session_state.rtd_sigma_enabled = sigma_enabled
@@ -453,12 +661,18 @@ def render_rejected_transaction_defaults_tab():
         # Decision-wide sigma settings: shown only when the Research Specification
         # stochastic checkbox is on; the settings apply to all elements of the decision.
         if sigma_enabled:
-            render_decision_sigma_controls(config)
+            quintile_sigma_table = render_decision_sigma_controls(config)
         elif sigma_in_copula:
             st.caption("Copula draws use each element's base σ (coefficient 1.0). "
                        "Check the Research Specification box to configure σ settings.")
         else:
             st.info("Stochastic component disabled - deterministic scores are used.")
+
+    # Quintile-mode sigma table rendered outside the column so it spans the full
+    # page width (base σ and effective σ per element, per budget level).
+    if quintile_sigma_table is not None:
+        st.markdown("**Base σ and effective σ per budget level:**")
+        st.dataframe(quintile_sigma_table, hide_index=True, use_container_width=True)
 
     # ---- Four mechanism sub-tabs ----
     st.markdown('<h4 class="subsection-header">Sub-Decision Mechanisms</h4>', unsafe_allow_html=True)
@@ -476,6 +690,14 @@ def render_rejected_transaction_defaults_tab():
             st.rerun()
 
     # ---- Simulation buttons ----
+    # The whole-decision and complete-simulation buttons must clear the per-element
+    # run flag so the results page presents all four elements again. A clicked
+    # button's widget state is already True at the start of the rerun its click
+    # triggers - i.e. BEFORE render_simulation_buttons() executes the run below -
+    # so clearing here keeps the generic decision_execution logic untouched.
+    if (st.session_state.get('run_rejected_transaction_defaults_only_btn')
+            or st.session_state.get('run_complete_from_rejected_transaction_defaults_btn')):
+        st.session_state.rtd_run_element = None
     try:
         from app.pages.decision_execution import render_simulation_buttons
         selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])

@@ -254,14 +254,35 @@ rejected_transaction_defaults:
       conscientiousness: -0.037739440732
       neuroticism: -0.025388697852
       income: 0.006874197106
+  # Income mode: 'continuous' (default, .dta-verified) or 'categorical'.
+  income_mode: continuous
+  # Categorical-income effects (doc rev 130826): score = intercept + level dummy
+  # + personality part (income term dropped, remaining coefficients as above).
+  # Level 1 (EUR 12) is the base level (intercept only); level_2..5 = EUR 32/72/128/200.
+  categorical_income_effects:
+    wtp:
+      intercept: -0.6919842
+      level_2: 0.2672136
+      level_3: 0.5058749
+      level_4: 0.9413666
+      level_5: 1.822843
+    risk_taking:
+      intercept: -0.0068307
+      level_2: 0.0026128
+      level_3: 0.0050555
+      level_4: 0.0092738
+      level_5: 0.0179812
   priority_sequences:          # segment s (1..5) receives the tail seq[s-1:] (.dta-verified)
     loyalty: [3, 1, 4, 5, 2]
     wtp: [3, 2, 1, 4, 5]
     risk_taking: [4, 2, 1, 3, 5]
   # Intercepts: beta0 (TTP, on the composite), beta0 (loyalty, on the composite),
   # beta1 (WTP, on the standardized score), beta2 (risk_taking, on the standardized
-  # score). Defaults 0 (doc placeholders 'XXX', TBD). They shift each element's score
-  # distribution only - allocations use population min-max rescaling and are invariant.
+  # score). Defaults 0 (doc placeholders 'XXX', TBD). FIXED-CUTOFF semantics: the
+  # segment cutoffs are anchored on the intercept-free population scores, so a
+  # nonzero intercept shifts the score distribution AND the allocation across the
+  # fixed segment boundaries (capped at the end bins); 0 reproduces the
+  # intercept-free pipeline exactly.
   intercepts:
     ttp: 0.0
     loyalty: 0.0

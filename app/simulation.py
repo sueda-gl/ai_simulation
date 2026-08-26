@@ -610,23 +610,42 @@ def _apply_disclose_documents_config(orchestrator, pop_mode: str, inc_mode: str 
         dd_config['stochastic']['quintile_scale_factors'] = st.session_state.dd_quintile_scale_factors
 
 
-def _apply_rejected_transaction_config(orchestrator, pop_mode: str):
+def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: str = None):
     """
     Apply Decision 4 (rejected_transaction_defaults) configuration to the orchestrator.
 
     The four mechanisms' coefficients, priority sequences and sigma constants are fixed
     (verified vs Stata_File_Decision4_050626.dta); user-configurable per mechanism are
-    the sigma strategy (overall vs per-allowance-group), the x0-2 scale factor(s), and
-    the stochastic anchor (continuous vs doc-literal binned). The stochastic enable
-    follows the disclose_documents three-way rule (baseline off / documentation via
-    checkbox / copula via flag). When the decision runs as a DEFAULT (unselected), the
-    decision function ignores all of this and applies the legacy priority template.
+    the income specification (continuous vs categorical budget-level effects; WTP and
+    Risk-Taking only - TTP and Loyalty use no income), the sigma strategy (overall vs
+    per-allowance-group), the x0-2 scale factor(s), and the stochastic anchor
+    (continuous vs doc-literal binned). The stochastic enable follows the
+    disclose_documents three-way rule (baseline off / documentation via checkbox /
+    copula via flag). When the decision runs as a DEFAULT (unselected), the decision
+    function ignores all of this and applies the legacy priority template.
+
+    Income mode resolution (structure mirrors _apply_disclose_documents_config):
+    explicit inc_mode (passed by the runners ONLY for an individual Decision-4 run,
+    incl. the two Compare-both sub-runs) > rtd_income_mode session state. In combined
+    runs Decision 4 keeps its own tab setting (default 'Continuous only'); a
+    'Compare both' tab setting without an explicit mode falls back to 'continuous'
+    (the original .dta-verified specification).
     """
     if not hasattr(orchestrator, 'config') or 'rejected_transaction_defaults' not in orchestrator.config:
         return
 
     rtd_config = orchestrator.config['rejected_transaction_defaults']
     rtd_config['model_enabled'] = True   # model path when selected; defaults path otherwise
+
+    # Income mode: explicit inc_mode (individual-run / Compare both) > session state
+    if inc_mode is not None:
+        rtd_config['income_mode'] = 'continuous' if 'continuous' in str(inc_mode).lower() else 'categorical'
+    elif 'rtd_income_mode' in st.session_state:
+        session_mode = str(st.session_state.rtd_income_mode)
+        if 'compare' in session_mode.lower() or 'both' in session_mode.lower():
+            rtd_config['income_mode'] = 'continuous'  # safeguard; runner passes explicit mode
+        else:
+            rtd_config['income_mode'] = 'continuous' if 'continuous' in session_mode.lower() else 'categorical'
 
     # Per-element intercepts (beta0/beta0/beta1/beta2, defaults 0/TBD)
     intercepts = rtd_config.setdefault('intercepts', {})
@@ -773,7 +792,11 @@ def run_copula_mode(n_agents: int, seed: int, inc_mode: str, decision_settings: 
     _apply_donation_config(orchestrator, "copula", inc_mode)
     _apply_disclose_income_config(orchestrator, "copula", inc_mode)  # Pass inc_mode for disclose_income
     _apply_disclose_documents_config(orchestrator, "copula", inc_mode)  # Pass inc_mode for disclose_documents
-    _apply_rejected_transaction_config(orchestrator, "copula")
+    # Decision 4 keeps its own tab income mode in combined runs; the explicit
+    # per-run inc_mode applies only to an individual Decision-4 run (Compare both).
+    _apply_rejected_transaction_config(
+        orchestrator, "copula",
+        inc_mode if single_decision == ['rejected_transaction_defaults'] else None)
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
     
@@ -800,7 +823,11 @@ def run_research_spec_mode(n_agents: int, seed: int, inc_mode: str, decision_set
     _apply_donation_config(orchestrator, "documentation", inc_mode)
     _apply_disclose_income_config(orchestrator, "documentation", inc_mode)  # Pass inc_mode for disclose_income
     _apply_disclose_documents_config(orchestrator, "documentation", inc_mode)  # Pass inc_mode for disclose_documents
-    _apply_rejected_transaction_config(orchestrator, "documentation")
+    # Decision 4 keeps its own tab income mode in combined runs; the explicit
+    # per-run inc_mode applies only to an individual Decision-4 run (Compare both).
+    _apply_rejected_transaction_config(
+        orchestrator, "documentation",
+        inc_mode if single_decision == ['rejected_transaction_defaults'] else None)
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
 
@@ -827,7 +854,11 @@ def run_research_baseline_mode(n_agents: int, seed: int, inc_mode: str, decision
     _apply_donation_config(orchestrator, "baseline", inc_mode)
     _apply_disclose_income_config(orchestrator, "baseline", inc_mode)  # Pass inc_mode for disclose_income
     _apply_disclose_documents_config(orchestrator, "baseline", inc_mode)  # Pass inc_mode for disclose_documents
-    _apply_rejected_transaction_config(orchestrator, "baseline")
+    # Decision 4 keeps its own tab income mode in combined runs; the explicit
+    # per-run inc_mode applies only to an individual Decision-4 run (Compare both).
+    _apply_rejected_transaction_config(
+        orchestrator, "baseline",
+        inc_mode if single_decision == ['rejected_transaction_defaults'] else None)
     _apply_simulation_params(orchestrator)
     _apply_decision_settings(orchestrator, decision_settings)
 
@@ -1299,6 +1330,13 @@ def run_full_simulation():
                         "🔐 Eligibility: using the selected Disclose Income configuration to "
                         "identify the qualified subgroup (income < threshold AND disclosed income)."
                     )
+            elif single_decision == ['rejected_transaction_defaults']:
+                # Running ONLY rejected_transaction_defaults - use its specific mode
+                effective_income_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
+                # CRITICAL: Sync rtd_income_mode to income_spec_mode so the results page
+                # renders the correct side-by-side comparison (mirrors disclose_income).
+                st.session_state.income_spec_mode = effective_income_mode
+                st.caption(f"🎯 Using Rejected Transaction Defaults specific mode: {effective_income_mode}")
             elif single_decision == ['donation_default']:
                 # Running ONLY donation_default - check for saved config first
                 dd_config = get_decision_config('donation_default')

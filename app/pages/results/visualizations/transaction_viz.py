@@ -472,7 +472,7 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
         else:
             st.caption("No priority template configured")
         
-        st.caption(f"💡 {len(configured_template)} option(s) configured")
+        st.caption(f"💡 {len(configured_template)} options configured")
         st.caption("All agents use this priority list")
     
     with col_chart:
@@ -556,7 +556,7 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
                 for opt in sorted_options:
                     count = option_agent_counts[opt]
                     percentage = (count / total_agents) * 100
-                    st.caption(f"• {option_numbers.get(opt, opt)}: {count:,} agents ({percentage:.0f}%)")
+                    st.caption(f"{option_numbers.get(opt, opt)}: {count:,} agents ({percentage:.0f}%)")
     
     # Summary statistics
     st.markdown("---")
@@ -569,9 +569,10 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
         list_lengths = decision_data.apply(lambda x: len(x) if isinstance(x, list) else 1)
         length_counts = list_lengths.value_counts().sort_index()
         
-        for length, count in length_counts.items():
-            percentage = (count / len(decision_data)) * 100
-            st.caption(f"• {int(length)} option(s): {count:,} agents ({percentage:.1f}%)")
+        breakdown_lines = [
+            f"{int(length)} options: {count:,} agents ({(count / len(decision_data)) * 100:.1f}%)"
+            for length, count in length_counts.items()]
+        st.caption("  \n".join(breakdown_lines))
     
     with col_summary2:
         st.markdown("**Most Common 1st Choice:**")
@@ -630,12 +631,63 @@ _RTD_MECHS = [
     ('risk_taking', 'rt', 'Risk-Taking', [4, 2, 1, 3, 5]),
 ]
 
+# Per-element sheet / section names for the Decision 4 exports.
+_RTD_ELEMENT_SHEETS = {
+    'ttp': 'Options List Length',
+    'loyalty': 'Loyalty',
+    'wtp': 'Willingness-to-Pay',
+    'risk_taking': 'Risk-Taking',
+}
+
+# Independent variables per element (Stata-aligned trait column names, in each
+# element's equation order). WTP and Risk-Taking additionally get 'Assigned
+# Allowance Level' when the frame was computed with categorical income.
+_RTD_ELEMENT_INPUTS = {
+    'ttp': ['ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
+            'ConscientiousnessBig5', 'Education'],
+    'loyalty': ['ExtraversionBig5', 'OpennessBig5', 'Agreeable'],
+    'wtp': ['ExtraversionBig5', 'Agreeable', 'income'],
+    'risk_taking': ['ExtraversionBig5', 'OpennessBig5', 'Agreeable',
+                    'ConscientiousnessBig5', 'NeuroticismBig5', 'income'],
+}
+
+
+def _rtd_frame_income_mode(df):
+    """Income specification the frame was computed with ('categorical'/'continuous')."""
+    if 'rtd_income_mode' in df.columns and len(df) > 0:
+        first = df['rtd_income_mode'].dropna()
+        if len(first) > 0 and str(first.iloc[0]) == 'categorical':
+            return 'categorical'
+    return 'continuous'
+
+
+def _rtd_active_element():
+    """The element selected via a per-element Run button on the Decision 4 tab
+    ('ttp' | 'loyalty' | 'wtp' | 'risk_taking'), or None when the whole decision
+    was run. Only individual Decision 4 runs are filtered - combined/complete
+    simulations always show all four elements."""
+    if (getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults']
+            and not getattr(st.session_state, 'default_decisions', [])):
+        element = st.session_state.get('rtd_run_element')
+        if element in _RTD_ELEMENT_SHEETS:
+            return element
+    return None
+
+# Compact options-numbering key shown under each allocation chart (plain caption
+# lines, no bullets; the trailing two spaces force markdown line breaks).
+_RTD_OPTION_NUMBERING = (
+    "Option 1: higher price category, same vendor · Option 2: other vendor, lower PN price  \n"
+    "Option 3: current vendor at PN price · Option 4: place a bid  \n"
+    "Option 5: forgo the transaction"
+)
+
 
 def _rtd_density_hist(series, title, x_title, chart_key):
-    """Density histogram of a continuous score matching Stata's `histogram` output:
-    y-axis is density and the binning follows Stata's default rule -
-    k = min(sqrt(N), 10*log10(N)) equal-width bins spanning min..max - so an n=280
-    run reproduces the design document's Stata graphs bar-for-bar."""
+    """Histogram of a continuous score, normalised so the bar heights sum to 1
+    (each bar is the proportion of observations falling in that bin). The binning
+    follows Stata's default rule - k = min(sqrt(N), 10*log10(N)) equal-width bins
+    spanning min..max - so an n=280 run reproduces the design document's Stata
+    graphs bar-for-bar. The series mean is marked with a vertical red line."""
     import plotly.graph_objects as go
     s = pd.Series(series).dropna().astype(float)
     n = len(s)
@@ -643,10 +695,11 @@ def _rtd_density_hist(series, title, x_title, chart_key):
     k = max(1, int(min(np.sqrt(n), 10 * np.log10(n)))) if n > 1 else 1
     size = (vmax - vmin) / k if vmax > vmin else 1.0
     fig = go.Figure(go.Histogram(
-        x=s, histnorm='probability density',
+        x=s, histnorm='probability',
         xbins=dict(start=vmin, end=vmax + size * 1e-9, size=size),
         marker_color='steelblue'))
-    fig.update_layout(title=title, xaxis_title=x_title, yaxis_title='Density', height=320,
+    fig.add_vline(x=float(s.mean()), line_color='red', line_width=2)
+    fig.update_layout(title=title, xaxis_title=x_title, yaxis_title='Proportion', height=320,
                       margin=dict(t=40, b=10), showlegend=False, bargap=0.05)
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
@@ -655,7 +708,7 @@ def _rtd_fraction_bar(x_labels, fractions, title, x_title, chart_key):
     """Discrete allocation chart: fraction of agents per category, in the given order."""
     fig = px.bar(x=x_labels, y=fractions, title=title)
     fig.update_traces(marker_color='steelblue')
-    fig.update_layout(xaxis_title=x_title, yaxis_title='Fraction of agents', height=320,
+    fig.update_layout(xaxis_title=x_title, yaxis_title='% of agents', height=320,
                       margin=dict(t=40, b=10), yaxis_tickformat='.0%',
                       xaxis=dict(type='category', categoryorder='array',
                                  categoryarray=list(x_labels)))
@@ -678,6 +731,16 @@ def render_rtd_comparison_results(results_dict, decision_name):
             if hasattr(df_, 'columns') and 'rtd_choice_length' in df_.columns]
     if not keys:
         return False
+
+    # Compare-both income x Compare-all population yields 6 keys interleaved as
+    # pop_categorical, pop_continuous, ... Group them by income spec so the
+    # chunks-of-3 rows below read as income modes x population modes
+    # (row 1 = categorical across populations, row 2 = continuous).
+    cat_keys = [k for k in keys if k.endswith('_categorical')]
+    cont_keys = [k for k in keys if k.endswith('_continuous')]
+    if cat_keys and cont_keys:
+        keys = (cat_keys + cont_keys
+                + [k for k in keys if k not in cat_keys and k not in cont_keys])
 
     mode_labels = {
         'copula': '🧬 Copula (Synthetic)',
@@ -716,17 +779,16 @@ def render_rtd_comparison_results(results_dict, decision_name):
 def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False):
     """Model-run results for Decision 4: four sub-decision mechanisms per agent.
 
+    When a per-element Run button was used (st.session_state.rtd_run_element set on
+    an individual Decision 4 run), ONLY that element's section is rendered; a
+    whole-decision run renders all four.
+
     chart_suffix disambiguates Streamlit element keys when this view is rendered
     once per result_key (comparison modes). compact=True stacks each section
     vertically for use inside a per-mode comparison column.
     """
     n = len(df)
-    stochastic_mechs = [label for key, col, label, _ in
-                        [('ttp', 'ttp', 'Options List Length', None)] + _RTD_MECHS
-                        if f'rtd_sigma_used_{col}' in df.columns
-                        and (df[f'rtd_sigma_used_{col}'] > 0).any()]
-    st.caption(f"{n:,} agents · Stochastic: "
-               + (", ".join(stochastic_mechs) if stochastic_mechs else "None (deterministic)"))
+    active = _rtd_active_element()
 
     def _element_section(chart_a, chart_b):
         """Chart A (score distribution) and Chart B (allocation) side by side, or
@@ -741,120 +803,214 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
             with col_b:
                 chart_b()
 
-    # ---- Element 1: Options List Length (Tendency to Plan) ----
-    st.markdown("---")
-    st.markdown("**1️⃣ Options List Length (Tendency to Plan)**")
-
-    def _ttp_score_chart():
-        _rtd_density_hist(df['rtd_weighted_ttp'], "Score distribution (weighted_ttp)",
-                          "Tendency-to-Plan score",
-                          f"{decision_name}_rtd_ttp_score{chart_suffix}")
-        _rtd_score_stats_caption(df['rtd_weighted_ttp'])
-
-    def _ttp_alloc_chart():
-        counts = df['rtd_choice_length'].astype(int).value_counts()
-        lengths = list(range(0, 6))
-        fractions = [counts.get(l, 0) / n for l in lengths]
-        _rtd_fraction_bar([str(l) for l in lengths], fractions,
-                          "Options list length (after conversion)",
-                          "Number of pre-selected options",
-                          f"{decision_name}_rtd_length_chart{chart_suffix}")
-
-    _element_section(_ttp_score_chart, _ttp_alloc_chart)
-
-    # ---- Elements 2-4: priority rankings ----
-    score_specs = {
-        'loyalty': ('rtd_loyalty_score', "Score distribution (weighted_loyalty)", "Loyalty score"),
-        'wtp': ('rtd_wtp_z', "Score distribution (z_WTP_calculated)", "Willingness-to-Pay score"),
-        'risk_taking': ('rtd_rt_z', "Score distribution (z_RT_calculated_hs)", "Risk-Taking score"),
-    }
-    for idx, (mech, col_key, label, seq) in enumerate(_RTD_MECHS, start=2):
-        seg_col = f'rtd_{col_key}_segment'
-        if seg_col not in df.columns:
-            continue
-        st.markdown("---")
-        st.markdown(f"**{idx}️⃣ {label} Ranking** - rejected transaction options sequence: "
-                    f"{' > '.join('Option ' + str(o) for o in seq)}")
-
-        score_col, score_title, score_x = score_specs[mech]
-
-        def _score_chart(sc=score_col, ti=score_title, xt=score_x, ck=col_key):
-            _rtd_density_hist(df[sc], ti, xt,
-                              f"{decision_name}_rtd_{ck}_score{chart_suffix}")
-            _rtd_score_stats_caption(df[sc])
-
-        def _alloc_chart(sq=seq, sgc=seg_col, ck=col_key, lb=label):
-            first_choice = df[sgc].astype(int).map(lambda s: sq[s - 1])
-            counts = first_choice.value_counts()
-            fractions = [counts.get(o, 0) / n for o in sq]
-            _rtd_fraction_bar([f"Option {o}" for o in sq], fractions,
-                              "First-choice allocation (ordered by priority sequence)",
-                              "Option (priority-sequence order)",
-                              f"{decision_name}_rtd_{ck}_seg_chart{chart_suffix}")
-
-        _element_section(_score_chart, _alloc_chart)
-
-    # ---- Per-agent Excel export (Stata-aligned column names) ----
-    st.markdown("---")
-    st.markdown("**📥 Download Decision 4 Model Results**")
-    export_df = _prepare_rtd_model_export(df)
-    if export_df is not None and not export_df.empty:
+    def _element_download(mech, label):
+        """Per-element Excel: Agent ID, the element's independent variables, its
+        score and the resulting option sequence per customer."""
+        export_df = _prepare_rtd_element_export(df, mech)
+        if export_df is None or export_df.empty:
+            return
         from io import BytesIO
         from datetime import datetime
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            export_df.to_excel(writer, index=False, sheet_name='Decision 4 Mechanisms')
+            export_df.to_excel(writer, index=False, sheet_name=_RTD_ELEMENT_SHEETS[mech])
         st.download_button(
-            label="📊 Download Decision 4 Mechanisms Excel",
+            label=f"📊 Download {label} Excel",
             data=buffer.getvalue(),
-            file_name=f"rejected_transaction_mechanisms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            file_name=f"rejected_transaction_{mech}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            help="Per-agent scores, segments and choice lists for all four mechanisms",
-            key=f"rtd_model_download{chart_suffix}",
+            help=f"Per-agent {label} results: independent variables, score and "
+                 "resulting option sequence per customer",
+            key=f"rtd_dl_{mech}{chart_suffix}",
         )
-        with st.expander("📋 Preview Export Data (first 50 rows)"):
-            st.dataframe(export_df.head(50).astype(str), use_container_width=True)
-            st.caption(f"Total rows: {len(export_df):,}")
+
+    # ---- Element 1: Options List Length (Tendency to Plan) ----
+    if active in (None, 'ttp'):
+        st.markdown("---")
+        st.markdown("**1️⃣ Options List Length (Tendency to Plan)**")
+        st.markdown("presents how many default options each customer pre-selects (0-5)")
+        _rtd_score_stats_caption(df['rtd_weighted_ttp'])
+
+        def _ttp_score_chart():
+            _rtd_density_hist(df['rtd_weighted_ttp'], "Tendency to Plan score",
+                              "Tendency to Plan score",
+                              f"{decision_name}_rtd_ttp_score{chart_suffix}")
+
+        def _ttp_alloc_chart():
+            counts = df['rtd_choice_length'].astype(int).value_counts()
+            lengths = list(range(0, 6))
+            fractions = [counts.get(l, 0) / n for l in lengths]
+            _rtd_fraction_bar([str(l) for l in lengths], fractions,
+                              "% of pre-selected options",
+                              "Number of pre-selected options",
+                              f"{decision_name}_rtd_length_chart{chart_suffix}")
+            st.caption(_RTD_OPTION_NUMBERING)
+
+        _element_section(_ttp_score_chart, _ttp_alloc_chart)
+        _element_download('ttp', "Options List Length")
+
+    # ---- Elements 2-4: priority rankings ----
+    score_specs = {
+        'loyalty': ('rtd_loyalty_score', "Loyalty score"),
+        'wtp': ('rtd_wtp_z', "Willingness-to-Pay score"),
+        'risk_taking': ('rtd_rt_z', "Risk-Taking score"),
+    }
+    for idx, (mech, col_key, label, seq) in enumerate(_RTD_MECHS, start=2):
+        seg_col = f'rtd_{col_key}_segment'
+        if seg_col not in df.columns or (active is not None and active != mech):
+            continue
+        st.markdown("---")
+        st.markdown(f"**{idx}️⃣ {label} Ranking**")
+        st.markdown("Priority sequence " + " > ".join(f"Option {o}" for o in seq))
+
+        score_col, score_title = score_specs[mech]
+        _rtd_score_stats_caption(df[score_col])
+
+        def _score_chart(sc=score_col, ti=score_title, ck=col_key):
+            _rtd_density_hist(df[sc], ti, ti,
+                              f"{decision_name}_rtd_{ck}_score{chart_suffix}")
+
+        def _alloc_chart(sq=seq, sgc=seg_col, ck=col_key, lb=label):
+            # Mirrored mapping: segment s -> first choice sq[5 - s] (highest segment
+            # gets the top option of the priority sequence). Bars are displayed from
+            # the LOWEST- to the HIGHEST-ranked option, i.e. the reversed sequence.
+            first_choice = df[sgc].astype(int).map(lambda s: sq[5 - s])
+            counts = first_choice.value_counts()
+            order = list(reversed(sq))
+            fractions = [counts.get(o, 0) / n for o in order]
+            _rtd_fraction_bar([f"Option {o}" for o in order], fractions,
+                              f"% of {lb.lower()}-based options ranking",
+                              "Selected option",
+                              f"{decision_name}_rtd_{ck}_seg_chart{chart_suffix}")
+            st.caption(_RTD_OPTION_NUMBERING)
+
+        _element_section(_score_chart, _alloc_chart)
+        _element_download(mech, f"{label} Ranking")
+
+    # ---- Whole-decision per-agent Excel export (only for whole-decision runs;
+    # per-element runs already have their element's download in the section above) ----
+    if active is None:
+        st.markdown("---")
+        st.markdown("**📥 Download Decision 4 Model Results**")
+        sheets = _prepare_rtd_model_export(df)
+        if sheets:
+            from io import BytesIO
+            from datetime import datetime
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                for sheet_name, sheet_df in sheets.items():
+                    sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+            st.download_button(
+                label="📊 Download Decision 4 Excel (all elements)",
+                data=buffer.getvalue(),
+                file_name=f"rejected_transaction_mechanisms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                help="One self-contained sheet per element: independent variables, "
+                     "scores, intermediate distributions and the resulting option "
+                     "sequence per customer",
+                key=f"rtd_model_download{chart_suffix}",
+            )
+            with st.expander("📋 Preview Export Data (first 10 rows per sheet)"):
+                for sheet_name, sheet_df in sheets.items():
+                    st.markdown(f"**{sheet_name} Sheet:**")
+                    st.dataframe(sheet_df.head(10).astype(str), use_container_width=True)
+                    st.caption(f"Rows: {len(sheet_df):,} · Columns: {', '.join(sheet_df.columns)}")
+
+
+def _rtd_agent_id_series(df):
+    if 'agent_id' in df.columns:
+        return df['agent_id']
+    return pd.Series(range(1, len(df) + 1), index=df.index)
+
+
+def _rtd_element_inputs_frame(df, mech):
+    """Agent ID + the element's OWN independent variables (Stata-aligned names).
+    Categorical income adds 'Assigned Allowance Level' for wtp / risk_taking."""
+    out = pd.DataFrame(index=df.index)
+    out['Agent ID'] = _rtd_agent_id_series(df)
+    inputs = list(_RTD_ELEMENT_INPUTS[mech])
+    if mech in ('wtp', 'risk_taking') and _rtd_frame_income_mode(df) == 'categorical':
+        inputs.append('Assigned Allowance Level')
+    for col in inputs:
+        if col in df.columns:
+            out[col] = df[col]
+    return out
+
+
+def _rtd_choice_columns(out, rankings):
+    """choice1..choice5 columns (option numbers; blank beyond the list length)."""
+    for pos in range(1, 6):
+        out[f'choice{pos}'] = rankings.apply(
+            lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
+
+
+_RTD_STATA_NAMES = {'loyalty': ('loyalty', 'loyalty'), 'wtp': ('wtp', 'WTP'),
+                    'risk_taking': ('rt', 'RT')}
+
+
+def _prepare_rtd_element_export(df, mech):
+    """Per-element Excel frame: Agent ID, ONLY this element's independent variables,
+    its score, the segment (or list length for TTP) and the resulting option
+    sequence per customer as choice1..choice5. Stata-aligned column names."""
+    try:
+        out = _rtd_element_inputs_frame(df, mech)
+        if mech == 'ttp':
+            out['weighted_ttp'] = df['rtd_weighted_ttp']
+            out['choice_length'] = df['rtd_choice_length']
+            return out
+        col_key, stata = _RTD_STATA_NAMES[mech]
+        out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
+        if f'rtd_{col_key}_z' in df.columns:
+            out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
+        out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
+        _rtd_choice_columns(out, df[f'rtd_{col_key}_ranking'])
+        return out
+    except Exception as e:
+        st.error(f"Error preparing Decision 4 {_RTD_ELEMENT_SHEETS.get(mech, mech)} export: {e}")
+        return None
 
 
 def _prepare_rtd_model_export(df):
-    """Per-agent export of the Decision 4 mechanism outputs, Stata-aligned names."""
+    """Whole-decision Decision 4 workbook, organized as one self-contained sheet per
+    element ('Options List Length', 'Loyalty', 'Willingness-to-Pay', 'Risk-Taking').
+
+    Each sheet mirrors the per-element file (Agent ID + the element's own
+    independent variables + choice1..choice5) and additionally carries the
+    intermediate distributions: score, z (where present), deterministic and final
+    segment / list length, and the sigma used. Stata-aligned column names.
+
+    Returns an ordered {sheet_name: DataFrame} dict, or None on error.
+    """
     try:
-        out = pd.DataFrame()
-        out['Agent ID'] = df['agent_id'] if 'agent_id' in df.columns else range(1, len(df) + 1)
-        for trait in ['ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
-                      'ConscientiousnessBig5', 'OpennessBig5', 'Education',
-                      'Assigned Allowance Level', 'income']:
-            if trait in df.columns:
-                out[trait] = df[trait]
-        # TTP
+        sheets = {}
+
+        # ---- Options List Length (TTP) ----
+        ttp = _rtd_element_inputs_frame(df, 'ttp')
         for src, dst in [('rtd_weighted_ttp', 'weighted_ttp'),
                          ('rtd_weighted_ttp06', 'weighted_ttp06'),
                          ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
-                         ('rtd_choice_length', 'choice_length')]:
+                         ('rtd_choice_length', 'choice_length'),
+                         ('rtd_sigma_used_ttp', 'sigma_used_ttp')]:
             if src in df.columns:
-                out[dst] = df[src]
-        # Rankings (score, z, segment, choice1..5)
-        for mech_key, col_key, stata in [('loyalty', 'loyalty', 'loyalty'),
-                                         ('wtp', 'wtp', 'WTP'),
-                                         ('risk_taking', 'rt', 'RT')]:
-            score_col = f'rtd_{col_key}_score'
-            if score_col not in df.columns:
+                ttp[dst] = df[src]
+        sheets[_RTD_ELEMENT_SHEETS['ttp']] = ttp
+
+        # ---- Rankings: Loyalty / Willingness-to-Pay / Risk-Taking ----
+        for mech, (col_key, stata) in _RTD_STATA_NAMES.items():
+            if f'rtd_{col_key}_score' not in df.columns:
                 continue
-            out[f'{stata}_score'] = df[score_col]
+            sheet = _rtd_element_inputs_frame(df, mech)
+            sheet[f'{stata}_score'] = df[f'rtd_{col_key}_score']
             if f'rtd_{col_key}_z' in df.columns:
-                out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
-            out[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
-            out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
-            rankings = df[f'rtd_{col_key}_ranking']
-            for pos in range(1, 6):
-                out[f'choice{pos}_{stata}'] = rankings.apply(
-                    lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
+                sheet[f'z_{stata}'] = df[f'rtd_{col_key}_z']
+            if f'rtd_{col_key}_segment_deterministic' in df.columns:
+                sheet[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
+            sheet[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
+            _rtd_choice_columns(sheet, df[f'rtd_{col_key}_ranking'])
             if f'rtd_sigma_used_{col_key}' in df.columns:
-                out[f'sigma_used_{stata}'] = df[f'rtd_sigma_used_{col_key}']
-        if 'rtd_sigma_used_ttp' in df.columns:
-            out['sigma_used_ttp'] = df['rtd_sigma_used_ttp']
-        return out
+                sheet[f'sigma_used_{stata}'] = df[f'rtd_sigma_used_{col_key}']
+            sheets[_RTD_ELEMENT_SHEETS[mech]] = sheet
+        return sheets
     except Exception as e:
         st.error(f"Error preparing Decision 4 export: {e}")
         return None

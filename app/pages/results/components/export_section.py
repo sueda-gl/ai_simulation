@@ -1181,6 +1181,17 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         hasattr(st.session_state, 'default_decisions') and
         len(st.session_state.default_decisions) == 0
     )
+
+    # Check if this is an individual Decision 4 (rejected_transaction_defaults) MODEL
+    # run: no purchase requests exist, so there is no transaction-level Excel here -
+    # only the Decision 4 agent-level workbook is offered.
+    is_rtd_only_run = (
+        hasattr(st.session_state, 'custom_decisions') and
+        st.session_state.custom_decisions == ['rejected_transaction_defaults'] and
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) == 0 and
+        df is not None and 'rtd_choice_length' in df.columns
+    )
     
     if is_disclose_income_only_run:
         # DISCLOSE INCOME-ONLY EXPORT: Simplified version with all 19 disclose income columns
@@ -1484,6 +1495,87 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     with st.expander("📋 Preview Disclose Documents Data (first 5 rows)"):
                         st.dataframe(export_df.head(), use_container_width=True)
                         st.caption(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns)}")
+        except ImportError:
+            st.caption("⚠️ Excel export requires openpyxl")
+
+    elif is_rtd_only_run:
+        # DECISION 4-ONLY EXPORT: agent-level workbook only. An individual Decision 4
+        # run produces no purchase requests, so no transaction-level file is offered.
+        from app.pages.results.visualizations.transaction_viz import (
+            _prepare_rtd_model_export, _rtd_active_element, _RTD_ELEMENT_SHEETS,
+        )
+        active_element = _rtd_active_element()
+        export_all_configs = results_dict is not None and len(results_dict) > 1
+
+        if active_element:
+            st.markdown(
+                f"**Decision 4 Results Export ({_RTD_ELEMENT_SHEETS[active_element]} element):** "
+                "one row per agent with the element's independent variables, its score "
+                "and the resulting option sequence."
+            )
+        else:
+            st.markdown(
+                "**Decision 4 (Rejected Transaction Defaults) Results Export:** one row "
+                "per agent with the Decision 4 element results - one self-contained "
+                "sheet per element with its independent variables, score, intermediate "
+                "distributions and the resulting option sequence."
+            )
+        if export_all_configs:
+            st.caption(f"{len(results_dict)} configurations - sheet names are prefixed "
+                       "with the configuration.")
+
+        try:
+            def _rtd_sheets_for(frame):
+                sheets = _prepare_rtd_model_export(frame) or {}
+                if active_element:
+                    name = _RTD_ELEMENT_SHEETS[active_element]
+                    sheets = {name: sheets[name]} if name in sheets else {}
+                return sheets
+
+            if export_all_configs:
+                config_labels = {
+                    'copula_categorical': 'Copula_Cat', 'copula_continuous': 'Copula_Cont',
+                    'research_spec_categorical': 'ResSpec_Cat', 'research_spec_continuous': 'ResSpec_Cont',
+                    'research_baseline_categorical': 'ResBase_Cat', 'research_baseline_continuous': 'ResBase_Cont',
+                    'categorical': 'Cat', 'continuous': 'Cont',
+                }
+                sheets_data = {}
+                for config_key, config_df in results_dict.items():
+                    if (config_df is None or config_df.empty
+                            or 'rtd_choice_length' not in config_df.columns):
+                        continue
+                    prefix = config_labels.get(config_key, str(config_key)[:12])
+                    for name, sheet_df in _rtd_sheets_for(config_df).items():
+                        sheets_data[f"{prefix} {name}"[:31]] = sheet_df
+            else:
+                sheets_data = _rtd_sheets_for(df)
+
+            if not sheets_data:
+                st.warning("⚠️ No Decision 4 data available for export")
+            else:
+                buffer = BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    for sheet_name, sheet_df in sheets_data.items():
+                        sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                first = next(iter(sheets_data.values()))
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.metric("Agents", len(first))
+                with c2:
+                    st.metric("Sheets", len(sheets_data))
+                st.download_button(
+                    label="📊 Download Decision 4 Agent-Level Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"rejected_transaction_defaults_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="One row per agent with the Decision 4 element results",
+                    key="rtd_export_section_download",
+                )
+                with st.expander("📋 Preview Decision 4 Data (first 5 rows per sheet)"):
+                    for sheet_name, sheet_df in sheets_data.items():
+                        st.markdown(f"**{sheet_name} Sheet:**")
+                        st.dataframe(sheet_df.head().astype(str), use_container_width=True)
+                        st.caption(f"Columns: {', '.join(sheet_df.columns)}")
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
 
