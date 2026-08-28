@@ -133,6 +133,87 @@ def render_results_page():
     render_navigation('results')
 
 
+def _render_overview_section(results_dict, has_combined_simulation, has_explicit_donation_config):
+    """Overview / comparison summary block (per-mode grids or single-mode metrics).
+
+    Rendered AFTER the Decision Results for most decisions, but BEFORE them
+    (summary-first) for individual Decision 4 runs.
+    """
+    # Show results based on mode (but only if donation_default is not being shown in dropdown)
+    is_comparison_mode = (
+        st.session_state.population_mode == "Compare all" or
+        st.session_state.income_spec_mode == "Compare both"
+    )
+    has_donation_default_in_dropdown = (
+        has_combined_simulation and
+        "donation_default" in st.session_state.custom_decisions and
+        is_comparison_mode
+    )
+    if has_donation_default_in_dropdown:
+        return
+
+    # Check if we're using a selected configuration (should not show overview)
+    using_selected_config = has_explicit_donation_config
+
+    # Check if this is a donation_default custom parameters run (should not show overview)
+    is_donation_custom_only = (
+        hasattr(st.session_state, 'custom_decisions') and
+        'donation_default' in st.session_state.custom_decisions
+    )
+
+    # Check if results actually have "Compare all" keys before rendering comparison
+    compare_all_keys = ["copula_categorical", "copula_continuous", "research_spec_categorical",
+                       "research_spec_continuous", "research_baseline_categorical", "research_baseline_continuous"]
+    has_compare_all_results = any(k in results_dict for k in compare_all_keys)
+
+    # CRITICAL: For combined/full simulations, NEVER show compare-all view
+    is_full_simulation = has_combined_simulation
+
+    if st.session_state.population_mode == "Compare all" and has_compare_all_results and not is_full_simulation:
+        render_all_modes_comparison(results_dict)
+    elif st.session_state.income_spec_mode == "Compare both" and not is_full_simulation:
+        render_income_comparison(results_dict)
+    elif not is_full_simulation and not using_selected_config and not is_donation_custom_only:
+        # Single mode display - show high-level summary
+        st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
+        df = next(iter(results_dict.values()))
+        mode_name = next(iter(results_dict.keys()))
+
+        col1, col2 = st.columns([1, 1.2])
+        with col1:
+            st.metric("Total Agents", f"{len(df):,}")
+        with col2:
+            donation_col = 'donation_default'
+            if donation_col in df.columns:
+                st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
+            elif 'rtd_choice_length' in df.columns:
+                # Decision 4 model run: element-aware headline metric
+                from app.components import rtd_overview_metric
+                rtd_label, rtd_value = rtd_overview_metric(df)
+                st.metric(rtd_label, rtd_value)
+
+        if 'rtd_choice_length' in df.columns and 'donation_default' not in df.columns:
+            st.caption(f"📊 Mode: {mode_name.title()}")
+        else:
+            st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
+
+        # Check if we should enable selection for individual donation runs
+        enable_selection = (
+            hasattr(st.session_state, 'custom_decisions') and
+            st.session_state.custom_decisions == ['donation_default'] and
+            hasattr(st.session_state, 'default_decisions') and
+            len(st.session_state.default_decisions) == 0
+        )
+
+        show_overview(
+            df,
+            f" ({mode_name.title()})",
+            result_key=mode_name,
+            enable_selection=enable_selection
+        )
+    # For full simulations, selected configs, or donation custom runs - skip overview display entirely
+
+
 def render_single_run_results():
     """Render single run simulation results"""
     
@@ -187,6 +268,26 @@ def render_single_run_results():
         getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults'] and
         not getattr(st.session_state, 'default_decisions', [])
     )
+
+    # Individual Decision 4 layout depends on the run shape:
+    # - SINGLE-MODE runs (one result key): SUMMARY-FIRST - the overview renders at the
+    #   TOP of the page, before the detailed per-element sections (professor feedback:
+    #   the summary was landing at the end of a long page).
+    # - COMPARISON runs (multiple result keys / Compare-all keys): the summary must be
+    #   INTERLEAVED per income treatment (title -> overview row -> detail row), which
+    #   render_rtd_comparison_results does inside the Decision Results section - so no
+    #   separate summary block is rendered up front here.
+    _rtd_results = st.session_state.simulation_results or {}
+    _rtd_compare_all_keys = [
+        "copula_categorical", "copula_continuous", "research_spec_categorical",
+        "research_spec_continuous", "research_baseline_categorical",
+        "research_baseline_continuous"]
+    is_rtd_comparison_run = is_individual_rtd_run and (
+        len(_rtd_results) > 1 or
+        any(k in _rtd_results for k in _rtd_compare_all_keys))
+    if is_individual_rtd_run and _rtd_results and not is_rtd_comparison_run:
+        _render_overview_section(_rtd_results,
+                                 has_combined_simulation, _has_explicit_donation_config)
 
     if (not is_comparison_mode or has_combined_simulation or is_individual_rtd_run) and hasattr(st.session_state, 'custom_decisions') and hasattr(st.session_state, 'default_decisions'):
         st.markdown('<h3 class="section-header">📋 Decision Results</h3>', unsafe_allow_html=True)
@@ -365,82 +466,13 @@ def render_single_run_results():
     
     # Show results based on comparison mode
     results_dict = st.session_state.simulation_results
-    
-    if results_dict:
-        # Show results based on mode (but only if donation_default is not being shown in dropdown)
-        has_donation_default_in_dropdown = (
-            has_combined_simulation and 
-            "donation_default" in st.session_state.custom_decisions and
-            is_comparison_mode
-        )
-        
-        if not has_donation_default_in_dropdown:
-            # Check if we're using a selected configuration (should not show overview)
-            using_selected_config = _has_explicit_donation_config
-            
-            # Check if this is a donation_default custom parameters run (should not show overview)
-            is_donation_custom_only = (
-                hasattr(st.session_state, 'custom_decisions') and 
-                'donation_default' in st.session_state.custom_decisions
-            )
-            
-            # Check if results actually have "Compare all" keys before rendering comparison
-            compare_all_keys = ["copula_categorical", "copula_continuous", "research_spec_categorical", 
-                               "research_spec_continuous", "research_baseline_categorical", "research_baseline_continuous"]
-            has_compare_all_results = any(k in results_dict for k in compare_all_keys)
-            
-            # CRITICAL: For combined/full simulations, NEVER show compare-all view
-            # Full simulations are blocked from running in compare-all mode by can_run_complete_simulation()
-            # So if we have a combined simulation, skip directly to single mode display
-            is_full_simulation = has_combined_simulation
-            
-            if st.session_state.population_mode == "Compare all" and has_compare_all_results and not is_full_simulation:
-                render_all_modes_comparison(results_dict)
-            elif st.session_state.income_spec_mode == "Compare both" and not is_full_simulation:
-                render_income_comparison(results_dict)
-            elif not is_full_simulation and not using_selected_config and not is_donation_custom_only:
-                # Single mode display - show high-level summary (but NOT for full simulations, selected configurations, or donation custom runs)
-                st.markdown('<h3 class="section-header">📊 Simulation Overview</h3>', unsafe_allow_html=True)
-                df = next(iter(results_dict.values()))
-                mode_name = next(iter(results_dict.keys()))
-                
-                # Show high-level metrics only (Traits Available / Decisions Computed removed)
-                col1, col2 = st.columns([1, 1.2])
 
-                with col1:
-                    st.metric("Total Agents", f"{len(df):,}")
+    # For individual Decision 4 runs the overview/summary was already rendered above:
+    # single-mode runs at the TOP of the page, comparison runs interleaved per income
+    # treatment inside the Decision Results section - do not repeat it here.
+    if results_dict and not is_individual_rtd_run:
+        _render_overview_section(results_dict, has_combined_simulation, _has_explicit_donation_config)
 
-                with col2:
-                    # Show overall donation rate if available - always use truncated
-                    donation_col = 'donation_default'
-                    if donation_col in df.columns:
-                        st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
-                    elif 'rtd_choice_length' in df.columns:
-                        # Decision 4 model run: options-list-length headline metric
-                        st.metric("Avg. Options List Length",
-                                  f"{df['rtd_choice_length'].mean():.2f}")
-                
-                st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
-                
-                # For single mode, also show the overview
-                
-                # Check if we should enable selection for individual donation runs
-                enable_selection = (
-                    hasattr(st.session_state, 'custom_decisions') and 
-                    st.session_state.custom_decisions == ['donation_default'] and
-                    hasattr(st.session_state, 'default_decisions') and
-                    len(st.session_state.default_decisions) == 0
-                )
-                
-                show_overview(
-                    df, 
-                    f" ({mode_name.title()})",
-                    result_key=mode_name,
-                    enable_selection=enable_selection
-                )
-            # For full simulations, selected configs, or donation custom runs - skip overview display entirely
-            # Decision results are shown in the dropdown sections above instead
-    
     # Configuration selection UI - shows config cards and "Run Complete Simulation" button
     render_configuration_selection_ui(results_dict)
     

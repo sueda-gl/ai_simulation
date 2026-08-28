@@ -723,56 +723,97 @@ def _rtd_score_stats_caption(series):
 
 
 def render_rtd_comparison_results(results_dict, decision_name):
-    """Comparison-mode rendering for Decision 4: the decision first, then all population
-    modes side by side in columns underneath - the same categorisation the other
-    decisions' comparison grids use. Returns True if anything was rendered.
+    """Comparison-mode rendering for Decision 4, grouped by income treatment.
+
+    Each income-treatment group renders as: group title ("Categorical Income
+    Treatment" / "Continuous Income Treatment"; omitted when only one group
+    exists), then a row of per-population-mode overview cells (Simulation
+    Overview + the D4 headline metrics, mirroring the donation-era comparison
+    grids), then the detailed per-element sections for the SAME population-mode
+    columns underneath - i.e. title -> summary -> details per income treatment,
+    instead of all summaries first and all details after.
+
+    Returns True if anything was rendered.
     """
+    from app.components import show_overview
+    from app.pages.decision_execution import format_result_name
+
     keys = [k for k, df_ in results_dict.items()
             if hasattr(df_, 'columns') and 'rtd_choice_length' in df_.columns]
     if not keys:
         return False
 
-    # Compare-both income x Compare-all population yields 6 keys interleaved as
-    # pop_categorical, pop_continuous, ... Group them by income spec so the
-    # chunks-of-3 rows below read as income modes x population modes
-    # (row 1 = categorical across populations, row 2 = continuous).
-    cat_keys = [k for k in keys if k.endswith('_categorical')]
-    cont_keys = [k for k in keys if k.endswith('_continuous')]
-    if cat_keys and cont_keys:
-        keys = (cat_keys + cont_keys
-                + [k for k in keys if k not in cat_keys and k not in cont_keys])
+    # Group by income treatment, categorical first (matches the donation-era
+    # grids' section order). Covers both the Compare-all key style
+    # (copula_categorical, ...) and the plain single-population Compare-both
+    # keys (categorical / continuous).
+    cat_keys = [k for k in keys if k.endswith('categorical')]
+    cont_keys = [k for k in keys if k.endswith('continuous')]
+    other_keys = [k for k in keys if k not in cat_keys and k not in cont_keys]
+    groups = [(title, group_keys) for title, group_keys in (
+        ("Categorical Income Treatment", cat_keys),
+        ("Continuous Income Treatment", cont_keys),
+        (None, other_keys)) if group_keys]
 
     mode_labels = {
         'copula': '🧬 Copula (Synthetic)',
         'research_spec': '📄 Research Specification',
         'research_baseline': '⚖️ Research Baseline',
     }
+    mode_short = {
+        'copula': 'Copula',
+        'research_spec': 'Research Spec',
+        'research_baseline': 'Research Baseline',
+    }
 
     def label_for(key):
         for prefix, label in mode_labels.items():
             if key.startswith(prefix):
                 return label
-        from app.pages.decision_execution import format_result_name
         return format_result_name(key)
 
-    labels = [label_for(k) for k in keys]
-    if len(set(labels)) != len(labels):
-        # e.g. Compare-both income keys within the same population mode
-        from app.pages.decision_execution import format_result_name
-        labels = [format_result_name(k) for k in keys]
+    def suffix_for(key):
+        """show_overview title suffix, mirroring the donation-era comparison
+        grids (' (Copula, Cat)', ' (Categorical)', ...)."""
+        for prefix, short in mode_short.items():
+            if key.startswith(prefix):
+                income = 'Cat' if key.endswith('categorical') else 'Cont'
+                return f" ({short}, {income})"
+        return f" ({key.replace('_', ' ').title()})"
 
-    # Rows of up to 3 mode columns (3x2 when Compare-both income doubles the keys)
-    for start in range(0, len(keys), 3):
-        row_keys = keys[start:start + 3]
-        row_labels = labels[start:start + 3]
-        cols = st.columns(len(row_keys))
-        for col, key, label in zip(cols, row_keys, row_labels):
-            with col:
-                st.markdown(f"**{label}**")
-                _render_rtd_model_results(results_dict[key], decision_name,
-                                          chart_suffix=f"_{key}", compact=True)
-        if start + 3 < len(keys):
+    show_group_titles = len(groups) > 1
+    for group_idx, (group_title, group_keys) in enumerate(groups):
+        if group_idx:
             st.markdown("---")
+        if show_group_titles and group_title:
+            st.markdown(f"#### {group_title}")
+
+        group_labels = [label_for(k) for k in group_keys]
+        if len(set(group_labels)) != len(group_labels):
+            # e.g. the same population mode appearing twice within a group
+            group_labels = [format_result_name(k) for k in group_keys]
+
+        # Rows of up to 3 population-mode columns: the overview cells (summary)
+        # first, then the detailed per-element sections for the same keys.
+        for start in range(0, len(group_keys), 3):
+            row_keys = group_keys[start:start + 3]
+            row_labels = group_labels[start:start + 3]
+            if start:
+                st.markdown("---")
+
+            overview_cols = st.columns(len(row_keys))
+            for col, key, label in zip(overview_cols, row_keys, row_labels):
+                with col:
+                    st.markdown(f"**{label}**")
+                    show_overview(results_dict[key], suffix_for(key),
+                                  result_key=key, enable_selection=False)
+
+            detail_cols = st.columns(len(row_keys))
+            for col, key, label in zip(detail_cols, row_keys, row_labels):
+                with col:
+                    st.markdown(f"**{label}**")
+                    _render_rtd_model_results(results_dict[key], decision_name,
+                                              chart_suffix=f"_{key}", compact=True)
     return True
 
 
@@ -814,10 +855,13 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
             export_df.to_excel(writer, index=False, sheet_name=_RTD_ELEMENT_SHEETS[mech])
+        # Human-readable filename slugs ('ttp' reads too much like 'wtp')
+        fname_slug = {'ttp': 'options_list_length', 'loyalty': 'loyalty',
+                      'wtp': 'willingness_to_pay', 'risk_taking': 'risk_taking'}[mech]
         st.download_button(
             label=f"📊 Download {label} Excel",
             data=buffer.getvalue(),
-            file_name=f"rejected_transaction_{mech}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            file_name=f"rejected_transaction_{fname_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             help=f"Per-agent {label} results: independent variables, score and "
                  "resulting option sequence per customer",
@@ -838,7 +882,8 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
 
         def _ttp_alloc_chart():
             counts = df['rtd_choice_length'].astype(int).value_counts()
-            lengths = list(range(0, 6))
+            # Bars in ASCENDING order of observed share (smallest first), ties by length
+            lengths = sorted(range(0, 6), key=lambda l: (counts.get(l, 0), l))
             fractions = [counts.get(l, 0) / n for l in lengths]
             _rtd_fraction_bar([str(l) for l in lengths], fractions,
                               "% of pre-selected options",
@@ -872,11 +917,12 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
 
         def _alloc_chart(sq=seq, sgc=seg_col, ck=col_key, lb=label):
             # Mirrored mapping: segment s -> first choice sq[5 - s] (highest segment
-            # gets the top option of the priority sequence). Bars are displayed from
-            # the LOWEST- to the HIGHEST-ranked option, i.e. the reversed sequence.
+            # gets the top option of the priority sequence). Bars are displayed in
+            # ASCENDING order of observed share (smallest bar first), ties broken by
+            # option number.
             first_choice = df[sgc].astype(int).map(lambda s: sq[5 - s])
             counts = first_choice.value_counts()
-            order = list(reversed(sq))
+            order = sorted(sq, key=lambda o: (counts.get(o, 0), o))
             fractions = [counts.get(o, 0) / n for o in order]
             _rtd_fraction_bar([f"Option {o}" for o in order], fractions,
                               f"% of {lb.lower()}-based options ranking",

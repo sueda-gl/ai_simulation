@@ -15,6 +15,30 @@ import yaml
 from app.models import get_decision_global_parameters, get_all_global_parameters
 
 
+def rtd_overview_metric(df):
+    """Headline metric for a Decision 4 model run, element-aware.
+
+    On a per-element run (rtd_run_element set for an individual Decision 4 run) the
+    metric is the run element's own mean score; otherwise the whole-decision metric
+    (average options list length). Returns (label, formatted_value).
+    """
+    element = None
+    if (getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults']
+            and not getattr(st.session_state, 'default_decisions', [])):
+        element = st.session_state.get('rtd_run_element')
+
+    specs = {
+        'loyalty': ("Mean Loyalty score", 'rtd_loyalty_score', "{:.4f}"),
+        'wtp': ("Mean Willingness-to-Pay score", 'rtd_wtp_z', "{:.4f}"),
+        'risk_taking': ("Mean Risk-Taking score", 'rtd_rt_z', "{:.4f}"),
+    }
+    if element in specs:
+        label, col, fmt = specs[element]
+        if col in df.columns:
+            return label, fmt.format(df[col].mean())
+    return "Avg. Options List Length", f"{df['rtd_choice_length'].mean():.2f}"
+
+
 def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     """Helper function to show simulation overview for a DataFrame
     
@@ -34,9 +58,10 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         and st.session_state.custom_decisions == ['disclose_documents']
     )
     
-    # Display anchor weights info
-    st.caption(f"📊 Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
-    
+    # Display anchor weights info (donation-specific; hidden on Decision 4 model runs)
+    if 'rtd_choice_length' not in df.columns or 'donation_default' in df.columns:
+        st.caption(f"📊 Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
+
     # Headline decision drives the metric layout. "Traits Available" / "Decisions Computed"
     # removed per professor feedback. Priority mirrors the old headline metric:
     # donation > income > documents; is_dd_focus forces the documents layout on DD-only runs.
@@ -49,9 +74,12 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     if has_rtd and not has_donation and not has_income and not has_documents:
         # Decision 4 (Rejected Transaction Defaults) model run: no donation /
         # disclosure metrics exist - show the D4-relevant headline metrics instead.
+        # On a per-ELEMENT run, the headline metric must be the run element's own
+        # (a Loyalty-only run must not show the Options List Length metric).
+        label, value = rtd_overview_metric(df)
         col1, col2 = st.columns([1, 1.2])
         col1.metric("Total Agents", f"{len(df):,}")
-        col2.metric("Avg. Options List Length", f"{df['rtd_choice_length'].mean():.2f}")
+        col2.metric(label, value)
     elif has_documents and not has_donation and not has_income:
         # Decision 2 (Disclose Documents): the realized all-agent disclosure rate
         # (agents who actually disclosed ÷ total agents — only qualified agents can disclose,

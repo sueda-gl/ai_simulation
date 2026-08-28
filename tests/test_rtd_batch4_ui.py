@@ -220,7 +220,10 @@ def test_apptest_element_run_then_whole_run():
     assert "Transaction-Level" not in md
     metric_labels = [m.label for m in at.metric]
     assert "Total Transactions" not in metric_labels
-    assert "Avg. Options List Length" in metric_labels
+    # element-aware overview: a Loyalty-only run shows the Loyalty metric, NOT the
+    # whole-decision options-list-length metric
+    assert "Mean Loyalty score" in metric_labels
+    assert "Avg. Options List Length" not in metric_labels
     # only the Loyalty element download (+ the D4 agent-level export) is offered
     dls = _download_labels(at)
     assert "📊 Download Loyalty Ranking Excel" in dls
