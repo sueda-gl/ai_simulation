@@ -490,7 +490,9 @@ def render_single_run_results():
         if st.session_state.income_spec_mode == "Compare both":
             df = next((results_dict[k] for k in ["copula_categorical", "research_spec_categorical", "research_baseline_categorical", "copula_continuous", "research_spec_continuous", "research_baseline_continuous"] if k in results_dict), pd.DataFrame())
         else:
-            income_type = "continuous" if st.session_state.income_spec_mode == "continuous only" else "categorical"
+            # Case-insensitive: Decisions 1/2/4 sync "Continuous only" (capitalized)
+            # into income_spec_mode while donation uses lowercase "continuous only".
+            income_type = "continuous" if "continuous" in str(st.session_state.income_spec_mode).lower() else "categorical"
             df = next((results_dict[k] for k in [f"copula_{income_type}", f"research_spec_{income_type}", f"research_baseline_{income_type}"] if k in results_dict), pd.DataFrame())
     elif st.session_state.income_spec_mode == "Compare both":
         df = next((results_dict[k] for k in ["categorical", "continuous"] if k in results_dict), pd.DataFrame())

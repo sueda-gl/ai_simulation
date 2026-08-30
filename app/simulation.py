@@ -647,7 +647,8 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: st
         else:
             rtd_config['income_mode'] = 'continuous' if 'continuous' in session_mode.lower() else 'categorical'
 
-    # Per-element intercepts (beta0/beta0/beta1/beta2, defaults 0/TBD)
+    # Per-element intercepts (doc notation beta0/beta1/beta2/beta3; research
+    # defaults from config/decisions.yaml - TTP beta0 = 0.05, others 0)
     intercepts = rtd_config.setdefault('intercepts', {})
     for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
         key = f'rtd_intercept_{mech}'

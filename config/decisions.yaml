@@ -276,15 +276,16 @@ rejected_transaction_defaults:
     loyalty: [3, 1, 4, 5, 2]
     wtp: [3, 2, 1, 4, 5]
     risk_taking: [4, 2, 1, 3, 5]
-  # Intercepts: beta0 (TTP, on the composite), beta0 (loyalty, on the composite),
-  # beta1 (WTP, on the standardized score), beta2 (risk_taking, on the standardized
-  # score). Defaults 0 (doc placeholders 'XXX', TBD). FIXED-CUTOFF semantics: the
+  # Intercepts, doc notation: beta0 (TTP, on the composite), beta1 (loyalty, on
+  # the composite), beta2 (WTP, on the standardized score), beta3 (risk_taking,
+  # on the standardized score). Research defaults: TTP beta0 = 0.05 (professor,
+  # 2026-08); the others 0 (doc placeholders 'XXX'). FIXED-CUTOFF semantics: the
   # segment cutoffs are anchored on the intercept-free population scores, so a
   # nonzero intercept shifts the score distribution AND the allocation across the
   # fixed segment boundaries (capped at the end bins); 0 reproduces the
   # intercept-free pipeline exactly.
   intercepts:
-    ttp: 0.0
+    ttp: 0.05
     loyalty: 0.0
     wtp: 0.0
     risk_taking: 0.0

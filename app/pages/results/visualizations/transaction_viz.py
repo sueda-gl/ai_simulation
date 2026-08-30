@@ -625,10 +625,21 @@ _RTD_OPTION_SHORT = {
     5: "Opt 5: forgo transaction",
 }
 
+# Priority sequences (most-likely option first) taken from the model at runtime -
+# the same constants the decision function maps segments with (mirrored in
+# config/decisions.yaml priority_sequences) - so chart orderings derived from
+# them can never drift from the run's actual rankings.
+try:
+    from src.decisions.rejected_transaction_defaults import (
+        PRIORITY_SEQUENCES as _RTD_PRIORITY_SEQUENCES)
+except Exception:   # pragma: no cover - defensive fallback, values identical
+    _RTD_PRIORITY_SEQUENCES = {'loyalty': [3, 1, 4, 5, 2], 'wtp': [3, 2, 1, 4, 5],
+                               'risk_taking': [4, 2, 1, 3, 5]}
+
 _RTD_MECHS = [
-    ('loyalty', 'loyalty', 'Loyalty', [3, 1, 4, 5, 2]),
-    ('wtp', 'wtp', 'Willingness-to-Pay', [3, 2, 1, 4, 5]),
-    ('risk_taking', 'rt', 'Risk-Taking', [4, 2, 1, 3, 5]),
+    ('loyalty', 'loyalty', 'Loyalty', _RTD_PRIORITY_SEQUENCES['loyalty']),
+    ('wtp', 'wtp', 'Willingness-to-Pay', _RTD_PRIORITY_SEQUENCES['wtp']),
+    ('risk_taking', 'rt', 'Risk-Taking', _RTD_PRIORITY_SEQUENCES['risk_taking']),
 ]
 
 # Per-element sheet / section names for the Decision 4 exports.
@@ -684,15 +695,17 @@ _RTD_OPTION_NUMBERING = (
 
 def _rtd_density_hist(series, title, x_title, chart_key):
     """Histogram of a continuous score, normalised so the bar heights sum to 1
-    (each bar is the proportion of observations falling in that bin). The binning
-    follows Stata's default rule - k = min(sqrt(N), 10*log10(N)) equal-width bins
-    spanning min..max - so an n=280 run reproduces the design document's Stata
-    graphs bar-for-bar. The series mean is marked with a vertical red line."""
+    (each bar is the proportion of observations falling in that bin). The bin
+    count is HALF of Stata's default rule - k = min(sqrt(N), 10*log10(N))
+    equal-width bins spanning min..max - per professor feedback (2026-08: "cut
+    the number of bins by half so will be closer to the Stata graphs"). The
+    series mean is marked with a vertical red line."""
     import plotly.graph_objects as go
     s = pd.Series(series).dropna().astype(float)
     n = len(s)
     vmin, vmax = float(s.min()), float(s.max())
-    k = max(1, int(min(np.sqrt(n), 10 * np.log10(n)))) if n > 1 else 1
+    k_stata = max(1, int(min(np.sqrt(n), 10 * np.log10(n)))) if n > 1 else 1
+    k = max(1, k_stata // 2)
     size = (vmax - vmin) / k if vmax > vmin else 1.0
     fig = go.Figure(go.Histogram(
         x=s, histnorm='probability',
@@ -882,21 +895,32 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
 
         def _ttp_alloc_chart():
             counts = df['rtd_choice_length'].astype(int).value_counts()
-            # Bars in ASCENDING order of observed share (smallest first), ties by length
-            lengths = sorted(range(0, 6), key=lambda l: (counts.get(l, 0), l))
+            # Bars ALWAYS in natural 0..5 order (professor 2026-08: "always start
+            # with 0 and end with 5, presenting bars in order rather than from
+            # low to high") - no sort-by-frequency for this chart.
+            lengths = list(range(0, 6))
             fractions = [counts.get(l, 0) / n for l in lengths]
             _rtd_fraction_bar([str(l) for l in lengths], fractions,
                               "% of pre-selected options",
                               "Number of pre-selected options",
                               f"{decision_name}_rtd_length_chart{chart_suffix}")
+            # Companion table: number of pre-selected options (0-5) -> % of agents
+            st.dataframe(pd.DataFrame({
+                'Number of pre-selected options': lengths,
+                '% of agents': [f"{counts.get(l, 0) / n * 100:.1f}%" for l in lengths],
+            }), hide_index=True, use_container_width=True)
             st.caption(_RTD_OPTION_NUMBERING)
 
         _element_section(_ttp_score_chart, _ttp_alloc_chart)
         _element_download('ttp', "Options List Length")
 
     # ---- Elements 2-4: priority rankings ----
+    # All three score charts plot the STANDARDIZED score (professor 2026-08:
+    # "present the standardized loyalty graph rather than the one before
+    # standardization"): rtd_loyalty_z / rtd_wtp_z / rtd_rt_z, matching the doc's
+    # `histogram weighted_loyalty` after `egen weighted_loyalty = std(...)`.
     score_specs = {
-        'loyalty': ('rtd_loyalty_score', "Loyalty score"),
+        'loyalty': ('rtd_loyalty_z', "Loyalty score"),
         'wtp': ('rtd_wtp_z', "Willingness-to-Pay score"),
         'risk_taking': ('rtd_rt_z', "Risk-Taking score"),
     }
@@ -915,19 +939,32 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
             _rtd_density_hist(df[sc], ti, ti,
                               f"{decision_name}_rtd_{ck}_score{chart_suffix}")
 
-        def _alloc_chart(sq=seq, sgc=seg_col, ck=col_key, lb=label):
+        def _alloc_chart(sq=seq, sgc=seg_col, ck=col_key, lb=label,
+                         per_element=(active == mech)):
             # Mirrored mapping: segment s -> first choice sq[5 - s] (highest segment
-            # gets the top option of the priority sequence). Bars are displayed in
-            # ASCENDING order of observed share (smallest bar first), ties broken by
-            # option number.
+            # gets the top option of the priority sequence).
             first_choice = df[sgc].astype(int).map(lambda s: sq[5 - s])
             counts = first_choice.value_counts()
-            order = sorted(sq, key=lambda o: (counts.get(o, 0), o))
+            if per_element:
+                # Per-element run (professor 2026-08): categories in the element's
+                # priority sequence REVERSED - least likely option on the left,
+                # most likely on the right (derived from the runtime sequence).
+                order = list(reversed(sq))
+            else:
+                # Whole-Decision-4 run keeps the least-popular -> most-popular
+                # presentation (ascending observed share, ties by option number),
+                # as the professor asked to retain for the integrated view.
+                order = sorted(sq, key=lambda o: (counts.get(o, 0), o))
             fractions = [counts.get(o, 0) / n for o in order]
             _rtd_fraction_bar([f"Option {o}" for o in order], fractions,
                               f"% of {lb.lower()}-based options ranking",
                               "Selected option",
                               f"{decision_name}_rtd_{ck}_seg_chart{chart_suffix}")
+            # Companion table: options 1-5 (natural order) -> first-ranked % of agents
+            st.dataframe(pd.DataFrame({
+                'Option': [f"Option {o}" for o in range(1, 6)],
+                '% of agents': [f"{counts.get(o, 0) / n * 100:.1f}%" for o in range(1, 6)],
+            }), hide_index=True, use_container_width=True)
             st.caption(_RTD_OPTION_NUMBERING)
 
         _element_section(_score_chart, _alloc_chart)

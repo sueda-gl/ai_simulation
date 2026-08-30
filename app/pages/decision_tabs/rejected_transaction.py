@@ -170,9 +170,9 @@ def render_formula_section(config, mech):
             rf" + {coeffs.get('agreeable', 0.0177638642):.8f} \times z_{{Agreeableness_i}}"
             rf" + {coeffs.get('neuroticism', 0.01959):.5f} \times z_{{Neuroticism_i}}"
             rf" + {coeffs.get('conscientiousness', 0.00901465):.8f} \times z_{{Conscientiousness_i}}"
-            rf" + {coeffs.get('education', 0.0297):.4f} \times Education_i"
+            rf" + {coeffs.get('education', 0.0297):.4f} \times Education_i,"
+            r"\quad Education_i \in \{0,1\}"
         )
-        st.markdown(r"where $Education_i \in \{0,1\}$ is a binary 0-1 variable.")
         st.latex(r"OptionsListLength05_i = \left\lfloor (6 - 0.0001) \times"
                  r" \frac{TTP_i - \min(TTP)}{\max(TTP) - \min(TTP)} \right\rfloor \in \{0,\dots,5\}")
         return
@@ -183,7 +183,7 @@ def render_formula_section(config, mech):
     if mech == 'loyalty':
         st.markdown(f"Estimates **{construct}** based on Big-5 personality traits.")
         st.latex(
-            rf"Loyalty_i = \beta_0"
+            rf"Loyalty_i = \beta_1"
             rf" + {coeffs.get('extraversion', 0.09):.4f} \times z_{{Extroversion_i}}"
             rf" + {coeffs.get('openness', 0.0273):.4f} \times z_{{Openness_i}}"
             rf" + {coeffs.get('agreeable', 0.0045):.4f} \times z_{{Agreeableness_i}}"
@@ -212,20 +212,25 @@ def render_formula_section(config, mech):
 
 
 def _categorical_effects(config, mech):
-    """Per-budget-level income effects for wtp / risk_taking (YAML with fallbacks)."""
+    """Per-quintile income effects for wtp / risk_taking (YAML with fallbacks)."""
     cfg = (config.get('categorical_income_effects', {}) or {}).get(mech, {}) or {}
     return {k: float(cfg.get(k, v)) for k, v in FALLBACK_CATEGORICAL_EFFECTS[mech].items()}
 
 
+# Quintile labels for the categorical income effects table - EXACTLY the
+# disclose_income tab's wording (professor: same names/titles across decisions).
+QUINTILE_LABELS = ['Q1 (€12)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)']
+
+
 def render_categorical_effects_table(config, mech):
-    """Per-level effects table for the categorical income specification (base
-    intercept + budget-level dummies), mirroring the disclose_documents layout."""
+    """Per-quintile effects table for the categorical income specification (base
+    intercept + quintile dummies), using the disclose_income tab's terminology."""
     eff = _categorical_effects(config, mech)
     base = eff['intercept']
-    st.markdown("**Budget-Level Effects (β_budget):**")
+    st.markdown("**Income Quintile Effects (β_income_q):**")
     table = pd.DataFrame({
-        'Budget Level': [LEVEL_LABELS[str(l)] for l in range(1, 6)],
-        'β_budget': [
+        'Quintile': QUINTILE_LABELS,
+        'β_income_q': [
             f"{base:.7f}",
             f"{base + eff['level_2']:.7f}",
             f"{base + eff['level_3']:.7f}",
@@ -234,9 +239,10 @@ def render_categorical_effects_table(config, mech):
         ],
     })
     st.dataframe(table, hide_index=True, use_container_width=False)
+    st.markdown("β_income_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
     st.markdown(
-        f"Each value = base intercept ({base:.7f}) + the level's differential "
-        "budget-level effect (Level 1 is the base level)."
+        f"Each value = base intercept ({base:.7f}) + the quintile's differential "
+        "income effect (Quintile 1 is the base level)."
     )
 
 
@@ -244,14 +250,14 @@ def _render_continuous_equation(coeffs, mech):
     """Continuous-income equation for wtp / risk_taking."""
     if mech == 'wtp':
         st.latex(
-            rf"WTP_i = \beta_0"
+            rf"WTP_i = \beta_2"
             rf" + {coeffs.get('extraversion', 0.0788796127824):.10f} \times z_{{Extroversion_i}}"
             rf" {coeffs.get('agreeable', -0.012328716):.9f} \times z_{{Agreeableness_i}}"
             rf" + {coeffs.get('income', 0.69814232):.8f} \times z_{{Income_i}}"
         )
     else:
         st.latex(
-            rf"RiskTaking_i = \beta_0"
+            rf"RiskTaking_i = \beta_3"
             rf" + {coeffs.get('extraversion', 0.025942386297):.10f} \times z_{{Extroversion_i}}"
             rf" + {coeffs.get('openness', 0.023699214948):.10f} \times z_{{Openness_i}}"
             rf" {coeffs.get('agreeable', -0.038734315188):.10f} \times z_{{Agreeableness_i}}"
@@ -263,23 +269,23 @@ def _render_continuous_equation(coeffs, mech):
 
 def _render_categorical_equation(config, coeffs, mech):
     """Categorical-income equation for wtp / risk_taking: the income term is replaced
-    by a per-budget-level effect (base intercept + level dummy)."""
+    by a per-quintile income effect (base intercept + quintile dummy)."""
     if mech == 'wtp':
         st.latex(
-            rf"WTP_i = \beta_0"
+            rf"WTP_i = \beta_2"
             rf" + {coeffs.get('extraversion', 0.0788796127824):.10f} \times z_{{Extroversion_i}}"
             rf" {coeffs.get('agreeable', -0.012328716):.9f} \times z_{{Agreeableness_i}}"
-            rf" + \beta_{{budget}}[BudgetLevel_i]"
+            rf" + \beta_{{income\_q}}[quintile_i]"
         )
     else:
         st.latex(
-            rf"RiskTaking_i = \beta_0"
+            rf"RiskTaking_i = \beta_3"
             rf" + {coeffs.get('extraversion', 0.025942386297):.10f} \times z_{{Extroversion_i}}"
             rf" + {coeffs.get('openness', 0.023699214948):.10f} \times z_{{Openness_i}}"
             rf" {coeffs.get('agreeable', -0.038734315188):.10f} \times z_{{Agreeableness_i}}"
             rf" {coeffs.get('conscientiousness', -0.037739440732):.10f} \times z_{{Conscientiousness_i}}"
             rf" {coeffs.get('neuroticism', -0.025388697852):.10f} \times z_{{Neuroticism_i}}"
-            rf" + \beta_{{budget}}[BudgetLevel_i]"
+            rf" + \beta_{{income\_q}}[quintile_i]"
         )
     render_categorical_effects_table(config, mech)
 
@@ -430,11 +436,14 @@ def render_anchor_control(mech):
         )
 
 
-INTERCEPT_SYMBOLS = {'ttp': 'β₀', 'loyalty': 'β₀', 'wtp': 'β₀', 'risk_taking': 'β₀'}
+# Intercept symbols per the Decision 4 document's notation: beta0 (TTP, doc line
+# "β0 = Intercept that sets a baseline tendency to plan"), beta1 (Loyalty),
+# beta2 (WTP), beta3 (Risk-Taking).
+INTERCEPT_SYMBOLS = {'ttp': 'β₀', 'loyalty': 'β₁', 'wtp': 'β₂', 'risk_taking': 'β₃'}
 
 
 def render_intercept_control(config, mech):
-    """Per-element intercept override (beta0/beta0/beta1/beta2), mirroring the
+    """Per-element intercept override (β0/β1/β2/β3 per the doc), mirroring the
     Research Default / Override Value / Impact Preview layout of the other decisions."""
     symbol = INTERCEPT_SYMBOLS[mech]
     research_default = float((config.get('intercepts') or {}).get(mech, 0.0) or 0.0)
@@ -452,16 +461,17 @@ def render_intercept_control(config, mech):
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.markdown(f"**Research Default: {research_default:.4f} (TBD)**")
+        st.markdown(f"**Research Default: {research_default:.4f}**")
         st.markdown(f"Intercept ({symbol})")
-        st.markdown("Baseline value; final research default to be determined")
+        st.markdown("Baseline value")
     with col2:
         st.markdown("**Override Value**")
         value = st.number_input(
             f"Baseline {ELEMENT_SHORT[mech]} tendency", min_value=-5.0, max_value=5.0,
             value=float(current), step=0.01, format="%.4f",
             key=widget_key, on_change=on_change,
-            help=f"{symbol} baseline for this element (default 0, TBD). Shifts the element's "
+            help=f"{symbol} baseline for this element (research default "
+                 f"{research_default:.4f}). Shifts the element's "
                  "score distribution and thereby the allocation: the segment boundaries are "
                  "fixed from the intercept-free population scores, so a nonzero intercept "
                  "moves agents across them (a negative value shifts agents toward the lower "
@@ -615,7 +625,7 @@ def render_rejected_transaction_defaults_tab():
             mode_options,
             help="""
             **Categorical only**: Willingness-to-Pay and Risk-Taking use fitted
-            budget-level effects (5 levels)
+            income quintile effects (Quintiles 1-5)
             **Continuous only**: Willingness-to-Pay and Risk-Taking use the generated
             monetary income (z-scored)
             **Compare both**: Run both specifications for comparison

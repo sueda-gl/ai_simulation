@@ -74,7 +74,10 @@ def render_population_comparison(results_dict):
                 st.caption("Continuous results not available")
     else:
         # Single income mode, compare population modes
-        income_type = "continuous" if st.session_state.income_spec_mode == "continuous only" else "categorical"
+        # Case-insensitive: donation uses "continuous only" while Decisions 1/2/4
+        # sync "Continuous only" (capitalized) into income_spec_mode. Mirrors the
+        # runner's own normalization ("continuous" in mode.lower()) in simulation.py.
+        income_type = "continuous" if "continuous" in str(st.session_state.income_spec_mode).lower() else "categorical"
         col1, col2 = st.columns(2)
         
         with col1:
@@ -190,7 +193,10 @@ def render_all_modes_comparison(results_dict):
                 st.caption("Research Baseline continuous results not available")
     else:
         # Single income mode, compare all three population modes
-        income_type = "continuous" if st.session_state.income_spec_mode == "continuous only" else "categorical"
+        # Case-insensitive: donation uses "continuous only" while Decisions 1/2/4
+        # sync "Continuous only" (capitalized) into income_spec_mode. Mirrors the
+        # runner's own normalization ("continuous" in mode.lower()) in simulation.py.
+        income_type = "continuous" if "continuous" in str(st.session_state.income_spec_mode).lower() else "categorical"
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -352,7 +358,10 @@ def render_disclose_income_all_modes_comparison(results_dict):
                 st.caption("Research Baseline continuous results not available")
     else:
         # Single income mode, compare all three population modes
-        income_type = "continuous" if st.session_state.income_spec_mode == "continuous only" else "categorical"
+        # Case-insensitive: donation uses "continuous only" while Decisions 1/2/4
+        # sync "Continuous only" (capitalized) into income_spec_mode. Mirrors the
+        # runner's own normalization ("continuous" in mode.lower()) in simulation.py.
+        income_type = "continuous" if "continuous" in str(st.session_state.income_spec_mode).lower() else "categorical"
         col1, col2, col3 = st.columns(3)
         
         with col1:

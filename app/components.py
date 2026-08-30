@@ -28,7 +28,9 @@ def rtd_overview_metric(df):
         element = st.session_state.get('rtd_run_element')
 
     specs = {
-        'loyalty': ("Mean Loyalty score", 'rtd_loyalty_score', "{:.4f}"),
+        # All three use the STANDARDIZED score (matches the results charts;
+        # professor 2026-08: all elements present standardized results).
+        'loyalty': ("Mean Loyalty score", 'rtd_loyalty_z', "{:.4f}"),
         'wtp': ("Mean Willingness-to-Pay score", 'rtd_wtp_z', "{:.4f}"),
         'risk_taking': ("Mean Risk-Taking score", 'rtd_rt_z', "{:.4f}"),
     }
@@ -77,9 +79,19 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         # On a per-ELEMENT run, the headline metric must be the run element's own
         # (a Loyalty-only run must not show the Options List Length metric).
         label, value = rtd_overview_metric(df)
-        col1, col2 = st.columns([1, 1.2])
-        col1.metric("Total Agents", f"{len(df):,}")
-        col2.metric(label, value)
+        if label == "Avg. Options List Length":
+            # Whole-decision run: min and max Options List Length shown next to
+            # the average (professor 2026-08 request).
+            lengths = df['rtd_choice_length'].astype(int)
+            col1, col2, col3, col4 = st.columns([1, 1.2, 1, 1])
+            col1.metric("Total Agents", f"{len(df):,}")
+            col2.metric(label, value)
+            col3.metric("Min Options List Length", f"{int(lengths.min())}")
+            col4.metric("Max Options List Length", f"{int(lengths.max())}")
+        else:
+            col1, col2 = st.columns([1, 1.2])
+            col1.metric("Total Agents", f"{len(df):,}")
+            col2.metric(label, value)
     elif has_documents and not has_donation and not has_income:
         # Decision 2 (Disclose Documents): the realized all-agent disclosure rate
         # (agents who actually disclosed ÷ total agents — only qualified agents can disclose,

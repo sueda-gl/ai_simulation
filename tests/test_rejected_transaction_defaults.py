@@ -273,7 +273,12 @@ def _run_model(gold, model_params, sim_config, stochastic=False, in_copula=False
 
 
 def test_model_path_deterministic_matches_stata(gold, model_params, sim_config):
-    results = _run_model(gold, model_params, sim_config, stochastic=False)
+    # Explicit zero intercepts: the .dta embeds NO intercepts, while the config's
+    # research default is now ttp beta0 = 0.05 (professor, 2026-08). Parity of the
+    # mechanism arithmetic is therefore asserted at beta = 0 (bit-identical to a
+    # no-intercepts run per test_zero_intercepts_bit_identical).
+    results = _run_model(gold, model_params, sim_config, stochastic=False,
+                         intercepts={m: 0.0 for m in MECHANISMS})
     lengths = [r["rtd_choice_length"] for r in results]
     assert (np.array(lengths) == gold["choice_length_deterministic"].astype(int)).all()
     for mech, key, seg_col in (("loyalty", "loyalty", "weighted_loyalty15"),
@@ -366,6 +371,13 @@ def test_baseline_mode_never_stochastic(gold, model_params, sim_config):
 INTERCEPTS_MIXED = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0}
 
 
+def test_research_default_intercepts(params):
+    """Config research defaults (professor, 2026-08): TTP beta0 = 0.05; the other
+    three elements' intercepts stay 0."""
+    assert params["intercepts"] == {
+        "ttp": 0.05, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0}
+
+
 def test_zero_intercepts_bit_identical(gold, model_params, sim_config):
     """beta = 0 (explicit zeros) reproduces a no-intercepts-key run bit-for-bit:
     every output - scores, z, segments, rankings, lengths, stochastic draws."""
@@ -387,7 +399,11 @@ def test_intercepts_shift_scores_on_natural_scale(gold, model_params, sim_config
     """Each intercept still shifts its element's score by exactly the entered value
     on its natural scale: raw composite for ttp/loyalty, standardized score for
     wtp/risk_taking (whose raw operative score shifts by beta * sd0)."""
-    base = _run_model(gold, model_params, sim_config, stochastic=False)
+    # Intercept-free baseline (the YAML research default is now ttp beta0 = 0.05,
+    # which would otherwise contaminate the exact-shift assertions below).
+    zeros = {m: 0.0 for m in MECHANISMS}
+    base = _run_model(gold, model_params, sim_config, stochastic=False,
+                      intercepts=zeros)
     shifted = _run_model(gold, model_params, sim_config, stochastic=False,
                          intercepts=INTERCEPTS_MIXED)
     wtp_sd0 = float(np.std([b["rtd_wtp_score"] for b in base], ddof=1))
@@ -444,7 +460,10 @@ def test_intercepts_shift_stochastic_draws_and_rebinning(gold, model_params, sim
     outcomes shift weakly in the intercept's direction; the hook's bit-for-bit RNG
     replication still reproduces the shifted draws."""
     seed = 321
-    base = _run_model(gold, model_params, sim_config, stochastic=True, seed=seed)
+    # Intercept-free baseline (YAML research default ttp beta0 = 0.05 would
+    # otherwise offset the exact draw-shift assertions).
+    base = _run_model(gold, model_params, sim_config, stochastic=True, seed=seed,
+                      intercepts={m: 0.0 for m in MECHANISMS})
     shifted = _run_model(gold, model_params, sim_config, stochastic=True, seed=seed,
                          intercepts=INTERCEPTS_MIXED)
 
@@ -527,13 +546,18 @@ def test_categorical_intercepts_apply_same_way(gold, cat_model_params, sim_confi
     semantics on the categorical scores - beta=0 bit-identical, z shifts by exactly
     beta, segments shift weakly in beta's direction (income-free elements and any
     element with beta=0 unchanged)."""
-    base = _run_model(gold, cat_model_params, sim_config, stochastic=False)
-    zero = _run_model(gold, cat_model_params, sim_config, stochastic=False,
+    # No-intercepts-key baseline: the YAML research default (ttp beta0 = 0.05)
+    # must be excluded so that explicit zeros == no intercepts at all.
+    import copy
+    cat_no_key = copy.deepcopy(cat_model_params)
+    cat_no_key.pop("intercepts", None)
+    base = _run_model(gold, cat_no_key, sim_config, stochastic=False)
+    zero = _run_model(gold, cat_no_key, sim_config, stochastic=False,
                       intercepts={m: 0.0 for m in MECHANISMS})
     for b, z in zip(base, zero):
         assert b == z
 
-    shifted = _run_model(gold, cat_model_params, sim_config, stochastic=False,
+    shifted = _run_model(gold, cat_no_key, sim_config, stochastic=False,
                          intercepts={'wtp': 1.5, 'risk_taking': -2.0})
     for b, s in zip(base, shifted):
         np.testing.assert_allclose(s["rtd_wtp_z"] - b["rtd_wtp_z"], 1.5, rtol=1e-7)
