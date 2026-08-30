@@ -470,7 +470,25 @@ def render_single_run_results():
     # For individual Decision 4 runs the overview/summary was already rendered above:
     # single-mode runs at the TOP of the page, comparison runs interleaved per income
     # treatment inside the Decision Results section - do not repeat it here.
-    if results_dict and not is_individual_rtd_run:
+    #
+    # Likewise, an individual decision run in SINGLE mode (single population mode +
+    # single income spec) already rendered that decision's full results once in the
+    # Decision Results section above (metrics, distribution, statistics,
+    # classification). The generic income-type overview ("📊 Simulation Overview" +
+    # show_overview's "... Analysis (Continuous/Categorical)") would repeat the exact
+    # same histogram/statistics/classification, so it is skipped for that run shape.
+    # Comparison runs ("Compare all" population mode / "Compare both" income spec)
+    # are NOT skipped: there the overview section renders the comparison grids,
+    # which are the primary display.
+    _single_mode_df = next(iter(results_dict.values())) if results_dict else pd.DataFrame()
+    is_individual_single_mode_run_with_results = (
+        not is_comparison_mode and
+        len(getattr(st.session_state, 'custom_decisions', []) or []) == 1 and
+        not getattr(st.session_state, 'default_decisions', []) and
+        not _single_mode_df.empty and
+        st.session_state.custom_decisions[0] in _single_mode_df.columns
+    )
+    if results_dict and not is_individual_rtd_run and not is_individual_single_mode_run_with_results:
         _render_overview_section(results_dict, has_combined_simulation, _has_explicit_donation_config)
 
     # Configuration selection UI - shows config cards and "Run Complete Simulation" button
