@@ -4,6 +4,8 @@ Before anything was moved, the old code was read line by line and every surprisi
 behaviour was written down — 58 of them. Each one was then put to the owner, who
 either **fixed** it (the behaviour changes, deliberately) or **deferred** it (the
 behaviour is kept exactly as it was, and is documented instead of silently carried).
+Two rows were added on 2026-09-04 (Q-59, Q-60) to record owner rulings on questions
+that had been referred to the professor.
 
 That register is reproduced below. It is the answer to "why does the code do *that*?"
 
@@ -15,7 +17,10 @@ comments in the source.
 > Every `fixed` row below was re-checked against the code in this repository while
 > this document was written. The one row that did **not** check out at the time was
 > Q-10 — the engine half of R8 was missing. It was applied on 2026-09-04 and
-> re-checked; no row is outstanding.
+> re-checked; no row is outstanding. On the same day the owner ruled on three of the
+> deferred rows: Q-31 became `fixed` (R-SD, applied and re-checked), and Q-59 / Q-60
+> record that the Decision 1 scale factor (R-DI01) and the Period-2 merge (R-P2) are
+> correct as they stand.
 
 ---
 
@@ -63,7 +68,9 @@ comments in the source.
 |---|---|---|---|
 | Q-12 | Three different "donation coefficients" existed in the UI and none of them reached the model: only the nested blocks in `config/decisions.yaml` mattered, and an edited intercept reached the engine only because the UI rewrote that file. | **fixed (R10)** — the flat coefficient set the Donation tab shows for the run's income mode **is** what the engine runs. The file's nested blocks are *replaced*, not merged into. | `session_donation_coefficient_set` and `build_donation_patch` in `app/seam/build_plan.py`; the `Replace` marker in `src/contract/plan.py` |
 | Q-13 | Editing a donation intercept, or pressing a reset button, made the app **rewrite `config/decisions.yaml`** — a whole-file dump that also dropped 44 comment lines. Each run then re-read the file. | **fixed (R11)** — the app never writes a configuration file. Tab values live in session keys and travel to the engine as patches. | `app/seam/config_repo.py` (read-only); no `yaml.dump` remains anywhere under `app/` or `src/` |
-| Q-14 | The tracked `config/decisions.yaml` carries `disclose_income.stochastic.scale_factor: 0.1` and `donation_default.adjustment.shift_value: -4.0`. | **deferred** — the file is unchanged, and it is now the only source of these values. See [`open-questions-for-professor.md`](open-questions-for-professor.md). | `config/decisions.yaml` |
+| Q-14 | The tracked `config/decisions.yaml` carries `disclose_income.stochastic.scale_factor: 0.1` and `donation_default.adjustment.shift_value: -4.0`. | **deferred** — the file is unchanged, and it is now the only source of these values. The `scale_factor: 0.1` half was confirmed correct by the owner on 2026-09-04 (R-DI01, see Q-59); the `shift_value: -4.0` half is kept as it was. | `config/decisions.yaml` |
+| Q-59 | Decision 1's Research Specification draw is `Normal(anchored_pb, sigma_overall × scale_factor)` with `scale_factor: 0.1`: one tenth of the raw-units TWT+Sospeso standard deviation (9.899547) applied to a z-scale variable, with nothing in the code or the file saying where `0.1` came from. It was referred to the professor as open question 2. | **resolved — kept (R-DI01, 2026-09-04)** — the owner ruled that `0.1` is correct and intended: it is the Disclose Income tab's "σ Coefficient (multiplier)" default of 0.10. No longer an open question; nothing changed. | `config/decisions.yaml`; `sigma_scaled = sigma_raw * scale_factor` in `src/decisions/disclose_income_stochastic.py`; the σ coefficient slider in `app/pages/decision_tabs/disclose_income.py` |
+| Q-60 | The Decision 2 sigma constants are derived from a two-period consumption count in which Period 2 (269 rows) is merged onto the 280 master rows by **row position**, not by `Participant ID` — the Period-2 export's ID column is offset relative to its data rows, so an ID join mismatches 89 of 280. It was referred to the professor as open question 5. | **resolved — kept (R-P2, 2026-09-04)** — the owner ruled that the positional merge is exactly the professor's Stata procedure and is correct; the sigma constants stand. The shifted ID column of the Period-2 export file remains a data-file note for the professor (`open-questions-for-professor.md`, last section). Nothing changed. | `reconstruct_consumed_2periods` in `src/build_dd_sigma.py` |
 | Q-15 | Four sigma constants were spelled as literals in the app, one of them (`9.8995`) differing from the file's value (`9.899547`) in the fifth decimal. | **fixed (R12)** — one constant, read from the configuration file. The donation σ handed to the engine is `sigma_overall × the coefficient slider`. | `app/seam/sentinels.py`; `DONATION_SIGMA_OVERALL` in `app/models.py`; `BASE_SIGMA_OVERALL` in `app/pages/decision_tabs/disclose_income.py` |
 | Q-53 | A rarely-reached branch could call a YAML loader that wrote 49 session keys. | **fixed (R10/R11)** — the coefficient sets come from `DecisionsConfig`, in memory. | `donation_coefficient_set` in `app/seam/config_repo.py` |
 
@@ -127,4 +134,4 @@ comments in the source.
 
 | id | behaviour before | ruling | where in the new code |
 |---|---|---|---|
-| Q-31 | Standard deviations are computed inconsistently: the shared income statistics use the **population** formula (`ddof=0`), while the composite statistics and Decision 4's income statistics use the **sample** formula (`ddof=1`). | **deferred** — kept, because each site currently matches its own Stata reference. See [`open-questions-for-professor.md`](open-questions-for-professor.md). | `np.std(all_incomes)` in `src/engine/core.py`; `ddof=1` in `src/decisions/disclose_income_stochastic.py`, `disclose_documents_stochastic.py`, `rejected_transaction_defaults.py` |
+| Q-31 | Standard deviations were computed inconsistently: the shared income statistics used the **population** formula (`ddof=0`), while the composite statistics and Decision 4's income statistics use the **sample** formula (`ddof=1`). | **fixed (R-SD, 2026-09-04)** — the shared income SD is now the sample SD (`ddof=1`), like every `egen std()` in `stata/*.do`; with fewer than two incomes it falls back to the population formula, the same guard Decision 4 uses. Decision 4's own income SD (already `ddof=1`) is untouched. Verified: the professor's Decision 2 `.dta` carries `z_net_income` / `z_picont` equal to the `ddof=1` z-score to 3e-7; his 280-row tables are reproduced under both formulas (largest score shift 1.6e-3, nearest score to the threshold 0.0116), so no earlier result was wrong; in the 17 journeys only the `disclose_documents_*` analytic columns of the three continuous complete runs moved, no decision flipped. See item 5 of [`open-questions-for-professor.md`](open-questions-for-professor.md) and `acceptance-report.md` §10. | `np.std(all_incomes, ddof=1)` in `src/engine/core.py` (end of Pass 1); `ddof=1` in `src/decisions/disclose_income_stochastic.py`, `disclose_documents_stochastic.py`, `rejected_transaction_defaults.py` |

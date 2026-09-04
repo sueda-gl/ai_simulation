@@ -3,122 +3,17 @@
 The migration split the logic from the screens. It did **not** re-derive the model.
 Along the way seven things turned up that look like modelling decisions rather than
 programming decisions, so they were left exactly as they were and written down here.
-Six are still open; item 7 has since been ruled on by the owner and applied, and is
-kept below as a record.
+Three are still open (items 1–3). Items 4–7 have since been ruled on by the owner and
+applied, and are kept below as records; the one thing left from item 7 is a data-file
+note, at the end.
 
-Each item says three things: **what the code does today**, **why it looks
+Each open item says three things: **what the code does today**, **why it looks
 suspicious**, and **what would change if it were altered**. None of them is a bug the
 migration introduced; every one of them predates it.
 
 ---
 
-## 1. Two different standard-deviation formulas
-
-**What the code does today.** The population income statistics are computed with the
-*population* formula:
-
-```python
-# src/engine/core.py, end of Pass 1
-self.simulation_config['income_stats'] = {
-    'mean': float(np.mean(all_incomes)),
-    'sd':   float(np.std(all_incomes)),      # ddof = 0
-}
-```
-
-Those statistics are what Decisions 1 and 2 use to standardise income in
-*continuous* income mode (`src/decisions/disclose_income_stochastic.py`,
-`src/decisions/disclose_documents_stochastic.py`).
-
-Everywhere else the *sample* formula is used, with a comment saying it matches
-Stata's `egen std()`:
-
-* `src/decisions/disclose_income_stochastic.py` — the continuous DE composite
-  statistics, `np.std(all_de, ddof=1)`;
-* `src/decisions/disclose_documents_stochastic.py` — the continuous DD composite
-  statistics, `np.std(vals, ddof=1)`;
-* `src/decisions/rejected_transaction_defaults.py` — Decision 4's own income
-  statistics and every mechanism-score statistic, `.std(ddof=1)`;
-* `src/build_dd_sigma.py` — the Decision 2 sigma constants.
-
-**Why it looks suspicious.** These are the same operation on the same 280
-participants, and Stata's `egen std()` is the sample formula in every one of them.
-Decision 4 goes as far as computing its **own** income statistics with `ddof=1`
-rather than reusing the shared ones, which is only necessary because the shared ones
-use `ddof=0`.
-
-**What would change if it were altered.** Switching the shared income statistics to
-`ddof=1` divides every continuous-mode income z-score by `sqrt(n/(n-1))`:
-about 1.0018 at n = 280 and about 1.0102 at n = 50 — so z-scores shrink by roughly
-0.2 % and 1 % respectively. That moves every Decision 1 and Decision 2 continuous
-result slightly, and flips the agents that sit within that margin of their
-threshold. Decision 4 would be unaffected (it already uses `ddof=1`), and
-categorical mode would be unaffected (it uses fixed statistics from the file).
-
-**The question.** Should the shared income standard deviation be the sample
-standard deviation, like every other standard deviation in the model?
-
----
-
-## 2. `disclose_income.stochastic.scale_factor: 0.1`
-
-**What the code does today.** In `config/decisions.yaml`, Decision 1 carries
-
-```yaml
-disclose_income:
-  stochastic:
-    sigma_overall: 9.899547
-    scale_factor: 0.1
-```
-
-and the code multiplies them:
-
-```python
-# src/decisions/disclose_income_stochastic.py
-sigma_raw    = stochastic_params.get('sigma_overall', 9.899547)
-scale_factor = stochastic_params.get('scale_factor', 0.1)
-sigma_scaled = sigma_raw * float(scale_factor)
-stochastic_anchored_pb = rng.normal(anchored_pb, sigma_scaled)
-```
-
-so the actual noise is `Normal(anchored_pb, 0.9899547)`.
-
-**Why it looks suspicious.** `9.899547` is the standard deviation of **TWT+Sospeso**
-in its own units — the same file records `TWT_Sospeso: {mean: 3.357143, sd: 9.899547}`.
-But the variable it is added to, `anchored_pb`, is a weighted average of two
-z-scores (`0.25 × z_obs_PB + 0.75 × z_weighted_prosocial`), whose population standard
-deviation the same file records as `0.7984211971`. A raw-units standard deviation is
-being used as the width of a draw on a z-scale variable, and `0.1` is the only thing
-bridging the two. Nothing in the code or the configuration says where `0.1` comes
-from, and no other decision has a scale factor other than `1.0`.
-
-The comparison with Decision 2 makes the asymmetry visible. Decision 2 perturbs
-`dd_deterministic = beta0 + z_weighted_dd` (standard deviation 1 by construction)
-with `sigma_overall = 0.1606568355 × scale_factor 1.0`. So, relative to the variable
-being perturbed:
-
-| | width of the draw | standard deviation of the variable | ratio |
-|---|---|---|---|
-| Decision 1 | 0.98995 | 0.79842 | **1.24** |
-| Decision 2 | 0.16066 | 1.0 | **0.16** |
-
-Decision 1 injects roughly eight times as much noise, relative to its own variable,
-as Decision 2 does.
-
-**What would change if it were altered.** Setting `scale_factor: 1.0` multiplies
-Decision 1's noise by ten — a draw of width 9.9 around a variable whose spread is
-0.8, which would make the disclosure outcome almost pure noise. Setting it so the
-two decisions match in relative terms (about `0.013`) would make Decision 1 nearly
-deterministic. Either way, only Research Specification runs and Copula runs with the
-Decision 1 σ tick box on are affected; Research Baseline draws no noise at all.
-
-**The question.** Is `0.1` a deliberate modelling choice ("use one tenth of the
-observed spread"), or a leftover from tuning? And is `sigma_overall` for Decision 1
-meant to be the standard deviation of TWT+Sospeso in raw units, or of the z-scored
-anchor?
-
----
-
-## 3. Three customer-price conventions in the exports
+## 1. Three customer-price conventions in the exports
 
 **What the code does today.** Three exports compute "Customer Price" for the same
 purchase requests, in three different ways.
@@ -162,7 +57,7 @@ authoritative vendor score?
 
 ---
 
-## 4. Three frozen Decision 1 reference files that disagree
+## 2. Three frozen Decision 1 reference files that disagree
 
 **What the code does today.** `data/` holds three files that all claim to be
 Decision 1 (disclose income) results for the same 280 participants. They disagree,
@@ -203,45 +98,7 @@ produced `stata_results.csv` and the frozen income column?
 
 ---
 
-## 5. Period 2 is merged by row position, not by participant ID
-
-**What the code does today.** The Decision 2 sigma constants come from
-`consumedtransferssospeso2periods`, the two-period count of sospeso and transfers
-each participant consumed. `src/build_dd_sigma.py` reconstructs it:
-
-```python
-def reconstruct_consumed_2periods(period1_df, period2_df):
-    c1 = _consumed(period1_df)          # 280 rows, the master order
-    c2_vals = _consumed(period2_df)     # 269 rows
-    c2 = np.zeros(len(c1), dtype=int)
-    c2[: len(c2_vals)] = c2_vals        # aligned by POSITION
-    return c1 + c2
-```
-
-Period 2 has 269 rows and is laid over the first 269 master rows; the 11 participants
-absent from Period 2 contribute 0.
-
-**Why it looks suspicious.** This is not a join. The module docstring explains why:
-the `Participant ID` column in the Period 2 export is offset relative to its own data
-rows, so joining the two periods **by ID** produces 89 of 280 per-participant
-mismatches. The grand total (351) is the same either way — the same 269 values are
-simply attributed to adjacent participants. The positional merge was chosen because
-it reproduces the professor's validated `.dta` exactly (280 of 280), which is strong
-evidence that the original Stata merge was also positional.
-
-**What would change if it were altered.** The per-participant values change for 89
-participants, so the derived sigmas change: the overall σ (`0.1606568355`) and all
-five per-level σ values in `config/decisions.yaml`. Every Decision 2 stochastic draw
-in Research Specification mode moves. The deterministic Decision 2 score does not
-change — it does not use these constants.
-
-**The question.** Was the original merge positional on purpose, or is the offset in
-the Period 2 export a data-export defect that should be repaired at the source? If it
-is a defect, the sigma constants need re-deriving.
-
----
-
-## 6. `config/income_reference_breaks.json` was deleted as dead
+## 3. `config/income_reference_breaks.json` was deleted as dead
 
 **What the code does today.** Nothing — the file was removed as part of the dead-code
 cleanup (ruling R37), because no `.py`, `.yaml` or `.md` file in the repository
@@ -279,7 +136,7 @@ against)? If yes, how was `sigma` obtained?
 
 ---
 
-## 7. Vendor price bounds in the engine (ruling R8) — RESOLVED 2026-09-04
+## 4. Vendor price bounds in the engine (ruling R8) — RESOLVED 2026-09-04
 
 **Resolved by the owner; no longer open.** The owner confirmed that R8 covers the
 engine's vendor choice, not only the reported scores: the engine must normalise
@@ -312,3 +169,79 @@ returns whenever `max <= min` — matching the reports. With one vendor the choi
 unchanged, so no journey number moved. Runs with several vendors and non-default
 bounds now rank vendors on the same scale the results page reports. Register row
 Q-10 and `acceptance-report.md` §5 record the change.
+
+---
+
+## 5. Two different standard-deviation formulas — RESOLVED 2026-09-04 (R-SD)
+
+**Resolved by the owner; no longer open.** The income standard deviation used for the
+continuous-income z-scores of Decisions 1 and 2 must divide by N−1, like Stata's
+`egen std()` — the formula every z-score in `stata/*.do` uses.
+
+**What was wrong.** The shared population income statistics at the end of Pass 1
+(`src/engine/core.py`) were computed with the *population* formula,
+`np.std(all_incomes)` (`ddof=0`), while the composite statistics of Decisions 1 and 2
+and Decision 4's own income statistics already used the *sample* formula
+(`ddof=1`). Decision 4 computed its own income SD precisely because the shared one
+was `ddof=0`.
+
+**What was changed.** One line: the shared `income_stats['sd']` is now
+`np.std(all_incomes, ddof=1)` (falling back to the population formula only when
+fewer than two incomes exist, the same guard `compute_rtd_population_stats` uses).
+Decision 4 (`src/decisions/rejected_transaction_defaults.py`) was left untouched — it
+already used N−1 — and the Decision 1 / Decision 2 composite statistics were already
+`ddof=1`.
+
+**Proof on the professor's data.** His corrected Decision 2 `.dta` carries
+`z_net_income` and `z_picont`; both equal `±(income − mean) / sd` with the
+*sample* SD to 3 × 10⁻⁷, so his Stata standardised income with N−1. On the 280
+participants the change moves every continuous score by at most 1.6 × 10⁻³ while the
+closest score to the threshold is 0.0116 away, so the professor's continuous table
+(63 / 280 = 22.50 %, every per-allowance-level cell) and his `disclosedoc_cont`
+column (280 / 280) are reproduced under **both** formulas — the old value was not
+wrong on the 280, only inconsistent.
+
+**Effect on the app.** Only continuous-income runs in which the Decision 1 / Decision 2
+*model* runs can change a decision, and only for an agent within about 0.2 % (n = 280)
+or 1 % (n = 50) of its threshold. In the 17 reference journeys nothing flipped: the
+three continuous complete runs (J2, J4, J6 — Decision 2 as a default) moved only the
+five `disclose_documents_*` analytic columns in the third decimal, the "DD Raw Values"
+histogram and the Agent Disclose Documents export; every categorical journey, every
+Decision 4 column and every donation column is identical. A dedicated Research
+Specification × continuous run with both decisions selected (n = 280, seed 42) flipped
+0 of 280 `disclose_income` and 0 of 280 `disclose_documents` values. Register row
+Q-31 and `acceptance-report.md` §10 record the change.
+
+---
+
+## 6. `disclose_income.stochastic.scale_factor: 0.1` — RESOLVED 2026-09-04 (R-DI01)
+
+**Resolved by the owner; no longer open.** The value `0.1` in `config/decisions.yaml`
+is **correct and intended**: it is the Disclose Income tab's "σ Coefficient
+(multiplier)" default of 0.10, so the Research Specification draw is
+`Normal(anchored_pb, sigma_overall × 0.10)` by design. Nothing was changed. Register
+row Q-59 records the ruling; the `shift_value: -4.0` half of Q-14 is unchanged and
+was never part of this question.
+
+---
+
+## 7. Period 2 is merged by row position, not by participant ID — RESOLVED 2026-09-04 (R-P2)
+
+**Resolved by the owner; no longer open.** The row-position merge in
+`src/build_dd_sigma.py` (`reconstruct_consumed_2periods`: Period 2's 269 rows laid over
+the first 269 master rows, the 11 participants absent from Period 2 contributing 0) is
+**exactly the professor's Stata procedure** and is correct. The Decision 2 sigma
+constants derived from it (`sigma_overall = 0.1606568355` and the five per-level values
+in `config/decisions.yaml`) stand. Nothing was changed. Register row Q-60 records the
+ruling.
+
+---
+
+## Data-file note for the professor (not a question)
+
+In `Student Experiment Results - Period 2.xlsx` the `Participant ID` column is offset
+relative to its own data rows: joining the two periods **by ID** mismatches 89 of the
+280 participants, while the row-position merge reproduces the validated `.dta`
+280 / 280. Since the positional merge is the intended procedure this changes nothing
+in the model — it is only worth knowing that the ID column of that export file is
+shifted, in case the file is ever re-exported or joined by ID elsewhere.

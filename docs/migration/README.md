@@ -57,6 +57,15 @@ as top-level keys nothing sets and so always fell back to the hard-coded `50.0 /
 `simulation_config['simulation']` through `get_simulation_param()` in
 `src/decisions/income_utils.py`, exactly as `src/engine/vendors.py` and the reports
 do, with the Page-1 "Average Price per Vendor" as the reference price wherever one
-is needed. See Q-10 in the register, item 7 of
+is needed. See Q-10 in the register, item 4 of
 [`open-questions-for-professor.md`](open-questions-for-professor.md) (resolved) and
 §5 of [`acceptance-report.md`](acceptance-report.md).
+
+On the same day the owner ruled on three of the questions that had been referred to
+the professor: the shared income standard deviation now divides by N−1 like Stata's
+`egen std()` (R-SD, Q-31, one line in `src/engine/core.py`; no decision in the
+reference journeys flipped), the Decision 1 `scale_factor: 0.1` is correct as it stands
+(R-DI01, Q-59), and the Period-2 row-position merge behind the Decision 2 sigma
+constants is the professor's own procedure (R-P2, Q-60). See items 5–7 of
+[`open-questions-for-professor.md`](open-questions-for-professor.md) and §10 of
+[`acceptance-report.md`](acceptance-report.md).

@@ -314,7 +314,7 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
 
     # z_income: prefer the Decision-4 population stats computed with SAMPLE SD (ddof=1,
     # Stata `egen std` semantics) by compute_rtd_population_stats; fall back to the
-    # orchestrators' shared income_stats (population SD) when the hook has not run.
+    # engine's shared income_stats (also sample SD since ruling R-SD) when the hook has not run.
     income = agent_state.get("income", None)
     sim = simulation_config or {}
     income_stats = (sim.get("rtd_population_stats", {}) or {}).get("income") \
@@ -522,8 +522,8 @@ def compute_rtd_population_stats(agents_df, all_incomes: List[float], params: Di
     matching _draw_noise() in the per-agent function.
     """
     # Decision-4-specific income standardization stats: SAMPLE SD (ddof=1), matching
-    # Stata `egen z_net_income = std(income)`. (The orchestrators' shared income_stats
-    # uses population SD; that convention is left untouched for the other decisions.)
+    # Stata `egen z_net_income = std(income)`. (Since ruling R-SD the engine's shared
+    # income_stats uses the same sample SD; Decision 4 keeps its own hook regardless.)
     inc = np.asarray([x for x in all_incomes if x is not None], dtype=float)
     if len(inc) > 1 and float(inc.std(ddof=1)) > 0:
         rtd_income_stats = {"mean": float(inc.mean()), "sd": float(inc.std(ddof=1))}

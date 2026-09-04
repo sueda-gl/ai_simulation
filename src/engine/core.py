@@ -294,9 +294,14 @@ class Engine:
             all_incomes.append(income)
 
         self.simulation_config['income_median'] = float(np.median(all_incomes))
+        # Income SD is the SAMPLE SD (ddof=1), matching Stata `egen z_net_income = std(income)`
+        # used for the continuous-income z-scores of Decisions 1 and 2 (owner ruling R-SD,
+        # 2026-09-04). Guarded like compute_rtd_population_stats: with fewer than two
+        # incomes fall back to the population formula (0.0 for a single agent).
         self.simulation_config['income_stats'] = {
             'mean': float(np.mean(all_incomes)),
-            'sd': float(np.std(all_incomes))
+            'sd': (float(np.std(all_incomes, ddof=1)) if len(all_incomes) > 1
+                   else float(np.std(all_incomes)))
         }
         self.log(f"Computed income median: ${self.simulation_config['income_median']:,.2f}")
         self.log(f"Computed income stats: mean=${self.simulation_config['income_stats']['mean']:,.2f}, "

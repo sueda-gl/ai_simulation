@@ -23,7 +23,10 @@ repository with `PYTHONPATH=/Users/suedagul/coopecon-migration`.
 
 **Verdict: pass.** Every difference against the original behaviour carries an owner ruling. Nothing is
 unattributed. The one ruled change that was still outstanding when this report was first written (R8)
-was applied on 2026-09-04 after the owner's ruling — see §5; the journeys did not move.
+was applied on 2026-09-04 after the owner's ruling — see §5; the journeys did not move. Later the same day
+the owner ruled on three of the deferred items (§10): the shared income SD now divides by N−1 (R-SD; one
+line, no decision in any journey flipped), and the Decision 1 scale factor (R-DI01) and the Period-2 merge
+(R-P2) were confirmed correct as they stand.
 
 ---
 
@@ -190,7 +193,7 @@ by `scratchpad/verify/compare_step3_closeout.py` (`scratchpad/r8/cmp/r8_vs_final
 identical (values, columns, dtypes, attrs, manifest hashes), every download identical, 40 / 40 page snapshots
 identical, session state identical. **No number moved**, exactly as predicted above. Documented in
 `rulings-and-quirks.md` (Q-10, now `fixed`), `docs/migration/README.md` ("Known gap": none open) and
-`open-questions-for-professor.md` §7 (resolved).
+`open-questions-for-professor.md` §4 (resolved).
 
 ## 6. End-to-end drive (fresh process, AppTest)
 
@@ -225,7 +228,7 @@ captures — `reference/step1/J1/run.log`, `J13/run.log`.)
 
 Every factual claim in `docs/migration/*.md` and `README.md` was checked against the code (function and
 constant names, file lists, line-level behaviour, the configuration values quoted, the data-file shapes and
-counts in `open-questions-for-professor.md` §4 — 280×32/165, 280×32/252, 280×12/232, `participant_id`
+counts in `open-questions-for-professor.md` §2 — 280×32/165, 280×32/252, 280×12/232, `participant_id`
 0…279, the allowance-level bands of `stata_incomes.csv` incl. the level-2 maximum 20 262.87 and the
 57/61/52/56/54 counts, the deleted `income_reference_breaks.json` contents at `80ee344`). Wrong or stale
 statements, fixed:
@@ -254,9 +257,7 @@ the 16 `donation_coeff_*_input` keys, the registry's fields, ten categories, `PR
 
 ## 8. Deferred (kept as-is, documented for the professor)
 
-ddof mix (population SD for the shared income stats feeding D1/D2 continuous z; sample SD for the composites
-and D4); Monte-Carlo subprocess ignoring tab settings and its lowercase income-mode map; DI stochastic
-`scale_factor: 0.1` in the tracked YAML; Page-1 reset-button exception; widget snap-back; once-per-process
+Monte-Carlo subprocess ignoring tab settings and its lowercase income-mode map; Page-1 reset-button exception; widget snap-back; once-per-process
 policy warning; export price conventions, `round(…, 2)` on stored values and the inline vendor-score formula
 in the Agent-Level sheet; transaction timestamps anchored to today's midnight and `datetime.now()` in file
 names; the unseeded example-bids caption; the duplicated "Vendor Selection Breakdown by Period" header; a
@@ -264,6 +265,9 @@ saved DI config ignoring the per-column income mode in Compare-both runs; a save
 coefficients not applied (the tab set is used; the R14 hash catches drift); `custom_coefficients` written and
 never cleared; `dd_intercept = -0.5` fallback; the Baseline `force_donation_sigma_zero`; the twice-built
 `TraitEngine`; the ~150 console prints; live-dict sharing in `df.attrs`.
+
+Two items that stood in this list when the report was first written are no longer deferred: the ddof mix was
+ruled `fixed` (R-SD) and the DI `scale_factor: 0.1` was confirmed correct (R-DI01) — both on 2026-09-04, see §10.
 
 ## 9. Notes for the owner (no action taken)
 
@@ -280,3 +284,69 @@ never cleared; `dd_intercept = -0.5` fallback; the Baseline `force_donation_sigm
    never read; `clear_input_field_cache()` deletes 16 keys no widget binds. All harmless; removal candidates.
 5. Pre-existing `SyntaxWarning: invalid escape sequence '\_'` at `app/pages/decision_tabs/disclose_income.py:600`
    (a `st.latex` docstring); the registry scanner suppresses it locally.
+
+## 10. Addendum 2026-09-04 — R-SD applied; R-DI01 and R-P2 confirmed
+
+**Rulings.** (R-SD) The income standard deviation used for the continuous-income z-scores of Decisions 1 and
+2 must divide by N−1 like Stata's `egen std()`, which every z-score in `stata/*.do` uses. Decision 4's own income
+SD (already N−1) must stay unchanged. (R-DI01) `disclose_income.stochastic.scale_factor: 0.1` in
+`config/decisions.yaml` is correct and intended — the tab's "σ Coefficient (multiplier) 0.10" — no longer open.
+(R-P2) The Period-2 row-position merge in `src/build_dd_sigma.py` is exactly the professor's Stata procedure and
+is correct; only the shifted `Participant ID` column of the Period-2 export file is kept as a data-file note.
+
+**Every `std` in `src/`, before the change** (`grep -rn 'np\.std(\|\.std(' src/`):
+
+| site | quantity standardised | ddof before | after |
+|---|---|---|---|
+| `src/engine/core.py` end of Pass 1, `income_stats['sd']` | the population income (z-income for D1/D2 continuous) | **0** | **1** (changed) |
+| `src/decisions/disclose_income_stochastic.py` `compute_continuous_de_stats` | D1 continuous direct-effect composite | 1 | 1 |
+| `src/decisions/disclose_documents_stochastic.py` `compute_continuous_dd_stats` | D2 continuous `weighted_dd_cont` composite | 1 | 1 |
+| `src/decisions/rejected_transaction_defaults.py` `compute_rtd_population_stats` (×2) | D4's own income SD; each mechanism's raw score SD | 1 | 1 (untouched) |
+| `src/build_dd_sigma.py` (×2) | D2 sigma constants, overall and per level | 1 | 1 |
+
+**The change.** One statement in `src/engine/core.py`: `'sd': float(np.std(all_incomes))` became
+`float(np.std(all_incomes, ddof=1)) if len(all_incomes) > 1 else float(np.std(all_incomes))` — the same
+`len > 1` guard `compute_rtd_population_stats` uses. Nothing else in `src/`, `app/` or `tests/` changed.
+
+**Proof on the professor's data** (`scratchpad/ddof/prof_table_ddof_variants.py`, a scratch re-run of the body of
+`tests/test_disclose_documents.py::test_continuous_reproduces_professor_table_with_frozen_income` — the test
+itself was not edited). With the frozen income (`data/stata_incomes.csv`) and with his own `income` column from
+the CORRECTED Decision 2 `.dta` (identical values): income SD 17 679.947640 (`ddof=0`) vs 17 711.603793 (`ddof=1`).
+Under **both** formulas the continuous table is 63 / 280 = 22.50 % with every per-allowance-level cell
+(78.95 / 27.87 / 1.92 / 0 / 0) and `disclosedoc_cont` matches 280 / 280; 0 agents flip; the largest shift of
+`dd_deterministic` is 1.57 × 10⁻³ and the nearest score to the threshold is 0.011583. So the old engine value
+was **not** off on the 280 — the test could not tell the formulas apart. What settles it is the `.dta` itself:
+its `z_net_income` equals `(income − mean) / sd` with the **sample** SD to 1.2 × 10⁻⁷ and `z_picont` equals its
+negative to 2.7 × 10⁻⁷; with the population SD the error is ≈ 5 × 10⁻³. Stata standardised with N−1.
+
+**Tests.** `.venv/bin/python -m pytest tests/ -q`: **215 passed** (43 s).
+
+**Journeys** (`scratchpad/reference/ddof`, all 17 workers rc=0, compared with `scratchpad/reference/r8` = the
+23dae63 tree, by `scratchpad/ddof/compare_runs.py`; details in `scratchpad/ddof/refined_r8_vs_ddof.txt`).
+Raw `.xlsx` bytes and the raw page hash are never stable between two runs of the same tree
+(`reference/_determinism_check`: 0 / 14 raw hashes equal, 14 / 14 normalised equal), so the comparison is on
+frame values, `df.attrs`, normalised workbook content and the v2 / v2-noids page snapshots.
+
+| journey | what moved |
+|---|---|
+| P0, J1, J3, J5, J7, J8, J9, J10, J11, J12, J13, J14, J15, J16 | **nothing** — every column identical, every page snapshot identical, every normalised export identical. The only difference is the statistic itself, carried as metadata in `df.attrs['simulation_config']['income_stats']['sd']` (n = 50 Copula: 11 173.90 → 11 287.35; n = 280 Research: 11 316.50 → 11 336.77). |
+| J2, J4, J6 (continuous complete runs; D1 and D2 run as **defaults**) | only the five `disclose_documents_*` analytic columns (`_raw`, `_score`, `_z_picont`, `_weighted_dd`, `_z_weighted_dd`), which the default path still computes from the model score, in the third decimal (all 50 / 280 / 280 rows); `attrs` `dd_cont_stats.sd` (J2 0.152868 → 0.151414; J4/J6 0.151556 → 0.151299) and `di_cont_de_stats.sd`. The `disclose_documents` value, `customer_type`, `disclose_income` and every other column are identical. Page snapshot: 10 / 12 / 12 changed lines, all in the "DD Raw Values" histogram and the download hashes; one export with changed content, `agent_disclose_documents_data.xlsx`. |
+
+`rtd_*` (Decision 4) and `donation_default` are identical in all 17 journeys, including J12 (D4 only,
+continuous) and J13–J15 (D4 model with sigma). Nothing is unattributed.
+
+**Extra journey JX** — Research Specification × continuous only, n = 280, seed 42, Disclose Income **and**
+Disclose Documents selected (model path; tab defaults, i.e. `di_sigma_enabled` / `dd_sigma_enabled` True and no
+sigma key set by the harness), run at HEAD 23dae63 in a temporary worktree and on the patched tree
+(`scratchpad/ddof/jx_head`, `jx_patched`): **0 of 280 `disclose_income` and 0 of 280 `disclose_documents`
+values change** (Y/N counts 241/39 and NA/Y/N 247/31/2 in both); `customer_type` identical. Seven analytic
+columns move: `disclose_income_raw` (max 9.7 × 10⁻⁴), `disclose_income_di`, `disclose_documents_raw`
+(max 1.6 × 10⁻³), `_score`, `_z_picont` (max 8.2 × 10⁻³), `_weighted_dd`, `_z_weighted_dd`; three exports with
+changed content (the two disclose data workbooks and `simulation_agent_level`); page changes only in the "DI Raw
+Values" / "DD Raw Values" histograms and download hashes.
+
+**Documents.** `rulings-and-quirks.md`: Q-31 → `fixed (R-SD)`, Q-14 qualified, Q-59 (R-DI01) and Q-60 (R-P2)
+added. `open-questions-for-professor.md`: items 1, 2 and 5 removed as open questions and kept as resolved records
+(now items 5–7), the remaining items renumbered 1–4, the shifted-ID data-file note kept at the end.
+`docs/migration/README.md`: a paragraph on the three rulings. `README.md` and `architecture.md` do not state the
+formula and were not touched. Nothing committed; the original repository was not opened for writing.
