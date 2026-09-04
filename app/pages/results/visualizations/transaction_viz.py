@@ -7,240 +7,51 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from collections import Counter
+
+from app.reports.purchase import (
+    build_purchase_vs_bid_export,
+    prepare_priority_lists_export,
+    priority_first_choice_counts,
+    priority_length_breakdown_lines,
+    priority_list_agent_count,
+    priority_lists_xlsx_bytes,
+    priority_option_agent_counts,
+    purchase_vs_bid_breakdown_frame,
+    purchase_vs_bid_request_counts,
+    purchase_vs_bid_xlsx_bytes,
+    rejected_option_value_counts,
+)
+from app.reports.rtd import (
+    RTD_ELEMENT_FILE_SLUGS,
+    RTD_ELEMENT_INPUTS,
+    RTD_ELEMENT_SHEETS,
+    RTD_STATA_NAMES,
+    prepare_rtd_element_export,
+    prepare_rtd_model_export,
+    rtd_agent_id_series,
+    rtd_choice_columns,
+    rtd_element_inputs_frame,
+    rtd_element_xlsx_bytes,
+    rtd_frame_income_mode,
+    rtd_model_xlsx_bytes,
+    rtd_score_stats_caption,
+)
+from app.reports.xlsx import apply_transaction_price_formatting
 from app.utils.timestamp_utils import TimestampConverter
 
-
-def _apply_price_formatting_transaction(writer, sheet_name: str, df: pd.DataFrame):
-    """
-    Apply Excel number formatting to price-related columns to display 2 decimal places.
-    """
-    price_columns = [
-        'Customer Price', 'customer_price', 'Bid Value', 'bid_value',
-        'Final Donation Rate', 'final_donation_rate',
-    ]
-    
-    workbook = writer.book
-    worksheet = workbook[sheet_name]
-    
-    for col_idx, col_name in enumerate(df.columns, start=1):
-        if col_name in price_columns:
-            for row_idx in range(2, len(df) + 2):
-                cell = worksheet.cell(row=row_idx, column=col_idx)
-                if isinstance(cell.value, (int, float)) and cell.value is not None:
-                    cell.number_format = '0.00'
-
-
-def _build_purchase_vs_bid_export(df):
-    """
-    Build transaction-level export data for regular customers showing purchase vs bid decisions.
-    
-    Returns a list of transaction records with fields:
-    - Agent ID
-    - Assigned Allowance Level
-    - Group_experiment
-    - Customer Type (Regular, Fixed, Discount)
-    - Income Category
-    - Purchase Request Type (PN/Bid)
-    - timestamp (DD/MM/YYYY HH:MM format)
-    - Period
-    - Customer Price (based on PN price or bid value, using vendor's actual price)
-    
-    Records are sorted by timestamp in chronological order.
-    """
-    from datetime import datetime, timedelta
-    
-    transaction_records = []
-    
-    if 'purchase_requests' not in df.columns:
-        return transaction_records
-    
-    # Get pricing parameters from session state or use defaults
-    platform_markup = 0.1
-    price_range = 0.25
-    if hasattr(st.session_state, 'sim_params'):
-        platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
-        price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
-
-    # Get vendor data for price lookup (stored by the run in st.session_state.vendors)
-    vendors_data = None
-    if hasattr(st.session_state, 'vendors'):
-        vendors_data = st.session_state.vendors
-
-    # Build vendor lookup dictionary for quick access
-    vendor_lookup = {}
-    if vendors_data:
-        for vendor in vendors_data:
-            vendor_id = vendor.get('vendor_id')
-            if vendor_id is not None:
-                # Store with both int and string keys to ensure lookup works
-                vendor_lookup[vendor_id] = vendor
-                vendor_lookup[str(vendor_id)] = vendor
-    
-    # Use centralized timestamp converter for consistent handling
-    ts_converter = TimestampConverter()
-    
-    for idx, row in df.iterrows():
-        # Get agent information
-        agent_id = row.get('agent_id', idx + 1)
-        
-        # Agent Traits (matching disclose income export)
-        # Honesty_Humility
-        honesty_humility = ''
-        if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
-            honesty_humility = round(row['Honesty_Humility'], 2)
-        
-        allowance_level = row.get('Assigned Allowance Level', np.nan)
-        
-        # Study Program
-        study_program = row.get('Study Program', '')
-        
-        # Group_experiment (with fallbacks)
-        group_experiment = ''
-        if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
-            group_experiment = row['Group_experiment']
-        elif 'group' in row and pd.notna(row['group']):
-            group_experiment = row['group']
-        elif 'group_experiment' in row and pd.notna(row['group_experiment']):
-            group_experiment = row['group_experiment']
-        
-        # TWT+Sospeso
-        twt_sospeso = ''
-        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
-            twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
-        
-        # Income
-        income = ''
-        if 'income' in row and pd.notna(row['income']):
-            income = round(row['income'], 2)
-        elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
-            income = round(row['actual_allowance'], 2)
-        
-        # Income category - Regular customers don't have this (assigned in Decision 6 only for Discount/Fixed)
-        income_category_raw = row.get('income_category', np.nan)
-        # Use 'N/A' for empty/missing income_category (e.g., regular customers who didn't disclose income)
-        if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
-            income_category = 'N/A'
-        else:
-            income_category = income_category_raw
-        
-        # Get purchase requests
-        purchase_requests = row.get('purchase_requests', [])
-        if not isinstance(purchase_requests, list):
-            continue
-        
-        # Process each purchase request
-        for req_idx, request in enumerate(purchase_requests):
-            if not isinstance(request, dict):
-                continue
-            
-            # Get customer type from request
-            customer_type = request.get('customer_type', request.get('customerType', 'regular'))
-            if isinstance(customer_type, str):
-                customer_type_display = customer_type.capitalize()
-            else:
-                customer_type_display = 'Regular'
-            
-            # Only include regular customers for this export
-            if customer_type.lower() != 'regular':
-                continue
-            
-            # Get timestamp and convert using centralized utilities
-            timestamp_hours = request.get('timestamp_hours', np.nan)
-            ts_result = ts_converter.convert(timestamp_hours)
-            
-            period = ts_result['period']
-            timestamp_str = ts_result['formatted']
-            sort_key = ts_result['timestamp_hours'] if not pd.isna(ts_result['timestamp_hours']) else 0.0
-            
-            # Determine Purchase Request Type and Customer Price
-            platform_price = request.get('platformPrice', request.get('platform_price', ''))
-            bid_value = request.get('bid_value', 'N/A')
-            
-            # Get vendor price for this request's vendor
-            vendor_id = request.get('vendorID', request.get('vendor_id'))
-            
-            # Normalize vendor_id for lookup (handle float 1.0 -> int 1)
-            lookup_key = vendor_id
-            if isinstance(vendor_id, float) and vendor_id.is_integer():
-                lookup_key = int(vendor_id)
-                
-            vendor_price = None
-            if lookup_key is not None:
-                # Try direct lookup first
-                if lookup_key in vendor_lookup:
-                    vendor_price = vendor_lookup[lookup_key].get('price')
-                # Try string lookup if not found
-                elif str(lookup_key) in vendor_lookup:
-                    vendor_price = vendor_lookup[str(lookup_key)].get('price')
-            
-            # Get Transaction ID (pre-assigned by central system)
-            transaction_id = request.get('transaction_id')
-            
-            # Calculate customer price based on vendor's actual price
-            # Formula: Customer Price (PN) = (1 + price_range) × (1 + platform_markup) × vendor_price
-            if vendor_price is not None:
-                baseline_price = (1 + platform_markup) * vendor_price
-                pn_price = (1 + price_range) * baseline_price
-            else:
-                # Fallback to market_price if vendor price not available
-                market_price = 100.0
-                if hasattr(st.session_state, 'sim_params'):
-                    market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
-                baseline_price = (1 + platform_markup) * market_price
-                pn_price = (1 + price_range) * baseline_price
-            
-            # Only include PN and BID for regular customers
-            if platform_price == 'PN':
-                purchase_request_type = 'PN'
-                customer_price = pn_price  # PN uses calculated price based on vendor
-            elif platform_price == 'BID' and bid_value != 'N/A':
-                purchase_request_type = 'Bid'
-                try:
-                    customer_price = float(bid_value)
-                except (ValueError, TypeError):
-                    customer_price = pn_price
-            else:
-                # Skip if not PN or BID
-                continue
-            
-            # Show price for both PN and BID customers
-            # Format to 2 decimal places for display
-            display_customer_price = float(f"{customer_price:.2f}")
-            
-            # Build record
-            record = {
-                'Purchase Request ID': transaction_id,  # Placeholder, will be updated after sorting
-                'Agent ID': agent_id,
-                'Honesty_Humility': honesty_humility,
-                'Assigned Allowance Level': allowance_level,
-                'Study Program': study_program,
-                'Group_experiment': group_experiment,
-                'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
-                'income': income,
-                'Customer Type': customer_type_display,
-                'Income Category': income_category,
-                'Purchase Request Type': purchase_request_type,
-                'Vendor': vendor_id,
-                'Vendor Price': vendor_price,
-                'Purchase Timestamp': timestamp_str,
-                'Period': period,
-                'Customer Price': display_customer_price,
-                '_sort_key': sort_key  # Hidden column for sorting
-            }
-            
-            transaction_records.append(record)
-    
-    # Sort all records by timestamp in chronological order
-    if transaction_records:
-        transaction_records.sort(key=lambda x: x.get('_sort_key', 0.0))
-        
-        # Assign unique Purchase Request IDs based on sorted order
-        for idx, record in enumerate(transaction_records):
-            record['Purchase Request ID'] = idx + 1
-            record.pop('_sort_key', None)
-    
-    return transaction_records
+# The pure builders now live in app/reports/{purchase,rtd}.py. These module-level
+# aliases keep the historical import paths working: tests/test_rtd_batch4_ui.py
+# and results/components/export_section.py import the underscored names from
+# this module.
+_RTD_ELEMENT_SHEETS = RTD_ELEMENT_SHEETS
+_RTD_ELEMENT_INPUTS = RTD_ELEMENT_INPUTS
+_RTD_STATA_NAMES = RTD_STATA_NAMES
+_rtd_frame_income_mode = rtd_frame_income_mode
+_rtd_agent_id_series = rtd_agent_id_series
+_rtd_element_inputs_frame = rtd_element_inputs_frame
+_rtd_choice_columns = rtd_choice_columns
+_apply_price_formatting_transaction = apply_transaction_price_formatting
+_prepare_priority_lists_export = prepare_priority_lists_export
 
 
 def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
@@ -258,23 +69,8 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
     st.caption("📊 Decisions for **Regular Customers only** - For full customer type breakdown, see **Decision 2: Disclose Documents**")
     
     if 'purchase_requests' in df.columns:
-        # Collect all purchase decisions from all requests
-        regular_requests = []
-        
-        for idx, row in df.iterrows():
-            requests = row.get('purchase_requests', [])
-            if isinstance(requests, list):
-                for req in requests:
-                    if isinstance(req, dict):
-                        platform_price = req.get('platformPrice')
-                        
-                        # Count only PN and BID for regular customers
-                        if platform_price in ['PN', 'BID']:
-                            regular_requests.append(platform_price)
-        
-        # Count regular customer choices
-        regular_counts = Counter(regular_requests)
-        total_regular_requests = len(regular_requests)
+        # Count regular customer choices (PN / BID, per request)
+        regular_counts, total_regular_requests = purchase_vs_bid_request_counts(df)
         
         if total_regular_requests > 0:
             pn_count = regular_counts.get('PN', 0)
@@ -311,14 +107,8 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
             with col_stats:
                 st.markdown("**🛒 Request-Level Choices**")
                 st.caption("(Regular customers only)")
-                breakdown_df = pd.DataFrame({
-                    'Choice': ['Purchase Now (PN)', 'Bid (BID)'],
-                    'Requests': [pn_count, bid_count],
-                    'Percentage': [
-                        f"{pn_count/total_regular_requests*100:.1f}%",
-                        f"{bid_count/total_regular_requests*100:.1f}%"
-                    ]
-                })
+                breakdown_df = purchase_vs_bid_breakdown_frame(
+                    pn_count, bid_count, total_regular_requests)
                 st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
         else:
             st.info("No regular customer purchase requests found")
@@ -328,41 +118,37 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
         st.markdown("**📥 Export Purchase Now vs Bid Decision Data**")
         st.caption("Download detailed request-level data for all regular customers with pricing and transaction information")
         
-        # Build transaction records
-        transaction_records = _build_purchase_vs_bid_export(df)
+        # Build transaction records (the pricing parameters and the vendor list
+        # the builder needs come off the session; the defaults match the
+        # fallbacks the builder used when it read them itself)
+        sim_params = getattr(st.session_state, 'sim_params', None)
+        transaction_records = build_purchase_vs_bid_export(
+            df,
+            # TimestampConverter takes its base time, period duration and period
+            # count off session state, so the page builds it
+            ts_converter=TimestampConverter(),
+            market_price=getattr(sim_params, 'market_price', 100.0),
+            platform_markup=getattr(sim_params, 'platform_markup', 0.1),
+            price_range=getattr(sim_params, 'price_range', 0.25),
+            vendors=getattr(st.session_state, 'vendors', None),
+        )
         
         if transaction_records and len(transaction_records) > 0:
             try:
-                from io import BytesIO
                 from datetime import datetime
-                
+
                 # Create DataFrame (already sorted by the build function)
                 export_df = pd.DataFrame(transaction_records)
-                
+
                 # Create Excel with multiple sheets
-                buffer = BytesIO()
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    # Sheet 1: Total (all data)
-                    export_df.to_excel(writer, index=False, sheet_name='Total')
-                    # Apply 2-decimal formatting
-                    _apply_price_formatting_transaction(writer, 'Total', export_df)
-                    
-                    # Additional sheets by Period
-                    if 'Period' in export_df.columns:
-                        periods = sorted(export_df['Period'].dropna().unique())
-                        for period in periods:
-                            period_df = export_df[export_df['Period'] == period]
-                            sheet_name = f'Period {int(period)}'
-                            period_df.to_excel(writer, index=False, sheet_name=sheet_name)
-                            # Apply 2-decimal formatting to each period sheet
-                            _apply_price_formatting_transaction(writer, sheet_name, period_df)
+                xlsx_bytes = purchase_vs_bid_xlsx_bytes(export_df)
                 
                 col_download, col_info = st.columns([1, 2])
                 
                 with col_download:
                     st.download_button(
                         label="📊 Download Purchase Now vs Bid Excel",
-                        data=buffer.getvalue(),
+                        data=xlsx_bytes,
                         file_name=f"purchase_now_vs_bid_decisions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Download request-level data for regular customers with purchase decisions"
@@ -432,8 +218,7 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
         st.metric("Simulation Mode", simulation_mode.title())
     
     with col3:
-        # Count how many agents have lists vs single values
-        list_count = decision_data.apply(lambda x: isinstance(x, list)).sum()
+        list_count = priority_list_agent_count(decision_data)
         st.metric("Agents with Priority Lists", f"{list_count:,}")
     
     # Show configured priority template
@@ -463,20 +248,10 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
         st.caption("All agents use this priority list")
     
     with col_chart:
-        # Count which options appear in agents' priority lists
-        from collections import Counter
-        
         total_agents = len(decision_data)
-        
+
         # Count how many agents have each option in their priority list
-        option_agent_counts = Counter()
-        for agent_list in decision_data:
-            if isinstance(agent_list, list):
-                # Count unique options per agent (not duplicates)
-                for opt in set(agent_list):
-                    option_agent_counts[opt] += 1
-            else:
-                option_agent_counts[agent_list] += 1
+        option_agent_counts = priority_option_agent_counts(decision_data)
         
         # Create individual charts for each option
         if len(option_agent_counts) > 0:
@@ -553,18 +328,12 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
     
     with col_summary1:
         st.markdown("**Priority List Lengths:**")
-        list_lengths = decision_data.apply(lambda x: len(x) if isinstance(x, list) else 1)
-        length_counts = list_lengths.value_counts().sort_index()
-        
-        breakdown_lines = [
-            f"{int(length)} options: {count:,} agents ({(count / len(decision_data)) * 100:.1f}%)"
-            for length, count in length_counts.items()]
+        breakdown_lines = priority_length_breakdown_lines(decision_data)
         st.caption("  \n".join(breakdown_lines))
     
     with col_summary2:
         st.markdown("**Most Common 1st Choice:**")
-        first_choices = decision_data.apply(lambda x: x[0] if isinstance(x, list) and len(x) > 0 else x)
-        first_choice_counts = first_choices.value_counts()
+        first_choice_counts = priority_first_choice_counts(decision_data)
         
         for i, (choice, count) in enumerate(first_choice_counts.head(3).items(), 1):
             percentage = (count / len(decision_data)) * 100
@@ -575,22 +344,17 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
     st.markdown("**📥 Download Priority Lists**")
     
     # Prepare export data
-    export_df = _prepare_priority_lists_export(df, decision_data)
+    export_df = prepare_priority_lists_export(df, decision_data)
     
     if export_df is not None and not export_df.empty:
         # Create Excel file
-        from io import BytesIO
         from datetime import datetime
-        
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            export_df.to_excel(writer, index=False, sheet_name='Priority Lists')
-            # Apply 2-decimal formatting (for any numeric columns that may exist)
-            _apply_price_formatting_transaction(writer, 'Priority Lists', export_df)
-        
+
+        xlsx_bytes = priority_lists_xlsx_bytes(export_df)
+
         st.download_button(
             label="📊 Download Priority Lists Excel",
-            data=buffer.getvalue(),
+            data=xlsx_bytes,
             file_name=f"rejected_transaction_priorities_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             help="Download detailed priority lists with Agent ID, Allowance Level, Group, and Priority 1-5 columns"
@@ -628,35 +392,6 @@ _RTD_MECHS = [
     ('wtp', 'wtp', 'Willingness-to-Pay', _RTD_PRIORITY_SEQUENCES['wtp']),
     ('risk_taking', 'rt', 'Risk-Taking', _RTD_PRIORITY_SEQUENCES['risk_taking']),
 ]
-
-# Per-element sheet / section names for the Decision 4 exports.
-_RTD_ELEMENT_SHEETS = {
-    'ttp': 'Options List Length',
-    'loyalty': 'Loyalty',
-    'wtp': 'Willingness-to-Pay',
-    'risk_taking': 'Risk-Taking',
-}
-
-# Independent variables per element (Stata-aligned trait column names, in each
-# element's equation order). WTP and Risk-Taking additionally get 'Assigned
-# Allowance Level' when the frame was computed with categorical income.
-_RTD_ELEMENT_INPUTS = {
-    'ttp': ['ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
-            'ConscientiousnessBig5', 'Education'],
-    'loyalty': ['ExtraversionBig5', 'OpennessBig5', 'Agreeable'],
-    'wtp': ['ExtraversionBig5', 'Agreeable', 'income'],
-    'risk_taking': ['ExtraversionBig5', 'OpennessBig5', 'Agreeable',
-                    'ConscientiousnessBig5', 'NeuroticismBig5', 'income'],
-}
-
-
-def _rtd_frame_income_mode(df):
-    """Income specification the frame was computed with ('categorical'/'continuous')."""
-    if 'rtd_income_mode' in df.columns and len(df) > 0:
-        first = df['rtd_income_mode'].dropna()
-        if len(first) > 0 and str(first.iloc[0]) == 'categorical':
-            return 'categorical'
-    return 'continuous'
 
 
 def _rtd_active_element():
@@ -717,9 +452,7 @@ def _rtd_fraction_bar(x_labels, fractions, title, x_title, chart_key):
 
 def _rtd_score_stats_caption(series):
     """Summary line matching Stata's `summarize` output for the score variable."""
-    s = pd.Series(series).astype(float)
-    st.caption(f"Mean {s.mean():.4f} · SD {s.std(ddof=1):.4f} · "
-               f"Min {s.min():.4f} · Max {s.max():.4f} · N {s.notna().sum():,}")
+    st.caption(rtd_score_stats_caption(series))
 
 
 def render_rtd_comparison_results(results_dict, decision_name):
@@ -850,17 +583,13 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
         export_df = _prepare_rtd_element_export(df, mech)
         if export_df is None or export_df.empty:
             return
-        from io import BytesIO
         from datetime import datetime
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            export_df.to_excel(writer, index=False, sheet_name=_RTD_ELEMENT_SHEETS[mech])
+        xlsx_bytes = rtd_element_xlsx_bytes(export_df, mech)
         # Human-readable filename slugs ('ttp' reads too much like 'wtp')
-        fname_slug = {'ttp': 'options_list_length', 'loyalty': 'loyalty',
-                      'wtp': 'willingness_to_pay', 'risk_taking': 'risk_taking'}[mech]
+        fname_slug = RTD_ELEMENT_FILE_SLUGS[mech]
         st.download_button(
             label=f"📊 Download {label} Excel",
-            data=buffer.getvalue(),
+            data=xlsx_bytes,
             file_name=f"rejected_transaction_{fname_slug}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             help=f"Per-agent {label} results: independent variables, score and "
@@ -964,15 +693,11 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
         st.markdown("**📥 Download Decision 4 Model Results**")
         sheets = _prepare_rtd_model_export(df)
         if sheets:
-            from io import BytesIO
             from datetime import datetime
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                for sheet_name, sheet_df in sheets.items():
-                    sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+            xlsx_bytes = rtd_model_xlsx_bytes(sheets)
             st.download_button(
                 label="📊 Download Decision 4 Excel (all elements)",
-                data=buffer.getvalue(),
+                data=xlsx_bytes,
                 file_name=f"rejected_transaction_mechanisms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 help="One self-contained sheet per element: independent variables, "
@@ -987,100 +712,21 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
                     st.caption(f"Rows: {len(sheet_df):,} · Columns: {', '.join(sheet_df.columns)}")
 
 
-def _rtd_agent_id_series(df):
-    if 'agent_id' in df.columns:
-        return df['agent_id']
-    return pd.Series(range(1, len(df) + 1), index=df.index)
-
-
-def _rtd_element_inputs_frame(df, mech):
-    """Agent ID + the element's OWN independent variables (Stata-aligned names).
-    Categorical income adds 'Assigned Allowance Level' for wtp / risk_taking."""
-    out = pd.DataFrame(index=df.index)
-    out['Agent ID'] = _rtd_agent_id_series(df)
-    inputs = list(_RTD_ELEMENT_INPUTS[mech])
-    if mech in ('wtp', 'risk_taking') and _rtd_frame_income_mode(df) == 'categorical':
-        inputs.append('Assigned Allowance Level')
-    for col in inputs:
-        if col in df.columns:
-            out[col] = df[col]
-    return out
-
-
-def _rtd_choice_columns(out, rankings):
-    """choice1..choice5 columns (option numbers; blank beyond the list length)."""
-    for pos in range(1, 6):
-        out[f'choice{pos}'] = rankings.apply(
-            lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
-
-
-_RTD_STATA_NAMES = {'loyalty': ('loyalty', 'loyalty'), 'wtp': ('wtp', 'WTP'),
-                    'risk_taking': ('rt', 'RT')}
-
-
 def _prepare_rtd_element_export(df, mech):
-    """Per-element Excel frame: Agent ID, ONLY this element's independent variables,
-    its score, the segment (or list length for TTP) and the resulting option
-    sequence per customer as choice1..choice5. Stata-aligned column names."""
+    """Page wrapper over `app.reports.rtd.prepare_rtd_element_export`, keeping the
+    inline error the section showed when a frame could not be exported."""
     try:
-        out = _rtd_element_inputs_frame(df, mech)
-        if mech == 'ttp':
-            out['weighted_ttp'] = df['rtd_weighted_ttp']
-            out['choice_length'] = df['rtd_choice_length']
-            return out
-        col_key, stata = _RTD_STATA_NAMES[mech]
-        out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
-        if f'rtd_{col_key}_z' in df.columns:
-            out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
-        out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
-        _rtd_choice_columns(out, df[f'rtd_{col_key}_ranking'])
-        return out
+        return prepare_rtd_element_export(df, mech)
     except Exception as e:
-        st.error(f"Error preparing Decision 4 {_RTD_ELEMENT_SHEETS.get(mech, mech)} export: {e}")
+        st.error(f"Error preparing Decision 4 {RTD_ELEMENT_SHEETS.get(mech, mech)} export: {e}")
         return None
 
 
 def _prepare_rtd_model_export(df):
-    """Whole-decision Decision 4 workbook, organized as one self-contained sheet per
-    element ('Options List Length', 'Loyalty', 'Willingness-to-Pay', 'Risk-Taking').
-
-    Each sheet mirrors the per-element file (Agent ID + the element's own
-    independent variables + choice1..choice5) and additionally carries the
-    intermediate distributions: score, z (where present), deterministic and final
-    segment / list length, and the sigma used. Stata-aligned column names.
-
-    Returns an ordered {sheet_name: DataFrame} dict, or None on error.
-    """
+    """Page wrapper over `app.reports.rtd.prepare_rtd_model_export`, keeping the
+    inline error the download section showed."""
     try:
-        sheets = {}
-
-        # ---- Options List Length (TTP) ----
-        ttp = _rtd_element_inputs_frame(df, 'ttp')
-        for src, dst in [('rtd_weighted_ttp', 'weighted_ttp'),
-                         ('rtd_weighted_ttp06', 'weighted_ttp06'),
-                         ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
-                         ('rtd_choice_length', 'choice_length'),
-                         ('rtd_sigma_used_ttp', 'sigma_used_ttp')]:
-            if src in df.columns:
-                ttp[dst] = df[src]
-        sheets[_RTD_ELEMENT_SHEETS['ttp']] = ttp
-
-        # ---- Rankings: Loyalty / Willingness-to-Pay / Risk-Taking ----
-        for mech, (col_key, stata) in _RTD_STATA_NAMES.items():
-            if f'rtd_{col_key}_score' not in df.columns:
-                continue
-            sheet = _rtd_element_inputs_frame(df, mech)
-            sheet[f'{stata}_score'] = df[f'rtd_{col_key}_score']
-            if f'rtd_{col_key}_z' in df.columns:
-                sheet[f'z_{stata}'] = df[f'rtd_{col_key}_z']
-            if f'rtd_{col_key}_segment_deterministic' in df.columns:
-                sheet[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
-            sheet[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
-            _rtd_choice_columns(sheet, df[f'rtd_{col_key}_ranking'])
-            if f'rtd_sigma_used_{col_key}' in df.columns:
-                sheet[f'sigma_used_{stata}'] = df[f'rtd_sigma_used_{col_key}']
-            sheets[_RTD_ELEMENT_SHEETS[mech]] = sheet
-        return sheets
+        return prepare_rtd_model_export(df)
     except Exception as e:
         st.error(f"Error preparing Decision 4 export: {e}")
         return None
@@ -1101,8 +747,7 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
     option_names = dict(options)
     
     # Get current option from results or session state
-    value_counts = decision_data.value_counts()
-    current_option = value_counts.index[0] if len(value_counts) > 0 else "forgo_transaction"
+    value_counts, current_option = rejected_option_value_counts(decision_data)
     
     # Use _default_selection key (same as Page 2 Overview tab) for consistency
     # (read-only here: the key is initialised at app start by app.models)
@@ -1161,115 +806,6 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
             st.plotly_chart(fig, use_container_width=True, key="rejected_transaction_option_chart")
         else:
             st.info("No simulation data available")
-
-
-def _prepare_priority_lists_export(df: pd.DataFrame, decision_data) -> pd.DataFrame:
-    """
-    Prepare rejected transaction defaults priority lists for Excel export.
-    
-    Creates columns: Agent ID, Honesty_Humility, Assigned Allowance Level, Study Program,
-    Group_experiment, TWT+Sospeso [=AW2+AX2]{Periods 1+2}, income,
-    Priority 1, Priority 2, Priority 3, Priority 4, Priority 5
-    
-    Priority columns contain option numbers (1, 2, 3, 4, 5) or N/A if not selected.
-    
-    Args:
-        df: Full results DataFrame with agent data
-        decision_data: Series containing priority lists
-        
-    Returns:
-        DataFrame formatted for Excel export
-    """
-    # Map option codes to numbers
-    option_to_number = {
-        "higher_price_category": 1,
-        "lower_pn_vendor": 2,
-        "current_vendor_pn": 3,
-        "place_bid": 4,
-        "forgo_transaction": 5
-    }
-    
-    # Create export dataframe
-    export_df = pd.DataFrame()
-    
-    # Agent ID
-    if 'agent_id' in df.columns:
-        export_df['Agent ID'] = df['agent_id']
-    elif 'index' in df.columns:
-        export_df['Agent ID'] = df['index'] + 1  # Convert 0-based to 1-based
-    else:
-        export_df['Agent ID'] = range(1, len(df) + 1)
-    
-    # Honesty_Humility
-    if 'Honesty_Humility' in df.columns:
-        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(2)
-    else:
-        export_df['Honesty_Humility'] = ''
-    
-    # Assigned Allowance Level
-    if 'Assigned Allowance Level' in df.columns:
-        export_df['Assigned Allowance Level'] = df['Assigned Allowance Level']
-    elif 'income_category' in df.columns:
-        export_df['Assigned Allowance Level'] = df['income_category']
-    else:
-        export_df['Assigned Allowance Level'] = ''
-    
-    # Study Program
-    if 'Study Program' in df.columns:
-        export_df['Study Program'] = df['Study Program']
-    else:
-        export_df['Study Program'] = ''
-    
-    # Group_experiment
-    if 'Group_experiment' in df.columns:
-        export_df['Group_experiment'] = df['Group_experiment']
-    elif 'group' in df.columns:
-        export_df['Group_experiment'] = df['group']
-    elif 'group_experiment' in df.columns:
-        export_df['Group_experiment'] = df['group_experiment']
-    else:
-        export_df['Group_experiment'] = ''
-    
-    # TWT+Sospeso
-    if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
-        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(2)
-    else:
-        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
-    
-    # Income
-    if 'income' in df.columns:
-        export_df['income'] = df['income'].round(2)
-    elif 'actual_allowance' in df.columns:
-        export_df['income'] = df['actual_allowance'].round(2)
-    else:
-        export_df['income'] = ''
-    
-    # Priority columns (1-5)
-    for priority_pos in range(1, 6):
-        column_name = f'Priority {priority_pos}'
-        priority_values = []
-        
-        for agent_list in decision_data:
-            if isinstance(agent_list, list):
-                # Check if agent has this priority position
-                if len(agent_list) >= priority_pos:
-                    option_code = agent_list[priority_pos - 1]
-                    option_number = option_to_number.get(option_code, 'N/A')
-                    priority_values.append(option_number)
-                else:
-                    # Agent doesn't have this many priorities
-                    priority_values.append('N/A')
-            else:
-                # Single value (legacy format) - only for priority 1
-                if priority_pos == 1:
-                    option_number = option_to_number.get(agent_list, 'N/A')
-                    priority_values.append(option_number)
-                else:
-                    priority_values.append('N/A')
-        
-        export_df[column_name] = priority_values
-    
-    return export_df
 
 
 def render_rejected_bid_value(df, decision_name, decision_title, decision_data):

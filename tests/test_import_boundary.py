@@ -1,7 +1,16 @@
 """
-Import-boundary test: `src/` is the engine and must not depend on the UI.
+Import-boundary tests: two layers that must stay importable without the UI.
 
-Rule under test: importing ANY module under `src/` must never drag `streamlit`
+Rule 1 -- `src/` is the engine and must not depend on the UI.
+Rule 2 -- `app/reports/` holds the report builders lifted out of the pages
+          (the numbers, frames, CSV and xlsx bytes behind every preview and
+          download). They live under `app/`, so importing `app` itself is
+          expected and fine, but they must never pull in `streamlit`: that is
+          the whole point of the split -- the exported numbers can then be
+          computed and tested outside a Streamlit script run, and a builder
+          cannot quietly start reading `st.session_state` again.
+
+Rule 1 under test: importing ANY module under `src/` must never drag `streamlit`
 or the `app` package into `sys.modules`. The engine is the layer the CLI
 (`scripts/run_simulation.py`), the Monte-Carlo subprocess and the tests import;
 if it reaches back into `app/` it can only run inside a Streamlit script context,
@@ -35,6 +44,7 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC_ROOT = PROJECT_ROOT / "src"
+REPORTS_ROOT = PROJECT_ROOT / "app" / "reports"
 
 # Prefer the project's own venv interpreter (that is what the app and the CLI
 # run under); fall back to the interpreter running pytest.
@@ -58,10 +68,10 @@ PROBE = (
 )
 
 
-def _discover_src_modules():
-    """Every importable module/package under src/, as dotted names."""
+def _discover_modules(root):
+    """Every importable module/package under `root`, as dotted names."""
     modules = []
-    for path in sorted(SRC_ROOT.rglob("*.py")):
+    for path in sorted(root.rglob("*.py")):
         if "__pycache__" in path.parts:
             continue
         rel = path.relative_to(PROJECT_ROOT)
@@ -76,7 +86,8 @@ def _discover_src_modules():
     return modules
 
 
-SRC_MODULES = _discover_src_modules()
+SRC_MODULES = _discover_modules(SRC_ROOT)
+REPORTS_MODULES = _discover_modules(REPORTS_ROOT)
 
 
 def _import_in_fresh_subprocess(module_name):
@@ -185,12 +196,15 @@ def test_known_app_importers_are_clean(module_name):
 
 # --- static check: no UI import statement anywhere in src/, even a lazy one ---
 
-def _ui_import_statements(path):
+def _ui_import_statements(path, roots=("streamlit", "app")):
     """Every `import streamlit`/`import app...` in a file, at ANY nesting depth.
 
     ast.walk descends into function and class bodies, so this also catches the
     deferred `try: from app.pages.decision_execution import ...` pattern that a
     fresh-import subprocess can never observe.
+
+    `roots` narrows what counts: the report builders under app/reports/ are part
+    of `app`, so there only `streamlit` is forbidden.
     """
     tree = ast.parse(path.read_text(), filename=str(path))
     hits = []
@@ -205,7 +219,7 @@ def _ui_import_statements(path):
             continue
         for name in names:
             root = name.split(".")[0]
-            if root in ("streamlit", "app"):
+            if root in roots:
                 hits.append(f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}: {name}")
     return hits
 
@@ -223,5 +237,66 @@ def test_src_file_has_no_ui_import_statement(rel_path):
     assert hits == [], (
         "src/ file imports the UI layer (a lazy import inside a function counts - "
         "it breaks the first time the engine runs outside Streamlit):\n  "
+        + "\n  ".join(hits)
+    )
+
+
+# ===========================================================================
+# Rule 2: app/reports/ -- the report builders must import without Streamlit
+# ===========================================================================
+# These modules are what the pages call to produce the numbers, the preview
+# frames and the CSV/xlsx bytes behind every download. They may import `app`
+# (they ARE app code) but never `streamlit`: a builder that reaches for
+# `st.session_state` or `st.download_button` again cannot be exercised outside
+# a script run, and the export parity tests could no longer call it directly.
+
+
+def test_report_modules_were_discovered():
+    """Guard against the walk silently finding nothing (then everything 'passes')."""
+    assert REPORTS_MODULES, f"no modules found under {REPORTS_ROOT}"
+    for expected in ("app.reports", "app.reports.mc", "app.reports.timestamps"):
+        assert expected in REPORTS_MODULES, f"{expected} missing from {REPORTS_MODULES}"
+
+
+@pytest.mark.parametrize("module_name", REPORTS_MODULES)
+def test_report_module_does_not_import_streamlit(module_name):
+    """No module under app/reports/ may pull streamlit into a fresh interpreter."""
+    rc, leaked, out, err = _import_in_fresh_subprocess(module_name)
+
+    assert rc == 0, (
+        f"importing {module_name} in a fresh interpreter failed (rc={rc}).\n"
+        f"stderr:\n{_tail(err)}\nstdout:\n{_tail(out)}"
+    )
+    assert leaked is not None, (
+        f"probe produced no {MARKER} line for {module_name}.\n"
+        f"stdout:\n{_tail(out)}\nstderr:\n{_tail(err)}"
+    )
+    # `app.*` entries are expected here (that is where these modules live);
+    # only streamlit is forbidden.
+    streamlit_leaked = [
+        m for m in leaked if m == "streamlit" or m.startswith("streamlit.")
+    ]
+    assert streamlit_leaked == [], (
+        f"importing {module_name} pulled streamlit into sys.modules: "
+        f"{_brief(streamlit_leaked)}.\n"
+        "app/reports/ must stay Streamlit-free - take the session values as "
+        "explicit arguments and return the frame/bytes instead of calling st.*."
+    )
+
+
+@pytest.mark.parametrize(
+    "rel_path",
+    [
+        str(p.relative_to(PROJECT_ROOT))
+        for p in sorted(REPORTS_ROOT.rglob("*.py"))
+        if "__pycache__" not in p.parts
+    ],
+)
+def test_report_file_has_no_streamlit_import_statement(rel_path):
+    """Also forbid a lazy `import streamlit` hidden inside a function body."""
+    hits = _ui_import_statements(PROJECT_ROOT / rel_path, roots=("streamlit",))
+    assert hits == [], (
+        "app/reports/ file imports streamlit (a lazy import inside a function "
+        "counts - it breaks the first time the builder runs outside Streamlit):\n  "
         + "\n  ".join(hits)
     )

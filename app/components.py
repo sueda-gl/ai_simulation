@@ -10,6 +10,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime
 
+from app.reports import mc as mc_report
+
 
 def rtd_overview_metric(df):
     """Headline metric for a Decision 4 model run, element-aware.
@@ -660,31 +662,31 @@ def show_monte_carlo_results(mc_data):
         # Overview metrics
         col1, col2, col3, col4 = st.columns(4)
     
-        if 'donation_default' in summary_df['decision'].values:
-            donation_row = summary_df[summary_df['decision'] == 'donation_default'].iloc[0]
-        
+        metrics = mc_report.overview_metrics(summary_df)
+        if metrics is not None:
             with col1:
-                st.metric("Mean Donation Rate", f"{donation_row['mean']:.2%}")
-            
+                st.metric("Mean Donation Rate", metrics["Mean Donation Rate"])
+
             with col2:
-                st.metric("Standard Deviation", f"{donation_row['std']:.2%}")
-            
+                st.metric("Standard Deviation", metrics["Standard Deviation"])
+
             with col3:
-                st.metric("95% CI Lower", f"{donation_row['p2.5']:.2%}")
-            
+                st.metric("95% CI Lower", metrics["95% CI Lower"])
+
             with col4:
-                st.metric("95% CI Upper", f"{donation_row['p97.5']:.2%}")
+                st.metric("95% CI Upper", metrics["95% CI Upper"])
     
         # Monte-Carlo convergence plot
         if mc_data['detailed'] is not None:
             detailed_df = mc_data['detailed']
             
-            if 'donation_default_mean' in detailed_df.columns:
+            if mc_report.has_convergence_series(detailed_df):
                 st.subheader("📊 Monte-Carlo Convergence")
-                
-                # Calculate running average
-                detailed_df['running_mean'] = detailed_df['donation_default_mean'].expanding().mean()
-                
+
+                # Calculate running average (written onto the session-state frame,
+                # which is how running_mean reaches the detailed CSV below)
+                mc_report.add_running_mean(detailed_df)
+
                 fig = make_subplots(
                     rows=2, cols=1,
                     subplot_titles=("Test Run Results", "Running Average Convergence"),
@@ -717,14 +719,10 @@ def show_monte_carlo_results(mc_data):
                 )
                 
                 # Add confidence interval
-                if len(detailed_df) > 1:
-                    final_mean = detailed_df['running_mean'].iloc[-1]
-                    final_std = detailed_df['donation_default_mean'].std()
-                    ci_upper = final_mean + 1.96 * final_std / np.sqrt(len(detailed_df))
-                    ci_lower = final_mean - 1.96 * final_std / np.sqrt(len(detailed_df))
-                    
-                    fig.add_hline(y=ci_upper, line_dash="dash", line_color="gray", row=2, col=1)
-                    fig.add_hline(y=ci_lower, line_dash="dash", line_color="gray", row=2, col=1)
+                interval = mc_report.convergence_interval(detailed_df)
+                if interval is not None:
+                    fig.add_hline(y=interval['ci_upper'], line_dash="dash", line_color="gray", row=2, col=1)
+                    fig.add_hline(y=interval['ci_lower'], line_dash="dash", line_color="gray", row=2, col=1)
                 
                 fig.update_layout(
                     height=600,
@@ -740,11 +738,8 @@ def show_monte_carlo_results(mc_data):
         st.subheader("📋 Summary Statistics")
     
         # Format the summary table for display
-        display_summary = summary_df.copy()
-        for col in ['mean', 'p2.5', 'p97.5']:
-            if col in display_summary.columns:
-                display_summary[col] = display_summary[col].apply(lambda x: f"{x:.2%}")
-        
+        display_summary = mc_report.format_summary_for_display(summary_df)
+
         st.dataframe(display_summary, use_container_width=True)
     
         # Download Monte-Carlo results
@@ -754,7 +749,7 @@ def show_monte_carlo_results(mc_data):
     
         with col1:
             if mc_data['summary'] is not None:
-                summary_csv = mc_data['summary'].to_csv(index=False)
+                summary_csv = mc_report.summary_csv(mc_data['summary'])
                 st.download_button(
                     label="📥 Download Summary",
                     data=summary_csv,
@@ -764,7 +759,7 @@ def show_monte_carlo_results(mc_data):
         
         with col2:
             if mc_data['detailed'] is not None:
-                detailed_csv = mc_data['detailed'].to_csv(index=False)
+                detailed_csv = mc_report.detailed_csv(mc_data['detailed'])
                 st.download_button(
                     label="📥 Download Detailed",
                     data=detailed_csv,

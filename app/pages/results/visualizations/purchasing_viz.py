@@ -6,9 +6,33 @@ Handles purchasing_quantity and purchasing_frequency decisions.
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from io import BytesIO
-from datetime import datetime, timedelta
-from app.utils.timestamp_utils import TimestampConverter, get_duration_hours, get_periods
+from datetime import datetime
+from app.reports.purchasing import (
+    agent_level_purchases_xlsx,
+    build_agent_level_purchases,
+    build_agent_timeline,
+    build_transaction_export,
+    collect_purchase_timestamps,
+    collect_timestamps,
+    count_requests_by_customer_type,
+    count_requests_by_customer_type_lower,
+    counts_per_period,
+    customer_type_quantity_stats_frame,
+    customer_type_stats_frame,
+    income_category_stats_frame,
+    period_bins_and_labels,
+    period_details_frame,
+    purchasing_transactions_xlsx,
+    quantities_by_customer_type,
+    quantity_stats_frame,
+    timestamps_by_customer_type,
+    top_agents_by_quantity,
+)
+from app.utils.timestamp_utils import (
+    get_duration_hours,
+    get_periods,
+    get_simulation_base_time,
+)
 
 
 def render_purchasing_quantity(df, decision_name, decision_title, decision_data):
@@ -54,35 +78,13 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
     
     with col_stats:
         st.markdown("**📈 Statistics**")
-        stats = decision_data.describe()
-        
         # Get number of periods from simulation config
         if hasattr(st.session_state, 'sim_params'):
             periods = st.session_state.sim_params.periods
         else:
             periods = 15  # default
         
-        stats_df = pd.DataFrame({
-            'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-            'Purchase Requests per Term': [
-                f"{stats['mean']:.2f}",
-                f"{stats['std']:.2f}",
-                f"{int(stats['min'])}",
-                f"{int(stats['max'])}",
-                f"{stats['50%']:.2f}",
-                f"{stats['25%']:.2f}",
-                f"{stats['75%']:.2f}"
-            ],
-            'Purchase Requests per Period': [
-                f"{stats['mean']/periods:.2f}",
-                f"{stats['std']/periods:.2f}",
-                f"{int(stats['min'])/periods:.2f}",
-                f"{int(stats['max'])/periods:.2f}",
-                f"{stats['50%']/periods:.2f}",
-                f"{stats['25%']/periods:.2f}",
-                f"{stats['75%']/periods:.2f}"
-            ]
-        })
+        stats_df = quantity_stats_frame(decision_data, periods)
         st.dataframe(stats_df, use_container_width=True, hide_index=True)
     
     # Customer Type Breakdown - Purchase Requests by customer type
@@ -92,20 +94,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         st.caption("Distribution of total purchase requests across Regular, Fixed, and Discount customers")
         
         # Extract customer type from purchase_requests
-        customer_type_counts = {'Regular': 0, 'Fixed': 0, 'Discount': 0}
-        
-        for idx, row in df.iterrows():
-            purchase_requests = row.get('purchase_requests', [])
-            if isinstance(purchase_requests, list):
-                for req in purchase_requests:
-                    if isinstance(req, dict):
-                        customer_type = req.get('customer_type', 'regular')
-                        # Normalize to title case
-                        if isinstance(customer_type, str):
-                            customer_type = customer_type.capitalize()
-                        
-                        if customer_type in customer_type_counts:
-                            customer_type_counts[customer_type] += 1
+        customer_type_counts = count_requests_by_customer_type(df)
         
         total_purchases_by_type = sum(customer_type_counts.values())
         
@@ -141,23 +130,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 st.markdown("**📊 Statistics**")
                 
                 # Create statistics table
-                type_stats = []
-                for ctype, count in customer_type_counts.items():
-                    percentage = (count / total_purchases_by_type * 100) if total_purchases_by_type > 0 else 0
-                    type_stats.append({
-                        'Customer Type': ctype,
-                        'Purchase Requests': f"{count:,}",
-                        'Percentage': f"{percentage:.1f}%"
-                    })
-                
-                # Add total row
-                type_stats.append({
-                    'Customer Type': 'TOTAL',
-                    'Purchase Requests': f"{total_purchases_by_type:,}",
-                    'Percentage': '100.0%'
-                })
-                
-                type_stats_df = pd.DataFrame(type_stats)
+                type_stats_df = customer_type_stats_frame(customer_type_counts, total_purchases_by_type)
                 st.dataframe(type_stats_df, use_container_width=True, hide_index=True)
             
             # Now create three sub-sections, one for each customer type
@@ -171,34 +144,6 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             else:
                 periods = 15  # default
             
-            # Helper function to get purchasing quantities for a specific customer type
-            def get_quantities_by_customer_type(df, target_type):
-                """Extract purchasing quantities for agents of a specific customer type"""
-                quantities = []
-                for idx, row in df.iterrows():
-                    # Get customer type - try direct column first, then purchase_requests as fallback
-                    customer_type = ''
-                    
-                    # Priority 1: Check if customer_type is directly available in the dataframe
-                    if 'customer_type' in row and pd.notna(row['customer_type']) and str(row['customer_type']).strip():
-                        customer_type = str(row['customer_type']).capitalize()
-                    else:
-                        # Priority 2: Extract from purchase_requests if available
-                        purchase_requests = row.get('purchase_requests', [])
-                        if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
-                            # Check customer type from first request (all requests have same customer type)
-                            first_req = purchase_requests[0]
-                            if isinstance(first_req, dict):
-                                customer_type = first_req.get('customer_type', 'regular')
-                                if isinstance(customer_type, str):
-                                    customer_type = customer_type.capitalize()
-                    
-                    # If this agent matches the target customer type, include their quantity
-                    if customer_type == target_type:
-                        qty = row.get('purchasing_quantity', 0)
-                        quantities.append(qty)
-                
-                return pd.Series(quantities) if quantities else pd.Series([0])
             
             # Create three sub-sections
             customer_types_to_analyze = ['Regular', 'Fixed', 'Discount']
@@ -209,7 +154,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     st.markdown(f"### {icons[ctype]} {ctype} Customers")
                     
                     # Get quantities for this customer type
-                    type_quantities = get_quantities_by_customer_type(df, ctype)
+                    type_quantities = quantities_by_customer_type(df, ctype)
                     
                     if len(type_quantities) > 0 and type_quantities.sum() > 0:
                         # Create two columns: plot and stats
@@ -235,29 +180,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                         
                         with col_stats_type:
                             st.markdown("**📈 Statistics**")
-                            type_stats_desc = type_quantities.describe()
-                            
-                            type_stats_table = pd.DataFrame({
-                                'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-                                'Purchase Requests per Term': [
-                                    f"{type_stats_desc['mean']:.2f}",
-                                    f"{type_stats_desc['std']:.2f}",
-                                    f"{int(type_stats_desc['min'])}",
-                                    f"{int(type_stats_desc['max'])}",
-                                    f"{type_stats_desc['50%']:.2f}",
-                                    f"{type_stats_desc['25%']:.2f}",
-                                    f"{type_stats_desc['75%']:.2f}"
-                                ],
-                                'Purchase Requests per Period': [
-                                    f"{type_stats_desc['mean']/periods:.2f}",
-                                    f"{type_stats_desc['std']/periods:.2f}",
-                                    f"{int(type_stats_desc['min'])/periods:.2f}",
-                                    f"{int(type_stats_desc['max'])/periods:.2f}",
-                                    f"{type_stats_desc['50%']/periods:.2f}",
-                                    f"{type_stats_desc['25%']/periods:.2f}",
-                                    f"{type_stats_desc['75%']/periods:.2f}"
-                                ]
-                            })
+                            type_stats_table = customer_type_quantity_stats_frame(type_quantities, periods)
                             st.dataframe(type_stats_table, use_container_width=True, hide_index=True)
                         
                         # Add agent count
@@ -284,20 +207,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         df_with_category = df[df['income_category'].notna()].copy()
         
         if len(df_with_category) > 0:
-            category_stats = df_with_category.groupby('income_category')['purchasing_quantity'].agg([
-                ('count', 'count'),
-                ('mean', 'mean'),
-                ('std', 'std'),
-                ('min', 'min'),
-                ('max', 'max')
-            ]).reset_index()
-            
-            # Sort by category number (ascending = lowest income first)
-            category_stats = category_stats.sort_values('income_category')
-            
-            category_stats.columns = ['Category', 'Agents', 'Mean Qty', 'Std Dev', 'Min', 'Max']
-            category_stats['Mean Qty'] = category_stats['Mean Qty'].round(2)
-            category_stats['Std Dev'] = category_stats['Std Dev'].round(2)
+            category_stats = income_category_stats_frame(df_with_category)
             
             # Show count of agents with/without income categories
             agents_with_category = len(df_with_category)
@@ -354,20 +264,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         )
         
         # Extract all timestamps and prepare data
-        all_timestamps = []
-        agent_timelines = []
-        
-        for idx, requests in enumerate(df['purchase_requests']):
-            if isinstance(requests, list) and len(requests) > 0:
-                agent_id = df.iloc[idx].get('agent_id', idx + 1)
-                for req in requests:
-                    if isinstance(req, dict) and 'timestamp_hours' in req:
-                        timestamp = req['timestamp_hours']
-                        all_timestamps.append(timestamp)
-                        agent_timelines.append({
-                            'agent_id': agent_id,
-                            'timestamp': timestamp
-                        })
+        all_timestamps, agent_timelines = collect_purchase_timestamps(df)
         
         if len(all_timestamps) > 0:
             # Get simulation parameters for period breakdown
@@ -385,18 +282,10 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             st.caption("Shows purchase requests and completed transactions per period")
             
             # Create period bins
-            period_bins = []
-            period_labels = []
-            for i in range(periods):
-                start = i * duration_hours
-                end = (i + 1) * duration_hours
-                period_labels.append(f"P{i+1}")
-                period_bins.append(start)
-            period_bins.append(term_duration)
+            period_bins, period_labels = period_bins_and_labels(periods, duration_hours, term_duration)
             
             # Count purchases per period
-            period_counts = pd.cut(all_timestamps, bins=period_bins, labels=period_labels, include_lowest=True)
-            purchase_requests_per_period = [sum(period_counts == label) for label in period_labels]
+            purchase_requests_per_period = counts_per_period(all_timestamps, period_bins, period_labels)
             
             # For now, all purchase requests are completed (100% completion rate)
             # In future versions, this could be different based on rejection logic
@@ -430,32 +319,9 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             st.markdown("**Period Details**")
             
             # Create statistics table with Purchase Requests, Purchases Completed, and % Completed
-            stats_rows = []
-            for i, label in enumerate(period_labels):
-                requests = purchase_requests_per_period[i]
-                completed = purchases_completed_per_period[i]
-                pct_completed = (completed / requests * 100) if requests > 0 else 100.0
-                
-                stats_rows.append({
-                    'Period': label,
-                    'Purchase Requests': requests,
-                    'Purchases Completed': completed,
-                    '% Completed': f"{pct_completed:.1f}%"
-                })
-            
-            # Add TOTAL row
-            total_requests = sum(purchase_requests_per_period)
-            total_completed = sum(purchases_completed_per_period)
-            total_pct = (total_completed / total_requests * 100) if total_requests > 0 else 100.0
-            
-            stats_rows.append({
-                'Period': 'TOTAL',
-                'Purchase Requests': total_requests,
-                'Purchases Completed': total_completed,
-                '% Completed': f"{total_pct:.1f}%"
-            })
-            
-            stats_df = pd.DataFrame(stats_rows)
+            stats_df = period_details_frame(
+                period_labels, purchase_requests_per_period, purchases_completed_per_period
+            )
             st.dataframe(
                 stats_df,
                 use_container_width=True,
@@ -473,20 +339,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             )
             
             # Extract timestamps by customer type from the customer_type field
-            timestamps_by_type = {'Regular': [], 'Fixed': [], 'Discount': []}
-            
-            for idx, requests in enumerate(df['purchase_requests']):
-                if isinstance(requests, list) and len(requests) > 0:
-                    for req in requests:
-                        if isinstance(req, dict) and 'timestamp_hours' in req:
-                            # Get customer_type from request (lowercase: discount, fixed, regular)
-                            customer_type = req.get('customer_type', 'regular')
-                            if isinstance(customer_type, str):
-                                # Normalize to title case for grouping
-                                customer_type = customer_type.capitalize()
-                            
-                            if customer_type in timestamps_by_type:
-                                timestamps_by_type[customer_type].append(req['timestamp_hours'])
+            timestamps_by_type = timestamps_by_customer_type(df)
             
             # Create sub-sections for each customer type
             customer_types_order = ['Regular', 'Fixed', 'Discount']
@@ -499,8 +352,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     st.markdown(f"### {icons[ctype]} {ctype} Customers")
                     
                     # Count requests per period for this customer type
-                    type_period_counts = pd.cut(type_timestamps, bins=period_bins, labels=period_labels, include_lowest=True)
-                    type_requests_per_period = [sum(type_period_counts == label) for label in period_labels]
+                    type_requests_per_period = counts_per_period(type_timestamps, period_bins, period_labels)
                     
                     # All requests are completed (100% completion rate)
                     type_completed_per_period = type_requests_per_period.copy()
@@ -533,32 +385,9 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     st.markdown("**Period Details**")
                     
                     # Create statistics table
-                    type_stats_rows = []
-                    for i, label in enumerate(period_labels):
-                        requests = type_requests_per_period[i]
-                        completed = type_completed_per_period[i]
-                        pct_completed = (completed / requests * 100) if requests > 0 else 100.0
-                        
-                        type_stats_rows.append({
-                            'Period': label,
-                            'Purchase Requests': requests,
-                            'Purchases Completed': completed,
-                            '% Completed': f"{pct_completed:.1f}%"
-                        })
-                    
-                    # Add TOTAL row
-                    type_total_requests = sum(type_requests_per_period)
-                    type_total_completed = sum(type_completed_per_period)
-                    type_total_pct = (type_total_completed / type_total_requests * 100) if type_total_requests > 0 else 100.0
-                    
-                    type_stats_rows.append({
-                        'Period': 'TOTAL',
-                        'Purchase Requests': type_total_requests,
-                        'Purchases Completed': type_total_completed,
-                        '% Completed': f"{type_total_pct:.1f}%"
-                    })
-                    
-                    type_stats_df = pd.DataFrame(type_stats_rows)
+                    type_stats_df = period_details_frame(
+                        period_labels, type_requests_per_period, type_completed_per_period
+                    )
                     st.dataframe(
                         type_stats_df,
                         use_container_width=True,
@@ -616,71 +445,21 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         st.markdown("**📥 Export Transaction Data**")
         
         try:
-            # Flatten purchase_requests to transaction-level DataFrame
-            transactions = []
-            # Use centralized timestamp converter for consistent handling
-            ts_converter = TimestampConverter()
+            # Flatten purchase_requests to a transaction-level DataFrame
+            transactions_df = build_transaction_export(
+                df, get_simulation_base_time(), get_duration_hours(), get_periods()
+            )
             
-            for idx, row in df.iterrows():
-                purchase_requests = row.get('purchase_requests', [])
-                if isinstance(purchase_requests, list):
-                    for req in purchase_requests:
-                        if isinstance(req, dict):
-                            # Get timestamp_hours and convert using centralized utilities
-                            timestamp_hours = req.get('timestamp_hours', 0.0)
-                            ts_result = ts_converter.convert(timestamp_hours)
-                            
-                            period = ts_result['period']
-                            timestamp_str = ts_result['formatted']
-                            
-                            transactions.append({
-                                'transaction_id': req.get('transaction_id'),
-                                'Agent ID': req.get('customer_id', idx + 1),
-                                'vendorID': req.get('vendorID', 1),
-                                'platformProductID': req.get('platformProductID', 1),
-                                'purchase type': req.get('platformPrice', 'N/A'),
-                                'purchase_bid_value': req.get('bid_value', 'N/A'),
-                                'Purchase Timestamp': timestamp_str,
-                                'Period': period,
-                                'timestamp_hours': timestamp_hours  # Keep for sorting
-                            })
-            
-            if len(transactions) > 0:
-                transactions_df = pd.DataFrame(transactions)
-                
-                # CRITICAL: Sort by timestamp across ALL customers
-                transactions_df['timestamp_hours'] = pd.to_numeric(transactions_df['timestamp_hours'], errors='coerce')
-                transactions_df = transactions_df.sort_values(
-                    by='timestamp_hours', 
-                    ascending=True,
-                    na_position='last'
-                ).reset_index(drop=True).copy()
-                
-                # Handle transaction_id
-                # If IDs were pre-assigned (central system), use them. Otherwise generate them.
-                if 'transaction_id' in transactions_df.columns and not transactions_df['transaction_id'].isnull().all():
-                    # Move transaction_id to first column
-                    cols = ['transaction_id'] + [c for c in transactions_df.columns if c != 'transaction_id']
-                    transactions_df = transactions_df[cols]
-                else:
-                    # Fallback: Generate sequential IDs if missing
-                    if 'transaction_id' in transactions_df.columns:
-                        transactions_df = transactions_df.drop(columns=['transaction_id'])
-                    transactions_df.insert(0, 'transaction_id', range(1, len(transactions_df) + 1))
-                
-                # Drop timestamp_hours column before display/export
-                transactions_df = transactions_df.drop(columns=['timestamp_hours'])
+            if transactions_df is not None:
                 
                 col_export, col_preview = st.columns([1, 2])
                 
                 with col_export:
-                    buffer = BytesIO()
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        transactions_df.to_excel(writer, index=False, sheet_name='Transactions')
+                    xlsx_bytes = purchasing_transactions_xlsx(transactions_df)
                     
                     st.download_button(
                         label="📊 Download Transactions Excel",
-                        data=buffer.getvalue(),
+                        data=xlsx_bytes,
                         file_name=f"purchasing_transactions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Download transaction-level data with one row per purchase request"
@@ -713,149 +492,20 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 duration_hours = 2.0
             
             # Build agent-level data
-            agent_level_data = []
-            
-            for idx, row in df.iterrows():
-                agent_id = row.get('agent_id', idx + 1)
-                
-                # Agent Traits (matching disclose income export)
-                # Honesty_Humility
-                honesty_humility = ''
-                if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
-                    honesty_humility = round(row['Honesty_Humility'], 2)
-                
-                allowance_level = row.get('Assigned Allowance Level', '')
-                
-                # Study Program
-                study_program = row.get('Study Program', '')
-                
-                # Group_experiment (with fallbacks)
-                group_experiment = ''
-                if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
-                    group_experiment = row['Group_experiment']
-                elif 'group' in row and pd.notna(row['group']):
-                    group_experiment = row['group']
-                elif 'group_experiment' in row and pd.notna(row['group_experiment']):
-                    group_experiment = row['group_experiment']
-                
-                # TWT+Sospeso
-                twt_sospeso = ''
-                if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
-                    twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
-                
-                # Income
-                income = ''
-                if 'income' in row and pd.notna(row['income']):
-                    income = round(row['income'], 2)
-                elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
-                    income = round(row['actual_allowance'], 2)
-                
-                income_category_raw = row.get('income_category', '')
-                # Handle None/NaN/empty - display as 'N/A' for Regular customers who don't have income categories
-                if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
-                    income_category = 'N/A'
-                else:
-                    income_category = income_category_raw
-                
-                # Get customer type - try direct column first, then purchase_requests as fallback
-                customer_type = ''
-                
-                # Priority 1: Check if customer_type is directly available in the dataframe
-                if 'customer_type' in row and pd.notna(row['customer_type']) and str(row['customer_type']).strip():
-                    customer_type = str(row['customer_type']).capitalize()
-                else:
-                    # Priority 2: Extract from purchase_requests if available
-                    purchase_requests = row.get('purchase_requests', [])
-                    if isinstance(purchase_requests, list) and len(purchase_requests) > 0:
-                        first_req = purchase_requests[0]
-                        if isinstance(first_req, dict):
-                            customer_type = first_req.get('customer_type', '')
-                            if isinstance(customer_type, str):
-                                customer_type = customer_type.capitalize()
-                
-                # Get purchase_requests for counting
-                purchase_requests = row.get('purchase_requests', [])
-                
-                # Total counts
-                total_requests = len(purchase_requests) if isinstance(purchase_requests, list) else 0
-                total_completed = total_requests  # All requests are completed (100%)
-                pct_completed = 100.0 if total_requests > 0 else 0.0
-                
-                # Add overall record
-                agent_level_data.append({
-                    'Agent ID': agent_id,
-                    'Honesty_Humility': honesty_humility,
-                    'Assigned Allowance Level': allowance_level,
-                    'Study Program': study_program,
-                    'Group_experiment': group_experiment,
-                    'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
-                    'income': income,
-                    'Customer Type': customer_type,
-                    'Income Category': income_category,
-                    'Count of Purchase Requests': total_requests,
-                    'Count of Completed Transactions': total_completed,
-                    '% Completed Transactions': f"{pct_completed:.1f}%",
-                    'Period': 'Total'
-                })
-                
-                # Breakdown by period
-                if isinstance(purchase_requests, list):
-                    # Count requests per period for this agent
-                    period_counts = {f"P{i+1}": 0 for i in range(periods)}
-                    
-                    for req in purchase_requests:
-                        if isinstance(req, dict) and 'timestamp_hours' in req:
-                            timestamp = req['timestamp_hours']
-                            # Determine which period this request belongs to
-                            period_idx = int(timestamp // duration_hours)
-                            if 0 <= period_idx < periods:
-                                period_label = f"P{period_idx + 1}"
-                                period_counts[period_label] += 1
-                    
-                    # Add one record per period for this agent
-                    for period_label, count in period_counts.items():
-                        completed = count  # All requests are completed
-                        pct = 100.0 if count > 0 else 0.0
-                        
-                        agent_level_data.append({
-                            'Agent ID': agent_id,
-                            'Honesty_Humility': honesty_humility,
-                            'Assigned Allowance Level': allowance_level,
-                            'Study Program': study_program,
-                            'Group_experiment': group_experiment,
-                            'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
-                            'income': income,
-                            'Customer Type': customer_type,
-                            'Income Category': income_category,
-                            'Count of Purchase Requests': count,
-                            'Count of Completed Transactions': completed,
-                            '% Completed Transactions': f"{pct:.1f}%",
-                            'Period': period_label
-                        })
+            agent_level_data = build_agent_level_purchases(df, periods, duration_hours)
             
             if len(agent_level_data) > 0:
                 agent_df = pd.DataFrame(agent_level_data)
                 
                 # Create multi-sheet Excel
-                buffer_agent = BytesIO()
-                with pd.ExcelWriter(buffer_agent, engine='openpyxl') as writer:
-                    # Sheet 1: Total (all agents, total across all periods)
-                    total_df = agent_df[agent_df['Period'] == 'Total'].drop(columns=['Period'])
-                    total_df.to_excel(writer, index=False, sheet_name='Total')
-                    
-                    # Additional sheets: One per Period
-                    period_labels = [f"P{i+1}" for i in range(periods)]
-                    for period_label in period_labels:
-                        period_df = agent_df[agent_df['Period'] == period_label].drop(columns=['Period'])
-                        if len(period_df) > 0:
-                            period_df.to_excel(writer, index=False, sheet_name=period_label)
+                xlsx_bytes = agent_level_purchases_xlsx(agent_df, periods)
                 
                 col_download_agent, col_info_agent = st.columns([1, 2])
                 
                 with col_download_agent:
                     st.download_button(
                         label="📥 Download Agent-Level Excel",
-                        data=buffer_agent.getvalue(),
+                        data=xlsx_bytes,
                         file_name=f"agent_level_purchases_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Download agent-level purchasing information with Total + Period breakdown"
@@ -893,15 +543,7 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
         duration_hours = 2.0
     
     # Extract all timestamps from purchase_requests for analysis
-    all_timestamps = []
-    
-    for idx, row in df.iterrows():
-        requests = row.get('purchase_requests', [])
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict):
-                    if 'timestamp_hours' in req:
-                        all_timestamps.append(req['timestamp_hours'])
+    all_timestamps = collect_timestamps(df)
     
     if len(all_timestamps) == 0:
         st.info("No purchase requests found")
@@ -912,20 +554,7 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
     st.caption("Breakdown of all purchase requests by customer type and pricing model")
     
     # Count by customer_type field directly (not platformPrice which may not exist)
-    from collections import Counter
-    customer_type_counts = Counter()
-    
-    for idx, row in df.iterrows():
-        requests = row.get('purchase_requests', [])
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict):
-                    # Get customer_type from request (lowercase: discount, fixed, regular)
-                    customer_type = req.get('customer_type', 'regular')
-                    if isinstance(customer_type, str):
-                        # Normalize to lowercase for counting
-                        customer_type = customer_type.lower()
-                        customer_type_counts[customer_type] += 1
+    customer_type_counts = count_requests_by_customer_type_lower(df)
     
     total_requests = sum(customer_type_counts.values())
     discount_count = customer_type_counts.get('discount', 0)
@@ -982,23 +611,9 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
     st.caption("Individual agent timelines showing random distribution of their purchases")
     
     # Select up to 20 agents with most purchases for visualization
-    agent_purchase_counts = df.groupby(df.index)['purchasing_quantity'].first().sort_values(ascending=False)
-    sample_agents = agent_purchase_counts.head(20).index.tolist()
+    sample_agents = top_agents_by_quantity(df, 20)
     
-    timeline_data = []
-    for idx in sample_agents:
-        requests = df.iloc[idx]['purchase_requests']
-        agent_id = df.iloc[idx].get('agent_id', idx + 1)
-        quantity = df.iloc[idx].get('purchasing_quantity', 0)
-        
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict) and 'timestamp_hours' in req:
-                    timeline_data.append({
-                        'Agent': f"Agent {agent_id} ({quantity} items)",
-                        'Time': req['timestamp_hours'],
-                        'Purchase': 1
-                    })
+    timeline_data = build_agent_timeline(df, sample_agents)
     
     if timeline_data:
         timeline_df = pd.DataFrame(timeline_data)
