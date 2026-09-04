@@ -48,14 +48,15 @@ place where the app hands that description to the engine.
 
 ## Known gap
 
-One owner ruling (**R8**, register row Q-10) is only half in place. The ruling says
-vendor scoring should normalise vendor price with the Page-1 price bounds. The
-results page and the exports do that. The engine does not:
-`_calculate_preferred_vendor` in `src/decisions/purchasing_quantity.py` reads
-`simulation_config['vendor_price_min' / 'vendor_price_max']` — top-level keys that
-nothing sets — so it always falls back to the hard-coded `50.0 / 150.0`. The Page-1
-bounds live one level down, in `simulation_config['simulation']`, and are read
-everywhere else through `get_simulation_param()` in
-`src/decisions/income_utils.py`. See Q-10 in the register and
-[`open-questions-for-professor.md`](open-questions-for-professor.md) for what changes
-if it is corrected.
+None open. When this document was first written one owner ruling — **R8**, register
+row Q-10 — was only half in place: the results page and the exports normalised vendor
+price with the Page-1 bounds, but `_calculate_preferred_vendor` in
+`src/decisions/purchasing_quantity.py` read `vendor_price_min` / `vendor_price_max`
+as top-level keys nothing sets and so always fell back to the hard-coded `50.0 /
+150.0`. That was closed on 2026-09-04: the engine now reads both bounds from
+`simulation_config['simulation']` through `get_simulation_param()` in
+`src/decisions/income_utils.py`, exactly as `src/engine/vendors.py` and the reports
+do, with the Page-1 "Average Price per Vendor" as the reference price wherever one
+is needed. See Q-10 in the register, item 7 of
+[`open-questions-for-professor.md`](open-questions-for-professor.md) (resolved) and
+§5 of [`acceptance-report.md`](acceptance-report.md).

@@ -3,6 +3,8 @@
 The migration split the logic from the screens. It did **not** re-derive the model.
 Along the way seven things turned up that look like modelling decisions rather than
 programming decisions, so they were left exactly as they were and written down here.
+Six are still open; item 7 has since been ruled on by the owner and applied, and is
+kept below as a record.
 
 Each item says three things: **what the code does today**, **why it looks
 suspicious**, and **what would change if it were altered**. None of them is a bug the
@@ -277,41 +279,36 @@ against)? If yes, how was `sigma` obtained?
 
 ---
 
-## 7. Vendor price bounds in the engine (ruling R8, only half applied)
+## 7. Vendor price bounds in the engine (ruling R8) — RESOLVED 2026-09-04
 
-**What the code does today.** Ruling **R8** says vendor scoring should normalise
-vendor price with the Page-1 price bounds. The results page and the exports do that
-— `app/pages/results/components/export_section.py` reads
-`sim_params.vendor_price_min / vendor_price_max` and passes the values into
-`app/reports/agent_level.py`, `transaction_level.py` and `vendor.py`.
+**Resolved by the owner; no longer open.** The owner confirmed that R8 covers the
+engine's vendor choice, not only the reported scores: the engine must normalise
+vendor price with the Page-1 min/max bounds exactly as the reports do, the Page-1
+"Average Price per Vendor" (`sim_params.market_price`) is the reference price
+wherever "the price" is needed, and the bounds only shape the random vendor prices.
+Everything else stays identical.
 
-The engine does not:
+**What was wrong.** `_calculate_preferred_vendor` in
+`src/decisions/purchasing_quantity.py` read `vendor_price_min` / `vendor_price_max`
+as **top-level** keys of `simulation_config`, which nothing sets, so it always
+normalised on the hard-coded `[50, 150]`. The Page-1 values live one level down, in
+`simulation_config['simulation']`, which every other decision reads through
+`get_simulation_param()` (`src/decisions/income_utils.py`) and which
+`src/engine/vendors.py` draws the vendor prices from.
 
-```python
-# src/decisions/purchasing_quantity.py, _calculate_preferred_vendor
-price_min_config = simulation_config.get('vendor_price_min', 50.0)
-price_max_config = simulation_config.get('vendor_price_max', 150.0)
-```
+**What was changed.** The two reads now go through
+`get_simulation_param(simulation_config, 'vendor_price_min', 50.0)` and
+`('vendor_price_max', 150.0)`; the 50 / 150 fallbacks remain for runs without Page-1
+parameters. Nothing else in `src/` scored vendors or read a reference price from the
+wrong place: `src/engine/vendors.py` already reads the bounds and `market_price`
+from `['simulation']`, `src/decisions/bid_value.py` already takes `market_price`
+through `get_simulation_param()` as the fallback reference price, and
+`src/decisions/vendor_selection.py` only echoes the Decision-6 choice.
 
-Those are **top-level** keys of `simulation_config`, and nothing sets them. The
-Page-1 values live one level down, in `simulation_config['simulation']`, which every
-other decision reads through `get_simulation_param()`
-(`src/decisions/income_utils.py`). So the engine always normalises on the hard-coded
-`[50, 150]`, whatever the user typed on Page 1.
-
-**Why it looks suspicious.** The engine picks the preferred vendor with one price
-scale and the results page reports that vendor's score with another. With the default
-single vendor (Page-1 bounds both equal to the Average Price per Vendor, 100) the
-engine computes a normalised price of `1 - (100-50)/100 = 0.5` while the reports
-compute `1.0`.
-
-**What would change if it were altered.** Changing the two lines to
-`get_simulation_param(simulation_config, 'vendor_price_min', 50.0)` (and `_max`)
-changes `preferred_vendor` — and therefore `vendorID` on every purchase request, and
-therefore vendor-dependent prices and bids — in **every run whose Page-1 bounds are
-not exactly 50 and 150**. That is every default single-vendor run. It is the largest
-single numerical change of any item on this page, which is why it has been reported
-rather than applied.
-
-**The question.** Confirm that R8 was meant to cover the engine's vendor choice, and
-not only the reported scores.
+**Effect.** With the default single vendor (Page-1 bounds both equal to the Average
+Price per Vendor, 100) the engine's normalised price moves from
+`1 - (100-50)/100 = 0.5` to `1.0` — the value `calculate_vendor_score_with_breakdown`
+returns whenever `max <= min` — matching the reports. With one vendor the choice is
+unchanged, so no journey number moved. Runs with several vendors and non-default
+bounds now rank vendors on the same scale the results page reports. Register row
+Q-10 and `acceptance-report.md` §5 record the change.

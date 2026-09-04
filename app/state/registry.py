@@ -173,9 +173,10 @@ _PAGE1_WIDGETS = _rows((
     ("single_vendor_price_input", "<sim_params.market_price>"),
     ("single_vendor_products_input", "<sim_params.vendor_products_avg>"),
     ("vendor_price_min_input", "<sim_params.vendor_price_min>",
-     "R8 says these bounds are the vendor-scoring reference; the results page and "
-     "the exports use them, src/decisions/purchasing_quantity.py does not (see the "
-     "Known gap in docs/migration/README.md)"),
+     "R8: these bounds are the vendor-scoring reference everywhere -- the results "
+     "page, the exports and, since 2026-09-04, the engine "
+     "(src/decisions/purchasing_quantity.py reads them via get_simulation_param); "
+     "market_price is the reference price (register row Q-10)"),
     ("vendor_price_max_input", "<sim_params.vendor_price_max>"),
     ("market_price_input", "<sim_params.market_price>"),
     ("vendor_products_min_input", "<sim_params.vendor_products_min>"),

@@ -22,7 +22,8 @@ repository with `PYTHONPATH=/Users/suedagul/coopecon-migration`.
 (`/private/tmp/claude-501/-Users-suedagul--sdg/7e5dc018-2435-4c04-abe0-987fa357d237/scratchpad`).
 
 **Verdict: pass.** Every difference against the original behaviour carries an owner ruling. Nothing is
-unattributed. One ruled change (R8) is not implemented and is reported, not applied.
+unattributed. The one ruled change that was still outstanding when this report was first written (R8)
+was applied on 2026-09-04 after the owner's ruling — see §5; the journeys did not move.
 
 ---
 
@@ -32,6 +33,7 @@ unattributed. One ruled change (R8) is not implemented and is reported, not appl
 |---|---|
 | `.venv/bin/python -m pytest tests/ -q` | **215 passed**, 0 failed, 34.5 s |
 | `.venv/bin/python -m pytest tests/test_import_boundary.py -q` | **106 passed**, 23.6 s |
+| `.venv/bin/python -m pytest tests/ -q` — re-run after R8 was applied (2026-09-04) | **215 passed**, 0 failed |
 
 The headline moved from 204 to 215 because C3 added `tests/test_session_key_registry.py` (11 tests).
 Per file: `test_import_boundary.py` 106, `test_rejected_transaction_defaults.py` 32, `test_build_plan.py` 31,
@@ -128,13 +130,13 @@ diff); **R18** absent sigma key = tab default (control journey J15).
   `result_columns`/`result_sha256`/pinned `sigma_value` (R14/R12), no auto-implied record (R13).
 * **Unattributed: none.**
 
-## 5. R8 — NOT IMPLEMENTED (report only)
+## 5. R8 — IMPLEMENTED 2026-09-04 (was "report only")
 
 Ruling R8: vendor scoring uses the Page-1 price bounds and the "Average Price per Vendor" as the reference
-price. Confirmed exactly as C1 and C3 found:
+price. When this report was first written the engine half was missing, confirmed exactly as C1 and C3 found:
 
 ```python
-# src/decisions/purchasing_quantity.py:85-86, _calculate_preferred_vendor
+# src/decisions/purchasing_quantity.py:85-86, _calculate_preferred_vendor  (BEFORE)
 price_min_config = simulation_config.get('vendor_price_min', 50.0)
 price_max_config = simulation_config.get('vendor_price_max', 150.0)
 ```
@@ -143,15 +145,52 @@ price_max_config = simulation_config.get('vendor_price_max', 150.0)
 `simulation_config['simulation_seed']` at that level and the same function reads it at line 71). The Page-1
 bounds are packed one level down — `build_simulation_params` in `app/seam/build_plan.py` puts
 `vendor_price_min/max` into `simulation_config['simulation']`, which is where `src/engine/vendors.py:43-44`
-reads them. No writer of a top-level `vendor_price_min` exists anywhere in `src/` or `app/`. The engine
-therefore always normalises on `[50, 150]` and never references `market_price`, while the reports
-(`app/reports/agent_level.py:49`, `transaction_level.py:71`, `vendor_viz.py:220,457`) normalise on the Page-1
-bounds. In the journeys the Page-1 bounds are 100/100 (single vendor) — the engine scores the one vendor with
-`norm_price = 0.5`, the reports with `1.0`; with one vendor the choice is unaffected, so no journey number
-moves. **No numerics were changed.** The fix is a two-line switch to `get_simulation_param(...)`; it changes
-`preferred_vendor`/`vendorID` (and everything downstream) in every run whose bounds are not 50/150, which is
-why it needs the owner's explicit go-ahead. Documented in `rulings-and-quirks.md` (Q-10 ⚠),
-`docs/migration/README.md` ("Known gap") and `open-questions-for-professor.md` §7.
+reads them. No writer of a top-level `vendor_price_min` existed anywhere in `src/` or `app/`, so the engine
+always normalised on `[50, 150]` while the reports (`app/reports/agent_level.py:49`,
+`transaction_level.py:71`, `vendor_viz.py:220,457`) normalised on the Page-1 bounds.
+
+**Owner ruling (recorded verbatim).** "the engine's vendor scoring is a mistake because it normalises vendor
+prices with a fixed 50-150 range read from top-level simulation_config keys that nothing sets, while the
+results page and exports normalise with the Page-1 bounds; the engine must use the Page-1 min/max bounds like
+the reports do, and the Average Price per Vendor (sim_params.market_price) is the reference price wherever
+'the price' is needed — bounds only shape the random vendor prices. Everything else stays identical."
+
+**Change applied (2026-09-04).** The two reads now go through the standard Page-1 accessor:
+
+```python
+# src/decisions/purchasing_quantity.py, _calculate_preferred_vendor  (AFTER, commented R8 at the site)
+price_min_config = get_simulation_param(simulation_config, 'vendor_price_min', 50.0)
+price_max_config = get_simulation_param(simulation_config, 'vendor_price_max', 150.0)
+```
+
+`get_simulation_param` (`src/decisions/income_utils.py`) reads `simulation_config['simulation']` — the same
+mapping `src/engine/vendors.py` draws the vendor prices from and the reports normalise with. The 50 / 150
+fallbacks stay for runs without Page-1 parameters; `config/simulation.yaml` carries the same 50 / 150 under
+`simulation:`, so a CLI run reads the values it always did.
+
+**Audit of every other site** (`grep vendor_price_min|vendor_price_max|market_price` under `src/decisions`
+and `src/engine`; nothing else changed, per "everything else stays identical"):
+
+| site | what it does | verdict |
+|---|---|---|
+| `src/engine/vendors.py:43-44, 63, 68` | reads the bounds and `market_price` from `simulation_config['simulation']`; the bounds only shape the random vendor prices, `market_price` fills the explicit-price list | already per the ruling — unchanged |
+| `src/decisions/bid_value.py:46` | `get_simulation_param(simulation_config, 'market_price', 100.0)` is the reference price whenever no vendor price is passed in | already per the ruling — unchanged |
+| `src/decisions/vendor_selection.py` | echoes the `preferred_vendor` Decision 6 stored; scores nothing (it imports `select_best_vendor` but never calls it, and nothing in `src/` or `app/` does) | unchanged |
+| `src/vendor_attribute_generator.py`, `calculate_vendor_score_with_breakdown` | with `max_price <= min_price` returns `norm_price = 1.0` (the single vendor at 100/100); with both bounds `None` it falls back to the vendor-list min/max, a branch the engine no longer reaches because it always passes the Page-1 bounds | unchanged |
+| `app/reports/agent_level.py` inline `avg_vendor_score` (Q-45, `0.5` at equal bounds) | reports side; deferred by the owner | out of scope — unchanged |
+
+**Effect on the default run.** One vendor at price 100, Page-1 bounds 100 / 100: the engine's `norm_price`
+was `1 - (100 - 50) / (150 - 50) = 0.5` and is now `1.0` (equal bounds), the value the reports compute. With
+one vendor the choice cannot change. Runs with several vendors and bounds other than 50 / 150 now rank
+vendors on the same scale the results page reports; no journey covers that case.
+
+**Verification.** `.venv/bin/python -m pytest tests/ -q`: **215 passed**. The 17 journeys were re-captured
+from the patched tree (`scratchpad/r8/final`, every worker rc=0) and compared with `scratchpad/reference/final`
+by `scratchpad/verify/compare_step3_closeout.py` (`scratchpad/r8/cmp/r8_vs_final.txt`): every frame
+identical (values, columns, dtypes, attrs, manifest hashes), every download identical, 40 / 40 page snapshots
+identical, session state identical. **No number moved**, exactly as predicted above. Documented in
+`rulings-and-quirks.md` (Q-10, now `fixed`), `docs/migration/README.md` ("Known gap": none open) and
+`open-questions-for-professor.md` §7 (resolved).
 
 ## 6. End-to-end drive (fresh process, AppTest)
 
@@ -228,7 +267,7 @@ never cleared; `dd_intercept = -0.5` fallback; the Baseline `force_donation_sigm
 
 ## 9. Notes for the owner (no action taken)
 
-1. **R8 not implemented** (§5) — needs a decision before the two-line change is made.
+1. **R8** (§5) — applied on 2026-09-04 after the owner's ruling; the entry is kept for the record.
 2. **"Compare both" raw-distribution title**: `_income_mode_suffix()` keeps the historical three-way test, so a
    Compare-both run still shows no suffix. No journey covers Compare both; the ruled `(Continuous)` /
    `(Categorical)` correction is only proven for single-mode runs.

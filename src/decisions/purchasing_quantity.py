@@ -81,9 +81,16 @@ def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng)
         proximity_scores = agent_state['vendor_proximity_scores']
     
     # Calculate composite score for ALL vendors
-    # Get configured price bounds for consistent normalization
-    price_min_config = simulation_config.get('vendor_price_min', 50.0)
-    price_max_config = simulation_config.get('vendor_price_max', 150.0)
+    # Get configured price bounds for consistent normalization.
+    # R8 (register row Q-10): the bounds are the Page-1 values in
+    # simulation_config['simulation'] -- the same ones src/engine/vendors.py
+    # draws the vendor prices from and the reports normalise with
+    # (app/reports/agent_level.py, transaction_level.py, vendor.py). They used
+    # to be read as top-level keys that nothing sets, so the engine always
+    # scored on the hard-coded [50, 150]. The 50/150 fallbacks remain for runs
+    # without Page-1 parameters (CLI).
+    price_min_config = get_simulation_param(simulation_config, 'vendor_price_min', 50.0)
+    price_max_config = get_simulation_param(simulation_config, 'vendor_price_max', 150.0)
     
     from src.vendor_attribute_generator import calculate_vendor_composite_score
     vendor_scores = []
