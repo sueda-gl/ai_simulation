@@ -8,8 +8,14 @@ from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 import yaml
 import numpy as np
-from scipy import stats
-from scipy.stats import gengamma
+from app.seam.sentinels import donation_sigma_overall
+from app.reports import preview
+
+
+# R12: one sigma constant for the donation model, read from
+# `donation_default.stochastic.sigma_overall` in config/decisions.yaml (never a
+# literal in app/). The UI multiplies it by the sigma coefficient slider.
+DONATION_SIGMA_OVERALL = donation_sigma_overall()
 
 
 @dataclass
@@ -114,125 +120,25 @@ class SimulationParameters:
         """Calculate number of products available for auction per vendor (legacy method)"""
         return int(self.products_per_vendor * self.bidding_percentage)
     
-    def validate_vendor_products_avg(self) -> bool:
-        """Validate that average products per vendor is within min/max range"""
-        return self.vendor_products_min <= self.vendor_products_avg <= self.vendor_products_max
-    
-    def get_total_products_range(self) -> Tuple[int, int]:
-        """Get the total products range across all vendors"""
-        min_total = self.vendor_products_min * self.num_vendors
-        max_total = self.vendor_products_max * self.num_vendors
-        return min_total, max_total
-    
-    def get_expected_total_products(self) -> int:
-        """Get expected total products across all vendors"""
-        return self.vendor_products_avg * self.num_vendors
-    
     def sample_income_distribution(self, n_samples: int = 1000, seed: int = 42) -> np.ndarray:
         """Sample from the configured income distribution"""
-        rng = np.random.default_rng(seed)
-        
-        if self.income_distribution == "lognormal":
-            # Use user-specified mu and sigma parameters
-            mu = self.lognormal_mu
-            sigma = self.lognormal_sigma
-            
-            # Sample from lognormal distribution
-            Y = stats.lognorm.rvs(s=sigma, scale=np.exp(mu), size=n_samples, random_state=rng)
-            
-            # Apply linear shift (X = a + Y)
-            samples = self.lognormal_min + Y
-            
-            # Apply rejection sampling if maximum is set
-            if self.lognormal_max is not None:
-                # Keep resampling values that exceed the maximum
-                max_iterations = 1000  # Prevent infinite loops
-                for _ in range(max_iterations):
-                    mask = samples > self.lognormal_max
-                    if not np.any(mask):
-                        break
-                    # Resample values that are too high
-                    n_resample = np.sum(mask)
-                    Y_new = stats.lognorm.rvs(s=sigma, scale=np.exp(mu), size=n_resample, random_state=rng)
-                    samples[mask] = self.lognormal_min + Y_new
-                
-                # Final clip to ensure no values exceed max
-                samples = np.clip(samples, self.lognormal_min, self.lognormal_max)
-            
-        elif self.income_distribution == "generalised_gamma":
-            # Use user-specified k, c, and lambda parameters
-            k = self.gg_k
-            c = self.gg_c
-            lambda_param = self.gg_lambda
-            
-            # Sample from Generalised Gamma distribution
-            # scipy.stats.gengamma uses (a, c, scale) parameterization
-            # where a=c (shape2), c=k (shape1), scale=lambda
-            Y = stats.gengamma.rvs(a=c, c=k, scale=lambda_param, size=n_samples, random_state=rng)
-            
-            # Apply linear shift (X = a + Y)
-            samples = self.gg_min + Y
-            
-            # Apply rejection sampling if maximum is set
-            if self.gg_max is not None:
-                # Keep resampling values that exceed the maximum
-                max_iterations = 1000  # Prevent infinite loops
-                for _ in range(max_iterations):
-                    mask = samples > self.gg_max
-                    if not np.any(mask):
-                        break
-                    # Resample values that are too high
-                    n_resample = np.sum(mask)
-                    Y_new = stats.gengamma.rvs(a=c, c=k, scale=lambda_param, size=n_resample, random_state=rng)
-                    samples[mask] = self.gg_min + Y_new
-                
-                # Final clip to ensure no values exceed max
-                samples = np.clip(samples, self.gg_min, self.gg_max)
-            
-        elif self.income_distribution == "dagum":
-            # Use user-specified a (tail), p (body), and b (scale) parameters
-            a = self.dagum_a
-            p = self.dagum_p
-            b = self.dagum_b
-            
-            # Sample from Dagum distribution using inverse CDF method
-            # Dagum CDF: F(x) = (1 + (x/b)^(-a))^(-p)
-            # Inverse CDF: x = b * ((U^(-1/p) - 1)^(-1/a))
-            U = rng.random(n_samples)
-            samples = b * np.power(np.power(U, -1/p) - 1, -1/a)
-            
-            # Apply linear shift
-            samples = self.dagum_min + samples
-            
-            # Apply rejection sampling if maximum is set
-            if self.dagum_max is not None:
-                # Keep resampling values that exceed the maximum
-                max_iterations = 1000  # Prevent infinite loops
-                for _ in range(max_iterations):
-                    mask = samples > self.dagum_max
-                    if not np.any(mask):
-                        break
-                    # Resample values that are too high
-                    n_resample = np.sum(mask)
-                    U_new = rng.random(n_resample)
-                    new_values = b * np.power(np.power(U_new, -1/p) - 1, -1/a)
-                    samples[mask] = self.dagum_min + new_values
-                
-                # Final clip to ensure no values exceed max
-                samples = np.clip(samples, self.dagum_min, self.dagum_max)
-        
-        else:
-            # Fallback to uniform distribution
-            samples = rng.uniform(self.income_min, self.income_max, n_samples)
-        
+        return preview.sample_income_distribution(
+            n_samples=n_samples,
+            seed=seed,
+            **preview.distribution_kwargs(self),
+        )
 
-        return samples
-    
     def get_discount_qualification_rate(self, n_samples: int = 1000) -> float:
-        """Calculate the percentage of agents that would qualify for discounts"""
-        samples = self.sample_income_distribution(n_samples)
-        qualified = np.sum(samples <= self.discount_income_threshold)
-        return qualified / len(samples)
+        """Calculate the percentage of agents that would qualify for discounts
+
+        No seed is passed on purpose: the rate has always been computed off the
+        preview's default seed, never off the seed the histogram was drawn with.
+        """
+        return preview.discount_qualification_rate(
+            discount_income_threshold=self.discount_income_threshold,
+            n_samples=n_samples,
+            **preview.distribution_kwargs(self),
+        )
 
 
 @dataclass
@@ -294,26 +200,14 @@ def initialize_session_state():
                 sim_params.income_distribution = 'dagum'  # Migrate Pareto to Dagum
             elif sim_params.income_distribution == 'weibull':
                 sim_params.income_distribution = 'generalised_gamma'  # Migrate Weibull to GG
-            
-        # Migrate old vendor price/product values to new defaults
-        # This ensures users get the updated default values
-        # Check for various old values that need migration
-        if hasattr(sim_params, 'vendor_price_min'):
-            if sim_params.vendor_price_min in [8.0, 100.0]:  # Old values
-                sim_params.vendor_price_min = 50.0
-        if hasattr(sim_params, 'vendor_price_max'):
-            if sim_params.vendor_price_max in [12.0, 100.0]:  # Old values  
-                sim_params.vendor_price_max = 150.0
-        if hasattr(sim_params, 'market_price'):
-            if sim_params.market_price == 10.0:  # Old value
-                sim_params.market_price = 100.0
-        if hasattr(sim_params, 'vendor_products_min'):
-            if sim_params.vendor_products_min in [1, 100]:  # Old values
-                sim_params.vendor_products_min = 50
-        if hasattr(sim_params, 'vendor_products_max'):
-            if sim_params.vendor_products_max in [1, 100]:  # Old values
-                sim_params.vendor_products_max = 150
-            
+
+        # R9: the vendor price / product "value migration" block that used to sit
+        # here is gone. It rewrote vendor_price_min/max, market_price and
+        # vendor_products_min/max on every rerun whenever they happened to equal one
+        # of the old defaults, so a single vendor could not be run at the Page-1
+        # average price / average products the user typed. A single vendor now runs
+        # at exactly those values.
+
     if 'decision_params' not in st.session_state:
         st.session_state.decision_params = DecisionParameters()
     if 'simulation_results' not in st.session_state:
@@ -327,7 +221,7 @@ def initialize_session_state():
         'income_spec_mode': 'categorical only',
         'sigma_in_copula': False,
         'sigma_in_research': True,  # Enable sigma in Research mode by default
-        'sigma_value_ui': 9.8995,  # Static empirical SD value
+        'sigma_value_ui': DONATION_SIGMA_OVERALL,  # Static empirical SD value
         'sigma_coefficient': 1.0,  # Coefficient to multiply the static SD (0-2)
         'anchor_observed_weight': 0.75,
         'n_agents': 1000,

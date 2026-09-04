@@ -4,9 +4,30 @@ Decision execution functions for running individual and combined simulations.
 """
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 from app.simulation import run_full_simulation
-from app.models import ALL_DECISIONS
+from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
+
+# The saved-decision-configuration store lives in app/state/saved_configs.py.
+# Re-exported here so every existing caller keeps importing it from this module.
+from app.state.saved_configs import (  # noqa: F401
+    extract_disclose_income_configuration_details,
+    get_current_disclose_income_params,
+    calculate_disclose_income_metrics,
+    extract_disclose_documents_configuration_details,
+    get_current_disclose_documents_params,
+    calculate_disclose_documents_metrics,
+    get_selected_decision_configs,
+    validate_seed_consistency,
+    get_decision_result_columns,
+    hash_result_columns,
+    save_decision_config,
+    get_decision_config,
+    has_decision_config,
+    is_decision_config_selected,
+    clear_decision_config,
+    get_simulation_seed_from_configs,
+    get_all_saved_config_summary,
+)
 
 
 def format_decision_title(decision_name, include_number=False):
@@ -234,172 +255,6 @@ def can_run_complete_simulation():
         return (True, "Using default values for all decisions", 1, None, [])
     else:
         return (True, "Single configuration", 1, None, [])
-
-
-def get_implied_single_configuration():
-    """
-    Returns the implied configuration when only one exists, otherwise None.
-    
-    This allows the system to auto-populate selected_donation_config when the user
-    has configured a single population mode + income mode combination, without
-    requiring them to explicitly run donation_default first.
-    
-    Returns:
-        dict: Configuration object if only one config exists, None otherwise
-    """
-    try:
-        # Check configuration count
-        # Note: Using *_ to handle the new 5th return value (blocking_issues list)
-        can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
-        
-        # Only return implied config when exactly one configuration exists
-        if config_count != 1:
-            return None
-        
-        # Get current mode settings from session state
-        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
-        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
-        
-        # Try to get current coefficient values (may fail if not loaded yet)
-        try:
-            coefficients = get_current_coefficients()
-        except Exception:
-            # Fallback: create minimal coefficients structure
-            coefficients = {
-                'intercept': 0.0,
-                'beta_group': {'MidSub': 0.0, 'NoSub': 0.0, 'FullSub': 0.0},
-                'beta_income_q': {'Q1': 0.0, 'Q2': 0.0, 'Q3': 0.0, 'Q4': 0.0, 'Q5': 0.0},
-                'beta_income_linear': 0.0,
-                'beta_study': {'Incoming': 0.0, 'Law5yr': 0.0, 'UG3yr': 0.0, 'Grad2yr': 0.0},
-                'beta_hh': 0.0
-            }
-        
-        # Try to get current stochastic parameters  
-        try:
-            stochastic_params = get_current_stochastic_params()
-        except Exception:
-            # Fallback: create minimal stochastic structure
-            stochastic_params = {
-                'stochastic': {
-                    'sigma_value': 9.8995,
-                    'sigma_coefficient': 1.0,
-                    'sigma_in_copula': False,
-                    'sigma_in_research': True
-                },
-                'anchor_weights': {
-                    'observed': 0.75,
-                    'predicted': 0.25
-                }
-            }
-        
-        # Build implied configuration (without metrics since simulation hasn't run)
-        # NOTE: donation_income_mode is the PRIMARY key for donation-specific income mode
-        config = {
-            'result_key': f"implied_{population_mode.lower().replace(' ', '_').replace('(', '').replace(')', '')}_{income_spec_mode.replace(' ', '_')}",
-            'population_mode': population_mode,
-            # NEW: donation-specific income mode (primary)
-            'donation_income_mode': income_spec_mode,
-            # DEPRECATED: kept for backwards compatibility
-            'income_spec_mode': income_spec_mode,
-            'coefficients': coefficients,
-            'stochastic_params': stochastic_params,
-            'metrics': {
-                'mean_donation': st.session_state.get('final_donation_rate_default_value', 0.10),
-                'std_donation': None,
-                'median_donation': None,
-                'min_donation': None,
-                'max_donation': None,
-                'q25_donation': None,
-                'q75_donation': None,
-                'donation_column_used': 'donation_default'
-            },
-            'selected_timestamp': datetime.now(),
-            'total_agents': st.session_state.get('n_agents', 1000),
-            'source': 'auto_implied_single_config',
-            'original_seed': st.session_state.get('seed_input', st.session_state.get('seed', 42)),
-            'original_n_agents': st.session_state.get('n_agents', 1000)
-        }
-        
-        return config
-    except Exception:
-        # If anything fails, return None (don't auto-populate)
-        return None
-
-
-def auto_populate_single_donation_config():
-    """
-    Auto-populate donation_default config when only one configuration exists.
-    
-    Writes to unified storage (selected_decision_configs) only.
-    
-    Returns:
-        bool: True if config was auto-populated, False otherwise
-    """
-    try:
-        selected_decisions = []
-        if hasattr(st.session_state, 'decision_params') and hasattr(st.session_state.decision_params, 'selected_decisions'):
-            selected_decisions = st.session_state.decision_params.selected_decisions or []
-        
-        if 'donation_default' not in selected_decisions:
-            return False
-        
-        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
-        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
-        
-        is_compare_mode = (
-            population_mode == "Compare all" or 
-            'compare' in str(income_spec_mode).lower() or 
-            'both' in str(income_spec_mode).lower()
-        )
-        
-        configs = get_selected_decision_configs()
-        
-        if is_compare_mode:
-            # In compare mode - clear any auto-implied configs
-            if 'donation_default' in configs and configs['donation_default'].get('source') == 'auto_implied_single_config':
-                del configs['donation_default']
-            return False
-        
-        # Check if already has a config in unified storage
-        existing = configs.get('donation_default')
-        
-        if existing is not None:
-            current_pop = st.session_state.get('population_mode', 'Copula (synthetic)')
-            current_income = st.session_state.get('income_spec_mode', 'categorical only')
-            
-            if existing.get('population_mode') != current_pop or existing.get('income_spec_mode') != current_income:
-                can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
-                if config_count == 1:
-                    if existing.get('source') == 'auto_implied_single_config':
-                        implied_config = get_implied_single_configuration()
-                        if implied_config:
-                            configs['donation_default'] = implied_config
-                            mean_donation = implied_config['metrics']['mean_donation']
-                            st.session_state.final_donation_rate_default_value = mean_donation
-                            if '_persistent_defaults' not in st.session_state:
-                                st.session_state._persistent_defaults = {}
-                            st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
-                            return True
-                else:
-                    if existing.get('source') == 'auto_implied_single_config':
-                        del configs['donation_default']
-            return False
-        
-        # No existing config - try to get implied single configuration
-        implied_config = get_implied_single_configuration()
-        
-        if implied_config:
-            configs['donation_default'] = implied_config
-            mean_donation = implied_config['metrics']['mean_donation']
-            st.session_state.final_donation_rate_default_value = mean_donation
-            if '_persistent_defaults' not in st.session_state:
-                st.session_state._persistent_defaults = {}
-            st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
-            return True
-        
-        return False
-    except Exception:
-        return False
 
 
 def render_simulation_buttons(decision_name, selected_decisions):
@@ -916,37 +771,21 @@ def run_individual_decision(decision_name):
                 else:
                     st.error("❌ Monte Carlo simulation returned no results")
             else:
-                # Run single simulation
+                # Run single simulation.
+                # A successful run ends in st.rerun(), which raises a BaseException,
+                # so nothing below runs on the success path - the state restoration
+                # happens through _pending_decisions_restore instead.
                 run_full_simulation()
-            
-            # Store in individual results (only for single run mode)
-            if st.session_state.sim_params.simulation_mode != "Monte-Carlo Study" and st.session_state.simulation_results:
-                if 'individual_results' not in st.session_state:
-                    st.session_state.individual_results = {}
-                
-                st.session_state.individual_results[decision_name] = st.session_state.simulation_results
-                st.success(f"✅ {decision_name} simulation complete!")
-                
-                # Show preview of results
-                results = next(iter(st.session_state.simulation_results.values()))
-                if results is not None and not results.empty:
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Agents Simulated", f"{len(results):,}")
-                    with col2:
-                        if decision_name == "donation_default":
-                            if 'donation_default' in results.columns:
-                                st.metric("Average Donation Rate", f"{results['donation_default'].mean():.2%}")
-            
-            # Restore ONLY selected_decisions - keep custom_decisions/default_decisions as-is
-            # because they're needed for should_enable_selection() to show "Use This Config" button
+
+            # Only reached when the run did not redirect: Monte Carlo returned no
+            # results, or run_full_simulation() handled an error itself.
+            # Restore ONLY selected_decisions - keep custom_decisions/default_decisions
+            # as-is because they're needed for should_enable_selection() to show the
+            # "Use This Config" button.
             st.session_state.decision_params.selected_decisions = original_decisions
-            # Do NOT restore custom_decisions and default_decisions
-            
-            # Clear pending restore flag since we restored successfully
             if hasattr(st.session_state, '_pending_decisions_restore'):
                 del st.session_state._pending_decisions_restore
-            
+
         except Exception as e:
             # Restore selected_decisions on exception to ensure state is consistent
             st.session_state.decision_params.selected_decisions = original_decisions
@@ -1062,9 +901,8 @@ def run_combined_simulation(selected_decisions):
     if 'disclose_income' in saved_config_info:
         di_saved_mode = saved_config_info['disclose_income']
         st.info(f"📋 **Disclose Income** will use saved config: {di_saved_mode}")
-        # Update di_income_mode to match saved config for consistency
-        if di_saved_mode and di_saved_mode != 'Unknown':
-            st.session_state.di_income_mode = di_saved_mode
+        # R28: the run does not write di_income_mode (or any other di_/dd_/rtd_ key)
+        # back into session state - the saved config carries the mode the run uses.
     elif 'disclose_income' in effective_selected_decisions:
         # Decision is selected but no saved config - show current mode
         di_mode = st.session_state.get('di_income_mode', 'Categorical only')
@@ -1088,10 +926,17 @@ def run_combined_simulation(selected_decisions):
         try:
             # Store original selected decisions
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
-            
+
+            # R27: a successful run ends in st.rerun() (a BaseException), so the
+            # restoration has to be handed to run_full_simulation() the same way
+            # run_individual_decision() does it.
+            st.session_state._pending_decisions_restore = {
+                'selected_decisions': original_decisions
+            }
+
             # Set to run ALL decisions (this ensures complete simulation)
             st.session_state.decision_params.selected_decisions = ALL_DECISIONS
-            
+
             # Store metadata about which decisions use custom vs default parameters
             # FIX: Use effective_selected_decisions which includes decisions with saved configs
             st.session_state.custom_decisions = effective_selected_decisions
@@ -1120,36 +965,25 @@ def run_combined_simulation(selected_decisions):
                     
                     # Restore state before rerun
                     st.session_state.decision_params.selected_decisions = original_decisions
-                    
+                    if hasattr(st.session_state, '_pending_decisions_restore'):
+                        del st.session_state._pending_decisions_restore
+
                     st.rerun()
                 else:
                     st.error("❌ Monte Carlo simulation returned no results")
             else:
-                # Run single simulation
+                # Run single simulation.
+                # A successful run ends in st.rerun(), which raises a BaseException,
+                # so nothing below runs on the success path - the restoration happens
+                # through _pending_decisions_restore instead.
                 run_full_simulation()
-            
-            # Restore original selected decisions
+
+            # Only reached when the run did not redirect: Monte Carlo returned no
+            # results, or run_full_simulation() handled an error itself.
             st.session_state.decision_params.selected_decisions = original_decisions
-            
-            # Show completion message
-            if st.session_state.simulation_results:
-                st.success(f"✅ Complete simulation finished!")
-                
-                # Provide clear messaging based on configuration
-                # Use effective_selected_decisions to include decisions with saved configs
-                if len(effective_selected_decisions) == 0:
-                    st.info(f"🔧 **All {len(ALL_DECISIONS)} decisions** used default values")
-                elif len(unselected_decisions) == 0:
-                    st.info(f"📊 **All {len(effective_selected_decisions)} decisions** used your custom parameters")
-                else:
-                    st.info(f"📊 **{len(effective_selected_decisions)} decisions** used your custom parameters")
-                    st.info(f"🔧 **{len(unselected_decisions)} decisions** used default values")
-                
-                # Show preview
-                results = next(iter(st.session_state.simulation_results.values()))
-                if results is not None and not results.empty:
-                    st.metric("Total Agents Simulated", f"{len(results):,}")
-                    
+            if hasattr(st.session_state, '_pending_decisions_restore'):
+                del st.session_state._pending_decisions_restore
+
         except Exception as e:
             st.error(f"❌ Error running complete simulation: {str(e)}")
             import traceback
@@ -1270,7 +1104,7 @@ def get_current_stochastic_params():
     """Collect current stochastic parameters from session state"""
     return {
         'stochastic': {
-            'sigma_value': st.session_state.get('sigma_value_ui', 9.8995),
+            'sigma_value': st.session_state.get('sigma_value_ui', DONATION_SIGMA_OVERALL),
             'sigma_coefficient': st.session_state.get('sigma_coefficient', 1.0),
             'sigma_in_copula': st.session_state.get('sigma_in_copula', False),
             'sigma_in_research': st.session_state.get('sigma_in_research', True)
@@ -1330,538 +1164,3 @@ def is_configuration_selected(result_key):
 def clear_selected_configuration():
     """Clear the currently selected donation_default configuration."""
     clear_decision_config('donation_default')
-
-
-# ==================== DISCLOSE INCOME CONFIGURATION SELECTION SYSTEM ====================
-# NOTE: These functions are kept for backwards compatibility.
-# New code should use the unified save_decision_config() function.
-
-def save_disclose_income_configuration(result_key, result_df):
-    """
-    Save the selected disclose income configuration for later use in combined simulations.
-    
-    DEPRECATED: This is a wrapper for backwards compatibility.
-    New code should use: save_decision_config('disclose_income', result_key, result_df, params, metrics, extra_data)
-    """
-    # Extract configuration details from the result key
-    config_details = extract_disclose_income_configuration_details(result_key)
-    
-    # Get current disclose income parameters from session state
-    params = get_current_disclose_income_params()
-    
-    # Calculate key metrics from the result
-    metrics = calculate_disclose_income_metrics(result_df)
-    
-    extra_data = {
-        'income_mode': config_details['income_mode']
-    }
-    
-    # Use unified save function
-    success, config, error_info = save_decision_config(
-        'disclose_income', result_key, result_df, params, metrics, extra_data
-    )
-    
-    return config
-
-
-def extract_disclose_income_configuration_details(result_key):
-    """Extract income mode from result key for disclose income"""
-    
-    # Income mode detection
-    if 'categorical' in result_key.lower():
-        income_mode = 'Categorical only'
-    elif 'continuous' in result_key.lower():
-        income_mode = 'Continuous only'
-    else:
-        # Use current session state value
-        income_mode = st.session_state.get('di_income_mode', 'Categorical only')
-    
-    return {
-        'income_mode': income_mode
-    }
-
-
-def get_current_disclose_income_params():
-    """Collect current disclose income parameters from session state"""
-    return {
-        'intercept': st.session_state.get('di_intercept', 0.75),
-        'income_mode': st.session_state.get('di_income_mode', 'Categorical only'),
-        'anchor_weights': {
-            'observed_prosocial': st.session_state.get('di_wopb', 0.25),
-            'prosocial_weight': st.session_state.get('di_wpb', 0.50)
-        },
-        'stochastic': {
-            'sigma_enabled': st.session_state.get('di_sigma_enabled', False),
-            'sigma_in_copula': st.session_state.get('di_sigma_in_copula', False),
-            'scale_factor': st.session_state.get('di_scale_factor', 1.0),
-            'sigma_strategy': st.session_state.get('di_sigma_strategy', 'overall'),
-            'quintile_scale_factors': st.session_state.get('di_quintile_scale_factors', {})
-        }
-    }
-
-
-def calculate_disclose_income_metrics(result_df):
-    """Calculate key metrics from disclose income result DataFrame"""
-    
-    metrics = {}
-    
-    # Calculate Y/N rates
-    if 'disclose_income' in result_df.columns:
-        total = len(result_df)
-        y_count = (result_df['disclose_income'] == 'Y').sum()
-        n_count = (result_df['disclose_income'] == 'N').sum()
-        metrics['y_rate'] = y_count / total if total > 0 else 0
-        metrics['n_rate'] = n_count / total if total > 0 else 0
-        metrics['y_count'] = int(y_count)
-        metrics['n_count'] = int(n_count)
-    
-    # Calculate raw value statistics if available
-    if 'disclose_income_raw' in result_df.columns:
-        raw_values = result_df['disclose_income_raw'].dropna()
-        metrics['raw_mean'] = float(raw_values.mean())
-        metrics['raw_std'] = float(raw_values.std())
-        metrics['raw_median'] = float(raw_values.median())
-        metrics['raw_min'] = float(raw_values.min())
-        metrics['raw_max'] = float(raw_values.max())
-        metrics['raw_q25'] = float(raw_values.quantile(0.25))
-        metrics['raw_q75'] = float(raw_values.quantile(0.75))
-    
-    # Calculate DI_i statistics if available (pre-stochastic value)
-    if 'disclose_income_di' in result_df.columns:
-        di_values = result_df['disclose_income_di'].dropna()
-        metrics['di_mean'] = float(di_values.mean())
-        metrics['di_std'] = float(di_values.std())
-    
-    return metrics
-
-
-def extract_disclose_documents_configuration_details(result_key):
-    """Extract income mode from result key for disclose documents"""
-    if 'categorical' in result_key.lower():
-        income_mode = 'Categorical only'
-    elif 'continuous' in result_key.lower():
-        income_mode = 'Continuous only'
-    else:
-        income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
-    return {'income_mode': income_mode}
-
-
-def get_current_disclose_documents_params():
-    """Collect current disclose documents parameters from session state.
-
-    NOTE: disclose_documents has NO prosocial anchoring, so (unlike disclose_income)
-    there is no anchor_weights block.
-    """
-    return {
-        'intercept': st.session_state.get('dd_intercept', -0.5),
-        'income_mode': st.session_state.get('dd_income_mode', 'Categorical only'),
-        'stochastic': {
-            'sigma_enabled': st.session_state.get('dd_sigma_enabled', False),
-            'sigma_in_copula': st.session_state.get('dd_sigma_in_copula', False),
-            'scale_factor': st.session_state.get('dd_scale_factor', 1.0),
-            'sigma_strategy': st.session_state.get('dd_sigma_strategy', 'overall'),
-            'quintile_scale_factors': st.session_state.get('dd_quintile_scale_factors', {})
-        }
-    }
-
-
-def calculate_disclose_documents_metrics(result_df):
-    """Calculate key metrics from a disclose documents result DataFrame.
-
-    Y/N rates are computed over QUALIFIED (non-NA) agents only; NA agents are tracked
-    separately so they do not dilute the disclosure rate.
-    """
-    metrics = {}
-    if 'disclose_documents' in result_df.columns:
-        qualified = result_df.loc[result_df['disclose_documents'] != 'NA', 'disclose_documents']
-        total_q = len(qualified)
-        y_count = int((qualified == 'Y').sum())
-        n_count = int((qualified == 'N').sum())
-        metrics['y_rate'] = y_count / total_q if total_q > 0 else 0
-        metrics['n_rate'] = n_count / total_q if total_q > 0 else 0
-        metrics['y_count'] = y_count
-        metrics['n_count'] = n_count
-        metrics['na_count'] = int((result_df['disclose_documents'] == 'NA').sum())
-        metrics['qualified_count'] = total_q
-
-    if 'disclose_documents_raw' in result_df.columns:
-        # Qualified subgroup only (decision != NA). The model now emits a raw score for every
-        # agent (incl. gated NAs) for export, so a bare .dropna() would include ineligibles.
-        if 'disclose_documents' in result_df.columns:
-            raw_values = result_df.loc[result_df['disclose_documents'] != 'NA', 'disclose_documents_raw'].dropna()
-        else:
-            raw_values = result_df['disclose_documents_raw'].dropna()
-        if len(raw_values) > 0:
-            metrics['raw_mean'] = float(raw_values.mean())
-            metrics['raw_std'] = float(raw_values.std())
-            metrics['raw_median'] = float(raw_values.median())
-            metrics['raw_min'] = float(raw_values.min())
-            metrics['raw_max'] = float(raw_values.max())
-    return metrics
-
-
-def is_disclose_income_configuration_selected(result_key):
-    """Check if a specific disclose income configuration is currently selected."""
-    return is_decision_config_selected('disclose_income', result_key)
-
-
-def clear_disclose_income_configuration():
-    """Clear the currently selected disclose income configuration."""
-    clear_decision_config('disclose_income')
-
-
-# ==================== UNIFIED DECISION CONFIGURATION SYSTEM ====================
-# This unified system replaces the fragmented per-decision config storage.
-# All decision configs are now stored in a single dict: selected_decision_configs
-# This enables seed matching validation and easy extensibility for new decisions.
-
-def get_selected_decision_configs():
-    """Get the unified decision configs dictionary, initializing if needed."""
-    if 'selected_decision_configs' not in st.session_state:
-        st.session_state.selected_decision_configs = {}
-    return st.session_state.selected_decision_configs
-
-
-def validate_seed_consistency(new_decision_name, new_seed, new_n_agents):
-    """
-    Check if new config's seed/n_agents matches existing configs.
-    
-    CRITICAL: Only validates against EXPLICITLY saved configs, not auto-implied ones.
-    Auto-implied configs are for UI convenience only and should not block saving.
-    
-    Args:
-        new_decision_name: Name of the decision being saved
-        new_seed: Seed used for the new config
-        new_n_agents: Number of agents used for the new config
-    
-    Returns:
-        tuple: (is_valid, existing_seed, existing_n_agents, conflicting_decision)
-            - is_valid: True if seed matches or no existing configs
-            - existing_seed: The seed from existing configs (if any)
-            - existing_n_agents: The n_agents from existing configs (if any)
-            - conflicting_decision: Name of the decision with mismatched seed (if any)
-    """
-    configs = get_selected_decision_configs()
-    
-    for decision_name, config in configs.items():
-        # Skip if checking against itself (re-saving same decision)
-        if decision_name == new_decision_name:
-            continue
-        
-        # Skip auto-implied configs - they're not real user selections
-        # Only validate against explicitly saved configs
-        if config.get('source') == 'auto_implied_single_config':
-            continue
-            
-        existing_seed = config.get('original_seed')
-        existing_n_agents = config.get('original_n_agents')
-        
-        if existing_seed != new_seed or existing_n_agents != new_n_agents:
-            return (False, existing_seed, existing_n_agents, decision_name)
-    
-    return (True, new_seed, new_n_agents, None)
-
-
-def save_decision_config(decision_name, result_key, result_df, params, metrics=None, extra_data=None):
-    """
-    Unified function to save a decision configuration.
-    
-    This is the standard way to save any decision config for use in combined simulations.
-    All configs are validated for seed consistency before saving.
-    
-    Args:
-        decision_name: Name of the decision (e.g., 'donation_default', 'disclose_income')
-        result_key: Key identifying the result configuration
-        result_df: DataFrame containing the simulation results
-        params: Dict of decision-specific parameters (coefficients, weights, etc.)
-        metrics: Optional dict of calculated metrics. If None, will use basic metrics.
-        extra_data: Optional dict of additional data to store (e.g., for backwards compat)
-    
-    Returns:
-        tuple: (success: bool, config: dict or None, error_info: dict or None)
-            - success: True if config was saved successfully
-            - config: The saved config dict (if successful)
-            - error_info: Dict with seed mismatch details (if failed)
-    """
-    # Get seed used during the original run
-    if hasattr(st.session_state, 'sim_params') and st.session_state.sim_params.simulation_mode == "Single Run":
-        original_seed = st.session_state.get('seed_input', st.session_state.get('seed', 42))
-    else:
-        original_seed = st.session_state.get('base_seed_input', st.session_state.get('base_seed', 42))
-    
-    original_n_agents = st.session_state.get('n_agents', 1000)
-    
-    # Validate seed consistency with existing configs
-    is_valid, existing_seed, existing_n_agents, conflicting_decision = validate_seed_consistency(
-        decision_name, original_seed, original_n_agents
-    )
-    
-    if not is_valid:
-        return (False, None, {
-            'new_seed': original_seed,
-            'new_n_agents': original_n_agents,
-            'existing_seed': existing_seed,
-            'existing_n_agents': existing_n_agents,
-            'conflicting_decision': conflicting_decision
-        })
-    
-    # Build the config object
-    config = {
-        'result_key': result_key,
-        'params': params,
-        'metrics': metrics or {},
-        'selected_timestamp': datetime.now(),
-        'total_agents': len(result_df) if result_df is not None else 0,
-        'source': f'individual_{decision_name}_run',
-        'original_seed': original_seed,
-        'original_n_agents': original_n_agents
-    }
-    
-    # For donation_default, flatten params to top level for consumer compatibility.
-    # Consumers read config['coefficients'], config['stochastic_params'], etc.
-    if decision_name == 'donation_default':
-        if 'coefficients' in params:
-            config['coefficients'] = params['coefficients']
-        if 'stochastic_params' in params:
-            config['stochastic_params'] = params['stochastic_params']
-        if 'income_mode' in params:
-            config['donation_income_mode'] = params['income_mode']
-            if not extra_data or 'income_spec_mode' not in extra_data:
-                config['income_spec_mode'] = params['income_mode']
-    
-    # Merge in any extra data
-    if extra_data:
-        config.update(extra_data)
-    
-    # For disclose_income / disclose_documents, ensure population_mode is stored
-    if decision_name in ('disclose_income', 'disclose_documents') and 'population_mode' not in config:
-        config_details = extract_configuration_details(result_key)
-        config['population_mode'] = config_details['population_mode']
-
-    # Store in unified configs dict (SINGLE source of truth)
-    configs = get_selected_decision_configs()
-    configs[decision_name] = config
-    
-    # Sync final_donation_rate_default_value when saving donation_default
-    if decision_name == 'donation_default' and 'mean_donation' in (metrics or {}):
-        mean_donation = metrics['mean_donation']
-        st.session_state.final_donation_rate_default_value = mean_donation
-        if '_persistent_defaults' not in st.session_state:
-            st.session_state._persistent_defaults = {}
-        st.session_state._persistent_defaults['final_donation_rate_default_value'] = mean_donation
-    
-    return (True, config, None)
-
-
-def _sync_to_legacy_storage(decision_name, config):
-    """DEPRECATED: Legacy sync is no longer needed.
-    
-    All config storage now goes through the unified selected_decision_configs dict.
-    This function is kept as a no-op for any stray callers during transition.
-    """
-    pass
-
-
-def get_decision_config(decision_name):
-    """
-    Get the saved configuration for a specific decision.
-    
-    Args:
-        decision_name: Name of the decision
-    
-    Returns:
-        dict or None: The config dict if exists, None otherwise
-    """
-    configs = get_selected_decision_configs()
-    return configs.get(decision_name)
-
-
-def has_decision_config(decision_name):
-    """
-    Check if a decision has a saved configuration.
-    
-    Args:
-        decision_name: Name of the decision
-    
-    Returns:
-        bool: True if config exists
-    """
-    return get_decision_config(decision_name) is not None
-
-
-def is_decision_config_selected(decision_name, result_key):
-    """
-    Check if a specific result_key is the currently selected config for a decision.
-    
-    Args:
-        decision_name: Name of the decision
-        result_key: The result key to check
-    
-    Returns:
-        bool: True if this result_key is currently selected
-    """
-    config = get_decision_config(decision_name)
-    if config is None:
-        return False
-    return config.get('result_key') == result_key
-
-
-def clear_decision_config(decision_name):
-    """
-    Clear the saved configuration for a specific decision.
-    
-    This is the SINGLE function for clearing any decision config.
-    It cleans up unified storage and any stale legacy attributes.
-    
-    Args:
-        decision_name: Name of the decision to clear
-    """
-    configs = get_selected_decision_configs()
-    if decision_name in configs:
-        del configs[decision_name]
-    
-    # Clean up stale legacy attributes (safety net for transition)
-    if decision_name == 'donation_default':
-        if hasattr(st.session_state, 'selected_donation_config'):
-            del st.session_state.selected_donation_config
-        if hasattr(st.session_state, '_using_selected_config'):
-            del st.session_state._using_selected_config
-        # Reset final_donation_rate_default_value (wrapped in try/except because
-        # Streamlit prevents modification after the bound widget is instantiated)
-        try:
-            st.session_state.final_donation_rate_default_value = 0.10
-        except Exception:
-            pass
-        if '_persistent_defaults' in st.session_state:
-            st.session_state._persistent_defaults['final_donation_rate_default_value'] = 0.10
-    elif decision_name == 'disclose_income':
-        if hasattr(st.session_state, 'selected_disclose_income_config'):
-            del st.session_state.selected_disclose_income_config
-
-
-def clear_all_decision_configs():
-    """Clear all saved decision configurations."""
-    st.session_state.selected_decision_configs = {}
-    
-    # Also clear legacy storage
-    if hasattr(st.session_state, 'selected_donation_config'):
-        del st.session_state.selected_donation_config
-    if hasattr(st.session_state, 'selected_disclose_income_config'):
-        del st.session_state.selected_disclose_income_config
-    
-    # Reset defaults
-    st.session_state.final_donation_rate_default_value = 0.10
-    if '_persistent_defaults' in st.session_state:
-        st.session_state._persistent_defaults['final_donation_rate_default_value'] = 0.10
-
-
-def get_simulation_seed_from_configs():
-    """
-    Get the seed to use for simulation from saved configs.
-    
-    If configs exist, returns their seed (all configs have matching seed).
-    Otherwise returns the current session state seed.
-    
-    Returns:
-        tuple: (seed, n_agents, source) where source is 'configs' or 'session_state'
-    """
-    configs = get_selected_decision_configs()
-    
-    if configs:
-        # All configs have matching seed, so just get from first one
-        first_config = next(iter(configs.values()))
-        return (
-            first_config['original_seed'],
-            first_config['original_n_agents'],
-            'configs'
-        )
-    
-    # No saved configs, use session state
-    if hasattr(st.session_state, 'sim_params') and st.session_state.sim_params.simulation_mode == "Single Run":
-        seed = st.session_state.get('seed_input', st.session_state.get('seed', 42))
-    else:
-        seed = st.session_state.get('base_seed_input', st.session_state.get('base_seed', 42))
-    
-    n_agents = st.session_state.get('n_agents', 1000)
-    
-    return (seed, n_agents, 'session_state')
-
-
-def get_all_saved_config_summary():
-    """
-    Get a summary of all saved decision configs.
-    
-    Returns:
-        list of dicts: Summary info for each saved config
-    """
-    configs = get_selected_decision_configs()
-    summaries = []
-    
-    for decision_name, config in configs.items():
-        summaries.append({
-            'decision_name': decision_name,
-            'result_key': config.get('result_key', 'unknown'),
-            'original_seed': config.get('original_seed'),
-            'original_n_agents': config.get('original_n_agents'),
-            'selected_timestamp': config.get('selected_timestamp'),
-            'source': config.get('source')
-        })
-    
-    return summaries
-
-
-def migrate_legacy_configs_to_unified():
-    """
-    One-time migration: move any stale legacy config attributes into unified storage,
-    then clean up the legacy attributes.
-    
-    Called at page initialization for safety during transition.
-    """
-    configs = get_selected_decision_configs()
-    
-    # Migrate donation_default from legacy attribute if not in unified
-    if 'donation_default' not in configs and hasattr(st.session_state, 'selected_donation_config'):
-        legacy = st.session_state.selected_donation_config
-        if legacy:
-            configs['donation_default'] = {
-                'result_key': legacy.get('result_key', 'migrated'),
-                'params': {
-                    'coefficients': legacy.get('coefficients', {}),
-                    'stochastic_params': legacy.get('stochastic_params', {}),
-                    'income_mode': legacy.get('donation_income_mode', legacy.get('income_spec_mode', 'categorical only'))
-                },
-                'coefficients': legacy.get('coefficients', {}),
-                'stochastic_params': legacy.get('stochastic_params', {}),
-                'donation_income_mode': legacy.get('donation_income_mode', legacy.get('income_spec_mode', 'categorical only')),
-                'metrics': legacy.get('metrics', {}),
-                'selected_timestamp': legacy.get('selected_timestamp', datetime.now()),
-                'total_agents': legacy.get('total_agents', 0),
-                'source': legacy.get('source', 'migrated_legacy'),
-                'original_seed': legacy.get('original_seed', st.session_state.get('seed', 42)),
-                'original_n_agents': legacy.get('original_n_agents', st.session_state.get('n_agents', 1000)),
-                'population_mode': legacy.get('population_mode'),
-                'income_spec_mode': legacy.get('income_spec_mode')
-            }
-        del st.session_state.selected_donation_config
-    
-    # Migrate disclose_income from legacy attribute if not in unified
-    if 'disclose_income' not in configs and hasattr(st.session_state, 'selected_disclose_income_config'):
-        legacy = st.session_state.selected_disclose_income_config
-        if legacy:
-            configs['disclose_income'] = {
-                'result_key': legacy.get('result_key', 'migrated'),
-                'params': legacy.get('params', {}),
-                'metrics': legacy.get('metrics', {}),
-                'income_mode': legacy.get('income_mode'),
-                'population_mode': legacy.get('population_mode'),
-                'selected_timestamp': legacy.get('selected_timestamp', datetime.now()),
-                'total_agents': legacy.get('total_agents', 0),
-                'source': legacy.get('source', 'migrated_legacy'),
-                'original_seed': legacy.get('original_seed', st.session_state.get('seed', 42)),
-                'original_n_agents': legacy.get('original_n_agents', st.session_state.get('n_agents', 1000)),
-            }
-        del st.session_state.selected_disclose_income_config
-    
-    # Clean up stale _using_selected_config flag
-    if hasattr(st.session_state, '_using_selected_config'):
-        del st.session_state._using_selected_config

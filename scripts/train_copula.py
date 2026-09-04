@@ -5,12 +5,11 @@ from pathlib import Path
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.build_master_traits import get_master_trait_list
-from src.validate_traits import merged    # uses the merge already done
+from src.data.participants import get_master_trait_list, merged  # the shared 280-participant merge
 
 MODEL_OUT = Path(__file__).resolve().parents[1] / "config" / "trait_model.pkl"
 traits    = get_master_trait_list()
-df        = merged[traits].copy()
+df        = merged()[traits].copy()
 
 print(f"Training copula on {len(traits)} traits from {len(df)} participants...")
 

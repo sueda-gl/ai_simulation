@@ -82,23 +82,16 @@ def get_duration_hours() -> float:
     Get the duration in hours per period from simulation configuration.
     
     Checks multiple sources in order:
-    1. st.session_state.simulation_params['simulation']['duration_hours']
-    2. st.session_state.sim_params.duration_hours
-    3. DEFAULT_DURATION_HOURS (2.0)
-    
+    1. st.session_state.sim_params.duration_hours
+    2. DEFAULT_DURATION_HOURS (2.0)
+
     Returns:
         float: Duration per period in hours
-    
+
     Example:
         >>> duration = get_duration_hours()  # Returns 2.0 (or configured value)
     """
-    # Try simulation_params dict first (preferred)
-    if hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        if 'duration_hours' in sim_params:
-            return float(sim_params['duration_hours'])
-    
-    # Try sim_params object (legacy)
+    # sim_params object (Page 1 parameters)
     if hasattr(st.session_state, 'sim_params'):
         if hasattr(st.session_state.sim_params, 'duration_hours'):
             return float(st.session_state.sim_params.duration_hours)
@@ -112,20 +105,13 @@ def get_periods() -> int:
     Get the number of periods from simulation configuration.
     
     Checks multiple sources in order:
-    1. st.session_state.simulation_params['simulation']['periods']
-    2. st.session_state.sim_params.periods
-    3. DEFAULT_PERIODS (15)
-    
+    1. st.session_state.sim_params.periods
+    2. DEFAULT_PERIODS (15)
+
     Returns:
         int: Number of periods in the simulation
     """
-    # Try simulation_params dict first (preferred)
-    if hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        if 'periods' in sim_params:
-            return int(sim_params['periods'])
-    
-    # Try sim_params object (legacy)
+    # sim_params object (Page 1 parameters)
     if hasattr(st.session_state, 'sim_params'):
         if hasattr(st.session_state.sim_params, 'periods'):
             return int(st.session_state.sim_params.periods)
@@ -365,83 +351,3 @@ class TimestampConverter:
     def get_term_duration(self) -> float:
         """Get total term duration in hours."""
         return self.duration_hours * self.periods
-
-
-# ============================================================================
-# PRICE FORMATTING UTILITIES
-# ============================================================================
-
-def format_price(price: Union[float, int, None], decimal_places: int = 2) -> Union[float, str]:
-    """
-    Format a price to a specified number of decimal places.
-    
-    This provides consistent price formatting across all Excel exports.
-    
-    Args:
-        price: The price value to format (can be float, int, or None)
-        decimal_places: Number of decimal places (default: 2)
-    
-    Returns:
-        float: Formatted price as float with specified decimal places
-        str: 'N/A' if price is None or NaN
-    
-    Example:
-        >>> format_price(137.5625)   # Returns 137.56
-        >>> format_price(100.0)      # Returns 100.00
-        >>> format_price(None)       # Returns 'N/A'
-        >>> format_price(np.nan)     # Returns 'N/A'
-    """
-    if price is None or (isinstance(price, float) and pd.isna(price)):
-        return 'N/A'
-    
-    try:
-        return round(float(price), decimal_places)
-    except (ValueError, TypeError):
-        return 'N/A'
-
-
-# ============================================================================
-# UTILITY FUNCTIONS FOR BATCH PROCESSING
-# ============================================================================
-
-def add_timestamp_columns(
-    df: pd.DataFrame,
-    timestamp_col: str = 'timestamp_hours',
-    converter: Optional[TimestampConverter] = None
-) -> pd.DataFrame:
-    """
-    Add standardized timestamp columns to a DataFrame.
-    
-    Adds the following columns:
-    - {timestamp_col}_datetime: datetime objects
-    - {timestamp_col}_formatted: formatted strings
-    - {timestamp_col}_date: date objects
-    - {timestamp_col}_time: time objects
-    - period: period numbers
-    
-    Args:
-        df: DataFrame with timestamp_hours column
-        timestamp_col: Name of the timestamp column
-        converter: Optional TimestampConverter instance
-    
-    Returns:
-        DataFrame with added columns
-    """
-    if timestamp_col not in df.columns:
-        return df
-    
-    if converter is None:
-        converter = TimestampConverter()
-    
-    df = df.copy()
-    
-    # Vectorized conversion (more efficient for large DataFrames)
-    results = df[timestamp_col].apply(converter.convert)
-    
-    df[f'{timestamp_col}_datetime'] = results.apply(lambda x: x['datetime'])
-    df[f'{timestamp_col}_formatted'] = results.apply(lambda x: x['formatted'])
-    df[f'{timestamp_col}_date'] = results.apply(lambda x: x['date'])
-    df[f'{timestamp_col}_time'] = results.apply(lambda x: x['time'])
-    df['period'] = results.apply(lambda x: x['period'])
-    
-    return df

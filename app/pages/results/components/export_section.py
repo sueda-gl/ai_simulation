@@ -85,89 +85,6 @@ def _apply_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
                 cell.number_format = number_format
 
 
-def _build_compare_all_wide_format(results_dict, trait_columns):
-    """
-    Build a wide-format DataFrame for "Compare all" mode where each population mode
-    has its own set of columns with correct agent traits and donation rates.
-    
-    Structure:
-    | Copula_Agent_ID | Copula_HH | ... | Copula_donation_Cat | Copula_donation_Cont | ResSpec_Agent_ID | ResSpec_HH | ... |
-    
-    Each row contains data for 3 DIFFERENT agents (one from each population mode),
-    but each agent's traits correctly match their donation rates.
-    
-    Args:
-        results_dict: Dictionary with keys like 'copula_categorical', 'research_spec_continuous', etc.
-        trait_columns: List of trait column names to include
-        
-    Returns:
-        pd.DataFrame: Wide-format DataFrame with all population modes side-by-side
-    """
-    # Define population modes and their prefixes
-    population_modes = [
-        ('copula', 'Copula'),
-        ('research_spec', 'ResSpec'),
-        ('research_baseline', 'ResBase')
-    ]
-    
-    income_modes = ['categorical', 'continuous']
-    
-    # Build a DataFrame for each population mode
-    population_dfs = []
-    
-    for pop_key, pop_prefix in population_modes:
-        # Find the DataFrames for this population mode
-        cat_key = f"{pop_key}_categorical"
-        cont_key = f"{pop_key}_continuous"
-        
-        cat_df = results_dict.get(cat_key)
-        cont_df = results_dict.get(cont_key)
-        
-        # Use whichever DataFrame is available for traits (they have the same agents)
-        base_df = cat_df if cat_df is not None else cont_df
-        
-        if base_df is None or base_df.empty:
-            continue
-        
-        # Create DataFrame for this population mode
-        pop_data = {}
-        
-        # Add Agent ID with prefix
-        if 'agent_id' in base_df.columns:
-            pop_data[f'{pop_prefix}_Agent_ID'] = base_df['agent_id'].values
-        else:
-            pop_data[f'{pop_prefix}_Agent_ID'] = list(range(1, len(base_df) + 1))
-        
-        # Add trait columns with prefix
-        for trait in trait_columns:
-            if trait in base_df.columns:
-                # Use shorter column names for readability
-                short_trait = trait.replace('Assigned Allowance Level', 'Income_Level')
-                short_trait = short_trait.replace('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 'TWT_Sospeso')
-                short_trait = short_trait.replace('Group_experiment', 'Group')
-                short_trait = short_trait.replace('Study Program', 'Study_Program')
-                pop_data[f'{pop_prefix}_{short_trait}'] = base_df[trait].values
-        
-        # Add donation columns for each income mode
-        if cat_df is not None and not cat_df.empty and 'donation_default' in cat_df.columns:
-            pop_data[f'{pop_prefix}_donation_Categorical'] = cat_df['donation_default'].values
-        
-        if cont_df is not None and not cont_df.empty and 'donation_default' in cont_df.columns:
-            pop_data[f'{pop_prefix}_donation_Continuous'] = cont_df['donation_default'].values
-        
-        # Create DataFrame for this population mode
-        pop_df = pd.DataFrame(pop_data)
-        population_dfs.append(pop_df)
-    
-    # Combine all population DataFrames horizontally (side-by-side)
-    if population_dfs:
-        combined_df = pd.concat(population_dfs, axis=1)
-    else:
-        combined_df = pd.DataFrame()
-    
-    return combined_df
-
-
 def _is_compare_all_mode(results_dict):
     """
     Check if results_dict contains configurations from multiple population modes.
@@ -222,8 +139,6 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
     sim_params = {}
     if simulation_params:
         sim_params = simulation_params.get('simulation', {})
-    elif hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
     elif hasattr(st.session_state, 'sim_params'):
         # Fallback to direct object access
         sim_params = {
@@ -582,14 +497,6 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
         duration_hours = sim_params.get('duration_hours', 1.0)
         price_min_config = sim_params.get('vendor_price_min', 50.0)
         price_max_config = sim_params.get('vendor_price_max', 150.0)
-    elif hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        market_price = sim_params.get('market_price', 100.0)
-        platform_markup = sim_params.get('platform_markup', 0.1)
-        price_range = sim_params.get('price_range', 0.25)
-        duration_hours = sim_params.get('duration_hours', 1.0)
-        price_min_config = sim_params.get('vendor_price_min', 50.0)
-        price_max_config = sim_params.get('vendor_price_max', 150.0)
     elif hasattr(st.session_state, 'sim_params'):
         market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
@@ -905,6 +812,8 @@ def _build_transaction_level_dataframe(df, vendors_data=None, simulation_params=
 
 def render_export_section(df, results_dict=None, using_selected_config=False):
     """Render the export/download section (simplified)"""
+    from app.pages.results.run_context import RunContext
+    ctx = RunContext.from_session()  # the run's own shape (R28)
     # Remove 'raw', 'index', 'consumption_frequency', 'actual_allowance', 'income', 'customer_type', and 'enriched_requests_count' columns before any processing
     # Use exact column name matching to avoid filtering out 'disclose_income' when we only want to exclude 'income'
     columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'enriched_requests_count']
@@ -923,13 +832,8 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     trait_columns = ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
                      'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
     
-    is_donation_only_run = (
-        hasattr(st.session_state, 'custom_decisions') and 
-        st.session_state.custom_decisions == ['donation_default'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0
-    )
-    
+    is_donation_only_run = ctx.is_individual_run('donation_default')
+
     if is_donation_only_run:
         # DONATION-ONLY EXPORT: Simplified version with just donation and traits
         # Filter main df to only include donation columns
@@ -1167,32 +1071,19 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             st.caption("⚠️ Excel export requires openpyxl")
     
     # Check if this is a disclose_income-only run (special simplified export)
-    is_disclose_income_only_run = (
-        hasattr(st.session_state, 'custom_decisions') and
-        st.session_state.custom_decisions == ['disclose_income'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0
-    )
+    is_disclose_income_only_run = ctx.is_individual_run('disclose_income')
 
     # Check if this is a disclose_documents-only run (focused export, mirrors disclose_income)
-    is_disclose_documents_only_run = (
-        hasattr(st.session_state, 'custom_decisions') and
-        st.session_state.custom_decisions == ['disclose_documents'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0
-    )
+    is_disclose_documents_only_run = ctx.is_individual_run('disclose_documents')
 
     # Check if this is an individual Decision 4 (rejected_transaction_defaults) MODEL
     # run: no purchase requests exist, so there is no transaction-level Excel here -
     # only the Decision 4 agent-level workbook is offered.
     is_rtd_only_run = (
-        hasattr(st.session_state, 'custom_decisions') and
-        st.session_state.custom_decisions == ['rejected_transaction_defaults'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0 and
+        ctx.is_individual_run('rejected_transaction_defaults') and
         df is not None and 'rtd_choice_length' in df.columns
     )
-    
+
     if is_disclose_income_only_run:
         # DISCLOSE INCOME-ONLY EXPORT: Simplified version with all 19 disclose income columns
         from app.pages.results.visualizations.disclosure_viz import (
@@ -1592,16 +1483,12 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         if hasattr(df, 'attrs') and 'vendors' in df.attrs:
             vendors_data = df.attrs['vendors']
         
-        # Get simulation parameters if available
-        simulation_params = None
-        if hasattr(st.session_state, 'simulation_params'):
-            simulation_params = st.session_state.simulation_params
-        
         try:
-            # Build agent-level and transaction-level DataFrames
-            agent_df = _build_agent_level_dataframe(df, vendors_data=vendors_data, simulation_params=simulation_params)
-            transaction_df = _build_transaction_level_dataframe(df, vendors_data=vendors_data, simulation_params=simulation_params)
-            
+            # Build agent-level and transaction-level DataFrames (pricing parameters
+            # come from st.session_state.sim_params inside the builders)
+            agent_df = _build_agent_level_dataframe(df, vendors_data=vendors_data)
+            transaction_df = _build_transaction_level_dataframe(df, vendors_data=vendors_data)
+
             # Show summary statistics
             col1, col2 = st.columns(2)
             with col1:

@@ -9,21 +9,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # Import income utilities for Category-First architecture
 from src.decisions.income_utils import get_actual_allowance
-from src.utils.stochastic import get_stochastic_sigma
+from src.utils.stochastic import get_stochastic_sigma, should_use_stochastic
 
 def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, simulation_config: dict = None, **kwargs) -> dict:
     """
-    Decision 3: Set up default donation rate
-    
-    Implements 6-step process from documentation:
-    1. Compute predicted prosocial from regression
+    Decision 3: Set up default donation rate.
+
+    The ONE donation module for every population mode (copula, documentation,
+    baseline). Steps:
+    1. Compute predicted prosocial from the regression
     2. Scale both observed and predicted to 0-100
-    3. Compute anchor (0.75 * observed + 0.25 * predicted)
-    4. Draw from Normal(anchor, sigma) where sigma is from observed behavior
+    3. Compute anchor (weights['observed'] * observed + weights['predicted'] * predicted)
+       and add adjustment.shift_value
+    4. Noise: draw from Normal(anchor, sigma * 100/112) iff the mode's stochastic
+       tick is on (src.utils.stochastic.should_use_stochastic: copula -> in_copula,
+       documentation -> sigma_value > 0, baseline -> never) AND the resolved sigma > 0
     5. Floor negative values at 0
-    6. Compute personal 99th percentile maximum and rescale to [0,1]
-    
-    Now enhanced with global parameter context for more realistic behavior.
+    6. Scale 0-100 -> [0,1] and clip
+
+    Output: {"donation_default": rate} in every mode.
     """
     
     # Check if this decision is using a simple default value (when unselected)
@@ -153,20 +157,19 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     # Note: donation_default currently doesn't use any global parameters
     # The anchor is computed purely from research-based regression and agent traits
     
-    # Step 4: Determine if we should use stochastic component
-    # NOTE: donation_default has different stochastic logic than disclose_income:
-    # - For documentation mode: ALWAYS use stochastic (matches original behavior)
-    # - For copula mode: only use if in_copula flag is set
+    # Step 4: Determine if we should use stochastic component.
+    # ONE gate for every mode (src.utils.stochastic.should_use_stochastic):
+    #   copula        -> stochastic.in_copula
+    #   documentation -> stochastic.sigma_value > 0
+    #   baseline      -> never
+    # and additionally the resolved sigma must be > 0 (a zero sigma adds no noise).
     pop_context = kwargs.get('pop_context', 'copula')
     stochastic_params = params.get('stochastic', {})
-    use_stochastic = (
-        (stochastic_params.get('in_copula', False) and pop_context == 'copula') or
-        pop_context == 'documentation'
-    )
+    use_stochastic = should_use_stochastic(stochastic_params, pop_context)
 
+    sigma_0_100_scaled = 0.0
     if use_stochastic:
-        # Apply stochastic component with Normal(anchor, σ) draw
-        # Check if quintile mode is enabled, otherwise use sigma_value directly (original behavior)
+        # Resolve sigma: quintile (categorical only) or sigma_value with sigma_overall fallback
         sigma_strategy = stochastic_params.get('sigma_strategy', 'overall')
 
         # Quintile sigma only applies to categorical mode.
@@ -200,20 +203,16 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
         # Convert sigma from 0-112 scale to 0-100 scale
         sigma_0_100_scaled = sigma_raw * (100.0 / 112.0)
 
-        # Step 4a: Draw from Normal(adjusted_anchor, σ)
+    if use_stochastic and sigma_0_100_scaled > 0:
+        # Step 4a: Draw from Normal(adjusted_anchor, sigma)
         draw_0_100 = rng.normal(s100_anchor_adjusted, sigma_0_100_scaled)
 
-        # Floor negative values at 0 (donations can't be negative)
+        # Step 5: Floor negative values at 0 (donations can't be negative)
         draw_0_100 = max(draw_0_100, 0.0)
-
-        # Step 6: Simple scaling to proportion (0-1) matching documentation-mode logic
-        donation_rate = draw_0_100 / 100.0
-        return {"donation_default": np.clip(donation_rate, 0.0, 1.0)}
     else:
-        # Use adjusted anchor directly (no additional stochastic component)
-        # The copula sampling already provides natural variability
+        # No noise: use the adjusted anchor directly
         draw_0_100 = s100_anchor_adjusted
 
-        # Step 6: Rescale to [0,1] range using simple scaling
-        donation_rate = draw_0_100 / 100.0
-        return {"donation_default": np.clip(donation_rate, 0.0, 1.0)}
+    # Step 6: Simple scaling to proportion (0-1)
+    donation_rate = draw_0_100 / 100.0
+    return {"donation_default": np.clip(donation_rate, 0.0, 1.0)}

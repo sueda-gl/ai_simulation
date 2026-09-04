@@ -39,24 +39,25 @@ def should_use_stochastic(
     pop_context: str
 ) -> bool:
     """
-    Determine if stochastic component should be applied.
+    The mode's stochastic tick box, as ONE rule for every decision that draws noise.
 
     Logic:
-    - Documentation mode + sigma_value > 0 → ON
-    - Copula mode + in_copula=True → ON
-    - Baseline mode → OFF (always deterministic)
-    - Otherwise → OFF
+    - 'copula'        -> stochastic_params['in_copula'] (the copula tick)
+    - 'documentation' -> stochastic_params['sigma_value'] > 0 (the research tick)
+    - 'baseline'      -> OFF, always (Research Baseline never adds noise)
+    - anything else   -> OFF
 
     Args:
         stochastic_params: Dict containing sigma_value, in_copula, etc.
         pop_context: Population context ('documentation', 'baseline', 'copula')
 
     Returns:
-        True if stochastic component should be applied
+        True if the stochastic component should be applied
     """
+    stochastic_params = stochastic_params or {}
     sigma_value = stochastic_params.get('sigma_value', 0)
 
-    return (
+    return bool(
         (stochastic_params.get('in_copula', False) and pop_context == 'copula') or
         (pop_context == 'documentation' and sigma_value > 0)
     )

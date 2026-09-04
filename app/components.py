@@ -8,11 +8,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from pathlib import Path
 from datetime import datetime
-import yaml
-
-from app.models import get_decision_global_parameters, get_all_global_parameters
 
 
 def rtd_overview_metric(df):
@@ -22,9 +18,10 @@ def rtd_overview_metric(df):
     metric is the run element's own mean score; otherwise the whole-decision metric
     (average options list length). Returns (label, formatted_value).
     """
+    from app.pages.results.run_context import RunContext
+
     element = None
-    if (getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults']
-            and not getattr(st.session_state, 'default_decisions', [])):
+    if RunContext.from_session().is_individual_run('rejected_transaction_defaults'):
         element = st.session_state.get('rtd_run_element')
 
     specs = {
@@ -54,11 +51,10 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     
     # Disclose-Documents-only run: the disclose_income column is present solely to drive the
     # eligibility gate, so none of its metrics/graphs/analysis should appear on the Disclose
-    # Documents results page (per professor feedback). Detected via the DD-only run flag.
-    is_dd_focus = (
-        hasattr(st.session_state, 'custom_decisions')
-        and st.session_state.custom_decisions == ['disclose_documents']
-    )
+    # Documents results page (per professor feedback). Detected via the DD-only run flag
+    # (the run's own custom-decision list, R28).
+    from app.pages.results.run_context import RunContext
+    is_dd_focus = RunContext.from_session().custom_decisions == ('disclose_documents',)
     
     # Display anchor weights info (donation-specific; hidden on Decision 4 model runs)
     if 'rtd_choice_length' not in df.columns or 'donation_default' in df.columns:
@@ -350,88 +346,6 @@ def render_inline_selection_button(result_key, result_df):
                 else:
                     # Show seed mismatch error
                     render_seed_mismatch_error('donation_default', error_info)
-
-
-def show_disclose_income_overview(df, title_suffix="", result_key=None, enable_selection=False):
-    """
-    Display compact Disclose Income overview for comparison views.
-    
-    Shows key metrics: Total Agents, Y count, N count, Disclosure Rate.
-    Suitable for side-by-side comparison grids.
-    
-    Args:
-        df: DataFrame with 'disclose_income' column
-        title_suffix: Additional text for titles
-        result_key: Unique key for this result (needed for selection buttons)
-        enable_selection: Whether to show "Use This Config" button
-    """
-    st.subheader(f"Disclose Income Overview{title_suffix}")
-    
-    if 'disclose_income' not in df.columns:
-        st.warning("disclose_income column not found in results")
-        return
-    
-    # Calculate metrics
-    total = len(df)
-    y_count = (df['disclose_income'] == 'Y').sum()
-    n_count = (df['disclose_income'] == 'N').sum()
-    y_rate = (y_count / total) * 100 if total > 0 else 0
-    
-    # Display metrics
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Total Agents", f"{total:,}")
-    with col2:
-        st.metric("Disclosed (Y)", f"{y_count:,}")
-    with col3:
-        st.metric("Not Disclosed (N)", f"{n_count:,}")
-    
-    # Disclosure rate metric
-    st.metric("Disclosure Rate", f"{y_rate:.2f}%")
-    
-    # Pie chart (compact)
-    import plotly.express as px
-    value_counts = df['disclose_income'].value_counts()
-    if len(value_counts) > 0:
-        fig = px.pie(
-            values=value_counts.values,
-            names=value_counts.index,
-            color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
-        )
-        fig.update_layout(
-            margin=dict(t=20, b=20, l=20, r=20),
-            height=200
-        )
-        chart_key = f"di_pie_{result_key}" if result_key else f"di_pie_{title_suffix.replace(' ', '_')}"
-        st.plotly_chart(fig, use_container_width=True, key=chart_key)
-    
-    # Add inline selection button if enabled
-    if enable_selection and result_key:
-        from app.pages.decision_execution import (
-            save_disclose_income_config_from_results, 
-            validate_seed_for_config_save
-        )
-        
-        # Get current simulation parameters
-        current_seed = st.session_state.get('seed', 42)
-        current_n_agents = st.session_state.get('n_agents', 1000)
-        
-        # Validate seed consistency before showing the button
-        is_valid, error_info = validate_seed_for_config_save(
-            'disclose_income', current_seed, current_n_agents
-        )
-        
-        if is_valid:
-            button_key = f"select_di_{result_key}"
-            if st.button(f"✅ Use This Config", key=button_key, help="Select this configuration for complete simulation"):
-                success = save_disclose_income_config_from_results(result_key, df)
-                if success:
-                    st.success(f"✅ Configuration saved: {result_key}")
-                    st.rerun()
-        else:
-            # Show seed mismatch error
-            render_seed_mismatch_error('disclose_income', error_info)
 
 
 def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, enable_selection=False):
@@ -734,80 +648,6 @@ def render_disclose_documents_selection_button(result_key, result_df):
                     st.rerun()
                 else:
                     render_seed_mismatch_error('disclose_documents', error_info)
-
-
-def show_parameter_applicability_analysis(selected_decisions):
-    """Show parameter applicability analysis for selected decisions"""
-    st.markdown('<h3 class="section-header">📋 Parameter Applicability Analysis</h3>', unsafe_allow_html=True)
-    
-    # Show overall summary
-    total_applicable = get_decision_global_parameters(selected_decisions)
-    all_global_params = get_all_global_parameters()
-    total_not_applicable = all_global_params - total_applicable
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("📊 Total Parameters", len(all_global_params))
-    with col2:
-        st.metric("✅ Applicable", len(total_applicable))
-    with col3:
-        st.metric("❌ Not Applicable", len(total_not_applicable))
-    
-    # Show parameter breakdown
-    with st.expander("🔍 Parameter Breakdown", expanded=False):
-        col_app, col_not_app = st.columns(2)
-        
-        with col_app:
-            st.markdown("### ✅ Applicable Parameters")
-            if total_applicable:
-                for param in sorted(total_applicable):
-                    st.markdown(f"  • {param.replace('_', ' ').title()}")
-            else:
-                st.markdown("None")
-        
-        with col_not_app:
-            st.markdown("### ❌ Not Applicable Parameters")
-            if total_not_applicable:
-                for param in sorted(total_not_applicable):
-                    st.markdown(f"  • {param.replace('_', ' ').title()}")
-            else:
-                st.markdown("None")
-    
-    # Show decision-specific analysis
-    with st.expander("📊 Decision-Specific Parameter Analysis", expanded=False):
-        try:
-            decisions_path = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
-            with open(decisions_path, 'r') as f:
-                decisions_config = yaml.safe_load(f)
-            
-            for decision in selected_decisions:
-                decision_config = decisions_config.get(decision, {})
-                decision_global_params = set(decision_config.get('uses_global_parameters', []))
-                all_params = get_all_global_parameters()
-                not_used_params = all_params - decision_global_params
-                
-                st.markdown(f"**{decision.replace('_', ' ').title()}**")
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Uses Global Params", len(decision_global_params))
-                with col2:
-                    st.metric("Doesn't Use", len(not_used_params))
-                with col3:
-                    efficiency = len(decision_global_params) / len(all_params) * 100 if all_params else 0
-                    st.metric("Usage %", f"{efficiency:.0f}%")
-                
-                if decision_global_params:
-                    st.markdown("✅ **Uses Global Parameters:**")
-                    formatted_params = [p.replace('_', ' ').title() for p in sorted(decision_global_params)]
-                    st.markdown(f"  {', '.join(formatted_params)}")
-                else:
-                    st.markdown("✅ **Uses Global Parameters:** None (trait-based decision)")
-                
-                st.markdown("---")
-                
-        except Exception as e:
-            st.error(f"Error loading decision configurations: {e}")
 
 
 def show_monte_carlo_results(mc_data):

@@ -99,7 +99,10 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                 y_pct_raw = (y_count_raw / total_raw) * 100 if total_raw > 0 else 0
                 n_pct_raw = (n_count_raw / total_raw) * 100 if total_raw > 0 else 0
                 
-                # Get income mode for title
+                # Get income mode for title.  Like the "Current Settings" badge
+                # (main_results.get_decision_config_display) this shows the DI tab's
+                # CURRENT setting, exactly as the screen read before R28; the run's
+                # own mode is not consulted here (step-3 U1: screen parity).
                 income_mode = st.session_state.get('di_income_mode', 'Categorical')
                 if 'categorical' in str(income_mode).lower():
                     mode_suffix = " (Categorical)"
@@ -304,6 +307,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
                 min_val = raw_values.min()
                 max_val = raw_values.max()
 
+                # Title suffix = the DD tab's CURRENT setting (see the DI twin above).
                 income_mode = st.session_state.get('dd_income_mode', 'Categorical')
                 if 'categorical' in str(income_mode).lower():
                     mode_suffix = " (Categorical)"
@@ -990,217 +994,4 @@ def _prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     
     return export_df
 
-
-def render_disclose_income_comparison_excel(results_dict, mode="compare_all"):
-    """
-    Render Excel export section for disclose_income comparison modes.
-    
-    Handles two modes:
-    - "compare_all": Multiple sheets (one per population mode: Copula, ResSpec, ResBase)
-    - "compare_both": Single sheet with separate columns for Categorical and Continuous
-    
-    Args:
-        results_dict: Dictionary of DataFrames keyed by configuration name
-        mode: Either "compare_all" or "compare_both"
-    """
-    from io import BytesIO
-    from datetime import datetime
-    import numpy as np
-    
-    st.markdown("### 📥 Download Disclose Income Comparison Data")
-    
-    if mode == "compare_all":
-        # COMPARE ALL MODE: Each population mode gets its own sheet
-        st.markdown(f"""
-        **Disclose Income Results Export (Compare All Mode - {len(results_dict)} Configurations):**
-        - Each population mode (Copula, Research Spec, Research Baseline) has its own sheet
-        - Each sheet contains all 19 columns for disclose income analysis
-        - Includes both Categorical and Continuous income mode results where available
-        """)
-        
-        population_modes = [
-            ('copula', 'Copula'),
-            ('research_spec', 'ResSpec'),
-            ('research_baseline', 'ResBase')
-        ]
-        
-        sheets_data = {}
-        
-        for pop_key, pop_prefix in population_modes:
-            # Find the DataFrames for this population mode
-            cat_key = f"{pop_key}_categorical"
-            cont_key = f"{pop_key}_continuous"
-            
-            cat_df = results_dict.get(cat_key)
-            cont_df = results_dict.get(cont_key)
-            
-            # Use whichever DataFrame is available for base data
-            base_df = cat_df if cat_df is not None and not cat_df.empty else cont_df
-            
-            if base_df is None or base_df.empty:
-                continue
-            
-            # Prepare the export DataFrame using the standard function
-            sheet_df = _prepare_disclose_income_excel_data(base_df)
-            
-            if sheet_df is None:
-                continue
-            
-            # If we have both income modes, add a suffix to the disclose_income column
-            # and add the other mode's disclose_income
-            if cat_df is not None and cont_df is not None and not cat_df.empty and not cont_df.empty:
-                # Rename the existing disclose_income to specify it's from base
-                if base_df is cat_df:
-                    sheet_df = sheet_df.rename(columns={'disclose_income': 'disclose_income_Categorical'})
-                    # Add continuous disclose_income
-                    cont_di = cont_df['disclose_income'].apply(
-                        lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
-                    )
-                    sheet_df['disclose_income_Continuous'] = cont_di.values
-                else:
-                    sheet_df = sheet_df.rename(columns={'disclose_income': 'disclose_income_Continuous'})
-                    # Add categorical disclose_income
-                    cat_di = cat_df['disclose_income'].apply(
-                        lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
-                    )
-                    # Insert categorical before continuous
-                    cols = list(sheet_df.columns)
-                    cont_idx = cols.index('disclose_income_Continuous')
-                    sheet_df.insert(cont_idx, 'disclose_income_Categorical', cat_di.values)
-            
-            sheets_data[pop_prefix] = sheet_df
-        
-        if not sheets_data:
-            st.warning("⚠️ No data available for export")
-            return
-        
-        # Create Excel file with multiple sheets
-        try:
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                for sheet_name, sheet_df in sheets_data.items():
-                    sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
-                    _apply_price_formatting_disclosure(writer, sheet_name, sheet_df)
-            
-            # Show metrics
-            total_sheets = len(sheets_data)
-            first_sheet_df = next(iter(sheets_data.values()))
-            n_agents = len(first_sheet_df)
-            n_columns = len(first_sheet_df.columns)
-            
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Sheets", total_sheets)
-            with col2:
-                st.metric("Agents per Sheet", n_agents)
-            with col3:
-                st.metric("Columns per Sheet", n_columns)
-            
-            excel_label = f"📊 Download Disclose Income Excel ({total_sheets} Sheets)"
-            excel_filename = f"disclose_income_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            
-            st.download_button(
-                label=excel_label,
-                data=buffer.getvalue(),
-                file_name=excel_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Each population mode has its own sheet with all disclose income columns"
-            )
-            
-            # Show preview
-            with st.expander("📋 Preview Disclose Income Data (first 5 rows per sheet)"):
-                st.info("""
-                **Sheet Structure:**
-                - **Copula**: Synthetic agents generated from copula
-                - **ResSpec**: Original 280 participants with stochastic draws
-                - **ResBase**: Original 280 participants without stochastic draws
-                
-                Each sheet contains all 19 disclose income columns plus income mode columns if both are available.
-                """)
-                
-                for sheet_name, sheet_df in sheets_data.items():
-                    st.markdown(f"**{sheet_name} Sheet:**")
-                    st.dataframe(sheet_df.head(), use_container_width=True)
-                    st.markdown(f"Columns: {', '.join(sheet_df.columns[:10])}{'...' if len(sheet_df.columns) > 10 else ''}")
-        
-        except Exception as e:
-            st.error(f"Error creating Excel export: {str(e)}")
-    
-    elif mode == "compare_both":
-        # COMPARE BOTH MODE: Single sheet with separate columns for each income mode
-        st.markdown(f"""
-        **Disclose Income Results Export (Compare Both Income Modes):**
-        - Single sheet with all trait columns
-        - Separate disclose_income columns for Categorical and Continuous modes
-        """)
-        
-        # Get the DataFrames
-        cat_df = results_dict.get("categorical")
-        cont_df = results_dict.get("continuous")
-        
-        if (cat_df is None or cat_df.empty) and (cont_df is None or cont_df.empty):
-            st.warning("⚠️ No data available for export")
-            return
-        
-        # Use categorical as base if available, otherwise continuous
-        base_df = cat_df if cat_df is not None and not cat_df.empty else cont_df
-        
-        # Prepare the export DataFrame
-        export_df = _prepare_disclose_income_excel_data(base_df)
-        
-        if export_df is None:
-            st.warning("⚠️ Unable to prepare Excel data")
-            return
-        
-        # Handle the disclose_income columns based on what's available
-        if cat_df is not None and cont_df is not None and not cat_df.empty and not cont_df.empty:
-            # Both modes available - create separate columns
-            # Remove the original disclose_income column
-            export_df = export_df.drop(columns=['disclose_income'])
-            
-            # Add categorical disclose_income
-            cat_di = cat_df['disclose_income'].apply(
-                lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
-            )
-            export_df['disclose_income_Categorical'] = cat_di.values
-            
-            # Add continuous disclose_income
-            cont_di = cont_df['disclose_income'].apply(
-                lambda x: 1 if x == 'Y' else (0 if x == 'N' else '')
-            )
-            export_df['disclose_income_Continuous'] = cont_di.values
-        elif cat_df is not None and not cat_df.empty:
-            # Only categorical
-            export_df = export_df.rename(columns={'disclose_income': 'disclose_income_Categorical'})
-        else:
-            # Only continuous
-            export_df = export_df.rename(columns={'disclose_income': 'disclose_income_Continuous'})
-        
-        try:
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                export_df.to_excel(writer, index=False, sheet_name='Disclose Income Comparison')
-                _apply_price_formatting_disclosure(writer, 'Disclose Income Comparison', export_df)
-            
-            # Show metrics
-            st.metric("Total Agents", len(export_df))
-            
-            excel_label = "📊 Download Disclose Income Excel (Both Income Modes)"
-            excel_filename = f"disclose_income_compare_both_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            
-            st.download_button(
-                label=excel_label,
-                data=buffer.getvalue(),
-                file_name=excel_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="Disclose income results with separate columns for Categorical and Continuous income modes"
-            )
-            
-            # Show preview
-            with st.expander("📋 Preview Disclose Income Data (first 5 rows)"):
-                st.dataframe(export_df.head(), use_container_width=True)
-                st.markdown(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns[:10])}{'...' if len(export_df.columns) > 10 else ''}")
-        
-        except Exception as e:
-            st.error(f"Error creating Excel export: {str(e)}")
 

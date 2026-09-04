@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--anchor-observed', type=float, default=0.75,
                        help='Weight on observed prosocial score for anchor (default: 0.75)')
     parser.add_argument('--population-mode', type=str, default='copula',
-                       choices=['copula', 'documentation', 'baseline', 'depvar'],
+                       choices=['copula', 'documentation', 'baseline'],
                        help='Population generation mode (default: copula)')
     parser.add_argument('--income-mode', type=str, default='categorical',
                        choices=['categorical', 'continuous'],

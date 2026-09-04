@@ -594,8 +594,8 @@ def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str,
     """
     Decision 4 simulation entry point.
 
-    DEFAULT path (decision unselected, or model config absent): unchanged legacy
-    behaviour - every agent receives the configured priority template.
+    DEFAULT path (decision unselected, i.e. listed in default_decisions_list):
+    unchanged legacy behaviour - every agent receives the configured priority template.
 
     MODEL path (decision selected with the trait model): computes the four sub-decision
     mechanisms. The main 'rejected_transaction_defaults' column is an EMPTY list -
@@ -611,9 +611,9 @@ def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str,
     sim = simulation_config or {}
     pop_context = kwargs.get("pop_context", "documentation")
 
-    is_default = "rejected_transaction_defaults" in sim.get("default_decisions_list", [])
-    has_model = bool(params) and bool(params.get("model_enabled", False))
-    if is_default or not has_model:
+    # The trait model runs whenever the decision is selected; there is no separate
+    # 'model_enabled' switch (owner ruling R23).
+    if "rejected_transaction_defaults" in sim.get("default_decisions_list", []):
         template = _resolve_default_template(sim, rng)
         return {"rejected_transaction_defaults": template}
 

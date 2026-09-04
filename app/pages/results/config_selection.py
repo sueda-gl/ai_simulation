@@ -7,7 +7,6 @@ import pandas as pd
 from app.pages.decision_execution import (
     save_selected_configuration,
     format_result_name,
-    is_configuration_selected,
     clear_selected_configuration,
     run_combined_simulation,
     can_run_complete_simulation,
@@ -16,15 +15,17 @@ from app.pages.decision_execution import (
     clear_decision_config
 )
 from app.models import ALL_DECISIONS
+from app.pages.results.run_context import RunContext
 
 
-def render_configuration_selection_ui(results_dict):
+def render_configuration_selection_ui(results_dict, ctx=None):
     """Render configuration selection UI for donation decision results"""
-    
+    ctx = ctx if ctx is not None else RunContext.from_session()
+
     # Only show if we have donation_default results and this is from individual decision run
     if not results_dict:
         return
-        
+
     # Check if any results have donation_default column
     has_donation_results = any(
         'donation_default' in df.columns 
@@ -37,13 +38,9 @@ def render_configuration_selection_ui(results_dict):
     
     # Check if this is from an individual donation decision run
     # This should only show for individual donation runs, not combined simulations
-    is_individual_donation_run = (
-        hasattr(st.session_state, 'custom_decisions') and 
-        st.session_state.custom_decisions == ['donation_default'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0  # Individual runs have empty default_decisions
-    )
-    
+    # (individual runs have empty default_decisions)
+    is_individual_donation_run = ctx.is_individual_run('donation_default')
+
     if not is_individual_donation_run:
         return
     
@@ -69,10 +66,10 @@ def render_configuration_selection_ui(results_dict):
             std_donation = result_df[donation_col].std()
             median_donation = result_df[donation_col].median()
             
-            # Get population and income mode for display
-            population_mode = st.session_state.get('population_mode', 'Unknown')
-            income_spec_mode = st.session_state.get('income_spec_mode', 'Unknown')
-            
+            # Get population and income mode for display - the modes this run used
+            population_mode = ctx.effective_population_mode
+            income_spec_mode = ctx.effective_income_mode
+
             with st.container():
                 st.info(f"📊 **{population_mode}** + **{income_spec_mode}**")
                 
@@ -123,12 +120,13 @@ def render_configuration_selection_ui(results_dict):
         render_complete_simulation_section()
 
 
-def render_disclose_income_config_selection_ui(results_dict):
+def render_disclose_income_config_selection_ui(results_dict, ctx=None):
     """Render configuration selection UI for disclose_income decision results"""
-    
+    ctx = ctx if ctx is not None else RunContext.from_session()
+
     if not results_dict:
         return
-    
+
     # Check if any results have disclose_income column
     has_di_results = any(
         'disclose_income' in df.columns 
@@ -140,13 +138,8 @@ def render_disclose_income_config_selection_ui(results_dict):
         return
     
     # Check if this is from an individual disclose_income decision run
-    is_individual_di_run = (
-        hasattr(st.session_state, 'custom_decisions') and 
-        st.session_state.custom_decisions == ['disclose_income'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0
-    )
-    
+    is_individual_di_run = ctx.is_individual_run('disclose_income')
+
     if not is_individual_di_run:
         return
     
@@ -189,8 +182,9 @@ def render_disclose_income_config_selection_ui(results_dict):
         render_complete_simulation_section()
 
 
-def render_disclose_documents_config_selection_ui(results_dict):
+def render_disclose_documents_config_selection_ui(results_dict, ctx=None):
     """Render configuration selection UI for disclose_documents results (mirrors disclose_income)."""
+    ctx = ctx if ctx is not None else RunContext.from_session()
 
     if not results_dict:
         return
@@ -203,12 +197,7 @@ def render_disclose_documents_config_selection_ui(results_dict):
     if not has_dd_results:
         return
 
-    is_individual_dd_run = (
-        hasattr(st.session_state, 'custom_decisions') and
-        st.session_state.custom_decisions == ['disclose_documents'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0
-    )
+    is_individual_dd_run = ctx.is_individual_run('disclose_documents')
     if not is_individual_dd_run:
         return
 
@@ -239,66 +228,6 @@ def render_disclose_documents_config_selection_ui(results_dict):
 
         can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
         render_complete_simulation_section()
-
-
-def render_configuration_card(result_key, result_df):
-    """Render a single configuration selection card"""
-
-    if result_df.empty or 'donation_default' not in result_df.columns:
-        return
-    
-    # Check if this configuration is currently selected
-    is_selected = is_configuration_selected(result_key)
-    
-    # Calculate key metrics - always use truncated
-    donation_col = 'donation_default'
-    
-    mean_donation = result_df[donation_col].mean()
-    std_donation = result_df[donation_col].std()
-    median_donation = result_df[donation_col].median()
-    
-    # Create card with conditional styling
-    card_class = "selected-config-card" if is_selected else "config-card"
-    
-    with st.container():
-        # Card header with selection indicator
-        if is_selected:
-            st.success(f"✅ **{format_result_name(result_key)}**")
-        else:
-            st.info(f"📊 **{format_result_name(result_key)}**")
-        
-        # Key metrics
-        metric_col1, metric_col2 = st.columns(2)
-        
-        with metric_col1:
-            st.metric("Mean", f"{mean_donation:.2%}")
-            st.metric("Std Dev", f"{std_donation:.2%}")
-        
-        with metric_col2:
-            st.metric("Median", f"{median_donation:.2%}")
-            st.metric("Agents", f"{len(result_df):,}")
-        
-        # Configuration details in smaller text
-        config_details = extract_configuration_details_from_key(result_key)
-        st.caption(f"Population: {config_details['population_short']}")
-        st.caption(f"Income: {config_details['income_short']}")
-        
-        # Selection button
-        button_type = "secondary" if is_selected else "primary"
-        button_text = "✅ Selected" if is_selected else "🎯 Use This Config"
-        button_disabled = is_selected
-        
-        if st.button(
-            button_text, 
-            type=button_type, 
-            key=f"select_config_{result_key}",
-            disabled=button_disabled,
-            use_container_width=True,
-            help="Select this configuration for use in combined simulations"
-        ):
-            save_selected_configuration(result_key, result_df)
-            st.success(f"Selected: {format_result_name(result_key)}")
-            st.rerun()
 
 
 def extract_configuration_details_from_key(result_key):

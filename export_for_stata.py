@@ -6,11 +6,10 @@ Renames columns to Stata-friendly names (no spaces, no special characters).
 Prints summary statistics so you can cross-check in Stata with `summarize`.
 """
 import pandas as pd
-from src.validate_traits import merged
-from src.build_master_traits import get_master_trait_list
+from src.data.participants import get_master_trait_list, merged
 
 traits = get_master_trait_list()
-df = merged[['Participant ID'] + traits].copy().dropna()
+df = merged()[['Participant ID'] + traits].copy().dropna()
 
 # Rename columns to Stata-friendly names
 rename_map = {

@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--anchor-observed', type=float, default=0.75,
                        help='Weight on observed prosocial score for anchor (default: 0.75)')
     parser.add_argument('--population-mode', type=str, default='copula',
-                       choices=['copula', 'documentation', 'baseline', 'depvar'],
+                       choices=['copula', 'documentation', 'baseline'],
                        help='Population generation mode (default: copula)')
     parser.add_argument('--income-mode', type=str, default='categorical',
                        choices=['categorical', 'continuous'],
@@ -44,9 +44,6 @@ def main():
     elif args.population_mode == 'baseline':
         from src.orchestrator_baseline import OrchestratorBaseline
         orchestrator = OrchestratorBaseline()
-    elif args.population_mode == 'depvar':
-        from src.orchestrator_depvar import OrchestratorDepVar
-        orchestrator = OrchestratorDepVar()
     else:  # copula (default)
         orchestrator = Orchestrator()
     

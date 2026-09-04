@@ -64,14 +64,10 @@ def _build_bid_value_export(df):
     # Use centralized timestamp converter
     ts_converter = TimestampConverter()
     
-    # Get vendor data for price lookup
+    # Get vendor data for price lookup (stored by the run in st.session_state.vendors)
     vendors_data = None
     if hasattr(st.session_state, 'vendors'):
         vendors_data = st.session_state.vendors
-    elif hasattr(st.session_state, 'vendors_data'):
-        vendors_data = st.session_state.vendors_data
-    elif hasattr(st.session_state, 'simulation_results') and isinstance(st.session_state.simulation_results, dict):
-        vendors_data = st.session_state.simulation_results.get('vendors_data', None)
     
     # Build vendor lookup
     vendor_lookup = {}

@@ -17,7 +17,6 @@ import streamlit as st
 # Import the registry and all render functions from the visualizations module
 from .visualizations import (
     DECISION_VISUALIZATIONS,
-    render_probability_controls,
     get_dynamic_description,
 )
 
@@ -57,7 +56,6 @@ def render_decision_results(df, decision_name, decision_title):
 # Re-export commonly used functions for backwards compatibility
 __all__ = [
     'render_decision_results',
-    'render_probability_controls',
     'get_dynamic_description',
     'DECISION_VISUALIZATIONS',
 ]

@@ -37,9 +37,7 @@ from .bidding_viz import (
 )
 
 from .viz_helpers import (
-    render_probability_controls,
-    get_dynamic_description,
-    _render_missing_visualization
+    get_dynamic_description
 )
 
 
@@ -103,9 +101,7 @@ __all__ = [
     'render_bid_value',
     
     # Helpers
-    'render_probability_controls',
     'get_dynamic_description',
-    '_render_missing_visualization',
     
     # Registry
     'DECISION_VISUALIZATIONS',

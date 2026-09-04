@@ -58,25 +58,15 @@ def _build_purchase_vs_bid_export(df):
     # Get pricing parameters from session state or use defaults
     platform_markup = 0.1
     price_range = 0.25
-    if hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        platform_markup = sim_params.get('platform_markup', 0.1)
-        price_range = sim_params.get('price_range', 0.25)
-    elif hasattr(st.session_state, 'sim_params'):
+    if hasattr(st.session_state, 'sim_params'):
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
         price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
-    
-    # Get vendor data for price lookup
+
+    # Get vendor data for price lookup (stored by the run in st.session_state.vendors)
     vendors_data = None
-    
-    # Check session state locations in order of likelihood
     if hasattr(st.session_state, 'vendors'):
         vendors_data = st.session_state.vendors
-    elif hasattr(st.session_state, 'vendors_data'):
-        vendors_data = st.session_state.vendors_data
-    elif hasattr(st.session_state, 'simulation_results') and isinstance(st.session_state.simulation_results, dict):
-        vendors_data = st.session_state.simulation_results.get('vendors_data', None)
-    
+
     # Build vendor lookup dictionary for quick access
     vendor_lookup = {}
     if vendors_data:
@@ -195,10 +185,7 @@ def _build_purchase_vs_bid_export(df):
             else:
                 # Fallback to market_price if vendor price not available
                 market_price = 100.0
-                if hasattr(st.session_state, 'simulation_params'):
-                    sim_params = st.session_state.simulation_params.get('simulation', {})
-                    market_price = sim_params.get('market_price', 100.0)
-                elif hasattr(st.session_state, 'sim_params'):
+                if hasattr(st.session_state, 'sim_params'):
                     market_price = getattr(st.session_state.sim_params, 'market_price', 100.0)
                 baseline_price = (1 + platform_markup) * market_price
                 pn_price = (1 + price_range) * baseline_price
@@ -677,8 +664,8 @@ def _rtd_active_element():
     ('ttp' | 'loyalty' | 'wtp' | 'risk_taking'), or None when the whole decision
     was run. Only individual Decision 4 runs are filtered - combined/complete
     simulations always show all four elements."""
-    if (getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults']
-            and not getattr(st.session_state, 'default_decisions', [])):
+    from app.pages.results.run_context import RunContext
+    if RunContext.from_session().is_individual_run('rejected_transaction_defaults'):
         element = st.session_state.get('rtd_run_element')
         if element in _RTD_ELEMENT_SHEETS:
             return element
@@ -1118,11 +1105,9 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
     current_option = value_counts.index[0] if len(value_counts) > 0 else "forgo_transaction"
     
     # Use _default_selection key (same as Page 2 Overview tab) for consistency
+    # (read-only here: the key is initialised at app start by app.models)
     radio_key = f"{decision_name}_default_selection"
-    if radio_key not in st.session_state:
-        # Initialize with what was actually used in the simulation
-        st.session_state[radio_key] = current_option
-    
+
     # Top section: Current results display
     col1, col2, col3, col4 = st.columns(4)
     

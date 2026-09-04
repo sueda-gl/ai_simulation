@@ -3,12 +3,12 @@
 Page 2: Decision-Specific Parameters for the Enhanced AI Agent Simulation.
 """
 import streamlit as st
-from app.models import ALL_DECISIONS
+from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
 from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, auto_populate_single_donation_config, migrate_legacy_configs_to_unified, get_decision_config, clear_decision_config
+from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, get_decision_config, clear_decision_config, get_current_coefficients, get_current_stochastic_params
 
 
 def initialize_page2_widget_keys():
@@ -59,10 +59,10 @@ def initialize_page2_widget_keys():
     # Sync donation sigma coefficient from unified widget key
     if 'tab_sigma_coefficient_stochastic' in st.session_state:
         st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient_stochastic
-        st.session_state.sigma_value_ui = 9.8995 * st.session_state.tab_sigma_coefficient_stochastic
+        st.session_state.sigma_value_ui = DONATION_SIGMA_OVERALL * st.session_state.tab_sigma_coefficient_stochastic
     elif 'sigma_coefficient' not in st.session_state:
         st.session_state.sigma_coefficient = 1.0
-        st.session_state.sigma_value_ui = 9.8995
+        st.session_state.sigma_value_ui = DONATION_SIGMA_OVERALL
 
     # Sync donation sigma checkboxes from canonical widget keys
     if 'tab_sigma_in_copula' in st.session_state:
@@ -141,14 +141,6 @@ def initialize_page2_widget_keys():
             value_key = f"{decision_name}_default_value"
             if value_key not in st.session_state:
                 st.session_state[value_key] = default_value
-    
-    # Migrate any legacy configs to the unified system (backwards compatibility)
-    migrate_legacy_configs_to_unified()
-    
-    # Auto-populate selected_donation_config when only one configuration exists
-    # This ensures the Overview tab shows the current config without requiring explicit selection
-    # NOTE: The sync of final_donation_rate happens INSIDE this function if it populates/updates
-    auto_populate_single_donation_config()
 
 
 def format_decision_title(decision_name, include_number=False):
@@ -413,20 +405,118 @@ def render_page2():
     render_navigation('page2')
 
 
+def _donation_income_mode_from_settings():
+    """Donation Default's own income mode from the live settings.
+
+    Uses the same three-level lookup can_run_complete_simulation() uses, so the
+    Overview card never picks up a global income_spec_mode that a disclose_income
+    run contaminated.
+    """
+    if (hasattr(st.session_state, 'donation_tab_persistence')
+            and 'income_spec_mode' in st.session_state.donation_tab_persistence):
+        return st.session_state.donation_tab_persistence['income_spec_mode']
+    if 'page2_tab_income_spec_mode' in st.session_state:
+        return st.session_state.page2_tab_income_spec_mode
+    return st.session_state.get('income_spec_mode', 'categorical only')
+
+
+def _donation_config_from_settings():
+    """R13: the Overview donation card's contents, read from the live settings.
+
+    Replaces the auto-implied saved config that used to be written into
+    selected_decision_configs on every Page-2 render. Returns None when the
+    current settings do not imply exactly one donation configuration, which is
+    when the card was not shown before either.
+    """
+    selected_decisions = []
+    if (hasattr(st.session_state, 'decision_params')
+            and hasattr(st.session_state.decision_params, 'selected_decisions')):
+        selected_decisions = st.session_state.decision_params.selected_decisions or []
+
+    if 'donation_default' not in selected_decisions:
+        return None
+
+    population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+    donation_income_mode = _donation_income_mode_from_settings()
+
+    is_compare_mode = (
+        population_mode == "Compare all"
+        or 'compare' in str(donation_income_mode).lower()
+        or 'both' in str(donation_income_mode).lower()
+    )
+    if is_compare_mode:
+        return None
+
+    # Only one configuration may be implied, otherwise the user has to pick one.
+    # Note: using *_ to handle the 5th return value (blocking_issues list)
+    can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
+    if config_count != 1:
+        return None
+
+    # Try to get current coefficient values (may fail if not loaded yet)
+    try:
+        coefficients = get_current_coefficients()
+    except Exception:
+        # Fallback: create minimal coefficients structure
+        coefficients = {
+            'intercept': 0.0,
+            'beta_group': {'MidSub': 0.0, 'NoSub': 0.0, 'FullSub': 0.0},
+            'beta_income_q': {'Q1': 0.0, 'Q2': 0.0, 'Q3': 0.0, 'Q4': 0.0, 'Q5': 0.0},
+            'beta_income_linear': 0.0,
+            'beta_study': {'Incoming': 0.0, 'Law5yr': 0.0, 'UG3yr': 0.0, 'Grad2yr': 0.0},
+            'beta_hh': 0.0
+        }
+
+    # Try to get current stochastic parameters
+    try:
+        stochastic_params = get_current_stochastic_params()
+    except Exception:
+        # Fallback: create minimal stochastic structure
+        stochastic_params = {
+            'stochastic': {
+                'sigma_value': DONATION_SIGMA_OVERALL,
+                'sigma_coefficient': 1.0,
+                'sigma_in_copula': False,
+                'sigma_in_research': True
+            },
+            'anchor_weights': {
+                'observed': 0.75,
+                'predicted': 0.25
+            }
+        }
+
+    return {
+        'population_mode': population_mode,
+        'donation_income_mode': donation_income_mode,
+        # DEPRECATED alias the implied record carried; Decision 13's default block
+        # ("Value synced from: ...") reads it
+        'income_spec_mode': donation_income_mode,
+        'coefficients': coefficients,
+        'stochastic_params': stochastic_params,
+        # No simulation has run: the linked final_donation_rate value is the
+        # current default (what the implied record recorded at implication time)
+        'metrics': {
+            'mean_donation': st.session_state.get('final_donation_rate_default_value', 0.10),
+        },
+        'total_agents': st.session_state.get('n_agents', 1000)
+    }
+
+
 def render_selected_donation_config_display():
     """Display the selected donation configuration in the overview tab"""
-    
+
     config = get_decision_config('donation_default')
-    
+    is_from_live_settings = False
+
     if config is None:
-        # No configuration - try auto-populate one more time
-        auto_populate_single_donation_config()
-        config = get_decision_config('donation_default')
-    
+        # R13: no stored auto-implied record any more - the same card is rendered
+        # straight from the current Page 1 / Donation Default tab settings.
+        config = _donation_config_from_settings()
+        is_from_live_settings = config is not None
+
     if config is None:
         return
-    is_auto_implied = config.get('source') == 'auto_implied_single_config'
-    
+
     st.markdown("#### 3. Donation Default")
     
     # Main configuration display
@@ -437,8 +527,8 @@ def render_selected_donation_config_display():
         st.success(f"✅ **Donation Default Configuration**: {config['population_mode']} + {donation_income_mode}")
         
         # Metrics and details in columns
-        if is_auto_implied:
-            # For auto-implied configs, show only mode info (no simulation metrics yet)
+        if is_from_live_settings:
+            # Rendered from the live settings: show only mode info (no simulation metrics yet)
             col1, col2, col3 = st.columns(3)
             
             with col1:
@@ -513,7 +603,7 @@ def render_selected_donation_config_display():
             
             # Selection metadata
             st.markdown("**ℹ️ Configuration Info:**")
-            if is_auto_implied:
+            if is_from_live_settings:
                 st.caption("Source: Auto-detected (single configuration)")
                 st.caption("💡 This configuration was automatically detected from your Page 1 and Donation Default tab settings")
             else:
@@ -524,14 +614,14 @@ def render_selected_donation_config_display():
         action_col1, action_col2 = st.columns([3, 1])
         
         with action_col1:
-            if is_auto_implied:
+            if is_from_live_settings:
                 st.caption("This single configuration will be used for the donation decision in complete simulations")
             else:
                 st.caption("This selected configuration will be used for the donation decision in complete simulations")
         
         with action_col2:
-            # Only show Clear button for explicitly selected configs (not auto-implied)
-            if not is_auto_implied:
+            # Only show Clear button for explicitly selected configs
+            if not is_from_live_settings:
                 if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_donation_config"):
                     clear_decision_config('donation_default')
                     st.rerun()

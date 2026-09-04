@@ -395,16 +395,32 @@ def render_checkbox_default_config(decision_name, default_value):
             st.warning("⚠️ No parameters selected")
 
 
+def _linked_donation_config():
+    """The donation configuration Decision 13's default value is linked to.
+
+    An explicitly pinned donation_default record wins; otherwise (R13: the
+    auto-implied record no longer exists) the configuration the live settings
+    imply - donation_default selected for customization, a single population /
+    income mode - rendered exactly as the implied record used to be.  None when
+    neither exists.
+    """
+    from app.pages.decision_execution import get_decision_config
+    config = get_decision_config('donation_default')
+    if config is not None:
+        return config
+    from app.pages.page2_decisions import _donation_config_from_settings
+    return _donation_config_from_settings()
+
+
 def render_numeric_default_config(decision_name, default_value):
     """Render UI for numeric default decisions"""
-    
+
     # Special handling for final_donation_rate when donation config is selected
-    from app.pages.decision_execution import get_decision_config
-    dd_config = get_decision_config('donation_default')
+    dd_config = _linked_donation_config() if decision_name == "final_donation_rate" else None
     if decision_name == "final_donation_rate" and dd_config is not None:
         render_final_donation_rate_with_config(default_value, dd_config)
         return
-    
+
     # Session state key for this decision's value
     value_key = f"{decision_name}_default_value"
     
@@ -469,12 +485,11 @@ def render_final_donation_rate_with_config(default_value, config=None):
     Shows the slider synced to the selected donation configuration's mean rate.
     """
     if config is None:
-        from app.pages.decision_execution import get_decision_config
-        config = get_decision_config('donation_default')
+        config = _linked_donation_config()
     if config is None:
         return
     mean_donation = config.get('metrics', {}).get('mean_donation', default_value)
-    
+
     # Session state key for this decision's value
     value_key = "final_donation_rate_default_value"
     

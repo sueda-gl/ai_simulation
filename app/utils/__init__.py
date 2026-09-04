@@ -10,8 +10,7 @@ from .timestamp_utils import (
     timestamp_hours_to_datetime,
     timestamp_hours_to_formatted_string,
     convert_timestamp,
-    TimestampConverter,
-    format_price
+    TimestampConverter
 )
 
 __all__ = [
@@ -21,6 +20,5 @@ __all__ = [
     'timestamp_hours_to_datetime',
     'timestamp_hours_to_formatted_string',
     'convert_timestamp',
-    'TimestampConverter',
-    'format_price'
+    'TimestampConverter'
 ]

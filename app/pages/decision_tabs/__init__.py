@@ -8,10 +8,7 @@ from app.pages.decision_tabs.disclose_income import render_disclose_income_tab
 from app.pages.decision_tabs.disclose_documents import render_disclose_documents_tab
 from app.pages.decision_tabs.generic_decision import render_generic_decision_tab
 from app.pages.decision_tabs.rejected_transaction import render_rejected_transaction_defaults_tab
-from app.pages.decision_tabs.global_parameters import (
-    render_global_parameters_readonly,
-    render_global_parameters_tab
-)
+from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_execution import render_simulation_buttons
 
 
@@ -51,6 +48,5 @@ __all__ = [
     'render_rejected_transaction_defaults_tab',
     'render_generic_decision_tab',
     'render_global_parameters_readonly',
-    'render_global_parameters_tab',
     'render_simulation_buttons'
 ]

@@ -5,8 +5,29 @@ Donation Default decision tab configuration.
 # Force rebuild timestamp: 2025-10-01
 import streamlit as st
 import pandas as pd
+import yaml
+from pathlib import Path
 from app.pages.decision_execution import run_individual_decision
 from app.models import load_donation_coefficients_from_yaml
+
+
+CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+
+
+def _load_base_sigma_overall():
+    """Read the donation base sigma from the configuration file (read-only)."""
+    try:
+        from app.seam.sentinels import donation_sigma_overall
+    except ImportError:
+        with open(CONFIG_PATH, 'r') as f:
+            config = yaml.safe_load(f)
+        return float(config['donation_default']['stochastic']['sigma_overall'])
+    return float(donation_sigma_overall())
+
+
+# Single sigma constant: donation_default.stochastic.sigma_overall from
+# config/decisions.yaml, loaded once at import. The file is never written.
+BASE_SIGMA_OVERALL = _load_base_sigma_overall()
 
 
 def ensure_coefficients_loaded():
@@ -31,18 +52,6 @@ def get_coefficient(name, mode_suffix=None):
             return 0.0
     
     return st.session_state[key]
-
-
-def get_coefficient_for_input(name):
-    """Get coefficient value for input field based on current income mode"""
-    ensure_coefficients_loaded()
-    income_mode = st.session_state.get('income_spec_mode', 'categorical only')
-    
-    # For input fields, show the appropriate coefficient set based on current mode
-    if 'continuous' in income_mode.lower() and 'compare' not in income_mode.lower():
-        return get_coefficient(name, 'cont')
-    else:
-        return get_coefficient(name, 'cat')  # Default to categorical for "compare both" and "categorical only"
 
 
 def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
@@ -176,7 +185,7 @@ def render_donation_sigma_controls(mode_suffix: str):
 
     if sigma_strategy == 'overall':
         # OVERALL MODE: Single slider
-        st.markdown("Base σ = 9.8995 (empirical from 280 participants)")
+        st.markdown(f"Base σ = {BASE_SIGMA_OVERALL:.4f} (empirical from 280 participants)")
 
         # Restore coefficient widget value
         coeff_widget_key = f'tab_sigma_coefficient_{mode_suffix}'
@@ -198,14 +207,14 @@ def render_donation_sigma_controls(mode_suffix: str):
             max_value=2.0,
             value=coeff_val if coeff_val != 0.0 else 1.0,
             step=0.01,
-            help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+            help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
             key=coeff_widget_key,
             on_change=lambda: save_to_donation_storage(coeff_widget_key, coeff_storage_key)
         )
         st.session_state.sigma_coefficient = sigma_coefficient
 
-        effective_sigma = 9.8995 * sigma_coefficient
-        st.markdown(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
+        effective_sigma = BASE_SIGMA_OVERALL * sigma_coefficient
+        st.markdown(f"Effective σ = {BASE_SIGMA_OVERALL:.4f} × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
         st.session_state.sigma_value_ui = effective_sigma
 
     else:
@@ -217,12 +226,12 @@ def render_donation_sigma_controls(mode_suffix: str):
                 "**Continuous mode uses overall σ.** "
                 "Per-quintile σ values are based on categorical budget levels and are "
                 "not applicable to the continuous income specification. "
-                "The simulation will use the overall σ (9.8995 × coefficient) for continuous runs."
+                f"The simulation will use the overall σ ({BASE_SIGMA_OVERALL:.4f} × coefficient) for continuous runs."
             )
         elif 'compare' in str(current_income_mode).lower():
             st.info(
                 "**Note:** Per-quintile σ values will only apply to the **categorical** run. "
-                "The continuous run will use the overall σ (9.8995 × coefficient)."
+                f"The continuous run will use the overall σ ({BASE_SIGMA_OVERALL:.4f} × coefficient)."
             )
         st.markdown("**Per-Quintile σ Coefficients**")
         st.markdown("Each level has its own base σ from empirical data:")
@@ -269,7 +278,7 @@ def render_donation_sigma_controls(mode_suffix: str):
         st.session_state.donation_quintile_scale_factors = quintile_coefficients
 
         # Set sigma_value_ui to indicate stochastic is enabled (using overall sigma as fallback display)
-        st.session_state.sigma_value_ui = 9.8995
+        st.session_state.sigma_value_ui = BASE_SIGMA_OVERALL
         st.session_state.sigma_coefficient = 1.0  # Default coefficient for overall fallback
 
 
@@ -304,19 +313,6 @@ def render_donation_default_tab():
         # Reset sigma strategy (main state variable)
         st.session_state.donation_sigma_strategy = "overall"
         
-        # Reset sigma strategy widget keys for all mode suffixes
-        for mode_suffix in ['copula', 'research', 'compare']:
-            st.session_state[f'donation_tab_sigma_strategy_{mode_suffix}'] = "overall"
-            st.session_state[f'tab_sigma_coefficient_{mode_suffix}'] = 1.0
-            # Reset quintile slider widget keys
-            for level in ['1', '2', '3', '4', '5']:
-                st.session_state[f'donation_tab_sigma_q{level}_{mode_suffix}'] = 1.0
-        
-        # Reset sigma coefficient sliders (legacy keys)
-        st.session_state.tab_sigma_coefficient = 1.0
-        st.session_state.tab_sigma_coefficient_research = 1.0
-        st.session_state.tab_sigma_coefficient_compare = 1.0
-        
         # Reset quintile scale factors
         st.session_state.donation_quintile_scale_factors = {
             '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0
@@ -328,8 +324,6 @@ def render_donation_default_tab():
         # Reset sigma checkboxes
         st.session_state.tab_sigma_in_copula = False
         st.session_state.tab_sigma_in_research = True
-        st.session_state.tab_sigma_in_copula_compare = False
-        st.session_state.tab_sigma_in_research_compare = True
     
     st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
     
@@ -723,7 +717,22 @@ def render_variable_definitions():
 
 def reload_coefficients_for_income_mode():
     """Reload coefficients from configuration file when income mode changes"""
+    # The configuration file is read-only, so the intercept / adjustment overrides
+    # live in session state; carry them across the reload.
+    overrides = {
+        key: st.session_state[key]
+        for key in ('donation_coeff_intercept_cat',
+                    'donation_coeff_intercept_cont',
+                    'donation_adjustment_shift')
+        if key in st.session_state
+    }
     load_donation_coefficients_from_yaml()
+    for key, value in overrides.items():
+        st.session_state[key] = value
+    # Point the unsuffixed intercept at the newly selected specification.
+    active_key = f'donation_coeff_intercept_{_active_intercept_suffix()}'
+    if active_key in st.session_state:
+        st.session_state.donation_coeff_intercept = st.session_state[active_key]
 
 
 def clear_input_field_cache():
@@ -919,8 +928,8 @@ def render_intercept_override_section():
     
     # Show current configuration values for reference
     try:
-        current_yaml_values = get_current_yaml_intercepts()
-        
+        current_yaml_values = get_current_intercepts()
+
         # Use 3 columns: Categorical Current, Continuous Current, Override Values
         col1, col2, col3 = st.columns(3)
         
@@ -1064,32 +1073,43 @@ def get_current_yaml_intercepts():
     }
 
 
-def update_yaml_intercepts(override_values):
-    """Update configuration file with new intercept values"""
-    import yaml
-    from pathlib import Path
-    
+def get_current_intercepts():
+    """Get the intercept values currently in effect.
+
+    The configuration file is read-only, so an override lives in the
+    donation_coeff_intercept_cat / _cont session keys (the coefficient set the
+    model runs); the file only supplies the value when no session value exists.
+    """
+    file_values = get_current_yaml_intercepts()
+    return {
+        'categorical': st.session_state.get('donation_coeff_intercept_cat', file_values['categorical']),
+        'continuous': st.session_state.get('donation_coeff_intercept_cont', file_values['continuous'])
+    }
+
+
+def _active_intercept_suffix():
+    """Coefficient suffix ('cat'/'cont') for the active income specification."""
+    income_mode = str(st.session_state.get('income_spec_mode', 'categorical only'))
+    if 'continuous' in income_mode.lower() and 'compare' not in income_mode.lower():
+        return 'cont'
+    return 'cat'
+
+
+def apply_intercept_overrides(override_values):
+    """Apply intercept values to session state (the configuration file is read-only)"""
     try:
-        config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+        ensure_coefficients_loaded()
         
-        # Load current configuration
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        suffixes = {'categorical': 'cat', 'continuous': 'cont'}
+        active_suffix = _active_intercept_suffix()
         
-        # Update intercept values
-        regression_coeffs = config['donation_default']['regression_coefficients']
-        
-        if 'categorical' in override_values:
-            regression_coeffs['categorical']['intercept'] = float(override_values['categorical'])
-            # Also update legacy regression block for backward compatibility
-            config['donation_default']['regression']['intercept'] = float(override_values['categorical'])
-        
-        if 'continuous' in override_values:
-            regression_coeffs['continuous']['intercept'] = float(override_values['continuous'])
-        
-        # Write back to configuration file
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        for spec_type, value in override_values.items():
+            suffix = suffixes[spec_type]
+            st.session_state[f'donation_coeff_intercept_{suffix}'] = float(value)
+            # Mirror load_donation_coefficients_from_yaml: the unsuffixed key holds
+            # the coefficient set of the active income specification.
+            if suffix == active_suffix:
+                st.session_state.donation_coeff_intercept = float(value)
         
         return True
         
@@ -1098,8 +1118,19 @@ def update_yaml_intercepts(override_values):
         return False
 
 
+def reset_intercepts_to_defaults():
+    """Restore the configuration file's intercept values into session state"""
+    try:
+        research_defaults = get_current_yaml_intercepts()
+    except Exception as e:
+        st.error(f"Error updating configuration file: {e}")
+        return False
+    
+    return apply_intercept_overrides(research_defaults)
+
+
 def auto_save_intercept(intercept_type, new_value):
-    """Auto-save intercept changes to configuration file"""
+    """Auto-save intercept changes to session state"""
     try:
         # Update the override values
         if 'intercept_override_values' not in st.session_state:
@@ -1107,12 +1138,10 @@ def auto_save_intercept(intercept_type, new_value):
         
         st.session_state.intercept_override_values[intercept_type] = new_value
         
-        # Save to configuration file immediately
-        success = update_yaml_intercepts({intercept_type: new_value})
+        # Save to session state immediately (the configuration file is read-only)
+        success = apply_intercept_overrides({intercept_type: new_value})
         
         if success:
-            # Reload coefficients to reflect changes
-            load_donation_coefficients_from_yaml()
             # Show a brief success message
             st.toast(f"✅ {intercept_type.title()} intercept auto-saved: {new_value:.6f}", icon="💾")
         else:
@@ -1196,16 +1225,11 @@ def render_actions_and_management_section():
     with col1:
         st.markdown("**🔄 Reset Intercept**")
         if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
-            # Reset to research default values
-            default_values = {
-                'categorical': 1.519818,  # Research default for categorical
-                'continuous': -0.139596   # Research default for continuous
-            }
-            success = update_yaml_intercepts(default_values)
+            # Reset to the research default values held in the configuration file
+            success = reset_intercepts_to_defaults()
             if success:
                 # Set flag to reset widgets on next rerun (before widgets render)
                 st.session_state._reset_intercept_flag = True
-                load_donation_coefficients_from_yaml()
                 st.toast("✅ Intercepts reset to research defaults", icon="🔄")
                 st.rerun()
             else:
@@ -1215,11 +1239,10 @@ def render_actions_and_management_section():
         st.markdown("**🔄 Reset Adjustment**")
         if st.button("Reset Adjustment to 0", type="secondary", use_container_width=True, help="Reset adjustment value to 0 and update configuration", key="reset_adjustment_btn"):
             # Reset to default value of 0.0
-            success = update_yaml_adjustment({'shift_value': 0.0})
+            success = apply_adjustment_overrides({'shift_value': 0.0})
             if success:
                 # Set flag to reset widget on next rerun (before widget renders)
                 st.session_state._reset_adjustment_flag = True
-                load_donation_coefficients_from_yaml()
                 st.toast("✅ Adjustment reset to 0", icon="🔄")
                 st.rerun()
             else:
@@ -1229,17 +1252,13 @@ def render_actions_and_management_section():
         st.markdown("**🔄 Reset All**")
         if st.button("Reset Config to Defaults", type="secondary", use_container_width=True, help="Reset entire page to research defaults (intercepts, adjustment, sliders, radio buttons)", key="reset_config_btn"):
             # Reset intercepts to research defaults
-            success_intercept = update_yaml_intercepts({
-                'categorical': 1.519818,
-                'continuous': -0.139596
-            })
+            success_intercept = reset_intercepts_to_defaults()
             # Reset adjustment to research default (-4.0)
-            success_adjustment = update_yaml_adjustment({'shift_value': -4.0})
+            success_adjustment = reset_adjustment_to_defaults()
             
             if success_intercept and success_adjustment:
                 # Set flag to reset ALL widgets on next rerun (before widgets render)
                 st.session_state._reset_config_to_defaults_flag = True
-                load_donation_coefficients_from_yaml()
                 st.toast("✅ All values reset to research defaults", icon="🔄")
                 st.rerun()
             else:
@@ -1263,28 +1282,11 @@ def get_current_yaml_adjustment():
     }
 
 
-def update_yaml_adjustment(override_values):
-    """Update configuration file with new adjustment values"""
-    import yaml
-    from pathlib import Path
-    
+def apply_adjustment_overrides(override_values):
+    """Apply adjustment values to session state (the configuration file is read-only)"""
     try:
-        config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
-        
-        # Load current configuration
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        # Update adjustment values
-        if 'adjustment' not in config['donation_default']:
-            config['donation_default']['adjustment'] = {}
-        
         if 'shift_value' in override_values:
-            config['donation_default']['adjustment']['shift_value'] = float(override_values['shift_value'])
-        
-        # Write back to configuration file
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+            st.session_state.donation_adjustment_shift = float(override_values['shift_value'])
         
         return True
         
@@ -1293,8 +1295,19 @@ def update_yaml_adjustment(override_values):
         return False
 
 
+def reset_adjustment_to_defaults():
+    """Restore the configuration file's adjustment shift into session state"""
+    try:
+        research_defaults = get_current_yaml_adjustment()
+    except Exception as e:
+        st.error(f"Error updating configuration file: {e}")
+        return False
+    
+    return apply_adjustment_overrides(research_defaults)
+
+
 def auto_save_adjustment(adjustment_type, new_value):
-    """Auto-save adjustment changes to configuration file"""
+    """Auto-save adjustment changes to session state"""
     try:
         # Update the override values
         if 'adjustment_override_values' not in st.session_state:
@@ -1302,12 +1315,10 @@ def auto_save_adjustment(adjustment_type, new_value):
         
         st.session_state.adjustment_override_values[adjustment_type] = new_value
         
-        # Save to configuration file immediately
-        success = update_yaml_adjustment({adjustment_type: new_value})
+        # Save to session state immediately (the configuration file is read-only)
+        success = apply_adjustment_overrides({adjustment_type: new_value})
         
         if success:
-            # Reload coefficients to reflect changes
-            load_donation_coefficients_from_yaml()
             # Show a brief success message
             st.toast(f"✅ {adjustment_type.replace('_', ' ').title()} auto-saved: {new_value:.3f}", icon="📊")
         else:

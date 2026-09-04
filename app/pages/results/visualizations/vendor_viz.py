@@ -70,11 +70,7 @@ def _build_purchase_request_export(df, vendors_data, price_min_config=None, pric
     # Get pricing parameters from session state for customer price calculation
     platform_markup = 0.1
     price_range = 0.25
-    if hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        platform_markup = sim_params.get('platform_markup', 0.1)
-        price_range = sim_params.get('price_range', 0.25)
-    elif hasattr(st.session_state, 'sim_params'):
+    if hasattr(st.session_state, 'sim_params'):
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
         price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
     
@@ -307,25 +303,9 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
     param_descriptions = {param[0]: param[2] for param in parameters}
     
     # Use _default_ key (same as Page 2 Overview tab) for consistency
+    # (read-only here: the key is initialised at app start by app.models)
     selection_key = f"{decision_name}_default_params"
-    
-    # Initialize if not exists (try to infer from actual results)
-    if selection_key not in st.session_state:
-        # Try to infer selection from the actual weights in the data
-        if not decision_data.empty and isinstance(decision_data.iloc[0], dict):
-            # The data contains weight dictionaries
-            sample_weights = decision_data.iloc[0]
-            # Find which parameters have non-zero weights
-            inferred_selection = [key for key, weight in sample_weights.items() if weight > 0]
-            if inferred_selection:
-                st.session_state[selection_key] = inferred_selection
-            else:
-                # Default to all if no inference possible
-                st.session_state[selection_key] = ["price", "quality", "proximity", "sustainability"]
-        else:
-            # Default to all if data format doesn't match
-            st.session_state[selection_key] = ["price", "quality", "proximity", "sustainability"]
-    
+
     # Top section: Current results display
     col1, col2, col3, col4 = st.columns(4)
     
@@ -558,13 +538,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     if hasattr(st.session_state, 'vendors') and st.session_state.vendors:
         vendors_data = st.session_state.vendors
         total_vendors_available = len(vendors_data)
-    elif 'simulation_results' in st.session_state:
-        results = st.session_state.simulation_results
-        if isinstance(results, dict):
-            vendors_data = results.get('vendors') or results.get('config', {}).get('vendors')
-            if vendors_data:
-                total_vendors_available = len(vendors_data)
-    
+
     # Get configured price bounds for consistent normalization
     # (Used in vendor score calculations throughout this function)
     price_min_config = None
@@ -572,11 +546,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     if hasattr(st.session_state, 'sim_params'):
         price_min_config = getattr(st.session_state.sim_params, 'vendor_price_min', 50.0)
         price_max_config = getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
-    elif hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        price_min_config = sim_params.get('vendor_price_min', 50.0)
-        price_max_config = sim_params.get('vendor_price_max', 150.0)
-    
+
     # Count unique vendors selected (excluding NaN)
     vendor_counts = decision_data.dropna().value_counts()
     num_vendors_selected = len(vendor_counts)
@@ -986,11 +956,7 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
     if hasattr(st.session_state, 'sim_params'):
         price_min_config = getattr(st.session_state.sim_params, 'vendor_price_min', 50.0)
         price_max_config = getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
-    elif hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        price_min_config = sim_params.get('vendor_price_min', 50.0)
-        price_max_config = sim_params.get('vendor_price_max', 150.0)
-    
+
     # Build purchase request level data
     purchase_request_data = _build_purchase_request_export(
         df, vendors_for_export, 

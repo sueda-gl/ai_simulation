@@ -21,36 +21,48 @@ def load_disclose_income_config():
     return config.get('disclose_income', {})
 
 
-def save_disclose_income_config(updates: dict):
-    """Save updates to disclose_income configuration in YAML."""
+def _load_base_sigma_overall():
+    """Read the base sigma from the configuration file (read-only)."""
     try:
+        from app.seam.config_repo import get_config_repo
+    except ImportError:
         with open(CONFIG_PATH, 'r') as f:
             config = yaml.safe_load(f)
+        return float(config['disclose_income']['stochastic']['sigma_overall'])
+    return float(get_config_repo().disclose_income_sigma_overall())
 
-        # Update disclose_income section
-        if 'disclose_income' not in config:
-            config['disclose_income'] = {}
 
-        for key, value in updates.items():
-            if '.' in key:
-                # Handle nested keys like 'anchor_weights.observed_prosocial'
-                parts = key.split('.')
-                target = config['disclose_income']
-                for part in parts[:-1]:
-                    if part not in target:
-                        target[part] = {}
-                    target = target[part]
-                target[parts[-1]] = value
-            else:
-                config['disclose_income'][key] = value
+# Single sigma constant: disclose_income.stochastic.sigma_overall from
+# config/decisions.yaml, loaded once at import. The file is never written.
+BASE_SIGMA_OVERALL = _load_base_sigma_overall()
 
-        with open(CONFIG_PATH, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+# The tab prints the base σ at four decimals and computes the effective σ it
+# shows next to it from that printed value, so the on-screen arithmetic stays
+# self-consistent (e.g. "0.10 × 9.8995 = 0.9899"). Display only: the model
+# takes its σ from the configuration file directly.
+DISPLAY_SIGMA_OVERALL = round(BASE_SIGMA_OVERALL, 4)
 
-        return True
-    except Exception as e:
-        st.error(f"Error saving configuration: {e}")
-        return False
+
+def apply_updates_to_config(config: dict, updates: dict):
+    """Apply dotted-key updates to a loaded config block in memory.
+
+    The configuration file is read-only; resets build the default config here
+    and push it into session state instead of writing it back to disk.
+    """
+    for key, value in updates.items():
+        if '.' in key:
+            # Handle nested keys like 'anchor_weights.observed_prosocial'
+            parts = key.split('.')
+            target = config
+            for part in parts[:-1]:
+                if part not in target:
+                    target[part] = {}
+                target = target[part]
+            target[parts[-1]] = value
+        else:
+            config[key] = value
+
+    return config
 
 
 def initialize_disclose_income_session_state():
@@ -188,7 +200,7 @@ def render_di_sigma_controls(mode_suffix: str):
 
     if sigma_strategy == 'overall':
         # OVERALL MODE: Single slider
-        st.markdown("Base σ = 9.8995 (empirical from 280 participants)")
+        st.markdown(f"Base σ = {BASE_SIGMA_OVERALL:.4f} (empirical from 280 participants)")
 
         coeff_widget_key = f'di_tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'di_sigma_coefficient_{mode_suffix}'
@@ -219,31 +231,31 @@ def render_di_sigma_controls(mode_suffix: str):
             max_value=2.0,
             value=coeff_val,
             step=0.01,
-            help="Coefficient to multiply the base σ. Final σ = 9.8995 × coefficient",
+            help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
             key=coeff_widget_key,
             on_change=lambda: save_to_disclose_income_storage(coeff_widget_key, coeff_storage_key)
         )
         st.session_state.di_scale_factor = sigma_coefficient
 
-        effective_sigma = 9.8995 * sigma_coefficient
-        st.markdown(f"Effective σ = 9.8995 × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
+        effective_sigma = DISPLAY_SIGMA_OVERALL * sigma_coefficient
+        st.markdown(f"Effective σ = {BASE_SIGMA_OVERALL:.4f} × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
 
     else:
         # QUINTILE MODE: 5 sliders (one per income level)
         current_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
         overall_coeff = st.session_state.get('di_scale_factor', 1.0)
-        effective_sigma = 9.8995 * overall_coeff
+        effective_sigma = DISPLAY_SIGMA_OVERALL * overall_coeff
         if 'continuous' in str(current_income_mode).lower() and 'compare' not in str(current_income_mode).lower():
             st.warning(
                 "**Continuous mode uses overall σ.** "
                 "Per-quintile σ values are based on categorical budget levels and are "
                 "not applicable to the continuous income specification. "
-                f"The simulation will use the overall σ ({overall_coeff:.2f} × 9.8995 = {effective_sigma:.4f}) for continuous runs."
+                f"The simulation will use the overall σ ({overall_coeff:.2f} × {BASE_SIGMA_OVERALL:.4f} = {effective_sigma:.4f}) for continuous runs."
             )
         elif 'compare' in str(current_income_mode).lower():
             st.info(
                 "**Note:** Per-quintile σ values will only apply to the **categorical** run. "
-                f"The continuous run will use the overall σ ({overall_coeff:.2f} × 9.8995 = {effective_sigma:.4f})."
+                f"The continuous run will use the overall σ ({overall_coeff:.2f} × {BASE_SIGMA_OVERALL:.4f} = {effective_sigma:.4f})."
             )
         st.markdown("**Per-Quintile σ Coefficients**")
         st.markdown("Each level has its own base σ from empirical data:")
@@ -761,7 +773,8 @@ def _apply_config_to_widget_keys(config):
     st.session_state.di_wopb_widget = anchor.get('observed_prosocial', 0.25)
     st.session_state.di_wpb_widget = anchor.get('prosocial_weight', 0.50)
     st.session_state.di_override_intercept = config.get('intercept', 0.75)
-    st.session_state.di_tab_sigma_enabled = stochastic.get('sigma_value', 0) > 0
+    # The Research Specification tick box defaults to on, so a reset leaves it on.
+    st.session_state.di_tab_sigma_enabled = True
     st.session_state.di_tab_sigma_coefficient = stochastic.get('scale_factor', 1.0)
     st.session_state.di_tab_sigma_strategy = stochastic.get('sigma_strategy', 'overall')
     st.session_state.di_tab_income_mode = config.get('income_mode', 'Categorical only')
@@ -776,9 +789,22 @@ def _apply_config_to_widget_keys(config):
             level, default_scale
         )
 
+    # Also set the READ-keys the simulation consumes; the configuration file is
+    # read-only, so they can no longer be re-read from a rewritten file.
+    st.session_state.di_intercept = config.get('intercept', 0.75)
+    st.session_state.di_income_mode = config.get('income_mode', 'Categorical only')
+    st.session_state.di_wopb = anchor.get('observed_prosocial', 0.25)
+    st.session_state.di_wpb = anchor.get('prosocial_weight', 0.50)
+    st.session_state.di_sigma_enabled = True
+    st.session_state.di_sigma_strategy = stochastic.get('sigma_strategy', 'overall')
+    st.session_state.di_scale_factor = default_scale
+    st.session_state.di_quintile_scale_factors = {
+        level: quintile_scales.get(level, default_scale) for level in ['1', '2', '3', '4', '5']
+    }
+
 
 def reset_to_defaults():
-    """Reset all configuration values to their defaults."""
+    """Reset all configuration values to their defaults (session state only)."""
     default_config = {
         'intercept': 0.75,
         'income_mode': 'Categorical only',
@@ -794,26 +820,43 @@ def reset_to_defaults():
         'stochastic.quintile_scale_factors.5': 1.0,
     }
 
-    success = True
-    for key, value in default_config.items():
-        if not save_disclose_income_config({key: value}):
-            success = False
+    try:
+        # The configuration file is read-only: build the reset configuration in
+        # memory from a read-only load instead of writing the defaults to disk.
+        reset_config = apply_updates_to_config(load_disclose_income_config(), default_config)
+    except Exception as e:
+        st.error(f"Error saving configuration: {e}")
+        return False
 
-    if success:
-        # 1. Clear all di_ keys and persistence storage
-        keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
-        for key in keys_to_clear:
-            del st.session_state[key]
-        if 'disclose_income_tab_persistence' in st.session_state:
-            del st.session_state['disclose_income_tab_persistence']
+    # 1. Clear all di_ keys and persistence storage
+    keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
+    for key in keys_to_clear:
+        del st.session_state[key]
+    if 'disclose_income_tab_persistence' in st.session_state:
+        del st.session_state['disclose_income_tab_persistence']
 
-        # 2. Re-read the now-reset YAML and SET every widget key to
-        #    the default value.  This prevents Streamlit's internal
-        #    widget cache from retaining stale slider values that would
-        #    be auto-saved back to YAML on the next rerun.
-        _apply_config_to_widget_keys(load_disclose_income_config())
+    # 2. SET every widget key to the default value.  This prevents
+    #    Streamlit's internal widget cache from retaining stale slider
+    #    values on the next rerun.
+    _apply_config_to_widget_keys(reset_config)
 
-    return success
+    return True
+
+
+def reset_intercept_to_default():
+    """Restore the configuration file's intercept into session state."""
+    try:
+        default_intercept = get_current_yaml_intercept()
+    except Exception as e:
+        st.error(f"Error saving configuration: {e}")
+        return False
+
+    # Update session state for intercept only
+    st.session_state.di_intercept = default_intercept
+    if 'di_intercept_override_values' in st.session_state:
+        st.session_state.di_intercept_override_values['intercept'] = default_intercept
+
+    return True
 
 
 def render_actions_and_management_section(config):
@@ -839,13 +882,8 @@ def render_actions_and_management_section(config):
                      help="Reset intercept value to research default (0.75)",
                      key="di_reload_btn"):
             # Only reset the intercept value - NOT all configuration values
-            default_intercept = 0.75
-            success = save_disclose_income_config({'intercept': default_intercept})
+            success = reset_intercept_to_default()
             if success:
-                # Update session state for intercept only
-                st.session_state.di_intercept = default_intercept
-                if 'di_intercept_override_values' in st.session_state:
-                    st.session_state.di_intercept_override_values['intercept'] = default_intercept
                 st.toast("✅ Intercept reset to research default (0.75)", icon="🔄")
                 st.rerun()
             else:

@@ -74,25 +74,16 @@ def _build_donation_transaction_export(df, simulation_config=None):
     if 'purchase_requests' not in df.columns:
         return transaction_records
     
-    # Get pricing parameters from session state or use defaults
+    # Pricing parameters (defaults; this export never read the Page-1 parameters)
     market_price = 100.0
     platform_markup = 0.1
     price_range = 0.25
-    if hasattr(st.session_state, 'simulation_params'):
-        sim_params = st.session_state.simulation_params.get('simulation', {})
-        market_price = sim_params.get('market_price', 100.0)
-        platform_markup = sim_params.get('platform_markup', 0.1)
-        price_range = sim_params.get('price_range', 0.25)
-    
+
     # Get vendor data for price lookup (consistent with transaction_viz.py)
     vendors_data = None
     if hasattr(st.session_state, 'vendors'):
         vendors_data = st.session_state.vendors
-    elif hasattr(st.session_state, 'vendors_data'):
-        vendors_data = st.session_state.vendors_data
-    elif hasattr(st.session_state, 'simulation_results') and isinstance(st.session_state.simulation_results, dict):
-        vendors_data = st.session_state.simulation_results.get('vendors_data', None)
-    
+
     # Build vendor lookup dictionary for quick access
     vendor_lookup = {}
     if vendors_data:
@@ -338,11 +329,9 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
             
             # Add Excel export for donation_default when using custom parameters
             # Check if this is a custom parameters run (not default values)
-            is_custom_parameters = (
-                hasattr(st.session_state, 'custom_decisions') and 
-                'donation_default' in st.session_state.custom_decisions
-            )
-            
+            from app.pages.results.run_context import RunContext
+            is_custom_parameters = 'donation_default' in RunContext.from_session().custom_decisions
+
             if is_custom_parameters:
                 st.markdown("---")
                 st.markdown("**💾 Export Donation Results**")
@@ -417,28 +406,29 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
 def render_final_donation_rate(df, decision_name, decision_title, decision_data):
     """Visualization for final_donation_rate with 3-case logic for donation configs"""
     
-    # CASE 3: Check if a donation configuration has been selected
     from app.pages.decision_execution import get_decision_config
+    from app.pages.results.run_context import RunContext
+    ctx = RunContext.from_session()
+
+    # CASE 3: Check if a donation configuration has been selected - an explicitly
+    # pinned record, or (R13) donation_default run as a custom decision of THIS run,
+    # whose donation_default column IS the selected distribution
     _donation_config = get_decision_config('donation_default')
-    has_selected_config = _donation_config is not None
-    
+    donation_was_custom = 'donation_default' in ctx.custom_decisions
+    has_selected_config = _donation_config is not None or donation_was_custom
+
     # CASE 1: Check if exactly one donation config exists (auto-use it)
-    is_single_donation_run = (
-        hasattr(st.session_state, 'custom_decisions') and 
-        st.session_state.custom_decisions == ['donation_default'] and
-        hasattr(st.session_state, 'default_decisions') and
-        len(st.session_state.default_decisions) == 0
-    )
-    
+    is_single_donation_run = ctx.is_individual_run('donation_default')
+
     # If this is a single donation run with exactly one result, treat it as "only config available"
     has_only_one_config = False
-    if is_single_donation_run and hasattr(st.session_state, 'simulation_results'):
-        results_dict = st.session_state.simulation_results
+    if is_single_donation_run:
+        results_dict = ctx.results
         if results_dict and len(results_dict) == 1:
             has_only_one_config = True
             only_config_key = list(results_dict.keys())[0]
             only_config_df = results_dict[only_config_key]
-    
+
     # Decision logic: Use distribution if selected config OR only one config available
     use_distribution = (has_selected_config or has_only_one_config) and 'donation_default' in df.columns
     
@@ -505,17 +495,20 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
             if _donation_config:
                 st.markdown(f"Population: {_donation_config.get('population_mode', 'Unknown')}")
                 st.markdown(f"Income: {_donation_config.get('donation_income_mode', _donation_config.get('income_spec_mode', 'Unknown'))}")
-    
+            elif donation_was_custom:
+                # R13: the modes this run computed donation_default with
+                st.markdown(f"Population: {ctx.effective_population_mode}")
+                st.markdown(f"Income: {ctx.effective_income_mode}")
+
     else:
         # Fall back to slider if no donation_default data available
         st.info("💡 **No donation configuration selected** - Using simple rate configuration")
         st.markdown("Select a donation configuration on Page 2 to see the full distribution")
         
-        # Use _default_value key (consistent with Page 2 for numeric defaults)
+        # Use _default_value key (consistent with Page 2 for numeric defaults;
+        # read-only here - the key is initialised at app start by app.models)
         slider_key = f"{decision_name}_default_value"
-        if slider_key not in st.session_state:
-            st.session_state[slider_key] = 0.10  # 10% as default
-        
+
         # Top section: Current settings
         col1, col2, col3 = st.columns(3)
         
@@ -526,7 +519,7 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
             # Calculate average of actual final donation rates
             avg_final_rate = pd.to_numeric(decision_data, errors='coerce').mean()
             if pd.isna(avg_final_rate):
-                avg_final_rate = st.session_state[slider_key]
+                avg_final_rate = st.session_state.get(slider_key, 0.10)  # 10% as default
             st.metric("Final Donation Rate", f"{avg_final_rate:.2%}")
         
         with col3:

@@ -39,30 +39,24 @@ def load_disclose_documents_config():
     return config.get('disclose_documents', {})
 
 
-def save_disclose_documents_config(updates: dict):
-    """Save updates to disclose_documents configuration in YAML."""
-    try:
-        with open(CONFIG_PATH, 'r') as f:
-            config = yaml.safe_load(f)
-        if 'disclose_documents' not in config:
-            config['disclose_documents'] = {}
-        for key, value in updates.items():
-            if '.' in key:
-                parts = key.split('.')
-                target = config['disclose_documents']
-                for part in parts[:-1]:
-                    if part not in target:
-                        target[part] = {}
-                    target = target[part]
-                target[parts[-1]] = value
-            else:
-                config['disclose_documents'][key] = value
-        with open(CONFIG_PATH, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-        return True
-    except Exception as e:
-        st.error(f"Error saving configuration: {e}")
-        return False
+def apply_updates_to_config(config: dict, updates: dict):
+    """Apply dotted-key updates to a loaded config block in memory.
+
+    The configuration file is read-only; resets build the default config here
+    and push it into session state instead of writing it back to disk.
+    """
+    for key, value in updates.items():
+        if '.' in key:
+            parts = key.split('.')
+            target = config
+            for part in parts[:-1]:
+                if part not in target:
+                    target[part] = {}
+                target = target[part]
+            target[parts[-1]] = value
+        else:
+            config[key] = value
+    return config
 
 
 def initialize_disclose_documents_session_state():
@@ -498,7 +492,8 @@ def _apply_config_to_widget_keys(config):
     """Explicitly set every widget key from a config dict (defeats Streamlit's stale cache)."""
     stochastic = config.get('stochastic', {})
     st.session_state.dd_override_intercept = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
-    st.session_state.dd_tab_sigma_enabled = stochastic.get('sigma_value', 0) > 0
+    # The Research Specification tick box defaults to on, so a reset leaves it on.
+    st.session_state.dd_tab_sigma_enabled = True
     st.session_state.dd_tab_sigma_coefficient_stochastic = stochastic.get('scale_factor', 1.0)
     st.session_state.dd_tab_sigma_strategy_stochastic = stochastic.get('sigma_strategy', 'overall')
     st.session_state.dd_tab_income_mode = config.get('income_mode', 'Categorical only')
@@ -513,7 +508,7 @@ def _apply_config_to_widget_keys(config):
     # Also set the READ-keys the simulation consumes (so reset is correct regardless of rerun timing).
     st.session_state.dd_income_mode = config.get('income_mode', 'Categorical only')
     st.session_state.dd_intercept = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
-    st.session_state.dd_sigma_enabled = stochastic.get('sigma_value', 0) > 0
+    st.session_state.dd_sigma_enabled = True
     st.session_state.dd_sigma_strategy = stochastic.get('sigma_strategy', 'overall')
     st.session_state.dd_scale_factor = default_scale
     st.session_state.dd_quintile_scale_factors = {
@@ -522,7 +517,7 @@ def _apply_config_to_widget_keys(config):
 
 
 def reset_to_defaults():
-    """Reset all configuration values to their research defaults."""
+    """Reset all configuration values to their research defaults (session state only)."""
     default_config = {
         'intercept': RESEARCH_DEFAULT_INTERCEPT,
         'income_mode': 'Categorical only',
@@ -535,14 +530,34 @@ def reset_to_defaults():
         'stochastic.quintile_scale_factors.4': 1.0,
         'stochastic.quintile_scale_factors.5': 1.0,
     }
-    success = all(save_disclose_documents_config({k: v}) for k, v in default_config.items())
-    if success:
-        for key in [k for k in st.session_state.keys() if k.startswith('dd_')]:
-            del st.session_state[key]
-        if 'disclose_documents_tab_persistence' in st.session_state:
-            del st.session_state['disclose_documents_tab_persistence']
-        _apply_config_to_widget_keys(load_disclose_documents_config())
-    return success
+    try:
+        # The configuration file is read-only: build the reset configuration in
+        # memory from a read-only load instead of writing the defaults to disk.
+        reset_config = apply_updates_to_config(load_disclose_documents_config(), default_config)
+    except Exception as e:
+        st.error(f"Error saving configuration: {e}")
+        return False
+
+    for key in [k for k in st.session_state.keys() if k.startswith('dd_')]:
+        del st.session_state[key]
+    if 'disclose_documents_tab_persistence' in st.session_state:
+        del st.session_state['disclose_documents_tab_persistence']
+    _apply_config_to_widget_keys(reset_config)
+    return True
+
+
+def reset_intercept_to_default():
+    """Restore the configuration file's intercept into session state."""
+    try:
+        default_intercept = get_current_yaml_intercept()
+    except Exception as e:
+        st.error(f"Error saving configuration: {e}")
+        return False
+
+    st.session_state.dd_intercept = default_intercept
+    if 'dd_intercept_override_values' in st.session_state:
+        st.session_state.dd_intercept_override_values['intercept'] = default_intercept
+    return True
 
 
 def render_actions_and_management_section(config):
@@ -561,10 +576,7 @@ def render_actions_and_management_section(config):
         st.markdown("**🔄 Reset Intercept**")
         if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True,
                      help="Reset intercept value to research default (−0.75)", key="dd_reload_btn"):
-            if save_disclose_documents_config({'intercept': RESEARCH_DEFAULT_INTERCEPT}):
-                st.session_state.dd_intercept = RESEARCH_DEFAULT_INTERCEPT
-                if 'dd_intercept_override_values' in st.session_state:
-                    st.session_state.dd_intercept_override_values['intercept'] = RESEARCH_DEFAULT_INTERCEPT
+            if reset_intercept_to_default():
                 st.toast("✅ Intercept reset to research default (−0.75)", icon="🔄")
                 st.rerun()
             else:
