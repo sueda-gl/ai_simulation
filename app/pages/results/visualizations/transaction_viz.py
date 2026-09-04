@@ -23,35 +23,19 @@ from app.reports.purchase import (
 )
 from app.reports.rtd import (
     RTD_ELEMENT_FILE_SLUGS,
-    RTD_ELEMENT_INPUTS,
     RTD_ELEMENT_SHEETS,
-    RTD_STATA_NAMES,
     prepare_rtd_element_export,
     prepare_rtd_model_export,
-    rtd_agent_id_series,
-    rtd_choice_columns,
-    rtd_element_inputs_frame,
     rtd_element_xlsx_bytes,
-    rtd_frame_income_mode,
     rtd_model_xlsx_bytes,
     rtd_score_stats_caption,
 )
-from app.reports.xlsx import apply_transaction_price_formatting
 from app.utils.timestamp_utils import TimestampConverter
 
-# The pure builders now live in app/reports/{purchase,rtd}.py. These module-level
-# aliases keep the historical import paths working: tests/test_rtd_batch4_ui.py
-# and results/components/export_section.py import the underscored names from
-# this module.
+# The pure builders now live in app/reports/{purchase,rtd}.py. This one alias is
+# kept because tests/test_rtd_batch4_ui.py imports the sheet-name map from this
+# module and `_rtd_active_element` below reads it.
 _RTD_ELEMENT_SHEETS = RTD_ELEMENT_SHEETS
-_RTD_ELEMENT_INPUTS = RTD_ELEMENT_INPUTS
-_RTD_STATA_NAMES = RTD_STATA_NAMES
-_rtd_frame_income_mode = rtd_frame_income_mode
-_rtd_agent_id_series = rtd_agent_id_series
-_rtd_element_inputs_frame = rtd_element_inputs_frame
-_rtd_choice_columns = rtd_choice_columns
-_apply_price_formatting_transaction = apply_transaction_price_formatting
-_prepare_priority_lists_export = prepare_priority_lists_export
 
 
 def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):

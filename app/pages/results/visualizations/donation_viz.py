@@ -11,7 +11,11 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from app.utils.timestamp_utils import TimestampConverter
+from app.utils.timestamp_utils import (
+    get_duration_hours,
+    get_periods,
+    get_simulation_base_time,
+)
 from app.reports.donation import (
     build_donation_default_export,
     build_donation_default_xlsx,
@@ -245,12 +249,13 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
             if hasattr(st.session_state, 'vendors'):
                 vendors_data = st.session_state.vendors
 
-            # Use centralized timestamp converter for consistent handling
-            ts_converter = TimestampConverter()
-
-            # Build transaction records
+            # Build transaction records. The three values the builder's
+            # TimestampConverter used to read from session state are read here.
             transaction_records = build_donation_transaction_export(
-                df, vendors=vendors_data, ts_converter=ts_converter
+                df, vendors=vendors_data,
+                base_time=get_simulation_base_time(),
+                duration_hours=get_duration_hours(),
+                periods=get_periods(),
             )
 
             if len(transaction_records) > 0:

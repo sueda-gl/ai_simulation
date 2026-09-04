@@ -1,13 +1,28 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from io import BytesIO
 from app.models import initialize_session_state
-from app.utils.timestamp_utils import TimestampConverter
+from app.utils.timestamp_utils import (
+    get_duration_hours,
+    get_periods,
+    get_simulation_base_time,
+)
 from app.reports import (
     apply_export_price_formatting,
     build_agent_level_dataframe,
+    build_disclose_documents_results_xlsx,
+    build_disclose_income_results_xlsx,
+    build_disclosure_sheets_xlsx,
     build_transaction_level_dataframe,
+    disclose_documents_export_sheets,
+    disclose_income_compare_all_sheets,
+    disclose_income_compare_both_sheets,
+    prepare_disclose_documents_excel_data,
+    prepare_disclose_income_excel_data,
+    rtd_config_sheet_prefix,
+    rtd_element_subset,
+    rtd_model_xlsx_bytes,
+    rtd_prefixed_sheet_name,
     to_xlsx_bytes,
 )
 
@@ -37,8 +52,8 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     """Render the export/download section (simplified)"""
     from app.pages.results.run_context import RunContext
     ctx = RunContext.from_session()  # the run's own shape (R28)
-    # Remove 'raw', 'index', 'consumption_frequency', 'actual_allowance', 'income', 'customer_type', and 'enriched_requests_count' columns before any processing
-    # Use exact column name matching to avoid filtering out 'disclose_income' when we only want to exclude 'income'
+    # Drop the bookkeeping columns before any processing. Exact column-name
+    # matching, so 'disclose_income' is never caught by an 'income' substring.
     columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'enriched_requests_count']
     
     if df is not None:
@@ -304,11 +319,6 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
 
     if is_disclose_income_only_run:
         # DISCLOSE INCOME-ONLY EXPORT: Simplified version with all 19 disclose income columns
-        from app.pages.results.visualizations.disclosure_viz import (
-            _prepare_disclose_income_excel_data,
-            _apply_price_formatting_disclosure
-        )
-        
         # Check if we have multiple configurations to compare.
         # For disclose_income-only runs, the using_selected_config flag (which is based on
         # donation_default config state) is irrelevant -- always export all computed configs.
@@ -337,48 +347,17 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             """)
         
         try:
-            buffer = BytesIO()
-            
             if export_all_configs and is_compare_all:
                 # COMPARE ALL MODE: Each configuration gets its own sheet
                 # Each sheet contains all 19 disclose income columns with correct values for that config
                 # This ensures PB_i, DI_i, and disclose_income are accurate for each income mode
-                
-                # Define all possible configuration keys and their sheet names
-                config_sheet_mapping = [
-                    ('copula_categorical', 'Copula_Cat'),
-                    ('copula_continuous', 'Copula_Cont'),
-                    ('research_spec_categorical', 'ResSpec_Cat'),
-                    ('research_spec_continuous', 'ResSpec_Cont'),
-                    ('research_baseline_categorical', 'ResBase_Cat'),
-                    ('research_baseline_continuous', 'ResBase_Cont')
-                ]
-                
-                sheets_data = {}  # Store DataFrames for each sheet
-                
-                for config_key, sheet_name in config_sheet_mapping:
-                    config_df = results_dict.get(config_key)
-                    
-                    if config_df is None or config_df.empty:
-                        continue
-                    
-                    # Prepare the export DataFrame using the standard function
-                    # This gives us all 19 columns with correct PB_i, DI_i, disclose_income for this config
-                    sheet_df = _prepare_disclose_income_excel_data(config_df)
-                    
-                    if sheet_df is None:
-                        continue
-                    
-                    sheets_data[sheet_name] = sheet_df
+                sheets_data = disclose_income_compare_all_sheets(results_dict)
                 
                 if not sheets_data:
                     st.warning("⚠️ No data available for export")
                 else:
                     # Write each population mode to its own sheet
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        for sheet_name, sheet_df in sheets_data.items():
-                            sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
-                            _apply_price_formatting_disclosure(writer, sheet_name, sheet_df)
+                    excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
                     
                     # Show metrics
                     total_sheets = len(sheets_data)
@@ -399,7 +378,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     
                     st.download_button(
                         label=excel_label,
-                        data=buffer.getvalue(),
+                        data=excel_bytes,
                         file_name=excel_filename,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Each configuration (population mode + income mode) has its own sheet"
@@ -424,34 +403,12 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             elif export_all_configs:
                 # COMPARE BOTH MODE: Separate sheets for each income mode
                 # Each sheet has complete 19 columns with correct PB_i, DI_i, disclose_income values
-                
-                sheets_data = {}
-                
-                for config_key, config_df in results_dict.items():
-                    if config_df is None or config_df.empty:
-                        continue
-                    
-                    # Create readable sheet name
-                    if 'categorical' in config_key.lower():
-                        sheet_name = 'Categorical'
-                    elif 'continuous' in config_key.lower():
-                        sheet_name = 'Continuous'
-                    else:
-                        sheet_name = config_key.replace('_', ' ').title()
-                    
-                    # Prepare the export DataFrame with all 19 columns for this config
-                    sheet_df = _prepare_disclose_income_excel_data(config_df)
-                    
-                    if sheet_df is not None:
-                        sheets_data[sheet_name] = sheet_df
+                sheets_data = disclose_income_compare_both_sheets(results_dict)
                 
                 if not sheets_data:
                     st.warning("⚠️ Unable to prepare Excel data")
                 else:
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        for sheet_name, sheet_df in sheets_data.items():
-                            sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
-                            _apply_price_formatting_disclosure(writer, sheet_name, sheet_df)
+                    excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
                     
                     # Show metrics
                     total_sheets = len(sheets_data)
@@ -472,7 +429,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     
                     st.download_button(
                         label=excel_label,
-                        data=buffer.getvalue(),
+                        data=excel_bytes,
                         file_name=excel_filename,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Each income mode has its own sheet with all 19 disclose income columns"
@@ -494,21 +451,19 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             
             else:
                 # SINGLE CONFIG: Simple export with just one configuration
-                export_df = _prepare_disclose_income_excel_data(df)
+                export_df = prepare_disclose_income_excel_data(df)
                 
                 if export_df is None:
                     st.warning("⚠️ Unable to prepare Excel data. Some required columns may be missing.")
                 else:
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        export_df.to_excel(writer, index=False, sheet_name='Disclose Income Results')
-                        _apply_price_formatting_disclosure(writer, 'Disclose Income Results', export_df)
+                    excel_bytes = build_disclose_income_results_xlsx(export_df)
                     
                     st.metric("Total Agents", len(export_df))
                     
                     excel_filename = f"disclose_income_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
                     st.download_button(
                         label="📊 Download Disclose Income Excel",
-                        data=buffer.getvalue(),
+                        data=excel_bytes,
                         file_name=excel_filename,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Disclose income results with all 19 columns"
@@ -526,10 +481,6 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         # DISCLOSE DOCUMENTS-ONLY EXPORT: focused DD Excel (mirror of the disclose_income-only export).
         # A DD-only run has no purchases (transaction-level export would be empty) and no other
         # decisions (agent-level export would be sparse), so we export a focused DD sheet instead.
-        from app.pages.results.visualizations.disclosure_viz import (
-            _prepare_disclose_documents_excel_data,
-            _apply_price_formatting_disclosure,
-        )
         export_all_configs = results_dict is not None and len(results_dict) > 1
         is_compare_all = _is_compare_all_mode(results_dict)
 
@@ -541,32 +492,12 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             st.markdown("**Disclose Documents Results Export:** full privacy-calculus calculation chain (z-scores, weighted_dd, score, decision, customer type).")
 
         try:
-            buffer = BytesIO()
             if export_all_configs:
-                if is_compare_all:
-                    config_sheet_mapping = [
-                        ('copula_categorical', 'Copula_Cat'), ('copula_continuous', 'Copula_Cont'),
-                        ('research_spec_categorical', 'ResSpec_Cat'), ('research_spec_continuous', 'ResSpec_Cont'),
-                        ('research_baseline_categorical', 'ResBase_Cat'), ('research_baseline_continuous', 'ResBase_Cont'),
-                    ]
-                    items = [(results_dict.get(k), name) for k, name in config_sheet_mapping]
-                else:
-                    items = [(cdf, ('Categorical' if 'categorical' in k.lower() else ('Continuous' if 'continuous' in k.lower() else k)))
-                             for k, cdf in results_dict.items()]
-                sheets_data = {}
-                for cdf, name in items:
-                    if cdf is None or cdf.empty:
-                        continue
-                    sdf = _prepare_disclose_documents_excel_data(cdf)
-                    if sdf is not None:
-                        sheets_data[name] = sdf
+                sheets_data = disclose_documents_export_sheets(results_dict, is_compare_all)
                 if not sheets_data:
                     st.warning("⚠️ No disclose documents data available for export")
                 else:
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        for name, sdf in sheets_data.items():
-                            sdf.to_excel(writer, index=False, sheet_name=name)
-                            _apply_price_formatting_disclosure(writer, name, sdf)
+                    excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
                     first = next(iter(sheets_data.values()))
                     c1, c2, c3 = st.columns(3)
                     with c1: st.metric("Sheets", len(sheets_data))
@@ -574,7 +505,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     with c3: st.metric("Columns per Sheet", len(first.columns))
                     st.download_button(
                         label=f"📄 Download Agent Disclose Documents Data ({len(sheets_data)} Sheets)",
-                        data=buffer.getvalue(),
+                        data=excel_bytes,
                         file_name=f"disclose_documents_compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Each configuration (population × income mode) has its own sheet",
@@ -584,19 +515,17 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                             st.markdown(f"**{name} Sheet:**")
                             st.dataframe(sdf.head(), use_container_width=True)
             else:
-                export_df = _prepare_disclose_documents_excel_data(df)
+                export_df = prepare_disclose_documents_excel_data(df)
                 if export_df is None or export_df.empty:
                     st.warning("⚠️ No disclose documents data available for export")
                 else:
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        export_df.to_excel(writer, index=False, sheet_name='Disclose Documents')
-                        _apply_price_formatting_disclosure(writer, 'Disclose Documents', export_df)
+                    excel_bytes = build_disclose_documents_results_xlsx(export_df)
                     c1, c2 = st.columns(2)
                     with c1: st.metric("Agents", len(export_df))
                     with c2: st.metric("Columns", len(export_df.columns))
                     st.download_button(
                         label="📄 Download Agent Disclose Documents Data",
-                        data=buffer.getvalue(),
+                        data=excel_bytes,
                         file_name=f"disclose_documents_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Disclose documents results with the full calculation chain",
@@ -611,14 +540,15 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         # DECISION 4-ONLY EXPORT: agent-level workbook only. An individual Decision 4
         # run produces no purchase requests, so no transaction-level file is offered.
         from app.pages.results.visualizations.transaction_viz import (
-            _prepare_rtd_model_export, _rtd_active_element, _RTD_ELEMENT_SHEETS,
+            _prepare_rtd_model_export, _rtd_active_element,
         )
+        from app.reports.rtd import RTD_ELEMENT_SHEETS
         active_element = _rtd_active_element()
         export_all_configs = results_dict is not None and len(results_dict) > 1
 
         if active_element:
             st.markdown(
-                f"**Decision 4 Results Export ({_RTD_ELEMENT_SHEETS[active_element]} element):** "
+                f"**Decision 4 Results Export ({RTD_ELEMENT_SHEETS[active_element]} element):** "
                 "one row per agent with the element's independent variables, its score "
                 "and the resulting option sequence."
             )
@@ -635,37 +565,24 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
 
         try:
             def _rtd_sheets_for(frame):
-                sheets = _prepare_rtd_model_export(frame) or {}
-                if active_element:
-                    name = _RTD_ELEMENT_SHEETS[active_element]
-                    sheets = {name: sheets[name]} if name in sheets else {}
-                return sheets
+                return rtd_element_subset(_prepare_rtd_model_export(frame) or {}, active_element)
 
             if export_all_configs:
-                config_labels = {
-                    'copula_categorical': 'Copula_Cat', 'copula_continuous': 'Copula_Cont',
-                    'research_spec_categorical': 'ResSpec_Cat', 'research_spec_continuous': 'ResSpec_Cont',
-                    'research_baseline_categorical': 'ResBase_Cat', 'research_baseline_continuous': 'ResBase_Cont',
-                    'categorical': 'Cat', 'continuous': 'Cont',
-                }
                 sheets_data = {}
                 for config_key, config_df in results_dict.items():
                     if (config_df is None or config_df.empty
                             or 'rtd_choice_length' not in config_df.columns):
                         continue
-                    prefix = config_labels.get(config_key, str(config_key)[:12])
+                    prefix = rtd_config_sheet_prefix(config_key)
                     for name, sheet_df in _rtd_sheets_for(config_df).items():
-                        sheets_data[f"{prefix} {name}"[:31]] = sheet_df
+                        sheets_data[rtd_prefixed_sheet_name(prefix, name)] = sheet_df
             else:
                 sheets_data = _rtd_sheets_for(df)
 
             if not sheets_data:
                 st.warning("⚠️ No Decision 4 data available for export")
             else:
-                buffer = BytesIO()
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    for sheet_name, sheet_df in sheets_data.items():
-                        sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+                excel_bytes = rtd_model_xlsx_bytes(sheets_data)
                 first = next(iter(sheets_data.values()))
                 c1, c2 = st.columns(2)
                 with c1:
@@ -674,7 +591,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     st.metric("Sheets", len(sheets_data))
                 st.download_button(
                     label="📊 Download Decision 4 Agent-Level Excel",
-                    data=buffer.getvalue(),
+                    data=excel_bytes,
                     file_name=f"rejected_transaction_defaults_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     help="One row per agent with the Decision 4 element results",
@@ -718,14 +635,14 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             transaction_df = build_transaction_level_dataframe(
                 df,
                 vendors_data=vendors_data,
-                # TimestampConverter takes its base time, period duration and
-                # period count from session state, so it is built here - exactly
-                # as the builder used to build it - and passed in.
-                ts_converter=TimestampConverter(),
+                # The three session values the builder's TimestampConverter used
+                # to read for itself; the same readers, so the same converter.
+                base_time=get_simulation_base_time(),
+                duration_hours=get_duration_hours(),
+                periods=get_periods(),
                 market_price=getattr(sim_params, 'market_price', 100.0),
                 platform_markup=getattr(sim_params, 'platform_markup', 0.1),
                 price_range=getattr(sim_params, 'price_range', 0.25),
-                duration_hours=getattr(sim_params, 'duration_hours', 1.0),
                 vendor_price_min=vendor_price_min,
                 vendor_price_max=vendor_price_max,
             )

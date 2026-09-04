@@ -44,11 +44,9 @@ def render_configuration_selection_ui(results_dict, ctx=None):
     if not is_individual_donation_run:
         return
     
-    # Check if config is already selected (only count explicitly saved configs, not auto-implied)
-    has_selected_config = False
+    # Check if config is already selected
     dd_config = get_decision_config('donation_default')
-    if dd_config is not None:
-        has_selected_config = dd_config.get('source') != 'auto_implied_single_config'
+    has_selected_config = dd_config is not None
     
     # SINGLE CONFIG SCENARIO: Show save button when only one config exists and not yet explicitly saved
     if len(results_dict) == 1 and not has_selected_config:
@@ -144,9 +142,8 @@ def render_disclose_income_config_selection_ui(results_dict, ctx=None):
         return
     
     # Check if config is already selected (from unified or legacy storage)
-    # Only count explicitly saved configs, not auto-implied ones
     di_config = get_decision_config('disclose_income')
-    has_selected_config = di_config is not None and di_config.get('source') != 'auto_implied_single_config'
+    has_selected_config = di_config is not None
     
     # If config is selected, show the selected config info and potentially the Run Complete Simulation button
     if has_selected_config:
@@ -202,7 +199,7 @@ def render_disclose_documents_config_selection_ui(results_dict, ctx=None):
         return
 
     dd_config = get_decision_config('disclose_documents')
-    has_selected_config = dd_config is not None and dd_config.get('source') != 'auto_implied_single_config'
+    has_selected_config = dd_config is not None
 
     if has_selected_config:
         st.markdown("---")
@@ -365,13 +362,8 @@ def render_complete_simulation_section():
             help=help_text
         )
     else:
-        # Simulation CAN run - now show saved configs that will be used
-        # Only show explicitly saved configs (not auto-implied ones)
-        saved_configs = get_selected_decision_configs()
-        explicit_configs = {
-            k: v for k, v in saved_configs.items() 
-            if v.get('source') != 'auto_implied_single_config'
-        }
+        # Simulation CAN run - now show the saved configs that will be used
+        explicit_configs = get_selected_decision_configs()
         
         if explicit_configs:
             st.info(f"📋 **{len(explicit_configs)} saved configuration(s) will be used:**")

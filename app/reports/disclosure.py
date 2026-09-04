@@ -10,9 +10,8 @@ return values -- these functions never read session state and never imported it.
 
 No Streamlit: pandas / numpy / openpyxl (and `src.decisions.income_utils`) only.
 
-`prepare_*` are the public names; the original `_prepare_*` / `_apply_*` names
-are kept as aliases at the bottom of the module because
-`app/pages/results/components/export_section.py` imports them by those names.
+`prepare_*` build the sheet frames; the `*_sheets` / `build_*_xlsx` helpers at
+the bottom assemble the results page's DI-only and DD-only export workbooks.
 
 The workbook plumbing (`to_xlsx_bytes`) and the disclosure number formatter
 live in `app/reports/xlsx.py` (B1); this module imports them rather than
@@ -555,10 +554,101 @@ def build_disclosure_xlsx(excel_data: pd.DataFrame) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible aliases: `app/pages/results/components/export_section.py`
-# still imports the sheet builders and the formatter by these names.
+# The DI-only / DD-only export workbooks of the results page's export section
+# (`app/pages/results/components/export_section.py`).  Sheet names, sheet order,
+# the skip rules and the formatter are the ones the page wrote inline; the page
+# keeps the `st.*` copy, metrics and previews.
 # ---------------------------------------------------------------------------
-_prepare_disclose_income_excel_data = prepare_disclose_income_excel_data
-_prepare_disclose_documents_excel_data = prepare_disclose_documents_excel_data
-_prepare_disclosure_excel_data = prepare_disclosure_excel_data
-_apply_price_formatting_disclosure = apply_disclosure_price_formatting
+
+# "Compare all" result key -> sheet name, in the order the workbook writes them.
+DISCLOSURE_COMPARE_ALL_SHEETS = (
+    ('copula_categorical', 'Copula_Cat'),
+    ('copula_continuous', 'Copula_Cont'),
+    ('research_spec_categorical', 'ResSpec_Cat'),
+    ('research_spec_continuous', 'ResSpec_Cont'),
+    ('research_baseline_categorical', 'ResBase_Cat'),
+    ('research_baseline_continuous', 'ResBase_Cont'),
+)
+
+
+def build_disclosure_sheets_xlsx(sheets: dict) -> bytes:
+    """Workbook bytes for a disclosure export: every sheet, disclosure formatter."""
+    return to_xlsx_bytes(sheets, formatter=apply_disclosure_price_formatting)
+
+
+def disclose_income_compare_all_sheets(results_dict: dict) -> dict:
+    """DI-only "Compare all" export: one sheet per population x income configuration.
+
+    Sheets follow `DISCLOSURE_COMPARE_ALL_SHEETS` order; absent, empty or
+    unpreparable configurations are skipped.
+    """
+    sheets_data = {}
+    for config_key, sheet_name in DISCLOSURE_COMPARE_ALL_SHEETS:
+        config_df = results_dict.get(config_key)
+
+        if config_df is None or config_df.empty:
+            continue
+
+        # Prepare the export DataFrame using the standard function
+        # This gives us all 19 columns with correct PB_i, DI_i, disclose_income for this config
+        sheet_df = prepare_disclose_income_excel_data(config_df)
+
+        if sheet_df is None:
+            continue
+
+        sheets_data[sheet_name] = sheet_df
+    return sheets_data
+
+
+def disclose_income_compare_both_sheets(results_dict: dict) -> dict:
+    """DI-only "Compare both" export: one sheet per income mode, in result order."""
+    sheets_data = {}
+    for config_key, config_df in results_dict.items():
+        if config_df is None or config_df.empty:
+            continue
+
+        # Create readable sheet name
+        if 'categorical' in config_key.lower():
+            sheet_name = 'Categorical'
+        elif 'continuous' in config_key.lower():
+            sheet_name = 'Continuous'
+        else:
+            sheet_name = config_key.replace('_', ' ').title()
+
+        # Prepare the export DataFrame with all 19 columns for this config
+        sheet_df = prepare_disclose_income_excel_data(config_df)
+
+        if sheet_df is not None:
+            sheets_data[sheet_name] = sheet_df
+    return sheets_data
+
+
+def build_disclose_income_results_xlsx(export_df) -> bytes:
+    """DI-only single-configuration export: one 'Disclose Income Results' sheet."""
+    return build_disclosure_sheets_xlsx({'Disclose Income Results': export_df})
+
+
+def disclose_documents_export_sheets(results_dict: dict, is_compare_all: bool) -> dict:
+    """DD-only multi-configuration export sheets (mirror of the DI builders).
+
+    "Compare all" uses the `DISCLOSURE_COMPARE_ALL_SHEETS` names; otherwise the
+    sheet is named after the income mode, falling back to the raw result key.
+    """
+    if is_compare_all:
+        items = [(results_dict.get(k), name) for k, name in DISCLOSURE_COMPARE_ALL_SHEETS]
+    else:
+        items = [(cdf, ('Categorical' if 'categorical' in k.lower() else ('Continuous' if 'continuous' in k.lower() else k)))
+                 for k, cdf in results_dict.items()]
+    sheets_data = {}
+    for cdf, name in items:
+        if cdf is None or cdf.empty:
+            continue
+        sdf = prepare_disclose_documents_excel_data(cdf)
+        if sdf is not None:
+            sheets_data[name] = sdf
+    return sheets_data
+
+
+def build_disclose_documents_results_xlsx(export_df) -> bytes:
+    """DD-only single-configuration export: one 'Disclose Documents' sheet."""
+    return build_disclosure_sheets_xlsx({'Disclose Documents': export_df})

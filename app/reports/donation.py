@@ -8,9 +8,9 @@ ones the report-module convention asks for:
 
 * `st.session_state.vendors` became the explicit `vendors` argument of
   :func:`build_donation_transaction_export`;
-* the `TimestampConverter` (which lives in `app/utils/timestamp_utils.py` and
-  imports Streamlit at module level) is passed in by the page as `ts_converter`,
-  so this module stays Streamlit-free;
+* the base time / period duration / period count its `TimestampConverter` used
+  to read out of session state are explicit arguments, so this module stays
+  Streamlit-free and builds the (pure) converter itself;
 * the `st.*` calls were replaced by return values.
 
 No Streamlit, no session state: pandas / numpy / openpyxl only.
@@ -24,6 +24,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
+from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import apply_donation_price_formatting, to_xlsx_bytes
 
 # The pricing constants the transaction export was written with. They are
@@ -101,7 +102,10 @@ def build_donation_default_xlsx(export_df: pd.DataFrame) -> bytes:
 def build_donation_transaction_export(
     df,
     vendors=None,
-    ts_converter=None,
+    *,
+    base_time,
+    duration_hours,
+    periods,
     market_price: float = DEFAULT_MARKET_PRICE,
     platform_markup: float = DEFAULT_PLATFORM_MARKUP,
     price_range: float = DEFAULT_PRICE_RANGE,
@@ -131,14 +135,18 @@ def build_donation_transaction_export(
     the actual price is unknown for Fixed/Discount customers, making these calculations
     misleading. The donation rate (percentage) is the meaningful decision output.
 
-    `vendors` is the vendor list the page reads off session state; `ts_converter`
-    is the `TimestampConverter` the page builds (it lives in a Streamlit-importing
-    module, so it is passed in rather than constructed here).
+    `vendors` is the vendor list the page reads off session state; `base_time`,
+    `duration_hours` and `periods` are the three session values the page's
+    `TimestampConverter` used to read for itself (`get_simulation_base_time()`,
+    `get_duration_hours()`, `get_periods()`), so the converter can be built here.
     """
     transaction_records = []
 
     if 'purchase_requests' not in df.columns:
         return transaction_records
+
+    # Use centralized timestamp converter for consistent handling
+    ts_converter = TimestampConverter(base_time, duration_hours, periods)
 
     # Build vendor lookup dictionary for quick access
     vendor_lookup = {}

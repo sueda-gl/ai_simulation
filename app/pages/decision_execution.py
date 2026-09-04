@@ -7,6 +7,14 @@ import pandas as pd
 from app.simulation import run_full_simulation
 from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
 
+# The 13 decisions' default values and default descriptions are pure contract
+# data (src/contract/defaults.py). Re-exported here because the screens, the
+# seam and the tests have always imported them from this module.
+from src.contract.defaults import (  # noqa: F401
+    DEFAULT_DECISION_DESCRIPTIONS,
+    DEFAULT_DECISION_VALUES,
+)
+
 # The saved-decision-configuration store lives in app/state/saved_configs.py.
 # Re-exported here so every existing caller keeps importing it from this module.
 from app.state.saved_configs import (  # noqa: F401
@@ -98,9 +106,8 @@ def can_run_complete_simulation():
     
     # Also include decisions that have saved configs (user explicitly saved a config)
     for decision_name in configs:
-        if configs[decision_name].get('source') != 'auto_implied_single_config':
-            if decision_name not in selected_decisions:
-                selected_decisions = list(selected_decisions) + [decision_name]
+        if decision_name not in selected_decisions:
+            selected_decisions = list(selected_decisions) + [decision_name]
     
     # ========================================================================
     # CALCULATE ALL COUNTS UPFRONT (shared between disclose_income and donation_default)
@@ -144,13 +151,12 @@ def can_run_complete_simulation():
     di_saved_mode = None
     
     if disclose_income_selected:
-        # Check if user has a saved disclose_income config (not auto-implied)
+        # Check if user has a saved disclose_income config
         if 'disclose_income' in configs:
             di_config = configs['disclose_income']
-            if di_config.get('source') != 'auto_implied_single_config':
-                has_disclose_income_config = True
-                di_saved_mode = di_config.get('params', {}).get('income_mode', 
-                    di_config.get('income_mode', 'Unknown'))
+            has_disclose_income_config = True
+            di_saved_mode = di_config.get('params', {}).get('income_mode', 
+                di_config.get('income_mode', 'Unknown'))
         
         # If multiple configs and no saved selection, add to blocking issues
         if di_total_configs > 1 and not has_disclose_income_config:
@@ -173,10 +179,9 @@ def can_run_complete_simulation():
     if disclose_documents_selected:
         if 'disclose_documents' in configs:
             ddc = configs['disclose_documents']
-            if ddc.get('source') != 'auto_implied_single_config':
-                has_disclose_documents_config = True
-                dd_saved_mode = ddc.get('params', {}).get('income_mode',
-                    ddc.get('income_mode', 'Unknown'))
+            has_disclose_documents_config = True
+            dd_saved_mode = ddc.get('params', {}).get('income_mode',
+                ddc.get('income_mode', 'Unknown'))
 
         if dd_total_configs > 1 and not has_disclose_documents_config:
             blocking_issues.append({
@@ -196,14 +201,13 @@ def can_run_complete_simulation():
     donation_saved_info = None
     
     if donation_default_selected:
-        # Check if user has a saved donation_default config (not auto-implied)
+        # Check if user has a saved donation_default config
         if 'donation_default' in configs:
             config = configs['donation_default']
-            if config.get('source') != 'auto_implied_single_config':
-                has_donation_config = True
-                pop_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
-                inc_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
-                donation_saved_info = f"{pop_mode} + {inc_mode}"
+            has_donation_config = True
+            pop_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+            inc_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
+            donation_saved_info = f"{pop_mode} + {inc_mode}"
         
         # If multiple configs and no saved selection, add to blocking issues
         if donation_total_configs > 1 and not has_donation_config:
@@ -425,11 +429,10 @@ This ensures all decisions use consistent settings.
             
         else:
             # Enabled button - can proceed
-            # Show info about selected config if applicable
-            # CRITICAL: Only show "Using:" message for EXPLICITLY saved configs, not auto-implied ones
+            # Show info about the saved config if applicable
             if config_count > 1:
                 dd_config = get_decision_config('donation_default')
-                if dd_config and dd_config.get('source') != 'auto_implied_single_config':
+                if dd_config:
                     st.success(f"✅ Using: {dd_config['population_mode']} + {dd_config.get('donation_income_mode', dd_config.get('income_spec_mode', 'unknown'))}")
             
             if st.button(
@@ -452,85 +455,6 @@ This ensures all decisions use consistent settings.
                     
                     # Execute the combined simulation
                     run_combined_simulation(selected_decisions)
-
-# Default values for unselected decisions
-DEFAULT_DECISION_VALUES = {
-    "donation_default": 0.10,  # 10%
-    "disclose_income": {
-        "type": "random_probability",
-        "probability_y": 0.5,  # 50% chance of Y (disclosing)
-        "options": ["Y", "N"],
-        "description": "Probability of disclosing income for Fixed status"
-    },
-    "disclose_documents": {
-        "type": "random_probability",
-        "probability_y": 0.5,  # 50% chance of Y (disclosing)
-        "options": ["Y", "N"],
-        "description": "Probability of disclosing documents (applies only to agents qualified for discount: income < threshold)"
-    },
-    "rejected_transaction_defaults": {
-        "type": "prioritized_selection",
-        "priority_template": ["forgo_transaction"],  # Default: all agents use Option 5 only
-        "options": [
-            ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
-            ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"), 
-            ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"),
-            ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
-            ("forgo_transaction", "Option 5: Forgo the purchase request")
-        ],
-        "description": "Each agent gets a prioritized list. If Option 5 is included, it must be last."
-    },
-    "vendor_choice_weights": {
-        "type": "checkbox_selection",
-        "default_selection": ["price", "quality", "proximity", "sustainability"],
-        "parameters": {
-            "price": {"name": "Price", "description": "the product price offered to the customer"},
-            "quality": {"name": "Quality", "description": "product quality based on customer ratings"},
-            "proximity": {"name": "Proximity", "description": "the proximity of vendor to customer"},
-            "sustainability": {"name": "Sustainability", "description": "vendor sustainability rating"}
-        }
-    },
-    "purchasing_quantity": "RANDOM_WITHIN_LIMIT",  # Random within purchasing limit
-    "purchasing_frequency": "CALCULATED",  # Consumption quantity / Number of Periods
-    "vendor_selection": "deterministic",  # Deterministic based on highest weighted vendor-product score
-    "purchase_vs_bid": {
-        "type": "random_probability",
-        "probability_y": 0.5,  # 50% chance of Purchase Now (vs bid)
-        "options": ["Purchase Now", "bid"],
-        "description": "Probability of Purchase Now vs bidding (applies only to REGULAR customers - those who did not disclose income)"
-    },
-    "bid_value": "RANDOM_WITHIN_RANGE",  # Random within bidding price range
-    "rejected_transaction_option": {
-        "type": "radio_selection",
-        "default_option": "forgo_transaction", 
-        "options": [
-            ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
-            ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"),
-            ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"), 
-            ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
-            ("forgo_transaction", "Option 5: Forgo the purchase request")
-        ]
-    },
-    "rejected_bid_value": "NA",  # Not relevant given Option 5
-    "final_donation_rate": 0.10  # Keep default 10%
-}
-
-# Description text for display purposes
-DEFAULT_DECISION_DESCRIPTIONS = {
-    "donation_default": "10%",
-    "disclose_income": "configurable probability Y/N (default 50% each)", 
-    "disclose_documents": "configurable probability Y/N (applies only to agents with income < discount threshold, default 50% each)",
-    "rejected_transaction_defaults": "Selected option for handling rejected transactions will be applied to all agents",
-    "vendor_choice_weights": "equal weight distribution among selected parameters (Price, Quality, Proximity, Sustainability)",
-    "purchasing_quantity": "random within purchasing limit",
-    "purchasing_frequency": "Consumption quantity divided by Number of Periods",
-    "vendor_selection": "deterministic based on highest weighted vendor-product score",
-    "purchase_vs_bid": "configurable probability Purchase Now/bid for REGULAR customers only (default 50% each)",
-    "bid_value": "random within bidding price range (only for REGULAR customers who chose to bid)",
-    "rejected_transaction_option": "Selected specific option for transaction rejection handling will be used",
-    "rejected_bid_value": "Default handling for rejected bid values will be applied",
-    "final_donation_rate": "Default donation rate will be maintained"
-}
 
 
 def get_actual_default_value(decision_name, sim_params=None):
@@ -872,9 +796,6 @@ def run_combined_simulation(selected_decisions):
     
     configs = get_selected_decision_configs()
     for decision_name, config in configs.items():
-        if config.get('source') == 'auto_implied_single_config':
-            continue
-        
         if decision_name not in effective_selected_decisions:
             effective_selected_decisions.append(decision_name)
         

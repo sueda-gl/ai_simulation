@@ -3,16 +3,17 @@
 `build_transaction_level_dataframe` is `_build_transaction_level_dataframe`
 moved verbatim out of `app/pages/results/components/export_section.py`. The
 only edits are to its head: the pricing parameters it used to read off
-`st.session_state.sim_params`, and the `TimestampConverter` it used to build
-from session state, are now parameters. Nothing here imports Streamlit or
-touches session state; every value, rounding and column order is exactly what
-the page produced.
+`st.session_state.sim_params`, and the base time / period duration / period
+count its `TimestampConverter` used to read from session state, are now
+parameters. Nothing here imports Streamlit or touches session state; every
+value, rounding and column order is exactly what the page produced.
 """
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
+from app.reports.timestamps import TimestampConverter
 from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
 
 
@@ -20,7 +21,8 @@ def build_transaction_level_dataframe(
     df,
     vendors_data=None,
     *,
-    ts_converter,
+    base_time,
+    periods,
     market_price: float = 100.0,
     platform_markup: float = 0.1,
     price_range: float = 0.25,
@@ -41,18 +43,14 @@ def build_transaction_level_dataframe(
     Args:
         df: Original simulation results DataFrame
         vendors_data: List of vendor dictionaries (optional)
-        ts_converter: A `TimestampConverter` built by the caller. It lives in
-            `app.utils.timestamp_utils`, which reads session state (and imports
-            Streamlit) for its base time, period duration and period count, so
-            the page constructs it -- exactly as this function used to -- and
-            passes it in.
+        base_time: Base datetime every timestamp string is relative to (the page
+            reads it from ``app.utils.timestamp_utils.get_simulation_base_time``).
+        periods: Number of periods in the run (was ``get_periods()``).
         market_price: Market price (was ``sim_params.market_price``)
         platform_markup: Platform markup (was ``sim_params.platform_markup``)
         price_range: Purchase-Now price range (was ``sim_params.price_range``)
-        duration_hours: Hours per period (was ``sim_params.duration_hours``).
-            Read but never used by this body -- the timestamp converter carries
-            its own period duration -- and kept so the page's parameter set is
-            unchanged.
+        duration_hours: Hours per period (was ``sim_params.duration_hours``);
+            drives the Period column through the timestamp converter.
         vendor_price_min: Configured lower price bound for vendor-score
             normalisation (was ``sim_params.vendor_price_min``)
         vendor_price_max: Configured upper price bound for vendor-score
@@ -62,6 +60,11 @@ def build_transaction_level_dataframe(
         pd.DataFrame: Transaction-level data
     """
     transaction_records = []
+    
+    # Timestamp/period arithmetic: the page used to build this converter from
+    # session state and pass it in; it now passes the three values it read
+    # (base time, period duration, period count) and the converter is built here.
+    ts_converter = TimestampConverter(base_time, duration_hours, periods)
     
     # Configured price bounds for consistent normalization. The page reads the
     # pricing parameters off st.session_state.sim_params and passes the VALUES in.

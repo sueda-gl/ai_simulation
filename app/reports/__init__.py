@@ -1,25 +1,184 @@
-"""Pure (Streamlit-free) numerics that back what the UI reports on screen.
+# app/reports/__init__.py
+"""Pure (Streamlit-free) numerics and export builders behind what the UI shows.
 
-`app.reports.preview` holds the Page-1 income-distribution preview maths that
-used to live as methods on `SimulationParameters`.
+Every module here takes its inputs explicitly -- the results DataFrame, the
+vendor list, the simulation parameter values, the base time / period duration /
+period count -- so the pages keep the session-state reads and the ``st.*`` calls,
+and the numbers an export writes can be computed (and tested) outside a
+Streamlit script run.  Nothing in this package imports Streamlit.
 
-`app.reports.xlsx`, `app.reports.agent_level` and `app.reports.transaction_level`
-hold the results-page export builders: the workbook plumbing plus the two
-two-level export DataFrames, moved out of
-`app/pages/results/components/export_section.py`. Every function here takes its
-inputs explicitly -- the results DataFrame, the vendors list, the simulation
-parameter values, the timestamp converter -- so the page keeps the session-state
-reads and the `st.*` calls, and the export numbers can be computed (and tested)
-outside a Streamlit script run.
+The modules, and what each one holds:
+
+* ``app.reports.agent_level`` -- agent-level export frame (one row per agent);
+* ``app.reports.bidding`` -- Decision 12 bid-value export and its statistics;
+* ``app.reports.disclosure`` -- Decisions 1 and 2 sheet builders, statistics and export workbooks;
+* ``app.reports.donation`` -- Decisions 3 and 13 export frames and workbooks;
+* ``app.reports.mc`` -- Monte-Carlo summary tables, convergence series and CSV bytes;
+* ``app.reports.preview`` -- Page-1 income-distribution preview maths (was on SimulationParameters);
+* ``app.reports.purchase`` -- Decisions 5/6 purchase-vs-bid and rejected-option exports;
+* ``app.reports.purchasing`` -- Decisions 9/10 quantity, frequency and period tables;
+* ``app.reports.rtd`` -- Decision 4 per-element and whole-decision sheet builders;
+* ``app.reports.timestamps`` -- timestamp/period arithmetic shared by every export;
+* ``app.reports.transaction_level`` -- transaction-level export frame (one row per purchase request);
+* ``app.reports.vendor`` -- Decisions 7/8 vendor scoring, selection and proximity tables;
+* ``app.reports.xlsx`` -- workbook plumbing (to_xlsx_bytes) and the six price formatters.
+
+Every public name of every module is re-exported here, so callers can import
+either ``from app.reports import build_agent_level_dataframe`` or
+``from app.reports.agent_level import build_agent_level_dataframe``.
 """
-from app.reports.agent_level import build_agent_level_dataframe
+from app.reports.agent_level import (
+    build_agent_level_dataframe,
+)
+from app.reports.bidding import (
+    bid_stats_frame,
+    bid_values_xlsx,
+    bidding_range,
+    build_bid_value_export,
+    collect_bid_values,
+)
+from app.reports.disclosure import (
+    DISCLOSURE_COMPARE_ALL_SHEETS,
+    build_disclose_documents_results_xlsx,
+    build_disclose_documents_xlsx,
+    build_disclose_income_results_xlsx,
+    build_disclose_income_xlsx,
+    build_disclosure_sheets_xlsx,
+    build_disclosure_xlsx,
+    customer_type_summary_frame,
+    disclose_documents_export_sheets,
+    disclose_income_compare_all_sheets,
+    disclose_income_compare_both_sheets,
+    prepare_disclose_documents_excel_data,
+    prepare_disclose_income_excel_data,
+    prepare_disclosure_excel_data,
+    raw_stats_frame,
+    raw_value_stats,
+)
+from app.reports.donation import (
+    DEFAULT_MARKET_PRICE,
+    DEFAULT_PLATFORM_MARKUP,
+    DEFAULT_PRICE_RANGE,
+    DONATION_DEFAULT_TRAIT_COLUMNS,
+    build_donation_default_export,
+    build_donation_default_xlsx,
+    build_donation_transaction_export,
+    build_donation_transactions_xlsx,
+    donation_default_export_columns,
+    donation_default_stats_frame,
+    donation_transactions_frame,
+)
+from app.reports.mc import (
+    DONATION_DECISION,
+    DONATION_MEAN_COLUMN,
+    PERCENT_SUMMARY_COLUMNS,
+    add_running_mean,
+    convergence_interval,
+    detailed_csv,
+    donation_summary_row,
+    format_summary_for_display,
+    has_convergence_series,
+    overview_metrics,
+    summary_csv,
+)
 from app.reports.preview import (
     DEFAULT_PREVIEW_SEED,
+    DISTRIBUTION_PARAM_NAMES,
     discount_qualification_rate,
     distribution_kwargs,
     sample_income_distribution,
 )
-from app.reports.transaction_level import build_transaction_level_dataframe
+from app.reports.purchase import (
+    build_purchase_vs_bid_export,
+    prepare_priority_lists_export,
+    priority_first_choice_counts,
+    priority_length_breakdown_lines,
+    priority_list_agent_count,
+    priority_lists_xlsx_bytes,
+    priority_option_agent_counts,
+    purchase_vs_bid_breakdown_frame,
+    purchase_vs_bid_request_counts,
+    purchase_vs_bid_xlsx_bytes,
+    rejected_option_value_counts,
+)
+from app.reports.purchasing import (
+    agent_level_purchases_xlsx,
+    build_agent_level_purchases,
+    build_agent_timeline,
+    build_transaction_export,
+    collect_purchase_timestamps,
+    collect_timestamps,
+    count_requests_by_customer_type,
+    count_requests_by_customer_type_lower,
+    counts_per_period,
+    customer_type_quantity_stats_frame,
+    customer_type_stats_frame,
+    income_category_stats_frame,
+    period_bins_and_labels,
+    period_details_frame,
+    purchasing_transactions_xlsx,
+    quantities_by_customer_type,
+    quantity_stats_frame,
+    timestamps_by_customer_type,
+    top_agents_by_quantity,
+)
+from app.reports.rtd import (
+    RTD_CONFIG_SHEET_PREFIXES,
+    RTD_ELEMENT_FILE_SLUGS,
+    RTD_ELEMENT_INPUTS,
+    RTD_ELEMENT_SHEETS,
+    RTD_STATA_NAMES,
+    prepare_rtd_element_export,
+    prepare_rtd_model_export,
+    rtd_agent_id_series,
+    rtd_choice_columns,
+    rtd_config_sheet_prefix,
+    rtd_element_inputs_frame,
+    rtd_element_subset,
+    rtd_element_xlsx_bytes,
+    rtd_frame_income_mode,
+    rtd_model_xlsx_bytes,
+    rtd_prefixed_sheet_name,
+    rtd_score_stats_caption,
+)
+from app.reports.timestamps import (
+    DEFAULT_DURATION_HOURS,
+    DEFAULT_PERIODS,
+    DEFAULT_TIMESTAMP_FORMAT,
+    TimestampConverter,
+    calculate_period,
+    convert_timestamp,
+    midnight_of,
+    timestamp_hours_to_datetime,
+    timestamp_hours_to_formatted_string,
+)
+from app.reports.transaction_level import (
+    build_transaction_level_dataframe,
+)
+from app.reports.vendor import (
+    average_vendor_scores,
+    build_period_breakdown,
+    build_proximity_matrix,
+    build_purchase_request_export,
+    build_selection_breakdown,
+    build_vendor_attributes_table,
+    build_vendor_choice_weights_export,
+    build_vendor_period_details,
+    build_vendor_score_breakdown,
+    calculate_vendor_score,
+    collect_period_data,
+    count_requests_per_vendor,
+    count_vendor_requests,
+    period_totals,
+    proximity_matrix_xlsx,
+    proximity_statistics,
+    purchase_requests_xlsx,
+    sorted_vendor_ids,
+    vendor_choice_weights_xlsx,
+    vendor_period_details_xlsx,
+    vendor_score_breakdown_xlsx,
+    vendor_selection_breakdown_xlsx,
+)
 from app.reports.xlsx import (
     apply_bid_price_formatting,
     apply_disclosure_price_formatting,
@@ -31,19 +190,152 @@ from app.reports.xlsx import (
 )
 
 __all__ = [
+    # agent_level
+    "build_agent_level_dataframe",
+    # bidding
+    "bid_stats_frame",
+    "bid_values_xlsx",
+    "bidding_range",
+    "build_bid_value_export",
+    "collect_bid_values",
+    # disclosure
+    "DISCLOSURE_COMPARE_ALL_SHEETS",
+    "build_disclose_documents_results_xlsx",
+    "build_disclose_documents_xlsx",
+    "build_disclose_income_results_xlsx",
+    "build_disclose_income_xlsx",
+    "build_disclosure_sheets_xlsx",
+    "build_disclosure_xlsx",
+    "customer_type_summary_frame",
+    "disclose_documents_export_sheets",
+    "disclose_income_compare_all_sheets",
+    "disclose_income_compare_both_sheets",
+    "prepare_disclose_documents_excel_data",
+    "prepare_disclose_income_excel_data",
+    "prepare_disclosure_excel_data",
+    "raw_stats_frame",
+    "raw_value_stats",
+    # donation
+    "DEFAULT_MARKET_PRICE",
+    "DEFAULT_PLATFORM_MARKUP",
+    "DEFAULT_PRICE_RANGE",
+    "DONATION_DEFAULT_TRAIT_COLUMNS",
+    "build_donation_default_export",
+    "build_donation_default_xlsx",
+    "build_donation_transaction_export",
+    "build_donation_transactions_xlsx",
+    "donation_default_export_columns",
+    "donation_default_stats_frame",
+    "donation_transactions_frame",
+    # mc
+    "DONATION_DECISION",
+    "DONATION_MEAN_COLUMN",
+    "PERCENT_SUMMARY_COLUMNS",
+    "add_running_mean",
+    "convergence_interval",
+    "detailed_csv",
+    "donation_summary_row",
+    "format_summary_for_display",
+    "has_convergence_series",
+    "overview_metrics",
+    "summary_csv",
+    # preview
     "DEFAULT_PREVIEW_SEED",
+    "DISTRIBUTION_PARAM_NAMES",
     "discount_qualification_rate",
     "distribution_kwargs",
     "sample_income_distribution",
-    # export builders
-    "build_agent_level_dataframe",
+    # purchase
+    "build_purchase_vs_bid_export",
+    "prepare_priority_lists_export",
+    "priority_first_choice_counts",
+    "priority_length_breakdown_lines",
+    "priority_list_agent_count",
+    "priority_lists_xlsx_bytes",
+    "priority_option_agent_counts",
+    "purchase_vs_bid_breakdown_frame",
+    "purchase_vs_bid_request_counts",
+    "purchase_vs_bid_xlsx_bytes",
+    "rejected_option_value_counts",
+    # purchasing
+    "agent_level_purchases_xlsx",
+    "build_agent_level_purchases",
+    "build_agent_timeline",
+    "build_transaction_export",
+    "collect_purchase_timestamps",
+    "collect_timestamps",
+    "count_requests_by_customer_type",
+    "count_requests_by_customer_type_lower",
+    "counts_per_period",
+    "customer_type_quantity_stats_frame",
+    "customer_type_stats_frame",
+    "income_category_stats_frame",
+    "period_bins_and_labels",
+    "period_details_frame",
+    "purchasing_transactions_xlsx",
+    "quantities_by_customer_type",
+    "quantity_stats_frame",
+    "timestamps_by_customer_type",
+    "top_agents_by_quantity",
+    # rtd
+    "RTD_CONFIG_SHEET_PREFIXES",
+    "RTD_ELEMENT_FILE_SLUGS",
+    "RTD_ELEMENT_INPUTS",
+    "RTD_ELEMENT_SHEETS",
+    "RTD_STATA_NAMES",
+    "prepare_rtd_element_export",
+    "prepare_rtd_model_export",
+    "rtd_agent_id_series",
+    "rtd_choice_columns",
+    "rtd_config_sheet_prefix",
+    "rtd_element_inputs_frame",
+    "rtd_element_subset",
+    "rtd_element_xlsx_bytes",
+    "rtd_frame_income_mode",
+    "rtd_model_xlsx_bytes",
+    "rtd_prefixed_sheet_name",
+    "rtd_score_stats_caption",
+    # timestamps
+    "DEFAULT_DURATION_HOURS",
+    "DEFAULT_PERIODS",
+    "DEFAULT_TIMESTAMP_FORMAT",
+    "TimestampConverter",
+    "calculate_period",
+    "convert_timestamp",
+    "midnight_of",
+    "timestamp_hours_to_datetime",
+    "timestamp_hours_to_formatted_string",
+    # transaction_level
     "build_transaction_level_dataframe",
-    # workbook plumbing
-    "to_xlsx_bytes",
+    # vendor
+    "average_vendor_scores",
+    "build_period_breakdown",
+    "build_proximity_matrix",
+    "build_purchase_request_export",
+    "build_selection_breakdown",
+    "build_vendor_attributes_table",
+    "build_vendor_choice_weights_export",
+    "build_vendor_period_details",
+    "build_vendor_score_breakdown",
+    "calculate_vendor_score",
+    "collect_period_data",
+    "count_requests_per_vendor",
+    "count_vendor_requests",
+    "period_totals",
+    "proximity_matrix_xlsx",
+    "proximity_statistics",
+    "purchase_requests_xlsx",
+    "sorted_vendor_ids",
+    "vendor_choice_weights_xlsx",
+    "vendor_period_details_xlsx",
+    "vendor_score_breakdown_xlsx",
+    "vendor_selection_breakdown_xlsx",
+    # xlsx
     "apply_bid_price_formatting",
     "apply_disclosure_price_formatting",
     "apply_donation_price_formatting",
     "apply_export_price_formatting",
     "apply_transaction_price_formatting",
     "apply_vendor_price_formatting",
+    "to_xlsx_bytes",
 ]

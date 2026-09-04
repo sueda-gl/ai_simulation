@@ -6,11 +6,6 @@ Handles disclose_income and disclose_documents decisions.
 The Excel sheet builders (`prepare_*`), their number formatting and the
 statistics tables live in `app/reports/disclosure.py` (pure pandas/openpyxl, no
 Streamlit); this module renders the charts, metrics and download buttons.
-
-`_prepare_disclose_income_excel_data`, `_prepare_disclose_documents_excel_data`
-and `_apply_price_formatting_disclosure` are re-exported below under their
-original names because `app/pages/results/components/export_section.py` imports
-them from this module.
 """
 import streamlit as st
 import pandas as pd
@@ -28,13 +23,30 @@ from app.reports.disclosure import (
     raw_stats_frame,
     raw_value_stats,
 )
-from app.reports.xlsx import apply_disclosure_price_formatting
+from app.pages.results.run_context import RunContext
 
-# Backward-compatible aliases for export_section.py (imported by these names).
-_prepare_disclose_income_excel_data = prepare_disclose_income_excel_data
-_prepare_disclose_documents_excel_data = prepare_disclose_documents_excel_data
-_prepare_disclosure_excel_data = prepare_disclosure_excel_data
-_apply_price_formatting_disclosure = apply_disclosure_price_formatting
+
+def _income_mode_suffix():
+    """Title suffix of the raw DI/DD histograms - the RUN's income mode (ruling R28).
+
+    The three-way test below is the one the screen has always used, character for
+    character; only its INPUT changed.  It used to read the live
+    ``di_income_mode`` / ``dd_income_mode`` tab keys, which describe the NEXT run
+    the user is configuring, so a continuous run was captioned "(Categorical)"
+    whenever the tab still sat on its default.  It now reads the executed run's
+    own effective income mode off the run metadata (``RunContext``).
+
+    Keeping the original branch - rather than collapsing it to a two-way
+    categorical/continuous test - matters for a "Compare both" run: that string
+    contains neither word, so the title carries NO suffix, exactly as before.
+    """
+    income_mode = RunContext.from_session().effective_income_mode
+    if 'categorical' in str(income_mode).lower():
+        return " (Categorical)"
+    elif 'continuous' in str(income_mode).lower():
+        return " (Continuous)"
+    else:
+        return ""
 
 
 def render_disclose_income(df, decision_name, decision_title, decision_data):
@@ -93,17 +105,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                 y_pct_raw = (y_count_raw / total_raw) * 100 if total_raw > 0 else 0
                 n_pct_raw = (n_count_raw / total_raw) * 100 if total_raw > 0 else 0
 
-                # Get income mode for title.  Like the "Current Settings" badge
-                # (main_results.get_decision_config_display) this shows the DI tab's
-                # CURRENT setting, exactly as the screen read before R28; the run's
-                # own mode is not consulted here (step-3 U1: screen parity).
-                income_mode = st.session_state.get('di_income_mode', 'Categorical')
-                if 'categorical' in str(income_mode).lower():
-                    mode_suffix = " (Categorical)"
-                elif 'continuous' in str(income_mode).lower():
-                    mode_suffix = " (Continuous)"
-                else:
-                    mode_suffix = ""
+                mode_suffix = _income_mode_suffix()
 
                 st.markdown(f"**📈 Raw Disclose Income Distribution{mode_suffix}**")
 
@@ -283,14 +285,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
                 stats = raw_value_stats(raw_values)
                 mean_val = stats['mean']
 
-                # Title suffix = the DD tab's CURRENT setting (see the DI twin above).
-                income_mode = st.session_state.get('dd_income_mode', 'Categorical')
-                if 'categorical' in str(income_mode).lower():
-                    mode_suffix = " (Categorical)"
-                elif 'continuous' in str(income_mode).lower():
-                    mode_suffix = " (Continuous)"
-                else:
-                    mode_suffix = ""
+                mode_suffix = _income_mode_suffix()
 
                 st.markdown(f"**📈 Raw Disclose Documents Distribution{mode_suffix}**")
 

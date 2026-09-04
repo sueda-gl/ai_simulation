@@ -62,7 +62,7 @@ def get_decision_config_display(decision_name):
 
     if decision_name == 'donation_default':
         config = get_decision_config('donation_default')
-        if config and config.get('source') != 'auto_implied_single_config':
+        if config:
             result['has_config'] = True
             result['income_mode'] = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
             result['source'] = 'Saved Configuration'
@@ -74,7 +74,7 @@ def get_decision_config_display(decision_name):
 
     elif decision_name == 'disclose_income':
         config = get_decision_config('disclose_income')
-        if config and config.get('source') != 'auto_implied_single_config':
+        if config:
             result['has_config'] = True
             result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
             result['source'] = 'Saved Configuration'
@@ -85,7 +85,7 @@ def get_decision_config_display(decision_name):
             result['source'] = 'Page 2 Settings'
     elif decision_name == 'disclose_documents':
         config = get_decision_config('disclose_documents')
-        if config and config.get('source') != 'auto_implied_single_config':
+        if config:
             result['has_config'] = True
             result['income_mode'] = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
             result['source'] = 'Saved Configuration'
@@ -217,7 +217,7 @@ def render_single_run_results():
 
     # Show saved configuration info if donation_default has an explicitly saved config
     dd_saved_config = get_decision_config('donation_default')
-    _has_explicit_donation_config = (dd_saved_config is not None and dd_saved_config.get('source') != 'auto_implied_single_config')
+    _has_explicit_donation_config = dd_saved_config is not None
 
     if _has_explicit_donation_config:
         donation_income_mode = dd_saved_config.get('donation_income_mode', dd_saved_config.get('income_spec_mode', 'categorical only'))
@@ -227,7 +227,7 @@ def render_single_run_results():
         # Also show disclose_income mode if it was MANUALLY configured
         di_was_manually_configured = 'disclose_income' in ctx.custom_decisions
         di_saved_config = get_decision_config('disclose_income')
-        di_has_saved_config = (di_saved_config is not None and di_saved_config.get('source') != 'auto_implied_single_config')
+        di_has_saved_config = di_saved_config is not None
 
         if di_was_manually_configured or di_has_saved_config:
             di_mode = None

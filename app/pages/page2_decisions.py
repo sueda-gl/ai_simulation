@@ -264,7 +264,7 @@ def render_overview_tab(selected_decisions):
                     """)
         elif config_count > 1:
             dd_config = get_decision_config('donation_default')
-            if dd_config and dd_config.get('source') != 'auto_implied_single_config':
+            if dd_config:
                 donation_income_mode = dd_config.get('donation_income_mode', dd_config.get('income_spec_mode', 'unknown'))
                 st.success(f"✅ **Using selected donation configuration**: {dd_config['population_mode']} + {donation_income_mode}")
             
@@ -420,13 +420,13 @@ def _donation_income_mode_from_settings():
     return st.session_state.get('income_spec_mode', 'categorical only')
 
 
-def _donation_config_from_settings():
-    """R13: the Overview donation card's contents, read from the live settings.
+def current_donation_configuration():
+    """The donation configuration the CURRENT Page-1 / Donation Default settings imply.
 
-    Replaces the auto-implied saved config that used to be written into
-    selected_decision_configs on every Page-2 render. Returns None when the
-    current settings do not imply exactly one donation configuration, which is
-    when the card was not shown before either.
+    This is what the Overview donation card shows when nothing has been pinned
+    into ``selected_decision_configs``. Returns None when the current settings do
+    not imply exactly one donation configuration (no donation_default selected,
+    or a Compare mode), which is when the card was not shown either.
     """
     selected_decisions = []
     if (hasattr(st.session_state, 'decision_params')
@@ -509,9 +509,9 @@ def render_selected_donation_config_display():
     is_from_live_settings = False
 
     if config is None:
-        # R13: no stored auto-implied record any more - the same card is rendered
-        # straight from the current Page 1 / Donation Default tab settings.
-        config = _donation_config_from_settings()
+        # Nothing pinned: the same card is rendered straight from the current
+        # Page 1 / Donation Default tab settings.
+        config = current_donation_configuration()
         is_from_live_settings = config is not None
 
     if config is None:
@@ -632,8 +632,7 @@ def render_selected_disclose_income_config_display():
     
     config = get_decision_config('disclose_income')
     
-    # Skip auto-implied configs - only show explicitly selected ones
-    if config is None or config.get('source') == 'auto_implied_single_config':
+    if config is None:
         return
     
     st.markdown("#### 1. Disclose Income")

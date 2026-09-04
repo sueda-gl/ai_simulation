@@ -152,6 +152,41 @@ def rtd_model_xlsx_bytes(sheets):
     return to_xlsx_bytes(sheets)
 
 
+# ---------------------------------------------------------------------------
+# The Decision 4-only export of the results page's export section
+# (`app/pages/results/components/export_section.py`): sheet naming for a
+# multi-configuration run and the per-element subset.  Pure name/dict work -
+# the page still calls its own `_prepare_rtd_model_export` wrapper so a
+# malformed frame keeps showing the inline `st.error`.
+# ---------------------------------------------------------------------------
+
+# Result key -> sheet-name prefix used when one workbook holds several configurations.
+RTD_CONFIG_SHEET_PREFIXES = {
+    'copula_categorical': 'Copula_Cat', 'copula_continuous': 'Copula_Cont',
+    'research_spec_categorical': 'ResSpec_Cat', 'research_spec_continuous': 'ResSpec_Cont',
+    'research_baseline_categorical': 'ResBase_Cat', 'research_baseline_continuous': 'ResBase_Cont',
+    'categorical': 'Cat', 'continuous': 'Cont',
+}
+
+
+def rtd_config_sheet_prefix(config_key):
+    """Sheet-name prefix for one result key (unknown keys: first 12 characters)."""
+    return RTD_CONFIG_SHEET_PREFIXES.get(config_key, str(config_key)[:12])
+
+
+def rtd_prefixed_sheet_name(prefix, sheet_name):
+    """'<prefix> <sheet>' truncated to Excel's 31-character sheet-name limit."""
+    return f"{prefix} {sheet_name}"[:31]
+
+
+def rtd_element_subset(sheets, active_element):
+    """`sheets` restricted to `active_element`'s sheet (all of them when None)."""
+    if not active_element:
+        return sheets
+    name = RTD_ELEMENT_SHEETS[active_element]
+    return {name: sheets[name]} if name in sheets else {}
+
+
 def rtd_score_stats_caption(series):
     """Summary line matching Stata's `summarize` output for the score variable."""
     s = pd.Series(series).astype(float)

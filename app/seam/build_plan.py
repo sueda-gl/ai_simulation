@@ -30,6 +30,7 @@ Rulings applied on top of the verbatim port (each marked inline):
 import copy
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from src.contract.defaults import DEFAULT_DECISION_VALUES
 from src.contract.plan import (
     Replace,
     RunMetadata,
@@ -849,15 +850,14 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
     snapshot               : SessionSnapshot (or any mapping - a test's dict)
     config_repo            : the read-only config files
     default_decision_values: the DEFAULT_DECISION_VALUES registry; when omitted
-                             it is imported from app.pages.decision_execution
-                             (the registry still lives in that page module)
+                             the contract's own src.contract.defaults registry
     seed_resolution        : (seed, n_agents, source) as returned by
                              app.state.saved_configs.get_simulation_seed_from_configs;
                              when omitted the same rule is applied to the snapshot
     """
     snap: SessionSnapshot = take_snapshot(snapshot)
     if default_decision_values is None:
-        from app.pages.decision_execution import DEFAULT_DECISION_VALUES as default_decision_values
+        default_decision_values = DEFAULT_DECISION_VALUES
 
     messages: List[UiMessage] = []
 
@@ -1071,6 +1071,7 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
 __all__ = [
     "ALL_DECISIONS",
     "AUTO_IMPLIED_SOURCE",
+    "DEFAULT_DECISION_VALUES",
     "COMPARE_ALL_POPULATIONS",
     "build_decision_patches",
     "build_disclose_documents_patch",

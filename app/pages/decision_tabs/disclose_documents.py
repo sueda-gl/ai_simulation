@@ -521,7 +521,6 @@ def reset_to_defaults():
     default_config = {
         'intercept': RESEARCH_DEFAULT_INTERCEPT,
         'income_mode': 'Categorical only',
-        'stochastic.sigma_value': 0,
         'stochastic.scale_factor': 1.0,
         'stochastic.sigma_strategy': 'overall',
         'stochastic.quintile_scale_factors.1': 1.0,

@@ -761,11 +761,19 @@ def auto_save_intercept(new_value):
 
 
 def _apply_config_to_widget_keys(config):
-    """Explicitly set every widget key from a config dict.
+    """Explicitly set the widget keys this tab resets, from a config dict.
 
     Streamlit's internal widget cache can retain stale slider values even
     after their session-state key is deleted.  Explicitly *setting* the key
     is more reliable than deletion because it overwrites the cache.
+
+    NOTE: the sigma coefficient / strategy / quintile sliders are NOT set here.
+    Their live keys carry the `_stochastic` mode suffix
+    (`di_tab_sigma_coefficient_stochastic`, `di_tab_sigma_strategy_stochastic`,
+    `di_tab_sigma_q{1..5}_stochastic`); `reset_to_defaults` clears them with its
+    bulk delete of every `di_` key instead.  The unsuffixed writes that used to
+    stand here set keys no widget and no reader ever used, so they are gone
+    (the Disclose Documents twin writes the suffixed keys and does set them).
     """
     anchor = config.get('anchor_weights', {})
     stochastic = config.get('stochastic', {})
@@ -775,19 +783,12 @@ def _apply_config_to_widget_keys(config):
     st.session_state.di_override_intercept = config.get('intercept', 0.75)
     # The Research Specification tick box defaults to on, so a reset leaves it on.
     st.session_state.di_tab_sigma_enabled = True
-    st.session_state.di_tab_sigma_coefficient = stochastic.get('scale_factor', 1.0)
-    st.session_state.di_tab_sigma_strategy = stochastic.get('sigma_strategy', 'overall')
     st.session_state.di_tab_income_mode = config.get('income_mode', 'Categorical only')
     st.session_state.di_tab_sigma_in_copula = False
-    st.session_state.di_tab_sigma_in_copula_compare = False
     st.session_state.di_sigma_in_copula = False
 
     default_scale = stochastic.get('scale_factor', 1.0)
     quintile_scales = stochastic.get('quintile_scale_factors', {})
-    for level in ['1', '2', '3', '4', '5']:
-        st.session_state[f'di_tab_sigma_q{level}'] = quintile_scales.get(
-            level, default_scale
-        )
 
     # Also set the READ-keys the simulation consumes; the configuration file is
     # read-only, so they can no longer be re-read from a rewritten file.
@@ -810,7 +811,6 @@ def reset_to_defaults():
         'income_mode': 'Categorical only',
         'anchor_weights.observed_prosocial': 0.25,
         'anchor_weights.prosocial_weight': 0.50,
-        'stochastic.sigma_value': 0,
         'stochastic.scale_factor': 1.0,
         'stochastic.sigma_strategy': 'overall',
         'stochastic.quintile_scale_factors.1': 1.0,
