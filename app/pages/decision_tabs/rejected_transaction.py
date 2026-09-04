@@ -2,18 +2,25 @@
 """
 Decision 4: Rejected Transaction Defaults - tab configuration.
 
-Four trait-based sub-decision mechanisms (per the "Decision 4 - Rejected Transaction
-Defaults" design document, verified against the professor's Stata file
-Stata_File_Decision4_050626.dta):
+Five trait-based sub-decision mechanisms (per the "Decision 4 - Rejected Transaction
+Defaults" design document rev 280826-2, verified against the professor's Stata file
+Stata_File_Decision4_290826.dta):
 
   1. Options List Length (Tendency to Plan) - how many default options to pre-select (0-5)
   2. Loyalty ranking                        - priority sequence Option 3 > 1 > 4 > 5 > 2
   3. Willingness-to-Pay ranking             - priority sequence Option 3 > 2 > 1 > 4 > 5
   4. Risk-Taking ranking                    - priority sequence Option 4 > 2 > 1 > 3 > 5
+  5. Cognitive Flexibility ranking          - priority sequence Option 2 > 4 > 3 > 1 > 5
+     (doc Section 5: IVW Big-5 score, standardized, anchored 25/75 with the observed
+     SD in actions per cycle (stdactions), re-standardized and binned; verified vs
+     Stata_File_Decision4_290826.dta)
 
-Each mechanism yields its own per-agent output; rank aggregation across the mechanisms
-is a later, separate step (explicitly out of scope in the source document), so no
-combined default list is produced yet.
+Each mechanism yields its own per-agent output; the four ranking mechanisms' lists
+are then integrated into ONE default list per agent by the document's Section-6 rank
+aggregation (Kemeny-Young consensus with the tie-break hierarchy Schulze -> Copeland
+-> footrule -> random, truncated to the options list length and at Option 5) -
+sub-tab 6 explains the procedure and exposes its enable flag (ties no criterion can
+separate are always broken at random, the document's rule).
 
 The model coefficients and sigma constants are fixed (dta-verified); the tab exposes
 the income specification (categorical / continuous / compare both; WTP and
@@ -29,13 +36,14 @@ from pathlib import Path
 
 CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
 
-MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking')
+MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
 
 MECH_TITLES = {
     'ttp': "1. Options List Length (Tendency to Plan)",
     'loyalty': "2. Loyalty Ranking",
     'wtp': "3. Willingness-to-Pay Ranking",
     'risk_taking': "4. Risk-Taking Ranking",
+    'flexibility': "5. Cognitive Flexibility Ranking",
 }
 
 OPTION_LABELS = {
@@ -53,15 +61,16 @@ LEVEL_LABELS = {
 
 # Fallback sigma constants (config/decisions.yaml is the source of truth).
 FALLBACK_SIGMA_OVERALL = {
-    'ttp': 0.395446, 'loyalty': 0.0318293523,
+    'ttp': 0.395446, 'loyalty': 0.423918958,
     'wtp': 0.45265807275, 'risk_taking': 0.332208167,
+    'flexibility': 0.4359172665,
 }
 
 # Fallback categorical-income effects (config/decisions.yaml is the source of truth).
 # Level 1 (EUR 12) is the base level: intercept only; level_2..5 = EUR 32/72/128/200.
 FALLBACK_CATEGORICAL_EFFECTS = {
-    'wtp': {'intercept': -0.6919842, 'level_2': 0.2672136, 'level_3': 0.5058749,
-            'level_4': 0.9413666, 'level_5': 1.822843},
+    'wtp': {'intercept': -0.691843, 'level_2': 0.2671588, 'level_3': 0.5057716,
+            'level_4': 0.9411747, 'level_5': 1.822471},
     'risk_taking': {'intercept': -0.0068307, 'level_2': 0.0026128, 'level_3': 0.0050555,
                     'level_4': 0.0092738, 'level_5': 0.0179812},
 }
@@ -103,6 +112,9 @@ def initialize_rtd_session_state():
         mech_cfg = _mech_stoch_config(config, mech)
         defaults[f'rtd_anchor_{mech}'] = mech_cfg.get('anchor', 'continuous')
         defaults[f'rtd_intercept_{mech}'] = float(intercepts_cfg.get(mech, 0.0) or 0.0)
+    # Section-6 rank aggregation settings (config/decisions.yaml `aggregation`)
+    agg_cfg = config.get('aggregation') or {}
+    defaults['rtd_aggregation_enabled'] = bool(agg_cfg.get('enabled', True))
 
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -136,13 +148,14 @@ def save_to_rtd_storage(widget_key, storage_key):
 def _segment_mapping_df(sequence, element_name):
     """Segment -> priority list table for a ranking mechanism.
 
-    Mirrored mapping (professor's ruling): segment s receives the tail of the priority
-    sequence from position 6-s, so the HIGHEST segment gets the full list starting
-    with the top option and the lowest segment gets only the last option.
+    STATA direction (the doc's replace statements and the .dta choice columns, 280/280):
+    segment s receives the tail of the priority sequence from position s, so segment 1
+    gets the full list starting with the top option and segment 5 only the last option.
+    Mirrors src.decisions.rejected_transaction_defaults._ranking_for_segment.
     """
     rows = []
     for seg in range(1, 6):
-        tail = sequence[5 - seg:]
+        tail = sequence[seg - 1:]
         label = {1: f'1 (Lowest 20% of {element_name} score segment)',
                  5: f'5 (Highest 20% of {element_name} score segment)'}.get(seg, str(seg))
         rows.append({
@@ -179,26 +192,35 @@ def render_formula_section(config, mech):
 
     seq = sequences.get(mech, [])
     construct = {'loyalty': 'Loyalty to the vendor', 'wtp': 'Willingness to Pay',
-                 'risk_taking': 'Risk-Taking propensity'}[mech]
+                 'risk_taking': 'Risk-Taking propensity',
+                 'flexibility': 'Cognitive Flexibility'}[mech]
     if mech == 'loyalty':
         st.markdown(f"Estimates **{construct}** based on Big-5 personality traits.")
         st.latex(
             rf"Loyalty_i = \beta_1"
-            rf" + {coeffs.get('extraversion', 0.09):.4f} \times z_{{Extroversion_i}}"
-            rf" + {coeffs.get('openness', 0.0273):.4f} \times z_{{Openness_i}}"
-            rf" + {coeffs.get('agreeable', 0.0045):.4f} \times z_{{Agreeableness_i}}"
+            rf" {coeffs.get('extraversion', -0.009828468):.9f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs.get('openness', 0.01096706):.8f} \times z_{{Openness_i}}"
+            rf" + {coeffs.get('agreeable', 0.03092465):.8f} \times z_{{Agreeableness_i}}"
         )
     elif mech == 'wtp':
         st.markdown(f"Estimates **{construct}** based on personality traits and income.")
         _render_income_element_formula(config, coeffs, 'wtp')
+    elif mech == 'flexibility':
+        _render_flexibility_formula(config, coeffs)
     else:
         st.markdown(f"Estimates **{construct}** based on Big-5 personality traits and income.")
         _render_income_element_formula(config, coeffs, 'risk_taking')
 
-    seg_name = {'loyalty': 'Loyalty', 'wtp': 'WTP', 'risk_taking': 'RiskTaking'}[mech]
+    seg_name = {'loyalty': 'Loyalty', 'wtp': 'WTP', 'risk_taking': 'RiskTaking',
+                'flexibility': 'Flexibility'}[mech]
+    if mech == 'flexibility':
+        # binned on the re-standardized anchored score (Stata z_anchored_flexibility)
+        sym, sym_i = r"z_{AnchoredFlexibility}", r"z_{AnchoredFlexibility_i}"
+    else:
+        sym, sym_i = seg_name, rf"{seg_name}_i"
     st.latex(
         rf"{seg_name}15_i = \left\lfloor 1 + (5 - 0.0001) \times"
-        rf" \frac{{{seg_name}_i - \min({seg_name})}}{{\max({seg_name}) - \min({seg_name})}}"
+        rf" \frac{{{sym_i} - \min({sym})}}{{\max({sym}) - \min({sym})}}"
         rf" \right\rfloor \in \{{1,\dots,5\}}"
     )
     st.markdown(f"**{ELEMENT_SHORT[mech]} rejected transaction options sequence:** "
@@ -209,6 +231,40 @@ def render_formula_section(config, mech):
                      use_container_width=True)
     for num in range(1, 6):
         st.caption(OPTION_LABELS[num])
+
+
+def _render_flexibility_formula(config, coeffs):
+    """Cognitive Flexibility (doc Section 5): the IVW Big-5 equation, its population
+    standardization, the 25/75 anchoring with the observed SD in actions per cycle
+    (stdactions) and the re-standardization that feeds the binning."""
+    anchor = config.get('flexibility_anchor', {}) or {}
+    w_obs = float(anchor.get('observed_weight', 0.25))
+    w_calc = float(anchor.get('calculated_weight', 0.75))
+    st.markdown(
+        "Estimates **Cognitive Flexibility** based on Big-5 personality traits "
+        "(inverse-variance-weighted meta-analytic coefficients), anchored on the "
+        "customer's **observed flexibility** in the experiment - the standard deviation "
+        "in the number of actions per cycle over the eight cycle-weeks (stdactions)."
+    )
+    st.latex(
+        rf"Flexibility_i ="
+        rf" {coeffs.get('extraversion', 0.0206):.4f} \times z_{{Extroversion_i}}"
+        rf" + {coeffs.get('openness', 0.0293241):.7f} \times z_{{Openness_i}}"
+        rf" {coeffs.get('neuroticism', -0.053781925):.9f} \times z_{{Neuroticism_i}}"
+        rf" + {coeffs.get('agreeable', 0.04921357):.8f} \times z_{{Agreeableness_i}}"
+        rf" + {coeffs.get('conscientiousness', 0.04811179):.8f} \times z_{{Conscientiousness_i}}"
+    )
+    st.latex(r"z_{Flexibility_i} = \operatorname{std}(Flexibility_i) + \beta_4")
+    st.latex(
+        rf"AnchoredFlexibility_i = {w_obs:.2f} \times z_{{stdactions_i}}"
+        rf" + {w_calc:.2f} \times z_{{Flexibility_i}},"
+        r"\qquad z_{AnchoredFlexibility_i} = \operatorname{std}(AnchoredFlexibility_i)"
+    )
+    st.caption(
+        "std(·) standardizes over the simulated population (Stata `egen std`). The "
+        "observed anchor stdactions is a copula trait for synthetic populations and the "
+        "participant's own value in the Research Baseline / Specification modes."
+    )
 
 
 def _categorical_effects(config, mech):
@@ -251,9 +307,9 @@ def _render_continuous_equation(coeffs, mech):
     if mech == 'wtp':
         st.latex(
             rf"WTP_i = \beta_2"
-            rf" + {coeffs.get('extraversion', 0.0788796127824):.10f} \times z_{{Extroversion_i}}"
-            rf" {coeffs.get('agreeable', -0.012328716):.9f} \times z_{{Agreeableness_i}}"
-            rf" + {coeffs.get('income', 0.69814232):.8f} \times z_{{Income_i}}"
+            rf" + {coeffs.get('extraversion', 0.078863062):.9f} \times z_{{Extroversion_i}}"
+            rf" {coeffs.get('agreeable', -0.012326128):.9f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs.get('income', 0.698):.3f} \times z_{{Income_i}}"
         )
     else:
         st.latex(
@@ -273,8 +329,8 @@ def _render_categorical_equation(config, coeffs, mech):
     if mech == 'wtp':
         st.latex(
             rf"WTP_i = \beta_2"
-            rf" + {coeffs.get('extraversion', 0.0788796127824):.10f} \times z_{{Extroversion_i}}"
-            rf" {coeffs.get('agreeable', -0.012328716):.9f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs.get('extraversion', 0.078863062):.9f} \times z_{{Extroversion_i}}"
+            rf" {coeffs.get('agreeable', -0.012326128):.9f} \times z_{{Agreeableness_i}}"
             rf" + \beta_{{income\_q}}[quintile_i]"
         )
     else:
@@ -306,7 +362,8 @@ def _render_income_element_formula(config, coeffs, mech):
 
 
 ELEMENT_SHORT = {'ttp': 'Options List Length', 'loyalty': 'Loyalty',
-                 'wtp': 'Willingness-to-Pay', 'risk_taking': 'Risk-Taking'}
+                 'wtp': 'Willingness-to-Pay', 'risk_taking': 'Risk-Taking',
+                 'flexibility': 'Cognitive Flexibility'}
 
 
 def render_decision_sigma_controls(config):
@@ -439,7 +496,8 @@ def render_anchor_control(mech):
 # Intercept symbols per the Decision 4 document's notation: beta0 (TTP, doc line
 # "β0 = Intercept that sets a baseline tendency to plan"), beta1 (Loyalty),
 # beta2 (WTP), beta3 (Risk-Taking).
-INTERCEPT_SYMBOLS = {'ttp': 'β₀', 'loyalty': 'β₁', 'wtp': 'β₂', 'risk_taking': 'β₃'}
+INTERCEPT_SYMBOLS = {'ttp': 'β₀', 'loyalty': 'β₁', 'wtp': 'β₂', 'risk_taking': 'β₃',
+                     'flexibility': 'β₄'}
 
 
 def render_intercept_control(config, mech):
@@ -492,13 +550,15 @@ def render_stochastic_explanation(mech):
     """Short stochastic-component explanation, phrased consistently with the other
     decisions' Final Decision text (same structure for all four elements)."""
     score = {'ttp': 'TTP_i', 'loyalty': 'Loyalty_i', 'wtp': 'WTP_i',
-             'risk_taking': 'RiskTaking_i'}[mech]
+             'risk_taking': 'RiskTaking_i',
+             'flexibility': 'z_AnchoredFlexibility_i'}[mech]
     bins = {'ttp': 'the 0-5 options list length',
             'loyalty': 'the 1-5 Loyalty segment',
             'wtp': 'the 1-5 WTP segment',
-            'risk_taking': 'the 1-5 Risk-Taking segment'}[mech]
+            'risk_taking': 'the 1-5 Risk-Taking segment',
+            'flexibility': 'the 1-5 Flexibility segment'}[mech]
     anchor = (f"the continuous {score} score (or the binned segment, see Advanced below)"
-              if mech in ('loyalty', 'risk_taking') else f"the continuous {score} score")
+              if mech in ('loyalty', 'risk_taking', 'flexibility') else f"the continuous {score} score")
     st.markdown("**Stochastic Component:**")
     st.markdown(
         f"- If stochastic enabled: `{score} ~ Normal(μ = anchor, σ)` where the anchor is "
@@ -524,6 +584,7 @@ ELEMENT_RUN_TITLES = {
     'loyalty': 'Loyalty Ranking',
     'wtp': 'Willingness-to-Pay Ranking',
     'risk_taking': 'Risk-Taking Ranking',
+    'flexibility': 'Cognitive Flexibility Ranking',
 }
 
 
@@ -550,13 +611,105 @@ def render_mechanism_subtab(config, mech):
     render_stochastic_explanation(mech)
     st.markdown("---")
     render_intercept_control(config, mech)
-    if mech in ('loyalty', 'risk_taking'):
+    if mech in ('loyalty', 'risk_taking', 'flexibility'):
         st.markdown("---")
         render_anchor_control(mech)
     st.markdown("---")
     render_element_reset_button(mech)
     st.markdown("---")
     render_element_run_button(mech)
+
+
+AGGREGATION_TITLE = "6. Integrated Default List (Rank Aggregation)"
+
+# Share of the 100,000 randomly generated test cases settled at each stage of the
+# tie-breaking hierarchy, as reported in the design document (Section 6).
+DOC_STAGE_SHARES = [
+    ("Kemeny alone (already a full ranking)", "7.7%"),
+    ("Schulze", "0.0%"),
+    ("Copeland", "43.3%"),
+    ("Footrule", "22.7%"),
+    ("Last resort (random)", "26.3%"),
+]
+
+
+def render_aggregation_subtab(config):
+    """Sub-tab 5: the Section-6 rank aggregation that integrates the ranking
+    mechanisms' lists into one default list per customer - method explanation,
+    the two output rules, and the enable flag (ties that no criterion can separate
+    are always broken at random, the document's rule)."""
+    sequences = config.get('priority_sequences', {}) or {}
+    st.markdown(
+        "The Loyalty, Willingness-to-Pay, Risk-Taking and Cognitive Flexibility "
+        "mechanisms each produce a priority list of the five options for a customer. "
+        "These lists do not necessarily concur, so they are reconciled into **one "
+        "integrated ranking** (all four inputs weighted equally), from which the "
+        "customer's default list is cut using two output rules:"
+    )
+    st.markdown(
+        "1. the list is **truncated to the Options List Length** (Tendency to Plan, element 1);  \n"
+        "2. every option listed **after Option 5** (forgo the transaction) is dropped - once the "
+        "customer forgoes the transaction there can be no subsequent default option."
+    )
+    st.markdown("**Inputs (priority lists per mechanism):**")
+    inputs_df = pd.DataFrame([
+        {'Mechanism': 'Loyalty', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('loyalty', [3, 1, 4, 5, 2]))},
+        {'Mechanism': 'Willingness-to-Pay', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('wtp', [3, 2, 1, 4, 5]))},
+        {'Mechanism': 'Risk-Taking', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('risk_taking', [4, 2, 1, 3, 5]))},
+        {'Mechanism': 'Cognitive Flexibility', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('flexibility', [2, 4, 3, 1, 5]))},
+    ])
+    st.dataframe(inputs_df, hide_index=True, use_container_width=True)
+    st.caption(
+        "Each customer's list is the tail of the mechanism's sequence selected by their "
+        "score segment; options absent from a list count as ranked below the listed ones."
+    )
+
+    st.markdown("**Aggregation method: Kemeny-Young with a tie-breaking hierarchy**")
+    st.markdown(
+        "Kendall-tau distance counts the option pairs two rankings order differently "
+        "(10 pairs for five options). The consensus is the ranking with the **smallest "
+        "total Kendall-tau distance** to the input lists (Kemeny 1959; Kemeny & Snell 1962), "
+        "found by exhaustive search over all 120 orderings."
+    )
+    st.latex(r"\pi^{*} = \arg\min_{\pi \in S_5} \sum_{j} d_{K}(\pi, r_j)")
+    st.markdown(
+        "With few input rankings ties are pervasive, so the consensus is completed by a "
+        "fixed hierarchy:  \n"
+        "**Phase 1 - initial ranking.** A unique, fully ordered Kemeny ranking is used as is. "
+        "If Kemeny returns several equally good orderings, the **Schulze** (2011) strongest-"
+        "paths ordering is used as the starting point (it is itself Kemeny-optimal in almost "
+        "every case).  \n"
+        "**Phase 2 - leftover ties.** Tied options are separated by **Copeland** (pairwise wins "
+        "minus losses), then by **Spearman footrule** (smallest total positional displacement), "
+        "and finally **at random** - randomisation avoids the systematic bias a fixed rule "
+        "(e.g. lower-numbered option first) would introduce. The random draw uses the "
+        "customer's simulation seed, so runs are reproducible."
+    )
+    with st.expander("Share of cases settled at each stage (document, 100,000 random cases)"):
+        st.dataframe(pd.DataFrame(DOC_STAGE_SHARES, columns=['Settled by', 'Share']),
+                     hide_index=True, use_container_width=False)
+        st.caption("The final ranking is one of the Kemeny-optimal orderings in 99.93% of the "
+                   "test cases; the exceptions arise only through the random last resort.")
+
+    st.markdown("---")
+    st.markdown("**Settings**")
+    enabled_val = restore_widget_from_storage(
+        'rtd_tab_aggregation_enabled', st.session_state.rejected_transaction_tab_persistence,
+        'rtd_aggregation_enabled', st.session_state.get('rtd_aggregation_enabled', True))
+
+    def on_enabled_change():
+        st.session_state.rtd_aggregation_enabled = bool(st.session_state.rtd_tab_aggregation_enabled)
+        save_to_rtd_storage('rtd_tab_aggregation_enabled', 'rtd_aggregation_enabled')
+
+    enabled = st.checkbox(
+        "Integrate the mechanism rankings into one default list per customer",
+        value=bool(enabled_val), key='rtd_tab_aggregation_enabled', on_change=on_enabled_change,
+        help="When disabled, the per-mechanism rankings are still computed but no integrated "
+             "default list is produced (the decision's main output stays empty).",
+    )
+    st.session_state.rtd_aggregation_enabled = bool(enabled)
+    st.caption("Options that no criterion can separate are ordered at random "
+               "(document rule), using the customer's simulation seed.")
 
 
 def reset_rtd_to_defaults():
@@ -684,12 +837,14 @@ def render_rejected_transaction_defaults_tab():
         st.markdown("**Base σ and effective σ per budget level:**")
         st.dataframe(quintile_sigma_table, hide_index=True, use_container_width=True)
 
-    # ---- Four mechanism sub-tabs ----
+    # ---- Four mechanism sub-tabs + the rank-aggregation sub-tab ----
     st.markdown('<h4 class="subsection-header">Sub-Decision Mechanisms</h4>', unsafe_allow_html=True)
-    sub_tabs = st.tabs([MECH_TITLES[m] for m in MECHANISMS])
-    for tab, mech in zip(sub_tabs, MECHANISMS):
+    sub_tabs = st.tabs([MECH_TITLES[m] for m in MECHANISMS] + [AGGREGATION_TITLE])
+    for tab, mech in zip(sub_tabs[:len(MECHANISMS)], MECHANISMS):
         with tab:
             render_mechanism_subtab(config, mech)
+    with sub_tabs[-1]:
+        render_aggregation_subtab(config)
 
     # ---- Reset ----
     if st.button("Reset Decision 4 Settings to Defaults", type="secondary",
@@ -698,6 +853,22 @@ def render_rejected_transaction_defaults_tab():
         if reset_rtd_to_defaults():
             st.toast("Decision 4 settings reset to defaults", icon="🔄")
             st.rerun()
+
+    # ---- What the whole-decision run produces (explained above its Run button) ----
+    st.markdown("---")
+    st.markdown("**Running the whole decision**")
+    st.markdown(
+        "**Run Rejected Transaction Defaults Only** produces the **integrated ranking** "
+        "only (each element's own results come from its Run button above). Per customer, "
+        "the Loyalty, Willingness-to-Pay, Risk-Taking and Cognitive Flexibility priority "
+        "lists are reconciled into one consensus ranking of the five options by "
+        "Kemeny-Young aggregation (equal weights; ties settled Schulze → Copeland → "
+        "footrule → random), which is then cut to the customer's Options List Length. "
+        "**Option 5 (forgo the transaction) is the final option of the produced list: "
+        "any option ranked after it is discarded.** The Excel of a whole-decision run "
+        "contains all elements, their intermediate distributions and rankings together "
+        "with the final ranking."
+    )
 
     # ---- Simulation buttons ----
     # The whole-decision and complete-simulation buttons must clear the per-element

@@ -33,6 +33,7 @@ def rtd_overview_metric(df):
         'loyalty': ("Mean Loyalty score", 'rtd_loyalty_z', "{:.4f}"),
         'wtp': ("Mean Willingness-to-Pay score", 'rtd_wtp_z', "{:.4f}"),
         'risk_taking': ("Mean Risk-Taking score", 'rtd_rt_z', "{:.4f}"),
+        'flexibility': ("Mean Cognitive Flexibility score", 'rtd_flex_z', "{:.4f}"),
     }
     if element in specs:
         label, col, fmt = specs[element]
@@ -236,6 +237,10 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     # Disclose income/documents have their own selection buttons in their rate-analysis helpers
     if enable_selection and result_key and 'donation_default' in df.columns:
         render_inline_selection_button(result_key, df)
+
+    # Decision 4 (Rejected Transaction Defaults): its "Use This Config" button renders
+    # UNDER the decision's detailed results (transaction_viz._render_rtd_model_results),
+    # like the other decisions' buttons sit under their result charts - not here.
 
 
 def render_seed_mismatch_error(decision_name, error_info):
@@ -734,6 +739,52 @@ def render_disclose_documents_selection_button(result_key, result_df):
                     st.rerun()
                 else:
                     render_seed_mismatch_error('disclose_documents', error_info)
+
+
+def render_rejected_transaction_selection_button(result_key, result_df):
+    """Render the 'Use This Config' selection button for a Decision 4 (Rejected
+    Transaction Defaults) result cell - mirrors render_disclose_income_selection_button."""
+    from app.pages.decision_execution import (
+        save_decision_config,
+        is_decision_config_selected,
+        get_current_rejected_transaction_params,
+        calculate_rejected_transaction_metrics,
+        extract_rejected_transaction_configuration_details,
+    )
+
+    is_selected = is_decision_config_selected('rejected_transaction_defaults', result_key)
+    st.markdown("---")
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        n = len(result_df)
+        summary = f"📊 Quick Summary: {n:,} agents"
+        if 'rtd_choice_length' in result_df.columns and n:
+            summary += f", avg options list length={result_df['rtd_choice_length'].mean():.2f}"
+        if 'rtd_default_list_length' in result_df.columns and n:
+            summary += f", avg integrated default list length={result_df['rtd_default_list_length'].mean():.2f}"
+        st.caption(summary)
+
+    with col2:
+        if is_selected:
+            st.success("✅ Selected")
+        else:
+            if st.button("🎯 Use This Config", key=f"rtd_inline_select_{result_key}", type="primary",
+                         use_container_width=True,
+                         help="Select this Rejected Transaction Defaults configuration for combined simulations"):
+                params = get_current_rejected_transaction_params()
+                metrics = calculate_rejected_transaction_metrics(result_df)
+                details = extract_rejected_transaction_configuration_details(result_key)
+                extra_data = {'income_mode': details['income_mode'],
+                              'population_mode': details['population_mode']}
+                success, config, error_info = save_decision_config(
+                    'rejected_transaction_defaults', result_key, result_df, params, metrics, extra_data
+                )
+                if success:
+                    st.success("Rejected Transaction Defaults configuration selected!")
+                    st.rerun()
+                else:
+                    render_seed_mismatch_error('rejected_transaction_defaults', error_info)
 
 
 def show_parameter_applicability_analysis(selected_decisions):

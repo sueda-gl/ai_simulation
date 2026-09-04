@@ -42,12 +42,18 @@ disclose_documents:
   - Assigned Allowance Level
 
 rejected_transaction_defaults:
-  # Decision 4: Rejected Transaction Defaults - four trait-based mechanisms
-  # (TTP length, Loyalty / WTP / Risk-Taking rankings). Traits per the design doc:
-  # Big 5 z-scores + Education (reducation = Education - 1) + continuous income
-  # (runtime-generated from Assigned Allowance Level, like disclose_* decisions).
-  # NOTE: adding ConscientiousnessBig5/Education requires retraining the copula
-  # (scripts/train_copula.py) - synthetic populations change for ALL decisions.
+  # Decision 4: Rejected Transaction Defaults - five trait-based mechanisms
+  # (TTP length, Loyalty / WTP / Risk-Taking / Cognitive Flexibility rankings).
+  # Traits per the design doc: Big 5 z-scores + Education (reducation = Education - 1)
+  # + continuous income (runtime-generated from Assigned Allowance Level, like the
+  # disclose_* decisions) + stdactions (observed SD in the number of actions per
+  # cycle over the eight experiment cycle-weeks; 25% anchor of the Cognitive
+  # Flexibility score, doc Section 5; sourced from the professor's Stata file via
+  # data/stata_stdactions.csv because the experiment workbook has no per-cycle counts).
+  # NOTE: adding a trait requires retraining the copula (scripts/train_copula.py) -
+  # synthetic populations change for ALL decisions (ConscientiousnessBig5/Education
+  # added 2026-08; stdactions added 2026-09-04, previous model backed up as
+  # config/trait_model.pkl.pre_flexibility.bak).
   - ExtraversionBig5
   - Agreeable
   - NeuroticismBig5
@@ -55,6 +61,7 @@ rejected_transaction_defaults:
   - OpennessBig5
   - Education
   - Assigned Allowance Level
+  - stdactions
 
 vendor_choice_weights:
   # Decision 5: Select default weights for vendor/product choice

@@ -1,6 +1,8 @@
 # app/pages/results/config_selection.py
 """
-Configuration selection UI for decision results (donation_default and disclose_income).
+Configuration selection UI for decision results (donation_default, disclose_income,
+disclose_documents and rejected_transaction_defaults): the selected-configuration
+banner with its Clear button and the "Run Complete Simulation" section.
 """
 import streamlit as st
 import pandas as pd
@@ -241,6 +243,64 @@ def render_disclose_documents_config_selection_ui(results_dict):
         render_complete_simulation_section()
 
 
+def render_rejected_transaction_config_selection_ui(results_dict):
+    """Configuration selection UI for Decision 4 (Rejected Transaction Defaults)
+    results - mirrors render_disclose_income_config_selection_ui: once a
+    configuration of an individual Decision 4 run has been selected with
+    "Use This Config", show the selected configuration (with Clear) and the
+    "Run Complete Simulation" section."""
+
+    if not results_dict:
+        return
+
+    has_rtd_results = any(
+        'rtd_choice_length' in df.columns
+        for df in results_dict.values()
+        if isinstance(df, pd.DataFrame) and not df.empty
+    )
+    if not has_rtd_results:
+        return
+
+    is_individual_rtd_run = (
+        hasattr(st.session_state, 'custom_decisions') and
+        st.session_state.custom_decisions == ['rejected_transaction_defaults'] and
+        hasattr(st.session_state, 'default_decisions') and
+        len(st.session_state.default_decisions) == 0
+    )
+    if not is_individual_rtd_run:
+        return
+
+    rtd_config = get_decision_config('rejected_transaction_defaults')
+    has_selected_config = rtd_config is not None and rtd_config.get('source') != 'auto_implied_single_config'
+
+    if has_selected_config:
+        st.markdown("---")
+        config = rtd_config
+        income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+        population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+
+        with st.container():
+            st.success(f"✅ **Selected Rejected Transaction Defaults Configuration**: "
+                       f"{population_mode} + {income_mode}")
+            metrics = config.get('metrics', {}) or {}
+            col1, col2, col3 = st.columns([2, 2, 1])
+            with col1:
+                if 'mean_choice_length' in metrics:
+                    st.caption(f"Avg options list length: {metrics['mean_choice_length']:.2f}")
+                if 'mean_default_list_length' in metrics:
+                    st.caption(f"Avg integrated default list length: {metrics['mean_default_list_length']:.2f}")
+            with col2:
+                timestamp = config.get('selected_timestamp')
+                if timestamp:
+                    st.caption(f"Selected at {timestamp.strftime('%H:%M:%S')}")
+            with col3:
+                if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_rtd_selection"):
+                    clear_decision_config('rejected_transaction_defaults')
+                    st.rerun()
+
+        render_complete_simulation_section()
+
+
 def render_configuration_card(result_key, result_df):
     """Render a single configuration selection card"""
 
@@ -371,6 +431,16 @@ def render_complete_simulation_section():
 1. Run **Disclose Documents Only** from the Disclose Documents tab
 2. Click **"Use This Config"** on the result you want to use
                     """)
+                elif issue['block_type'] == "rejected_transaction_defaults":
+                    st.warning(f"""
+**Issue {i}: Rejected Transaction Defaults**
+
+{issue['reason']}
+
+**Action Required:**
+1. Run **Rejected Transaction Defaults Only** from the Rejected Transaction Defaults tab
+2. Click **"Use This Config"** on the result you want to use
+                    """)
                 else:
                     # donation_config block type
                     st.warning(f"""
@@ -417,6 +487,17 @@ def render_complete_simulation_section():
 2. Click **"Use This Config"** on the result you want to use
 3. Return here to run complete simulation
                 """)
+            elif block_type == "rejected_transaction_defaults":
+                st.warning(f"""
+⚠️ **Rejected Transaction Defaults Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Run **Rejected Transaction Defaults Only** from the Rejected Transaction Defaults tab
+2. Click **"Use This Config"** on the result you want to use
+3. Return here to run complete simulation
+                """)
             else:
                 st.warning(f"""
 ⚠️ **Configuration Issue**
@@ -425,7 +506,7 @@ def render_complete_simulation_section():
                 """)
         
         # Disabled button
-        help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Select a Disclose Income config first" if block_type == "disclose_income" else ("Select a Donation Default config first" if block_type == "donation_config" else ("Select a Disclose Documents config first" if block_type == "disclose_documents" else "Configuration issue detected")))
+        help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Select a Disclose Income config first" if block_type == "disclose_income" else ("Select a Donation Default config first" if block_type == "donation_config" else ("Select a Disclose Documents config first" if block_type == "disclose_documents" else ("Select a Rejected Transaction Defaults config first" if block_type == "rejected_transaction_defaults" else "Configuration issue detected"))))
             
         st.button(
             "🚀 Run Complete Simulation",
@@ -463,6 +544,12 @@ def render_complete_simulation_section():
                         config.get('income_mode', 'Unknown'))
                     y_rate = config.get('metrics', {}).get('y_rate', 0)
                     st.caption(f"  ✅ {decision_title}: {income_mode} (Y rate qualified: {y_rate:.2%})")
+                elif decision_name == 'rejected_transaction_defaults':
+                    income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+                    population_mode = config.get('population_mode', 'Unknown')
+                    mean_len = config.get('metrics', {}).get('mean_choice_length')
+                    extra = f" (avg options list length: {mean_len:.2f})" if mean_len is not None else ""
+                    st.caption(f"  ✅ {decision_title}: {population_mode} + {income_mode}{extra}")
                 else:
                     st.caption(f"  ✅ {decision_title}")
         else:

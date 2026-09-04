@@ -193,9 +193,10 @@ def render_overview_tab(selected_decisions):
     # Show the section header once for both decision configs
     st.markdown('<h3 class="section-header">🎯 Saved Decision Configurations</h3>', unsafe_allow_html=True)
     
-    # Render both config displays - they handle the "no config" case internally
+    # Render the config displays - they handle the "no config" case internally
     render_selected_donation_config_display()
     render_selected_disclose_income_config_display()
+    render_selected_rejected_transaction_config_display()
     
     # NEW: Show default decisions configuration for unselected decisions
     st.markdown("---")
@@ -233,6 +234,27 @@ def render_overview_tab(selected_decisions):
 2. Run **disclose_income only** and select one configuration
 3. Or change to **"Categorical only"** or **"Continuous only"** mode
                         """)
+                    elif issue['block_type'] == "rejected_transaction_defaults":
+                        st.warning(f"""
+**Issue {i}: Rejected Transaction Defaults**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Rejected Transaction Defaults** tab
+2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config")
+3. Or change its Income Specification to **"Categorical only"** or **"Continuous only"**
+                        """)
+                    elif issue['block_type'] == "disclose_documents":
+                        st.warning(f"""
+**Issue {i}: Disclose Documents**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration
+                        """)
                     else:
                         # donation_config block type
                         st.warning(f"""
@@ -255,6 +277,18 @@ def render_overview_tab(selected_decisions):
 **Action Required:**
 1. Go to the **Disclose Income** tab
 2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+3. Return here to run complete simulation
+                    """)
+                elif block_type == "rejected_transaction_defaults":
+                    st.warning(f"""
+⚠️ **Rejected Transaction Defaults Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Rejected Transaction Defaults** tab
+2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config"),
+   or change its Income Specification to **"Categorical only"** / **"Continuous only"**
 3. Return here to run complete simulation
                     """)
                 else:
@@ -300,7 +334,11 @@ def render_overview_tab(selected_decisions):
     with col2:
         if not can_run:
             # Disabled button with appropriate help text
-            help_text = "Change Disclose Income to single mode first" if block_type == "disclose_income" else "Select a donation configuration first"
+            help_text = {
+                "disclose_income": "Change Disclose Income to single mode first",
+                "rejected_transaction_defaults": "Select a Rejected Transaction Defaults configuration first",
+                "disclose_documents": "Select a Disclose Documents configuration first",
+            }.get(block_type, "Select a donation configuration first")
             st.button(
                 "🚀 Run Complete Simulation", 
                 type="primary", 
@@ -603,4 +641,84 @@ def render_selected_disclose_income_config_display():
         with action_col2:
             if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_disclose_income_config"):
                 clear_decision_config('disclose_income')
+                st.rerun()
+
+
+def render_selected_rejected_transaction_config_display():
+    """Display the selected Rejected Transaction Defaults (Decision 4) configuration in
+    the overview tab - mirrors render_selected_disclose_income_config_display."""
+
+    config = get_decision_config('rejected_transaction_defaults')
+
+    # Skip auto-implied configs - only show explicitly selected ones
+    if config is None or config.get('source') == 'auto_implied_single_config':
+        return
+
+    st.markdown("#### 4. Rejected Transaction Defaults")
+
+    params = config.get('params', {}) or {}
+    income_mode = config.get('income_mode', params.get('income_mode', 'Unknown'))
+    population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+    metrics = config.get('metrics', {}) or {}
+
+    with st.container():
+        st.success(f"✅ **Rejected Transaction Defaults Configuration**: {population_mode} + {income_mode}")
+
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Population Mode", population_mode)
+        with col2:
+            st.metric("Income Mode", income_mode)
+        with col3:
+            mean_len = metrics.get('mean_choice_length')
+            st.metric("Avg. Options List Length", f"{mean_len:.2f}" if mean_len is not None else "n/a")
+        with col4:
+            st.metric("Agents", f"{config.get('total_agents', 0):,}")
+
+        with st.expander("📊 Configuration Details", expanded=False):
+            st.markdown("**🔢 Element Intercepts:**")
+            intercepts = params.get('intercepts', {}) or {}
+            labels = [('ttp', 'β₀ Options List Length'), ('loyalty', 'β₁ Loyalty'),
+                      ('wtp', 'β₂ Willingness-to-Pay'), ('risk_taking', 'β₃ Risk-Taking'),
+                      ('flexibility', 'β₄ Cognitive Flexibility')]
+            int_cols = st.columns(len(labels))
+            for col, (mech, label) in zip(int_cols, labels):
+                with col:
+                    st.metric(label, f"{float(intercepts.get(mech, 0.0)):.4f}")
+
+            det_col1, det_col2 = st.columns(2)
+            with det_col1:
+                st.markdown("**🎲 Stochastic Settings (at save time):**")
+                stochastic = params.get('stochastic', {}) or {}
+                st.caption(f"Research Specification draws: {'on' if stochastic.get('sigma_enabled', True) else 'off'} · "
+                           f"Copula draws: {'on' if stochastic.get('sigma_in_copula', False) else 'off'}")
+                st.caption(f"σ mode: {stochastic.get('sigma_strategy', 'overall')} · "
+                           f"σ coefficient: {float(stochastic.get('scale_factor', 1.0)):.2f}")
+                anchors = params.get('anchors', {}) or {}
+                if anchors:
+                    st.caption("Stochastic anchors: " + ", ".join(
+                        f"{m.replace('_', ' ')}={a}" for m, a in anchors.items()))
+            with det_col2:
+                st.markdown("**🔗 Rank Aggregation:**")
+                agg = params.get('aggregation', {}) or {}
+                st.caption(f"Integrated default list: {'enabled' if agg.get('enabled', True) else 'disabled'} "
+                           "(Kemeny-Young, ties settled Schulze → Copeland → footrule → random)")
+                shares = metrics.get('first_option_shares')
+                if shares:
+                    st.caption("First integrated option: " + ", ".join(
+                        f"Option {o}: {float(v) * 100:.1f}%" for o, v in sorted(shares.items(), key=lambda kv: int(kv[0]))))
+                if 'mean_default_list_length' in metrics:
+                    st.caption(f"Avg. integrated default list length: {metrics['mean_default_list_length']:.2f}")
+
+            st.markdown("**ℹ️ Configuration Info:**")
+            st.caption(f"Selected at: {config.get('selected_timestamp', 'Unknown')}")
+            st.caption(f"Original seed: {config.get('original_seed', 'Unknown')}")
+            st.caption(f"Source: {config.get('source', 'Unknown')}")
+
+        action_col1, action_col2 = st.columns([3, 1])
+        with action_col1:
+            st.caption("This configuration will be used for the rejected transaction defaults decision in complete simulations")
+        with action_col2:
+            if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_rejected_transaction_config"):
+                clear_decision_config('rejected_transaction_defaults')
                 st.rerun()

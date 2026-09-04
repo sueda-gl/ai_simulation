@@ -166,6 +166,33 @@ def can_run_complete_simulation():
             })
 
     # ========================================================================
+    # CHECK REJECTED_TRANSACTION_DEFAULTS (only if selected) - mirrors disclose_income
+    # ========================================================================
+
+    rtd_income_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
+    rtd_income_count = 2 if ('compare' in str(rtd_income_mode).lower() or 'both' in str(rtd_income_mode).lower()) else 1
+    rtd_selected = 'rejected_transaction_defaults' in selected_decisions
+    rtd_total_configs = population_count * rtd_income_count
+    has_rtd_config = False
+    rtd_saved_info = None
+
+    if rtd_selected:
+        if 'rejected_transaction_defaults' in configs:
+            rc = configs['rejected_transaction_defaults']
+            if rc.get('source') != 'auto_implied_single_config':
+                has_rtd_config = True
+                rtd_saved_info = (f"{rc.get('population_mode', 'Unknown')} + "
+                                  f"{rc.get('income_mode', rc.get('params', {}).get('income_mode', 'Unknown'))}")
+
+        if rtd_total_configs > 1 and not has_rtd_config:
+            blocking_issues.append({
+                'decision': 'rejected_transaction_defaults',
+                'block_type': 'rejected_transaction_defaults',
+                'config_count': rtd_total_configs,
+                'reason': f"Rejected Transaction Defaults has {rtd_total_configs} configurations (population: {population_count}, income: {rtd_income_count}) - please run rejected_transaction_defaults only and select one"
+            })
+
+    # ========================================================================
     # CHECK DONATION_DEFAULT (only if selected)
     # ========================================================================
 
@@ -223,10 +250,15 @@ def can_run_complete_simulation():
     if has_disclose_documents_config and dd_saved_mode:
         config_parts.append(f"Disclose Documents: {dd_saved_mode}")
 
+    # Show rejected_transaction_defaults config if selected and saved
+    if has_rtd_config and rtd_saved_info:
+        config_parts.append(f"Rejected Transaction Defaults: {rtd_saved_info}")
+
     # Determine total config count for display
     total_configs = max(di_total_configs if disclose_income_selected else 1,
                        donation_total_configs if donation_default_selected else 1,
-                       dd_total_configs if disclose_documents_selected else 1)
+                       dd_total_configs if disclose_documents_selected else 1,
+                       rtd_total_configs if rtd_selected else 1)
     
     if config_parts:
         return (True, f"Using saved configuration(s): {', '.join(config_parts)}", total_configs, None, [])
@@ -1046,6 +1078,10 @@ def run_combined_simulation(selected_decisions):
             pop_mode = config.get('population_mode', 'Unknown')
             inc_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
             saved_config_info['donation_default'] = f"{pop_mode} + {inc_mode}"
+        elif decision_name == 'rejected_transaction_defaults':
+            pop_mode = config.get('population_mode', 'Unknown')
+            inc_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+            saved_config_info['rejected_transaction_defaults'] = f"{pop_mode} + {inc_mode}"
         else:
             saved_config_info[decision_name] = "custom config"
     
@@ -1500,6 +1536,79 @@ def calculate_disclose_documents_metrics(result_df):
     return metrics
 
 
+# ==================== REJECTED TRANSACTION DEFAULTS (Decision 4) CONFIG SELECTION ====================
+# Mirrors the disclose_income pattern: a Decision 4 result cell can be selected with
+# "Use This Config"; the tab settings at save time (income mode, per-element intercepts,
+# stochastic anchors, rank-aggregation settings, stochastic UI) are stored in the unified
+# selected_decision_configs store and applied by app.simulation._apply_rejected_transaction_config
+# in combined/complete simulations (individual Decision 4 runs keep reflecting the tab).
+
+RTD_CONFIG_MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
+RTD_ANCHOR_MECHANISMS = ('loyalty', 'risk_taking', 'flexibility')
+
+
+def extract_rejected_transaction_configuration_details(result_key):
+    """Income mode and population mode of a Decision 4 result cell from its result key
+    ('categorical'/'continuous' single-mode keys, 'copula_continuous' etc. Compare-all keys)."""
+    key = str(result_key or '').lower()
+    if 'categorical' in key:
+        income_mode = 'Categorical only'
+    elif 'continuous' in key:
+        income_mode = 'Continuous only'
+    else:
+        income_mode = str(st.session_state.get('rtd_income_mode', 'Continuous only'))
+        if 'compare' in income_mode.lower() or 'both' in income_mode.lower():
+            income_mode = 'Continuous only'   # a single cell always has one mode
+    population_mode = extract_configuration_details(result_key)['population_mode']
+    return {'income_mode': income_mode, 'population_mode': population_mode}
+
+
+def get_current_rejected_transaction_params():
+    """Collect the current Decision 4 tab settings from session state (the model
+    coefficients and sigma constants are fixed in config/decisions.yaml)."""
+    return {
+        'income_mode': st.session_state.get('rtd_income_mode', 'Continuous only'),
+        'intercepts': {m: float(st.session_state.get(f'rtd_intercept_{m}', 0.0) or 0.0)
+                       for m in RTD_CONFIG_MECHANISMS},
+        'anchors': {m: st.session_state.get(f'rtd_anchor_{m}', 'continuous')
+                    for m in RTD_ANCHOR_MECHANISMS},
+        'aggregation': {
+            'enabled': bool(st.session_state.get('rtd_aggregation_enabled', True)),
+        },
+        'stochastic': {
+            'sigma_enabled': st.session_state.get('rtd_sigma_enabled', True),
+            'sigma_in_copula': st.session_state.get('rtd_sigma_in_copula', False),
+            'scale_factor': st.session_state.get('rtd_scale_factor', 1.0),
+            'sigma_strategy': st.session_state.get('rtd_sigma_strategy', 'overall'),
+            'quintile_scale_factors': st.session_state.get('rtd_quintile_scale_factors', {}),
+        },
+    }
+
+
+def calculate_rejected_transaction_metrics(result_df):
+    """Key metrics of a Decision 4 result frame: options list length, integrated default
+    list, first integrated option shares, per-element mean segments."""
+    metrics = {'total_agents': int(len(result_df))}
+    n = len(result_df)
+    if 'rtd_choice_length' in result_df.columns:
+        lengths = result_df['rtd_choice_length'].astype(int)
+        metrics['mean_choice_length'] = float(lengths.mean()) if n else 0.0
+        metrics['choice_length_distribution'] = {int(k): int(v) for k, v in lengths.value_counts().sort_index().items()}
+    if 'rtd_default_list_length' in result_df.columns and n:
+        metrics['mean_default_list_length'] = float(result_df['rtd_default_list_length'].mean())
+    if 'rtd_default_list' in result_df.columns and n:
+        firsts = result_df['rtd_default_list'].apply(lambda l: l[0] if isinstance(l, list) and len(l) else 0)
+        metrics['first_option_shares'] = {int(o): float((firsts == o).sum() / n) for o in range(1, 6)}
+        metrics['empty_list_rate'] = float((firsts == 0).mean())
+    for mech, col in (('loyalty', 'rtd_loyalty_segment'), ('wtp', 'rtd_wtp_segment'),
+                      ('risk_taking', 'rtd_rt_segment'), ('flexibility', 'rtd_flex_segment')):
+        if col in result_df.columns and n:
+            metrics[f'mean_{mech}_segment'] = float(result_df[col].astype(float).mean())
+    if 'rtd_consensus_is_kemeny_optimal' in result_df.columns and n:
+        metrics['kemeny_optimal_rate'] = float(result_df['rtd_consensus_is_kemeny_optimal'].astype(bool).mean())
+    return metrics
+
+
 def is_disclose_income_configuration_selected(result_key):
     """Check if a specific disclose income configuration is currently selected."""
     return is_decision_config_selected('disclose_income', result_key)
@@ -1633,8 +1742,10 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     if extra_data:
         config.update(extra_data)
     
-    # For disclose_income / disclose_documents, ensure population_mode is stored
-    if decision_name in ('disclose_income', 'disclose_documents') and 'population_mode' not in config:
+    # For disclose_income / disclose_documents / rejected_transaction_defaults, ensure
+    # population_mode is stored
+    if decision_name in ('disclose_income', 'disclose_documents', 'rejected_transaction_defaults') \
+            and 'population_mode' not in config:
         config_details = extract_configuration_details(result_key)
         config['population_mode'] = config_details['population_mode']
 

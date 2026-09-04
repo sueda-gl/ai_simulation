@@ -2,12 +2,14 @@
 Validation tests for Decision 4: Rejected Transaction Defaults.
 
 Ground truth: data/stata_d4_verification.csv - a frozen extract of the professor's
-`Stata_File_Decision4_050626.dta` (280 participants) holding the raw inputs, the
-Stata z-scores, and every derived Decision-4 column (TTP, Loyalty, WTP incl.
-stochastic, RT).
+`Stata_File_Decision4_290826.dta` (280 participants) holding the raw inputs, the
+Stata z-scores, and every derived Decision-4 column (TTP, Loyalty incl. the
+standardized weighted_loyalty, WTP, RT, categorical scores, Flexibility) plus the
+June file's WTP stochastic columns (the 290826 file carries none).
 
-All four deterministic mechanisms must reproduce 280/280 EXACTLY (bin/choice level;
-float32 tolerance on continuous scores). The WTP stochastic PIPELINE (rescale +
+All deterministic mechanisms must reproduce 280/280 EXACTLY (bin/choice level;
+float32 tolerance on continuous scores), with the choice columns in the STATA
+direction (segment s -> tail seq[s-1:]). The WTP stochastic PIPELINE (rescale +
 floor + choice mapping keyed on sWTP_calculated15) is validated on the professor's
 stored draws; the draws themselves are RNG-dependent and not reproducible.
 
@@ -36,9 +38,9 @@ DECISIONS_YAML = os.path.join(REPO, "config", "decisions.yaml")
 # float32 storage tolerance for continuous scores
 ATOL = 5e-6
 
-# .dta ground-truth distributions (verification agents, 2026-08-05)
+# .dta ground-truth distributions (Stata_File_Decision4_290826.dta)
 EXPECTED_LENGTH_DIST = {0: 20, 1: 92, 2: 95, 3: 57, 4: 14, 5: 2}
-EXPECTED_LOYALTY_DIST = {1: 17, 2: 46, 3: 86, 4: 101, 5: 30}
+EXPECTED_LOYALTY_DIST = {1: 14, 2: 71, 3: 137, 4: 56, 5: 2}
 EXPECTED_WTP_DIST = {1: 168, 2: 82, 3: 26, 4: 3, 5: 1}
 EXPECTED_RT_DIST = {1: 20, 2: 100, 3: 110, 4: 46, 5: 4}
 
@@ -76,6 +78,7 @@ def _agent_state(row) -> dict:
         "Education": row["education"],
         "Assigned Allowance Level": row["assignedallowancelevel"],
         "income": row["income"],
+        "stdactions": row["stdactions"],   # Cognitive Flexibility observed anchor
     }
 
 
@@ -138,24 +141,21 @@ def test_ttp_choice_length_exact(gold, all_scores):
 # ---------------------------------------------------------------------------
 def _check_ranking_mechanism(gold, all_scores, mech, score_key, gold_score_col,
                              gold_seg_col, gold_choice_prefix, gold_choice_suffix,
-                             expected_dist):
+                             expected_dist, atol=ATOL):
     scores = np.array([s[score_key] for s in all_scores])
-    np.testing.assert_allclose(scores, gold[gold_score_col], atol=ATOL)
+    np.testing.assert_allclose(scores, gold[gold_score_col], atol=atol)
 
     vmin, vmax = scores.min(), scores.max()
     segs = np.floor(1 + (5 - 0.0001) * (scores - vmin) / (vmax - vmin)).astype(int)
     assert (segs == gold[gold_seg_col].astype(int)).all(), f"{mech} segments mismatch"
     assert pd.Series(segs).value_counts().to_dict() == expected_dist
 
-    # NOTE: the stored .dta choice columns embed the INVERTED mapping (segment s ->
-    # tail seq[s-1:]) — a professor-confirmed bug in the original Stata code. We
-    # assert the file's structure as-is here (documenting what the .dta contains);
-    # the MODEL's corrected MIRRORED mapping (segment s -> tail seq[5-s:]) is
-    # asserted in test_model_path_deterministic_matches_stata and
-    # test_first_choice_distribution_matches_professor_ruling.
+    # The stored .dta choice columns follow the STATA direction (segment s -> tail
+    # seq[s-1:]); the model uses the same direction (Stata arbitrates, 2026-09-04),
+    # asserted directly in test_model_path_deterministic_matches_stata.
     seq = PRIORITY_SEQUENCES[mech]
     for i, seg in enumerate(segs):
-        expected_tail = seq[seg - 1:]   # inverted mapping, as stored in the .dta
+        expected_tail = seq[seg - 1:]   # Stata direction, as stored in the .dta
         for pos in range(1, 6):
             col = f"{gold_choice_prefix}{pos}{gold_choice_suffix}"
             stata_val = gold[col].iloc[i]
@@ -168,15 +168,20 @@ def _check_ranking_mechanism(gold, all_scores, mech, score_key, gold_score_col,
 
 
 def test_loyalty_ranking(gold, all_scores):
+    # the raw composite is bs_weighted_loyalty; weighted_loyalty = std(bs) (+ beta1)
     _check_ranking_mechanism(gold, all_scores, "loyalty", "loyalty",
-                             "weighted_loyalty", "weighted_loyalty15",
+                             "bs_weighted_loyalty", "weighted_loyalty15",
                              "choice", "_loyalty_deterministic", EXPECTED_LOYALTY_DIST)
+    scores = np.array([s["loyalty"] for s in all_scores])
+    z = (scores - scores.mean()) / scores.std(ddof=1)
+    np.testing.assert_allclose(z, gold["weighted_loyalty"], atol=5e-5)
 
 
 def test_wtp_ranking(gold, all_scores):
+    # 1e-5: the .dta's WTP_calculated carries float32 rounding of the income z-score
     _check_ranking_mechanism(gold, all_scores, "wtp", "wtp",
                              "WTP_calculated", "WTP_calculated15",
-                             "choice", "_WTP_deterministic", EXPECTED_WTP_DIST)
+                             "choice", "_WTP_deterministic", EXPECTED_WTP_DIST, atol=1e-5)
     # z_WTP_calculated = std(WTP_calculated), no beta added (.dta-verified)
     scores = np.array([s["wtp"] for s in all_scores])
     z = (scores - scores.mean()) / scores.std(ddof=1)
@@ -207,11 +212,10 @@ def test_wtp_stochastic_pipeline_on_stata_draws(gold):
     segs = np.floor(1 + (5 - 0.0001) * (draws - smin) / (smax - smin)).astype(int)
     assert (segs == gold["sWTP_calculated15"].astype(int)).all()
 
-    # Stored stochastic choice columns also embed the INVERTED mapping (see
-    # _check_ranking_mechanism note); asserted as-is to document the file.
+    # Stored stochastic choice columns follow the STATA direction as well.
     seq = PRIORITY_SEQUENCES["wtp"]
     for i, seg in enumerate(segs):
-        tail = seq[seg - 1:]   # inverted mapping, as stored in the .dta
+        tail = seq[seg - 1:]   # Stata direction, as stored in the .dta
         for pos in range(1, 6):
             stata_val = gold[f"choice{pos}_WTP_calculated_stoc"].iloc[i]
             if pos <= len(tail):
@@ -288,28 +292,33 @@ def test_model_path_deterministic_matches_stata(gold, model_params, sim_config):
         assert (np.array(segs) == gold[seg_col].astype(int)).all(), mech
         for i, r in enumerate(results):
             seg = r[f"rtd_{key}_segment"]
-            # MIRRORED mapping (professor's ruling): segment s -> tail seq[5-s:]
-            assert r[f"rtd_{key}_ranking"] == PRIORITY_SEQUENCES[mech][5 - seg:]
+            # STATA direction: segment s -> tail seq[s-1:] (== the .dta choice columns)
+            assert r[f"rtd_{key}_ranking"] == PRIORITY_SEQUENCES[mech][seg - 1:]
             assert r[f"rtd_{key}_ranking_codes"] == \
                 [OPTION_CODES[o] for o in r[f"rtd_{key}_ranking"]]
-    # no aggregated list is fabricated
-    assert all(r["rejected_transaction_defaults"] == [] for r in results)
+    # the main column is the Section-6 integrated default list (option codes of
+    # rtd_default_list, a prefix of the consensus ranking cut at the TTP length /
+    # Option 5) - see tests/test_rtd_rank_aggregation.py for the aggregation itself
+    for r in results:
+        assert r["rejected_transaction_defaults"] == [OPTION_CODES[o] for o in r["rtd_default_list"]]
+        assert r["rtd_default_list"] == r["rtd_consensus_ranking"][:len(r["rtd_default_list"])]
+        assert len(r["rtd_default_list"]) <= r["rtd_choice_length"]
     assert all(r["rtd_sigma_used_wtp"] == 0.0 for r in results)
 
 
-def test_first_choice_distribution_matches_professor_ruling(gold, model_params, sim_config):
-    """The professor's explicit example (2026-08 feedback): under the corrected
-    (mirrored) mapping, the WTP first-choice distribution on the 280 participants
-    must be highest for Option 5, then 4, then 1, then 2, and lowest for Option 3
-    (the mirror image of the flipped .dta columns)."""
+def test_first_choice_distribution_matches_stata_columns(gold, model_params, sim_config):
+    """STATA direction: the WTP first choices on the 280 participants equal the
+    .dta's choice1_WTP_deterministic column - segment s takes seq[s-1] first, so
+    segment 1 (168 people) takes Option 3 and segment 5 (1 person) Option 5."""
     results = _run_model(gold, model_params, sim_config, stochastic=False)
     seq = PRIORITY_SEQUENCES["wtp"]
     first = [r["rtd_wtp_ranking"][0] for r in results]
     counts = pd.Series(first).value_counts().to_dict()
-    # segment counts {1:168, 2:82, 3:26, 4:3, 5:1} -> mirrored first choices
-    assert counts == {5: 168, 4: 82, 1: 26, 2: 3, 3: 1}
-    # and every ranking still ends with the sequence's last option when full-length
-    full = [r["rtd_wtp_ranking"] for r in results if r["rtd_wtp_segment"] == 5]
+    # segment counts {1:168, 2:82, 3:26, 4:3, 5:1} -> Stata-direction first choices
+    assert counts == {3: 168, 2: 82, 1: 26, 4: 3, 5: 1}
+    assert first == gold["choice1_WTP_deterministic"].astype(int).tolist()
+    # segment 1 carries the full sequence
+    full = [r["rtd_wtp_ranking"] for r in results if r["rtd_wtp_segment"] == 1]
     assert all(lst == seq for lst in full)
 
 
@@ -364,8 +373,9 @@ def test_baseline_mode_never_stochastic(gold, model_params, sim_config):
 # observably shift the allocation). All population statistics (min/max/mean/sd,
 # s_min/s_max) are anchored on the BETA0-FREE scores, freezing the segment
 # cutoffs; the per-agent operative score adds the intercept's raw-scale
-# equivalent afterward (beta for ttp/loyalty; beta*sd0 for wtp/risk_taking,
-# whose intercepts live on the standardized scale), so agents genuinely cross
+# equivalent afterward (beta for ttp; beta*sd0 for loyalty/wtp/risk_taking,
+# whose intercepts live on the standardized scale; 0.75*beta4 for flexibility),
+# so agents genuinely cross
 # the fixed bin boundaries. beta = 0 must be bit-identical to no intercepts.
 # ---------------------------------------------------------------------------
 INTERCEPTS_MIXED = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0}
@@ -373,9 +383,9 @@ INTERCEPTS_MIXED = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0
 
 def test_research_default_intercepts(params):
     """Config research defaults (professor, 2026-08): TTP beta0 = 0.05; the other
-    three elements' intercepts stay 0."""
+    four elements' intercepts stay 0."""
     assert params["intercepts"] == {
-        "ttp": 0.05, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0}
+        "ttp": 0.05, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0, "flexibility": 0.0}
 
 
 def test_zero_intercepts_bit_identical(gold, model_params, sim_config):
@@ -397,8 +407,8 @@ def test_zero_intercepts_bit_identical(gold, model_params, sim_config):
 
 def test_intercepts_shift_scores_on_natural_scale(gold, model_params, sim_config):
     """Each intercept still shifts its element's score by exactly the entered value
-    on its natural scale: raw composite for ttp/loyalty, standardized score for
-    wtp/risk_taking (whose raw operative score shifts by beta * sd0)."""
+    on its natural scale: raw composite for ttp, standardized score for
+    loyalty/wtp/risk_taking (whose raw operative score shifts by beta * sd0)."""
     # Intercept-free baseline (the YAML research default is now ttp beta0 = 0.05,
     # which would otherwise contaminate the exact-shift assertions below).
     zeros = {m: 0.0 for m in MECHANISMS}
@@ -406,11 +416,14 @@ def test_intercepts_shift_scores_on_natural_scale(gold, model_params, sim_config
                       intercepts=zeros)
     shifted = _run_model(gold, model_params, sim_config, stochastic=False,
                          intercepts=INTERCEPTS_MIXED)
+    loy_sd0 = float(np.std([b["rtd_loyalty_score"] for b in base], ddof=1))
     wtp_sd0 = float(np.std([b["rtd_wtp_score"] for b in base], ddof=1))
     rt_sd0 = float(np.std([b["rtd_rt_score"] for b in base], ddof=1))
     for b, s in zip(base, shifted):
         np.testing.assert_allclose(s["rtd_weighted_ttp"] - b["rtd_weighted_ttp"], 0.7, rtol=1e-9)
-        np.testing.assert_allclose(s["rtd_loyalty_score"] - b["rtd_loyalty_score"], -0.3, rtol=1e-9)
+        np.testing.assert_allclose(s["rtd_loyalty_z"] - b["rtd_loyalty_z"], -0.3, rtol=1e-7)
+        np.testing.assert_allclose(s["rtd_loyalty_score"] - b["rtd_loyalty_score"],
+                                   -0.3 * loy_sd0, rtol=1e-6)
         np.testing.assert_allclose(s["rtd_wtp_z"] - b["rtd_wtp_z"], 1.5, rtol=1e-7)
         np.testing.assert_allclose(s["rtd_rt_z"] - b["rtd_rt_z"], -2.0, rtol=1e-7)
         # raw-scale equivalents of the standardized-scale intercepts
@@ -440,18 +453,18 @@ def test_negative_ttp_intercept_shortens_option_lists(gold, model_params, sim_co
 
 
 def test_positive_loyalty_intercept_shifts_segments_up(gold, model_params, sim_config):
-    """A positive loyalty beta0 shifts the segments weakly upward (some strictly),
-    and the rankings follow the shifted segments' priority tails."""
+    """A positive loyalty beta1 (standardized scale) shifts the segments weakly
+    upward (some strictly), and the rankings follow the shifted segments' tails."""
     base = _run_model(gold, model_params, sim_config, stochastic=False)
     shifted = _run_model(gold, model_params, sim_config, stochastic=False,
-                         intercepts={'loyalty': 0.05})
+                         intercepts={'loyalty': 0.3})
     b_seg = np.array([r["rtd_loyalty_segment"] for r in base])
     s_seg = np.array([r["rtd_loyalty_segment"] for r in shifted])
     assert (s_seg >= b_seg).all()
     assert (s_seg > b_seg).any()
     for r in shifted:
         seg = r["rtd_loyalty_segment"]
-        assert r["rtd_loyalty_ranking"] == PRIORITY_SEQUENCES["loyalty"][5 - seg:]
+        assert r["rtd_loyalty_ranking"] == PRIORITY_SEQUENCES["loyalty"][seg - 1:]
 
 
 def test_intercepts_shift_stochastic_draws_and_rebinning(gold, model_params, sim_config):
@@ -507,27 +520,29 @@ def test_intercepts_shift_stochastic_draws_and_rebinning(gold, model_params, sim
 
 def test_extreme_intercepts_saturate_boundary_bins(gold, model_params, sim_config):
     """Extreme intercepts saturate every agent at the boundary bins without errors.
-    +/-5 (the UI slider bound) fully saturates ttp/loyalty/risk_taking; WTP's
-    standardized-scale shift of 5*sd0 is only ~0.73 of its long-tailed score range,
-    so full WTP saturation is asserted at +/-8 (the model imposes no bound) and
-    +/-5 is asserted to shift weakly and stay valid, incl. under stochastic."""
+    +/-5 (the UI slider bound) fully saturates ttp/risk_taking; the standardized-scale
+    shifts of loyalty (5 z-units vs a 6.43 range) and WTP (5*sd0 ~0.73 of its
+    long-tailed range) do not, so full saturation is asserted at +/-8 for both (the
+    model imposes no bound) and +/-5 is asserted to shift weakly and stay valid,
+    incl. under stochastic. Rankings follow the Stata direction (segment 5 -> last
+    option only, segment 1 -> the full sequence)."""
     base = _run_model(gold, model_params, sim_config, stochastic=False)
 
     hi = _run_model(gold, model_params, sim_config, stochastic=False,
-                    intercepts={'ttp': 5.0, 'loyalty': 5.0, 'wtp': 8.0, 'risk_taking': 5.0})
+                    intercepts={'ttp': 5.0, 'loyalty': 8.0, 'wtp': 8.0, 'risk_taking': 5.0})
     assert all(r["rtd_choice_length"] == 5 for r in hi)
     assert all(r["rtd_loyalty_segment"] == 5 for r in hi)
     assert all(r["rtd_wtp_segment"] == 5 for r in hi)
     assert all(r["rtd_rt_segment"] == 5 for r in hi)
-    assert all(r["rtd_wtp_ranking"] == PRIORITY_SEQUENCES["wtp"] for r in hi)
+    assert all(r["rtd_wtp_ranking"] == PRIORITY_SEQUENCES["wtp"][4:] for r in hi)
 
     lo = _run_model(gold, model_params, sim_config, stochastic=False,
-                    intercepts={'ttp': -5.0, 'loyalty': -5.0, 'wtp': -8.0, 'risk_taking': -5.0})
+                    intercepts={'ttp': -5.0, 'loyalty': -8.0, 'wtp': -8.0, 'risk_taking': -5.0})
     assert all(r["rtd_choice_length"] == 0 for r in lo)
     assert all(r["rtd_loyalty_segment"] == 1 for r in lo)
     assert all(r["rtd_wtp_segment"] == 1 for r in lo)
     assert all(r["rtd_rt_segment"] == 1 for r in lo)
-    assert all(r["rtd_loyalty_ranking"] == PRIORITY_SEQUENCES["loyalty"][4:] for r in lo)
+    assert all(r["rtd_loyalty_ranking"] == PRIORITY_SEQUENCES["loyalty"] for r in lo)
 
     # WTP at the +/-5 UI bound: monotone shift (deterministic) and valid bins with
     # no errors under stochastic draws
@@ -593,8 +608,8 @@ def test_default_template_path_unchanged(gold, model_params, sim_config):
 # The personality part enters at coefficient 1.0 (doc-literal; the fitted slope
 # 0.5439389/0.9991365 is NOT applied).
 # ---------------------------------------------------------------------------
-DOC_WTP_CAT_INTERCEPT = -0.6919842
-DOC_WTP_CAT_DUMMIES = {1: 0.0, 2: 0.2672136, 3: 0.5058749, 4: 0.9413666, 5: 1.822843}
+DOC_WTP_CAT_INTERCEPT = -0.691843          # doc rev 280826-2 cond() code
+DOC_WTP_CAT_DUMMIES = {1: 0.0, 2: 0.2671588, 3: 0.5057716, 4: 0.9411747, 5: 1.822471}
 DOC_RT_CAT_INTERCEPT = -0.0068307
 DOC_RT_CAT_DUMMIES = {1: 0.0, 2: 0.0026128, 3: 0.0050555, 4: 0.0092738, 5: 0.0179812}
 
@@ -631,8 +646,8 @@ def _doc_categorical_reference(gold):
     construction, computed from the Stata z-columns of the frozen extract."""
     lvl = gold["assignedallowancelevel"].astype(int)
     ref_wtp = (DOC_WTP_CAT_INTERCEPT + lvl.map(DOC_WTP_CAT_DUMMIES)
-               + 0.0788796127824 * gold["z_extraversionbig5"]
-               - 0.012328716 * gold["z_agreeable"])
+               + 0.078863062 * gold["z_extraversionbig5"]
+               - 0.012326128 * gold["z_agreeable"])
     ref_rt = (DOC_RT_CAT_INTERCEPT + lvl.map(DOC_RT_CAT_DUMMIES)
               + 0.025942386297 * gold["z_extraversionbig5"]
               + 0.023699214948 * gold["z_opennessbig5"]
@@ -702,7 +717,7 @@ def test_continuous_mode_unchanged_by_explicit_key(gold, params, sim_config, all
                                       np.array([s[key] for s in all_scores]),
                                       err_msg=f"{key} explicit-continuous mismatch")
     np.testing.assert_allclose(np.array([s["wtp"] for s in explicit]),
-                               gold["WTP_calculated"], atol=ATOL)
+                               gold["WTP_calculated"], atol=1e-5)   # float32 income z
     np.testing.assert_allclose(np.array([s["risk_taking"] for s in explicit]),
                                gold["RT_calculated_hs"], atol=ATOL)
 

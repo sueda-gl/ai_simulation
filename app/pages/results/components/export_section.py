@@ -364,13 +364,38 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
         # when Decision 4 ran as a custom decision). Rankings exported as 'a > b > c'
         # option-number strings; the dedicated Decision 4 Excel has the full breakdown.
         if 'rtd_choice_length' in row:
+            # Element values (scores, standardized scores, segments, rankings) so the
+            # complete-simulation Excel carries every element even though the results
+            # page shows only the integrated ranking (professor, 2026-09).
+            agent_record['rtd_weighted_ttp'] = row.get('rtd_weighted_ttp', np.nan)
             agent_record['rtd_choice_length'] = row.get('rtd_choice_length', np.nan)
-            for mech_col, export_name in [('loyalty', 'rtd_loyalty'), ('wtp', 'rtd_wtp'), ('rt', 'rtd_risk_taking')]:
+            for mech_col, export_name in [('loyalty', 'rtd_loyalty'), ('wtp', 'rtd_wtp'),
+                                          ('rt', 'rtd_risk_taking'), ('flex', 'rtd_flexibility')]:
+                if f'rtd_{mech_col}_segment' not in row:
+                    continue
+                agent_record[f'{export_name}_score'] = row.get(f'rtd_{mech_col}_score', np.nan)
+                agent_record[f'{export_name}_z'] = row.get(f'rtd_{mech_col}_z', np.nan)
                 agent_record[f'{export_name}_segment'] = row.get(f'rtd_{mech_col}_segment', np.nan)
                 ranking = row.get(f'rtd_{mech_col}_ranking', None)
                 agent_record[f'{export_name}_ranking'] = (
                     ' > '.join(str(o) for o in ranking) if isinstance(ranking, list) else 'N/A'
                 )
+            if 'rtd_z_stdactions' in row:
+                agent_record['rtd_z_stdactions'] = row.get('rtd_z_stdactions', np.nan)
+            # Section-6 rank aggregation: the integrated default list (option numbers,
+            # after the list-length and Option-5 truncation), the full consensus
+            # ranking it was cut from, and the tie-break stage that settled it.
+            if 'rtd_default_list' in row:
+                default_list = row.get('rtd_default_list', None)
+                agent_record['rtd_default_list'] = (
+                    ' > '.join(str(o) for o in default_list) if isinstance(default_list, list) else 'N/A'
+                )
+                consensus = row.get('rtd_consensus_ranking', None)
+                agent_record['rtd_consensus_ranking'] = (
+                    ' > '.join(str(o) for o in consensus) if isinstance(consensus, list) else 'N/A'
+                )
+                agent_record['rtd_consensus_settled_by'] = row.get('rtd_consensus_settled_by', 'N/A')
+                agent_record['rtd_default_list_length'] = row.get('rtd_default_list_length', np.nan)
         
         # Decision 5: Vendor Choice Weights (flatten dict to columns)
         vendor_weights = row.get('vendor_choice_weights', {})

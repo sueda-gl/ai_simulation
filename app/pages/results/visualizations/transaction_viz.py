@@ -402,11 +402,12 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
 
     Two display modes:
     - MODEL run (Decision 4 selected): the four trait-based sub-decision mechanisms
-      (TTP list length + Loyalty/WTP/Risk-Taking rankings) -> _render_rtd_model_results.
+      (TTP list length + Loyalty/WTP/Risk-Taking rankings) and the Section-6 rank
+      aggregation's integrated default list -> _render_rtd_model_results.
     - DEFAULT run (unselected): the legacy priority-template view below.
     """
     if 'rtd_choice_length' in df.columns:
-        _render_rtd_model_results(df, decision_name)
+        _render_rtd_model_results(df, decision_name, result_key=_rtd_result_key_for(df))
         return
 
     # Define the 5 options
@@ -634,12 +635,13 @@ try:
         PRIORITY_SEQUENCES as _RTD_PRIORITY_SEQUENCES)
 except Exception:   # pragma: no cover - defensive fallback, values identical
     _RTD_PRIORITY_SEQUENCES = {'loyalty': [3, 1, 4, 5, 2], 'wtp': [3, 2, 1, 4, 5],
-                               'risk_taking': [4, 2, 1, 3, 5]}
+                               'risk_taking': [4, 2, 1, 3, 5], 'flexibility': [2, 4, 3, 1, 5]}
 
 _RTD_MECHS = [
     ('loyalty', 'loyalty', 'Loyalty', _RTD_PRIORITY_SEQUENCES['loyalty']),
     ('wtp', 'wtp', 'Willingness-to-Pay', _RTD_PRIORITY_SEQUENCES['wtp']),
     ('risk_taking', 'rt', 'Risk-Taking', _RTD_PRIORITY_SEQUENCES['risk_taking']),
+    ('flexibility', 'flex', 'Cognitive Flexibility', _RTD_PRIORITY_SEQUENCES['flexibility']),
 ]
 
 # Per-element sheet / section names for the Decision 4 exports.
@@ -648,6 +650,22 @@ _RTD_ELEMENT_SHEETS = {
     'loyalty': 'Loyalty',
     'wtp': 'Willingness-to-Pay',
     'risk_taking': 'Risk-Taking',
+    'flexibility': 'Cognitive Flexibility',
+}
+# Section-6 rank aggregation (integrated default list) sheet / section name.
+_RTD_AGG_SHEET = 'Integrated Default List'
+_RTD_STAGE_LABELS = {
+    'kemeny': 'Kemeny alone (unique full ranking)',
+    'schulze': 'Schulze',
+    'copeland': 'Copeland',
+    'footrule': 'Footrule',
+    'random': 'Last resort (random)',
+}
+_RTD_TRUNCATION_LABELS = {
+    'none': 'Not truncated (full ranking kept)',
+    'length': 'Options list length',
+    'option5': 'Option 5 stop rule',
+    'both': 'Both rules bind at the same position',
 }
 
 # Independent variables per element (Stata-aligned trait column names, in each
@@ -660,6 +678,9 @@ _RTD_ELEMENT_INPUTS = {
     'wtp': ['ExtraversionBig5', 'Agreeable', 'income'],
     'risk_taking': ['ExtraversionBig5', 'OpennessBig5', 'Agreeable',
                     'ConscientiousnessBig5', 'NeuroticismBig5', 'income'],
+    # Cognitive Flexibility: Big 5 (IVW equation order) + the observed anchor stdactions
+    'flexibility': ['ExtraversionBig5', 'OpennessBig5', 'NeuroticismBig5', 'Agreeable',
+                    'ConscientiousnessBig5', 'stdactions'],
 }
 
 
@@ -674,9 +695,9 @@ def _rtd_frame_income_mode(df):
 
 def _rtd_active_element():
     """The element selected via a per-element Run button on the Decision 4 tab
-    ('ttp' | 'loyalty' | 'wtp' | 'risk_taking'), or None when the whole decision
-    was run. Only individual Decision 4 runs are filtered - combined/complete
-    simulations always show all four elements."""
+    ('ttp' | 'loyalty' | 'wtp' | 'risk_taking' | 'flexibility'), or None when the
+    whole decision was run. Only individual Decision 4 runs are filtered -
+    combined/complete simulations always show all five elements."""
     if (getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults']
             and not getattr(st.session_state, 'default_decisions', [])):
         element = st.session_state.get('rtd_run_element')
@@ -755,6 +776,12 @@ def render_rtd_comparison_results(results_dict, decision_name):
             if hasattr(df_, 'columns') and 'rtd_choice_length' in df_.columns]
     if not keys:
         return False
+    # A COMBINED run's frame carries every decision; show_overview would then render
+    # the other decisions' analyses (donation rate, disclose income, ...) inside the
+    # Decision 4 section. Such frames get the Decision 4 headline metric only.
+    combined_frame = any(
+        c in results_dict[k].columns for k in keys
+        for c in ('donation_default', 'disclose_income', 'disclose_documents'))
 
     # Group by income treatment, categorical first (matches the donation-era
     # grids' section order). Covers both the Compare-all key style
@@ -818,24 +845,63 @@ def render_rtd_comparison_results(results_dict, decision_name):
             for col, key, label in zip(overview_cols, row_keys, row_labels):
                 with col:
                     st.markdown(f"**{label}**")
-                    show_overview(results_dict[key], suffix_for(key),
-                                  result_key=key, enable_selection=False)
+                    # summary cell; the per-cell "Use This Config" button sits under the
+                    # detail cell below (_render_rtd_model_results)
+                    if combined_frame:
+                        from app.components import rtd_overview_metric
+                        st.subheader(f"Simulation Overview{suffix_for(key)}")
+                        rtd_label, rtd_value = rtd_overview_metric(results_dict[key])
+                        st.metric("Total Agents", f"{len(results_dict[key]):,}")
+                        st.metric(rtd_label, rtd_value)
+                    else:
+                        show_overview(results_dict[key], suffix_for(key), result_key=key)
 
             detail_cols = st.columns(len(row_keys))
             for col, key, label in zip(detail_cols, row_keys, row_labels):
                 with col:
                     st.markdown(f"**{label}**")
                     _render_rtd_model_results(results_dict[key], decision_name,
-                                              chart_suffix=f"_{key}", compact=True)
+                                              chart_suffix=f"_{key}", compact=True,
+                                              result_key=key)
     return True
 
 
-def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False):
-    """Model-run results for Decision 4: four sub-decision mechanisms per agent.
+def _rtd_result_key_for(df):
+    """The simulation_results key this Decision 4 frame belongs to (None if unknown).
 
-    When a per-element Run button was used (st.session_state.rtd_run_element set on
-    an individual Decision 4 run), ONLY that element's section is rendered; a
-    whole-decision run renders all four.
+    Single-mode runs have one key; otherwise the frame is matched by identity."""
+    results = st.session_state.get('simulation_results') or {}
+    if not isinstance(results, dict) or not results:
+        return None
+    for key, frame in results.items():
+        if frame is df:
+            return key
+    return next(iter(results.keys())) if len(results) == 1 else None
+
+
+def _render_rtd_selection_button(df, result_key):
+    """'Use This Config' for an individual Decision 4 run, rendered under the
+    decision's results (same placement as the other decisions' buttons)."""
+    if not result_key:
+        return
+    from app.pages.results.comparisons import should_enable_selection
+    if not should_enable_selection():
+        return
+    from app.components import render_rejected_transaction_selection_button
+    render_rejected_transaction_selection_button(result_key, df)
+
+
+def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False, result_key=None):
+    """Model-run results for Decision 4.
+
+    Display rule (professor, 2026-09):
+    - a per-element Run button (st.session_state.rtd_run_element set on an individual
+      Decision 4 run) renders ONLY that element's section and its Excel;
+    - "Run Rejected Transaction Defaults Only" (whole decision) and the complete
+      simulation render ONLY the integrated ranking (Section 6): the elements'
+      scores, distributions and rankings stay available in the downloadable Excel.
+      The element sections are shown for a whole run only when no integrated list
+      exists (rank aggregation disabled on the tab).
 
     chart_suffix disambiguates Streamlit element keys when this view is rendered
     once per result_key (comparison modes). compact=True stacks each section
@@ -843,6 +909,13 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
     """
     n = len(df)
     active = _rtd_active_element()
+    has_integrated = 'rtd_default_list' in df.columns
+    if active is not None:
+        elements_to_show = {active}
+    elif has_integrated:
+        elements_to_show = set()
+    else:
+        elements_to_show = {'ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'}
 
     def _element_section(chart_a, chart_b):
         """Chart A (score distribution) and Chart B (allocation) side by side, or
@@ -870,7 +943,8 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
             export_df.to_excel(writer, index=False, sheet_name=_RTD_ELEMENT_SHEETS[mech])
         # Human-readable filename slugs ('ttp' reads too much like 'wtp')
         fname_slug = {'ttp': 'options_list_length', 'loyalty': 'loyalty',
-                      'wtp': 'willingness_to_pay', 'risk_taking': 'risk_taking'}[mech]
+                      'wtp': 'willingness_to_pay', 'risk_taking': 'risk_taking',
+                      'flexibility': 'cognitive_flexibility'}[mech]
         st.download_button(
             label=f"📊 Download {label} Excel",
             data=buffer.getvalue(),
@@ -882,7 +956,7 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
         )
 
     # ---- Element 1: Options List Length (Tendency to Plan) ----
-    if active in (None, 'ttp'):
+    if 'ttp' in elements_to_show:
         st.markdown("---")
         st.markdown("**1️⃣ Options List Length (Tendency to Plan)**")
         st.markdown("presents how many default options each customer pre-selects (0-5)")
@@ -923,10 +997,12 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
         'loyalty': ('rtd_loyalty_z', "Loyalty score"),
         'wtp': ('rtd_wtp_z', "Willingness-to-Pay score"),
         'risk_taking': ('rtd_rt_z', "Risk-Taking score"),
+        # z_anchored_flexibility (doc: `histogram z_anchored_flexibility`)
+        'flexibility': ('rtd_flex_z', "Cognitive Flexibility score"),
     }
     for idx, (mech, col_key, label, seq) in enumerate(_RTD_MECHS, start=2):
         seg_col = f'rtd_{col_key}_segment'
-        if seg_col not in df.columns or (active is not None and active != mech):
+        if seg_col not in df.columns or mech not in elements_to_show:
             continue
         st.markdown("---")
         st.markdown(f"**{idx}️⃣ {label} Ranking**")
@@ -941,9 +1017,9 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
 
         def _alloc_chart(sq=seq, sgc=seg_col, ck=col_key, lb=label,
                          per_element=(active == mech)):
-            # Mirrored mapping: segment s -> first choice sq[5 - s] (highest segment
-            # gets the top option of the priority sequence).
-            first_choice = df[sgc].astype(int).map(lambda s: sq[5 - s])
+            # STATA direction: segment s -> first choice sq[s - 1] (segment 1 gets the
+            # top option of the priority sequence; mirrors _ranking_for_segment).
+            first_choice = df[sgc].astype(int).map(lambda s: sq[s - 1])
             counts = first_choice.value_counts()
             if per_element:
                 # Per-element run (professor 2026-08): categories in the element's
@@ -970,6 +1046,14 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
         _element_section(_score_chart, _alloc_chart)
         _element_download(mech, f"{label} Ranking")
 
+    # ---- Integrated default list (Section-6 rank aggregation): the ONLY section of a
+    # whole-decision / complete-simulation run ----
+    if active is None and has_integrated:
+        _render_rtd_aggregation_section(df, decision_name, chart_suffix, _element_section)
+    elif active is None:
+        st.info("The rank aggregation is disabled on the Decision 4 tab, so no integrated "
+                "default list was produced; the individual elements are shown instead.")
+
     # ---- Whole-decision per-agent Excel export (only for whole-decision runs;
     # per-element runs already have their element's download in the section above) ----
     if active is None:
@@ -983,14 +1067,16 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                 for sheet_name, sheet_df in sheets.items():
                     sheet_df.to_excel(writer, index=False, sheet_name=sheet_name)
+            st.caption("The workbook holds the final integrated ranking first, then all "
+                       "elements side by side (inputs, scores, intermediate distributions "
+                       "and rankings per customer), then one sheet per element.")
             st.download_button(
                 label="📊 Download Decision 4 Excel (all elements)",
                 data=buffer.getvalue(),
                 file_name=f"rejected_transaction_mechanisms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                help="One self-contained sheet per element: independent variables, "
-                     "scores, intermediate distributions and the resulting option "
-                     "sequence per customer",
+                help="Final integrated ranking + every element's independent variables, "
+                     "scores, intermediate distributions and option sequences per customer",
                 key=f"rtd_model_download{chart_suffix}",
             )
             with st.expander("📋 Preview Export Data (first 10 rows per sheet)"):
@@ -998,6 +1084,139 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False)
                     st.markdown(f"**{sheet_name} Sheet:**")
                     st.dataframe(sheet_df.head(10).astype(str), use_container_width=True)
                     st.caption(f"Rows: {len(sheet_df):,} · Columns: {', '.join(sheet_df.columns)}")
+
+    # ---- "Use This Config" (individual Decision 4 runs): UNDER the decision's results,
+    # where the other decisions place their selection buttons ----
+    _render_rtd_selection_button(df, result_key)
+
+
+def _rtd_list_str(lst):
+    """'a > b > c' rendering of an option-number list ('(empty)' for no options)."""
+    if isinstance(lst, (list, tuple)):
+        return ' > '.join(str(o) for o in lst) if len(lst) else '(empty)'
+    return 'N/A'
+
+
+def _render_rtd_aggregation_section(df, decision_name, chart_suffix, element_section):
+    """Section 6 of the Decision 4 results: the integrated default list produced by
+    the Section-6 rank aggregation (Kemeny-Young + tie-break hierarchy, truncated to
+    the options list length and at Option 5)."""
+    n = len(df)
+    lists = df['rtd_default_list']
+    inputs = df['rtd_consensus_inputs'].iloc[0] if 'rtd_consensus_inputs' in df.columns else []
+    input_labels = {'loyalty': 'Loyalty', 'wtp': 'Willingness-to-Pay',
+                    'risk_taking': 'Risk-Taking', 'flexibility': 'Cognitive Flexibility'}
+    inputs_txt = ', '.join(input_labels.get(m, m) for m in inputs) if isinstance(inputs, list) else ''
+
+    st.markdown("---")
+    st.markdown("**6️⃣ Integrated Default List (Rank Aggregation)**")
+    st.markdown(
+        f"presents each customer's final pre-selected default list: the Kemeny-Young "
+        f"consensus of the {inputs_txt} rankings (ties broken Schulze → Copeland → "
+        f"footrule → random), cut to the customer's Options List Length. Option 5 "
+        f"(forgo the transaction) is the final option of the produced list: any option "
+        f"ranked after it is discarded."
+    )
+    st.caption("The individual elements' results are not shown for a whole-decision run; "
+               "their scores, distributions and rankings are in the Excel below, and each "
+               "element has its own Run button on the Decision 4 tab.")
+
+    def _lists_chart():
+        # The ranking itself: share of agents per integrated default list (the most
+        # common lists; the list length is element 1's result and is not repeated here)
+        common = lists.apply(_rtd_list_str).value_counts()
+        top = common.head(8)
+        _rtd_fraction_bar(list(top.index), [c / n for c in top.values],
+                          "% of agents per integrated default list",
+                          "Integrated default list (options in order)",
+                          f"{decision_name}_rtd_agg_lists_chart{chart_suffix}")
+        rows = [{'Integrated default list': lst, '% of agents': f"{c / n * 100:.1f}%"}
+                for lst, c in common.head(10).items()]
+        if len(common) > 10:
+            rest = common.iloc[10:].sum()
+            rows.append({'Integrated default list': f"other ({len(common) - 10} lists)",
+                         '% of agents': f"{rest / n * 100:.1f}%"})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    def _first_choice_chart():
+        firsts = lists.apply(lambda l: l[0] if isinstance(l, list) and len(l) else 0)
+        counts = firsts.value_counts()
+        order = list(range(1, 6))
+        fractions = [counts.get(o, 0) / n for o in order]
+        _rtd_fraction_bar([f"Option {o}" for o in order], fractions,
+                          "% of first integrated default option",
+                          "First option in the integrated default list",
+                          f"{decision_name}_rtd_agg_first_chart{chart_suffix}")
+        rows = [{'Option': f"Option {o}", '% of agents': f"{counts.get(o, 0) / n * 100:.1f}%"}
+                for o in order]
+        rows.append({'Option': 'No default options (list length 0)',
+                     '% of agents': f"{counts.get(0, 0) / n * 100:.1f}%"})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.caption(_RTD_OPTION_NUMBERING)
+
+    element_section(_lists_chart, _first_choice_chart)
+
+    # Tie-break diagnostics + the full consensus rankings (before the cut)
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("**Tie-breaking stage that settled the consensus ranking**")
+        settled = df['rtd_consensus_settled_by'].value_counts()
+        st.dataframe(pd.DataFrame({
+            'Settled by': [_RTD_STAGE_LABELS[s] for s in _RTD_STAGE_LABELS],
+            '% of agents': [f"{settled.get(s, 0) / n * 100:.1f}%" for s in _RTD_STAGE_LABELS],
+        }), hide_index=True, use_container_width=True)
+        if 'rtd_consensus_is_kemeny_optimal' in df.columns:
+            opt_share = df['rtd_consensus_is_kemeny_optimal'].astype(bool).mean() * 100
+            st.caption(f"Final consensus ranking is Kemeny-optimal for {opt_share:.1f}% of agents.")
+    with col_b:
+        st.markdown("**Most common consensus rankings (full ranking before the cut)**")
+        consensus = df['rtd_consensus_ranking'].apply(_rtd_list_str).value_counts().head(10)
+        st.dataframe(pd.DataFrame({
+            'Consensus ranking': consensus.index,
+            '% of agents': [f"{c / n * 100:.1f}%" for c in consensus.values],
+        }), hide_index=True, use_container_width=True)
+
+    export_df = _prepare_rtd_aggregation_export(df)
+    if export_df is not None and not export_df.empty:
+        from io import BytesIO
+        from datetime import datetime
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            export_df.to_excel(writer, index=False, sheet_name=_RTD_AGG_SHEET)
+        st.download_button(
+            label="📊 Download Integrated Default List Excel",
+            data=buffer.getvalue(),
+            file_name=f"rejected_transaction_integrated_default_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Per-agent mechanism lists, consensus ranking, tie-break diagnostics and "
+                 "the integrated default list",
+            key=f"rtd_dl_aggregation{chart_suffix}",
+        )
+
+
+def _prepare_rtd_aggregation_export(df):
+    """Integrated Default List sheet: Agent ID, choice length, the mechanism lists
+    that entered the aggregation, the consensus ranking with its tie-break
+    diagnostics, and the truncated default list as choice1..choice5."""
+    try:
+        out = pd.DataFrame(index=df.index)
+        out['Agent ID'] = _rtd_agent_id_series(df)
+        out['choice_length'] = df['rtd_choice_length']
+        for col_key, stata in (('loyalty', 'loyalty'), ('wtp', 'WTP'), ('rt', 'RT'), ('flex', 'Flexibility')):
+            if f'rtd_{col_key}_ranking' in df.columns:
+                out[f'{stata}_list'] = df[f'rtd_{col_key}_ranking'].apply(_rtd_list_str)
+        out['consensus_ranking'] = df['rtd_consensus_ranking'].apply(_rtd_list_str)
+        out['kemeny_status'] = df['rtd_consensus_kemeny_status']
+        out['n_kemeny_optimal'] = df['rtd_consensus_n_kemeny_optimal']
+        out['settled_by'] = df['rtd_consensus_settled_by']
+        out['is_kemeny_optimal'] = df['rtd_consensus_is_kemeny_optimal']
+        out['truncated_by'] = df['rtd_consensus_truncated_by']
+        out['default_list_length'] = df['rtd_default_list_length']
+        _rtd_choice_columns(out, df['rtd_default_list'])
+        return out
+    except Exception as e:
+        st.error(f"Error preparing Decision 4 {_RTD_AGG_SHEET} export: {e}")
+        return None
 
 
 def _rtd_agent_id_series(df):
@@ -1028,7 +1247,18 @@ def _rtd_choice_columns(out, rankings):
 
 
 _RTD_STATA_NAMES = {'loyalty': ('loyalty', 'loyalty'), 'wtp': ('wtp', 'WTP'),
-                    'risk_taking': ('rt', 'RT')}
+                    'risk_taking': ('rt', 'RT'), 'flexibility': ('flex', 'Flexibility')}
+
+
+def _rtd_flex_intermediates(out, df):
+    """Cognitive Flexibility intermediates in Stata naming: the calculated IVW score,
+    its population z, and z_stdactions (the anchored score / its z follow as
+    Flexibility_score / z_Flexibility)."""
+    for src, dst in (('rtd_flex_ivw', 'Flexibility_calculated_ivw'),
+                     ('rtd_flex_z_ivw', 'z_Flexibility_calculated_ivw'),
+                     ('rtd_z_stdactions', 'z_stdactions')):
+        if src in df.columns:
+            out[dst] = df[src]
 
 
 def _prepare_rtd_element_export(df, mech):
@@ -1042,6 +1272,8 @@ def _prepare_rtd_element_export(df, mech):
             out['choice_length'] = df['rtd_choice_length']
             return out
         col_key, stata = _RTD_STATA_NAMES[mech]
+        if mech == 'flexibility':
+            _rtd_flex_intermediates(out, df)
         out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
         if f'rtd_{col_key}_z' in df.columns:
             out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
@@ -1055,7 +1287,8 @@ def _prepare_rtd_element_export(df, mech):
 
 def _prepare_rtd_model_export(df):
     """Whole-decision Decision 4 workbook, organized as one self-contained sheet per
-    element ('Options List Length', 'Loyalty', 'Willingness-to-Pay', 'Risk-Taking').
+    element ('Options List Length', 'Loyalty', 'Willingness-to-Pay', 'Risk-Taking',
+    'Cognitive Flexibility') plus the 'Integrated Default List' aggregation sheet.
 
     Each sheet mirrors the per-element file (Agent ID + the element's own
     independent variables + choice1..choice5) and additionally carries the
@@ -1067,6 +1300,18 @@ def _prepare_rtd_model_export(df):
     try:
         sheets = {}
 
+        # ---- 1. Final integrated ranking (Section-6 rank aggregation) first ----
+        if 'rtd_default_list' in df.columns:
+            agg = _prepare_rtd_aggregation_export(df)
+            if agg is not None:
+                sheets[_RTD_AGG_SHEET] = agg
+
+        # ---- 2. All elements side by side (inputs -> element by element -> final) ----
+        all_elements = _prepare_rtd_all_elements_export(df)
+        if all_elements is not None:
+            sheets[_RTD_ALL_ELEMENTS_SHEET] = all_elements
+
+        # ---- 3. One sheet per element ----
         # ---- Options List Length (TTP) ----
         ttp = _rtd_element_inputs_frame(df, 'ttp')
         for src, dst in [('rtd_weighted_ttp', 'weighted_ttp'),
@@ -1083,6 +1328,8 @@ def _prepare_rtd_model_export(df):
             if f'rtd_{col_key}_score' not in df.columns:
                 continue
             sheet = _rtd_element_inputs_frame(df, mech)
+            if mech == 'flexibility':
+                _rtd_flex_intermediates(sheet, df)
             sheet[f'{stata}_score'] = df[f'rtd_{col_key}_score']
             if f'rtd_{col_key}_z' in df.columns:
                 sheet[f'z_{stata}'] = df[f'rtd_{col_key}_z']
@@ -1096,6 +1343,65 @@ def _prepare_rtd_model_export(df):
         return sheets
     except Exception as e:
         st.error(f"Error preparing Decision 4 export: {e}")
+        return None
+
+
+_RTD_ALL_ELEMENTS_SHEET = 'All Elements'
+
+
+def _prepare_rtd_all_elements_export(df):
+    """One row per customer with every element side by side, columns grouped in
+    the order of the decision: Agent ID -> inputs (traits, education, income /
+    allowance level, stdactions) -> 1 Options List Length -> 2 Loyalty -> 3 WTP ->
+    4 Risk-Taking -> 5 Cognitive Flexibility (each: score, z, segment, option list)
+    -> 6 Integrated default list (consensus ranking, tie-break stage, final options).
+    Stata-aligned column names, prefixed per element."""
+    try:
+        out = pd.DataFrame(index=df.index)
+        out['Agent ID'] = _rtd_agent_id_series(df)
+        inputs = ['ExtraversionBig5', 'Agreeable', 'NeuroticismBig5', 'ConscientiousnessBig5',
+                  'OpennessBig5', 'Education', 'income']
+        if _rtd_frame_income_mode(df) == 'categorical':
+            inputs.append('Assigned Allowance Level')
+        inputs.append('stdactions')
+        for col in inputs:
+            if col in df.columns:
+                out[col] = df[col]
+
+        # 1. Options List Length
+        for src, dst in [('rtd_weighted_ttp', 'weighted_ttp'),
+                         ('rtd_weighted_ttp06', 'weighted_ttp06'),
+                         ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
+                         ('rtd_choice_length', 'choice_length')]:
+            if src in df.columns:
+                out[dst] = df[src]
+
+        # 2-5. Ranking elements
+        for mech, (col_key, stata) in _RTD_STATA_NAMES.items():
+            if f'rtd_{col_key}_score' not in df.columns:
+                continue
+            if mech == 'flexibility':
+                _rtd_flex_intermediates(out, df)
+            out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
+            if f'rtd_{col_key}_z' in df.columns:
+                out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
+            if f'rtd_{col_key}_segment_deterministic' in df.columns:
+                out[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
+            out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
+            out[f'{stata}_list'] = df[f'rtd_{col_key}_ranking'].apply(_rtd_list_str)
+
+        # 6. Integrated default list
+        if 'rtd_default_list' in df.columns:
+            out['consensus_ranking'] = df['rtd_consensus_ranking'].apply(_rtd_list_str)
+            out['settled_by'] = df['rtd_consensus_settled_by']
+            out['truncated_by'] = df['rtd_consensus_truncated_by']
+            out['default_list_length'] = df['rtd_default_list_length']
+            for pos in range(1, 6):
+                out[f'final_choice{pos}'] = df['rtd_default_list'].apply(
+                    lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
+        return out
+    except Exception as e:
+        st.error(f"Error preparing Decision 4 {_RTD_ALL_ELEMENTS_SHEET} export: {e}")
         return None
 
 

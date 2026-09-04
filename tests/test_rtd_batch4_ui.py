@@ -30,6 +30,7 @@ RTD_SECTION_TITLES = {
     'loyalty': "2️⃣ Loyalty Ranking",
     'wtp': "3️⃣ Willingness-to-Pay Ranking",
     'risk_taking': "4️⃣ Risk-Taking Ranking",
+    'flexibility': "5️⃣ Cognitive Flexibility Ranking",
 }
 
 
@@ -61,8 +62,24 @@ def rtd_frame_cat():
 # ---------------------------------------------------------------------------
 def test_whole_decision_workbook_sheets_and_columns(rtd_frame):
     sheets = _prepare_rtd_model_export(rtd_frame)
-    assert list(sheets.keys()) == ['Options List Length', 'Loyalty',
-                                   'Willingness-to-Pay', 'Risk-Taking']
+    # professor 2026-09: the final ranking first, then all elements side by side
+    # (inputs -> element by element -> final), then one sheet per element
+    assert list(sheets.keys()) == ['Integrated Default List', 'All Elements',
+                                   'Options List Length', 'Loyalty',
+                                   'Willingness-to-Pay', 'Risk-Taking',
+                                   'Cognitive Flexibility']
+    assert list(sheets['All Elements'].columns) == [
+        'Agent ID', 'ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
+        'ConscientiousnessBig5', 'OpennessBig5', 'Education', 'income', 'stdactions',
+        'weighted_ttp', 'weighted_ttp06', 'choice_length_deterministic', 'choice_length',
+        'loyalty_score', 'z_loyalty', 'loyalty_segment_deterministic', 'loyalty_segment', 'loyalty_list',
+        'WTP_score', 'z_WTP', 'WTP_segment_deterministic', 'WTP_segment', 'WTP_list',
+        'RT_score', 'z_RT', 'RT_segment_deterministic', 'RT_segment', 'RT_list',
+        'Flexibility_calculated_ivw', 'z_Flexibility_calculated_ivw', 'z_stdactions',
+        'Flexibility_score', 'z_Flexibility', 'Flexibility_segment_deterministic',
+        'Flexibility_segment', 'Flexibility_list',
+        'consensus_ranking', 'settled_by', 'truncated_by', 'default_list_length',
+        'final_choice1', 'final_choice2', 'final_choice3', 'final_choice4', 'final_choice5']
 
     assert list(sheets['Options List Length'].columns) == [
         'Agent ID', 'ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
@@ -82,6 +99,22 @@ def test_whole_decision_workbook_sheets_and_columns(rtd_frame):
         'ConscientiousnessBig5', 'NeuroticismBig5', 'income',
         'RT_score', 'z_RT', 'RT_segment_deterministic', 'RT_segment',
         'choice1', 'choice2', 'choice3', 'choice4', 'choice5', 'sigma_used_RT']
+    # Cognitive Flexibility: Big 5 + stdactions inputs, the Stata intermediates, the
+    # anchored score / its z, segments, choices, sigma.
+    assert list(sheets['Cognitive Flexibility'].columns) == [
+        'Agent ID', 'ExtraversionBig5', 'OpennessBig5', 'NeuroticismBig5', 'Agreeable',
+        'ConscientiousnessBig5', 'stdactions',
+        'Flexibility_calculated_ivw', 'z_Flexibility_calculated_ivw', 'z_stdactions',
+        'Flexibility_score', 'z_Flexibility', 'Flexibility_segment_deterministic',
+        'Flexibility_segment', 'choice1', 'choice2', 'choice3', 'choice4', 'choice5',
+        'sigma_used_Flexibility']
+    # Section-6 rank aggregation sheet: the mechanism inputs, the consensus ranking,
+    # the tie-break diagnostics and the truncated integrated default list.
+    assert list(sheets['Integrated Default List'].columns) == [
+        'Agent ID', 'choice_length', 'loyalty_list', 'WTP_list', 'RT_list', 'Flexibility_list',
+        'consensus_ranking', 'kemeny_status', 'n_kemeny_optimal', 'settled_by',
+        'is_kemeny_optimal', 'truncated_by', 'default_list_length',
+        'choice1', 'choice2', 'choice3', 'choice4', 'choice5']
 
     for sheet in sheets.values():
         assert len(sheet) == len(rtd_frame)
@@ -112,10 +145,19 @@ def test_element_exports_only_own_variables(rtd_frame):
         'RT_score', 'z_RT', 'RT_segment',
         'choice1', 'choice2', 'choice3', 'choice4', 'choice5']
 
+    flex = _prepare_rtd_element_export(rtd_frame, 'flexibility')
+    assert list(flex.columns) == [
+        'Agent ID', 'ExtraversionBig5', 'OpennessBig5', 'NeuroticismBig5', 'Agreeable',
+        'ConscientiousnessBig5', 'stdactions',
+        'Flexibility_calculated_ivw', 'z_Flexibility_calculated_ivw', 'z_stdactions',
+        'Flexibility_score', 'z_Flexibility', 'Flexibility_segment',
+        'choice1', 'choice2', 'choice3', 'choice4', 'choice5']
+
     # exclusivity: no foreign independent variables leak into an element's file
     assert 'income' not in ttp.columns and 'income' not in loyalty.columns
     assert 'OpennessBig5' not in ttp.columns and 'OpennessBig5' not in wtp.columns
     assert 'Assigned Allowance Level' not in wtp.columns  # continuous frame
+    assert 'income' not in flex.columns and 'stdactions' not in rt.columns
 
 
 def test_categorical_frame_adds_allowance_level(rtd_frame_cat):
@@ -123,29 +165,29 @@ def test_categorical_frame_adds_allowance_level(rtd_frame_cat):
     sheets = _prepare_rtd_model_export(rtd_frame_cat)
     for name in ('Willingness-to-Pay', 'Risk-Taking'):
         assert 'Assigned Allowance Level' in sheets[name].columns
-    for name in ('Options List Length', 'Loyalty'):
+    for name in ('Options List Length', 'Loyalty', 'Cognitive Flexibility'):
         assert 'Assigned Allowance Level' not in sheets[name].columns
     for mech in ('wtp', 'risk_taking'):
         assert 'Assigned Allowance Level' in \
             _prepare_rtd_element_export(rtd_frame_cat, mech).columns
-    for mech in ('ttp', 'loyalty'):
+    for mech in ('ttp', 'loyalty', 'flexibility'):
         assert 'Assigned Allowance Level' not in \
             _prepare_rtd_element_export(rtd_frame_cat, mech).columns
 
 
 def test_choice_sequences_follow_segment_and_blank_beyond_length(rtd_frame):
-    """choice1..choice5 hold the mirrored priority tail: segment s gets the last s
-    options of the sequence (choice1 = seq[5-s]); positions beyond s are blank."""
+    """choice1..choice5 hold the Stata-direction priority tail: segment s gets the
+    sequence from position s (choice1 = seq[s-1]); positions beyond are blank."""
     from src.decisions.rejected_transaction_defaults import PRIORITY_SEQUENCES
     for mech, seg_col in (('loyalty', 'loyalty_segment'), ('wtp', 'WTP_segment'),
-                          ('risk_taking', 'RT_segment')):
+                          ('risk_taking', 'RT_segment'), ('flexibility', 'Flexibility_segment')):
         out = _prepare_rtd_element_export(rtd_frame, mech)
         seq = PRIORITY_SEQUENCES[mech]
         segs = out[seg_col].astype(int)
         assert segs.min() < 5, f"{mech}: need a short list to test blanks"
         for _, row in out.iterrows():
             s = int(row[seg_col])
-            tail = seq[5 - s:]
+            tail = seq[s - 1:]
             for pos in range(1, 6):
                 val = row[f'choice{pos}']
                 if pos <= len(tail):
@@ -198,8 +240,8 @@ def test_apptest_element_run_then_whole_run():
     at.run(timeout=600)
     assert not at.exception
 
-    # (A) all four per-element Run buttons exist on the tab
-    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
+    # (A) all five per-element Run buttons exist on the tab
+    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'):
         assert at.button(key=f'rtd_run_{mech}_btn') is not None
 
     # (i) per-element run: Loyalty only
@@ -210,7 +252,7 @@ def test_apptest_element_run_then_whole_run():
 
     md = _all_markdown(at)
     assert RTD_SECTION_TITLES['loyalty'] in md
-    for other in ('ttp', 'wtp', 'risk_taking'):
+    for other in ('ttp', 'wtp', 'risk_taking', 'flexibility'):
         assert RTD_SECTION_TITLES[other] not in md
     # summary line (Mean/SD/Min/Max/N) rendered exactly once (one element section)
     captions = _all_captions(at)
@@ -229,18 +271,22 @@ def test_apptest_element_run_then_whole_run():
     assert "📊 Download Loyalty Ranking Excel" in dls
     assert "📊 Download Decision 4 Agent-Level Excel" in dls
     assert not any("Options List Length" in l or "Willingness-to-Pay" in l
-                   or "Risk-Taking" in l or "all elements" in l
-                   or "Transaction-Level" in l for l in dls)
+                   or "Risk-Taking" in l or "Cognitive Flexibility" in l
+                   or "all elements" in l or "Transaction-Level" in l for l in dls)
 
-    # (ii) whole-decision run: flag cleared, all four sections back
+    # (ii) whole-decision run: flag cleared; ONLY the integrated ranking is shown
+    # (professor 2026-09: "Run Rejected Transaction Defaults Only" produces the
+    # integrated ranking only; the elements stay in the Excel)
     at.button(key='run_rejected_transaction_defaults_only_btn').click().run(timeout=600)
     assert not at.exception
     assert at.session_state['rtd_run_element'] is None
 
     md = _all_markdown(at)
-    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
-        assert RTD_SECTION_TITLES[mech] in md
-    assert _all_captions(at).count("· SD ") == 4
+    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'):
+        assert RTD_SECTION_TITLES[mech] not in md
+    assert "6️⃣ Integrated Default List (Rank Aggregation)" in md
+    assert "Option 5 (forgo the transaction) is the final option of the produced list" in md
+    assert _all_captions(at).count("· SD ") == 0
 
     # (iv) D4-only export/overview: agent-level workbook only, D4 metrics
     assert "Transaction-Level" not in md
@@ -249,16 +295,20 @@ def test_apptest_element_run_then_whole_run():
     assert "Total Transactions" not in metric_labels
     assert "Avg. Options List Length" in metric_labels
     assert "Total Agents" in metric_labels
-    # all four element downloads + the whole-decision workbook + the export
-    # section's agent-level workbook; still no transaction-level file
+    # the integrated-list download + the whole-decision workbook (all elements) +
+    # the export section's agent-level workbook; NO per-element downloads and no
+    # transaction-level file
     dls = _download_labels(at)
+    for label in ("📊 Download Integrated Default List Excel",
+                  "📊 Download Decision 4 Excel (all elements)",
+                  "📊 Download Decision 4 Agent-Level Excel"):
+        assert label in dls, label
     for label in ("📊 Download Options List Length Excel",
                   "📊 Download Loyalty Ranking Excel",
                   "📊 Download Willingness-to-Pay Ranking Excel",
                   "📊 Download Risk-Taking Ranking Excel",
-                  "📊 Download Decision 4 Excel (all elements)",
-                  "📊 Download Decision 4 Agent-Level Excel"):
-        assert label in dls, label
+                  "📊 Download Cognitive Flexibility Ranking Excel"):
+        assert label not in dls, label
     assert not any("Transaction-Level" in l for l in dls)
 
 
@@ -279,7 +329,7 @@ def test_apptest_compare_both_element_filter_per_column():
     md = _all_markdown(at)
     # one Loyalty section per income-mode column, nothing else
     assert md.count(RTD_SECTION_TITLES['loyalty']) == 2
-    for other in ('ttp', 'wtp', 'risk_taking'):
+    for other in ('ttp', 'wtp', 'risk_taking', 'flexibility'):
         assert RTD_SECTION_TITLES[other] not in md
     assert "Transaction-Level" not in md
     # element-scoped D4-only export path is used for the comparison run as well:

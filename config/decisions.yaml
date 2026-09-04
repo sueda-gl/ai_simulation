@@ -221,17 +221,37 @@ disclose_documents:
       '4': 1.0
       '5': 1.0
     in_copula: false
-# Decision 4: Rejected Transaction Defaults - FOUR trait-based sub-decision mechanisms
-# (TTP list length 0-5; Loyalty / WTP / Risk-Taking priority rankings). Rank aggregation
-# across the mechanisms is a later, separate step (not specified in the source document).
-# Source: "Decision 4 - Rejected Transaction Defaults" doc (100726); ground truth arbiter:
-# Stata_File_Decision4_050626.dta (data/stata_d4_verification.csv is the frozen extract).
-# All deterministic outputs verified 280/280 against the .dta.
+# Decision 4: Rejected Transaction Defaults - FIVE trait-based sub-decision mechanisms
+# (TTP list length 0-5; Loyalty / WTP / Risk-Taking / Cognitive Flexibility priority
+# rankings), integrated into ONE default list per agent by the Section-6 rank aggregation
+# (doc rev 280826-2): Kemeny-Young consensus + tie-break hierarchy Schulze -> Copeland ->
+# footrule -> random, then truncated to the TTP list length and at Option 5 (see
+# `aggregation` below).
+# Source: "Decision 4 - Rejected Transaction Defaults" doc (rev 280826-2); ground truth
+# arbiter: Stata_File_Decision4_290826.dta (data/stata_d4_verification.csv is the frozen
+# extract of all mechanisms incl. Flexibility, plus the June file's WTP stochastic columns;
+# data/stata_d4_flexibility_verification.csv holds the Flexibility columns alone). All
+# deterministic outputs (segments AND choice columns, Stata direction) verified 280/280.
 rejected_transaction_defaults:
   uses_global_parameters: []
   placeholder: false
   output_field: rejected_transaction_defaults
   default_value: NA
+  # Section-6 rank aggregation of the four ranking mechanisms into the integrated default
+  # list (src/decisions/rtd_rank_aggregation.py). Equal weights (doc). `mechanisms` null =
+  # every ranking mechanism the model computes (loyalty, wtp, risk_taking, flexibility).
+  # last_resort: 'random' (doc) breaks the ties no criterion can separate at random
+  # (the only rule exposed in the app).
+  aggregation:
+    enabled: true
+    mechanisms: null
+    last_resort: random
+  # Cognitive Flexibility anchoring (doc Section 5): anchored_flexibility =
+  # observed_weight * z_stdactions + calculated_weight * z_Flexibility_calculated_ivw
+  # ("we start by giving the observed flexibility a weight of 25%"; .dta-verified 0.25/0.75).
+  flexibility_anchor:
+    observed_weight: 0.25
+    calculated_weight: 0.75
   coefficients:
     ttp:                       # Tendency to Plan -> number of pre-selected options (0-5)
       extraversion: -0.0152556564
@@ -239,14 +259,14 @@ rejected_transaction_defaults:
       neuroticism: 0.01959
       conscientiousness: 0.00901465
       education: 0.0297        # applies to reducation = Education - 1 (0/1)
-    loyalty:                   # priority sequence Option 3 > 1 > 4 > 5 > 2
-      extraversion: 0.09
-      openness: 0.0273
-      agreeable: 0.0045
-    wtp:                       # Hunter & Schmidt pooling; priority 3 > 2 > 1 > 4 > 5
-      extraversion: 0.0788796127824
-      agreeable: -0.012328716
-      income: 0.69814232
+    loyalty:                   # doc rev 280826-2 bs_weighted_loyalty; priority 3 > 1 > 4 > 5 > 2
+      extraversion: -0.009828468   # (.dta 290826: bs reproduces to 7e-9; std(bs) is binned)
+      openness: 0.01096706
+      agreeable: 0.03092465
+    wtp:                       # Hunter & Schmidt pooling (doc code); priority 3 > 2 > 1 > 4 > 5
+      extraversion: 0.078863062
+      agreeable: -0.012326128
+      income: 0.698
     risk_taking:               # Hunter & Schmidt pooling; priority 4 > 2 > 1 > 3 > 5
       extraversion: 0.025942386297
       openness: 0.023699214948
@@ -254,31 +274,44 @@ rejected_transaction_defaults:
       conscientiousness: -0.037739440732
       neuroticism: -0.025388697852
       income: 0.006874197106
+    flexibility:               # IVW pooling (retained, doc Section 5); priority 2 > 4 > 3 > 1 > 5
+      extraversion: 0.0206     # doc/.dta literal values (audit: O/N/A weights inconsistent
+      openness: 0.0293241      # with their own inputs - flagged to the professor, not changed)
+      neuroticism: -0.053781925
+      agreeable: 0.04921357
+      conscientiousness: 0.04811179
   # Income mode: 'continuous' (default, .dta-verified) or 'categorical'.
   income_mode: continuous
   # Categorical-income effects (doc rev 130826): score = intercept + level dummy
   # + personality part (income term dropped, remaining coefficients as above).
   # Level 1 (EUR 12) is the base level (intercept only); level_2..5 = EUR 32/72/128/200.
   categorical_income_effects:
-    wtp:
-      intercept: -0.6919842
-      level_2: 0.2672136
-      level_3: 0.5058749
-      level_4: 0.9413666
-      level_5: 1.822843
+    wtp:                       # doc rev 280826-2 section 3 cond() code
+      intercept: -0.691843
+      level_2: 0.2671588
+      level_3: 0.5057716
+      level_4: 0.9411747
+      level_5: 1.822471
     risk_taking:
       intercept: -0.0068307
       level_2: 0.0026128
       level_3: 0.0050555
       level_4: 0.0092738
       level_5: 0.0179812
-  priority_sequences:          # segment s (1..5) receives the tail seq[s-1:] (.dta-verified)
+  # Segment s (1..5) receives the tail seq[s-1:] - the STATA direction (doc replace
+  # statements + .dta choice1..5 columns, 280/280 for every mechanism): segment 1 gets the
+  # full list starting with the top option, segment 5 only the last option. The doc prose
+  # and the professor's 2026-08 feedback describe the mirror; per the 2026-09-04 rule the
+  # Stata file arbitrates.
+  priority_sequences:
     loyalty: [3, 1, 4, 5, 2]
     wtp: [3, 2, 1, 4, 5]
     risk_taking: [4, 2, 1, 3, 5]
-  # Intercepts, doc notation: beta0 (TTP, on the composite), beta1 (loyalty, on
-  # the composite), beta2 (WTP, on the standardized score), beta3 (risk_taking,
-  # on the standardized score). Research defaults: TTP beta0 = 0.05 (professor,
+    flexibility: [2, 4, 3, 1, 5]
+  # Intercepts, doc notation: beta0 (TTP, on the composite), beta1 (loyalty, on the
+  # standardized weighted_loyalty = std(bs)), beta2 (WTP, on the standardized score),
+  # beta3 (risk_taking, on the standardized score), beta4 (flexibility, on the
+  # standardized CALCULATED score before the 25/75 anchoring). Research defaults: TTP beta0 = 0.05 (professor,
   # 2026-08); the others 0 (doc placeholders 'XXX'). FIXED-CUTOFF semantics: the
   # segment cutoffs are anchored on the intercept-free population scores, so a
   # nonzero intercept shifts the score distribution AND the allocation across the
@@ -289,6 +322,7 @@ rejected_transaction_defaults:
     loyalty: 0.0
     wtp: 0.0
     risk_taking: 0.0
+    flexibility: 0.0
   z_scoring:                   # frozen original-280 mean/SD (Stata egen std semantics)
     ExtraversionBig5:
       mean: 3.557857
@@ -305,10 +339,15 @@ rejected_transaction_defaults:
     OpennessBig5:
       mean: 4.060714
       sd: 0.5068274
+    stdactions:                # observed flexibility: SD in actions per cycle (original 280)
+      mean: 1.1863375902
+      sd: 0.6752842665
   # sigma = (score range / 18) * mean(stdactions within allowance group); doc sigma tables.
-  # NOTES: loyalty quintile '2' corrects the doc's dropped-digit typo (0.04975281 ->
-  # 0.0304975281); risk_taking overall 0.332208167 = 5.979747/18 follows the doc as
-  # stated even though it omits the *mean(stdactions) factor the other mechanisms use.
+  # NOTES: loyalty sigmas are on the STANDARDIZED weighted_loyalty scale (doc rev
+  # 280826-2 table, factor 6.432015/18); risk_taking overall 0.332208167 = 5.979747/18 follows the doc as
+  # stated even though it omits the *mean(stdactions) factor the other mechanisms use;
+  # flexibility 0.4359172665 = (6.494119/18)*1.1863376 follows the doc's sigma table as
+  # stated even though the doc quotes the z_anchored range as 6.6140623.
   stochastic:
     sigma_value: 0             # >0 enables draws in Research Specification mode
     in_copula: false           # enables draws in Copula mode
@@ -332,13 +371,13 @@ rejected_transaction_defaults:
         anchor: continuous     # weighted_ttp06 (doc line 191)
       loyalty:
         sigma_strategy: overall
-        sigma_overall: 0.0318293523
-        sigma_quintile:
-          '1': 0.0274422808
-          '2': 0.0304975281   # CORRECTED (doc table typo 0.04975281)
-          '3': 0.0351645726
-          '4': 0.0328852897
-          '5': 0.0336578789
+        sigma_overall: 0.423918958
+        sigma_quintile:        # 0.357334167 * mean(stdactions within allowance group), doc table
+          '1': 0.3654897834
+          '2': 0.4061810687
+          '3': 0.4683390612
+          '4': 0.4379824517
+          '5': 0.448272175
         scale_factor: 1.0
         quintile_scale_factors:
           '1': 1.0
@@ -346,7 +385,7 @@ rejected_transaction_defaults:
           '3': 1.0
           '4': 1.0
           '5': 1.0
-        anchor: continuous     # raw weighted_loyalty ('binned' = doc-literal alternative)
+        anchor: continuous     # population z = std(bs_weighted_loyalty) ('binned' = doc-literal)
       wtp:
         sigma_strategy: overall
         sigma_overall: 0.45265807275
@@ -381,6 +420,23 @@ rejected_transaction_defaults:
           '4': 1.0
           '5': 1.0
         anchor: continuous     # population z of RT_calculated ('binned' = doc-literal)
+      flexibility:
+        sigma_strategy: overall
+        sigma_overall: 0.4359172665
+        sigma_quintile:        # 0.367448 * mean(stdactions within allowance group), doc table
+          '1': 0.3758343529
+          '2': 0.4176773361
+          '3': 0.4815946054
+          '4': 0.4503788034
+          '5': 0.4609597598
+        scale_factor: 1.0
+        quintile_scale_factors:
+          '1': 1.0
+          '2': 1.0
+          '3': 1.0
+          '4': 1.0
+          '5': 1.0
+        anchor: continuous     # z_anchored_flexibility ('binned' = doc-literal Flexibility_combined15)
 vendor_choice_weights:
   uses_global_parameters: []
   placeholder: true

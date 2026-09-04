@@ -7,10 +7,12 @@ from app.components import show_overview
 
 
 def should_enable_selection():
-    """Check if selection buttons should be enabled for individual decision runs (donation_default or disclose_income)"""
+    """Check if selection buttons should be enabled for individual decision runs
+    (donation_default, disclose_income, disclose_documents or rejected_transaction_defaults)"""
     return (
         hasattr(st.session_state, 'custom_decisions') and
-        st.session_state.custom_decisions in [['donation_default'], ['disclose_income'], ['disclose_documents']] and
+        st.session_state.custom_decisions in [['donation_default'], ['disclose_income'], ['disclose_documents'],
+                                              ['rejected_transaction_defaults']] and
         hasattr(st.session_state, 'default_decisions') and
         len(st.session_state.default_decisions) == 0  # Individual runs have empty default_decisions
     )

@@ -83,10 +83,12 @@ def _count(texts, needle):
 
 
 WTP_SECTION = "3️⃣ Willingness-to-Pay Ranking"
+INTEGRATED_SECTION = "6️⃣ Integrated Default List (Rank Aggregation)"
 ALL_SECTIONS = ("1️⃣ Options List Length (Tendency to Plan)",
                 "2️⃣ Loyalty Ranking",
                 "3️⃣ Willingness-to-Pay Ranking",
-                "4️⃣ Risk-Taking Ranking")
+                "4️⃣ Risk-Taking Ranking",
+                "5️⃣ Cognitive Flexibility Ranking")
 
 
 def _assert_interleaved_two_groups(texts, first_detail_marker):
@@ -181,9 +183,12 @@ def test_apptest_compare_all_compare_both_interleaved():
     assert at.session_state['rtd_run_element'] is None
 
     texts = _ordered_texts(at)
-    joined = _assert_interleaved_two_groups(texts, ALL_SECTIONS[0])
+    # whole-decision run: ONLY the integrated ranking per result-key column
+    # (professor 2026-09); the element sections are not rendered
+    joined = _assert_interleaved_two_groups(texts, INTEGRATED_SECTION)
+    assert _count(texts, INTEGRATED_SECTION) == 6  # one per result-key column
     for section in ALL_SECTIONS:
-        assert _count(texts, section) == 6  # one per result-key column
+        assert _count(texts, section) == 0
     metric_labels = [m.label for m in at.metric]
     assert metric_labels.count("Avg. Options List Length") == 6
 
@@ -213,7 +218,7 @@ def test_apptest_compare_all_single_income_one_group():
 
     idx_results = _first_index(texts, "📋 Decision Results")
     idx_overview = _first_index(texts, "Simulation Overview (Copula, Cont)")
-    idx_detail = _first_index(texts, ALL_SECTIONS[0])
+    idx_detail = _first_index(texts, INTEGRATED_SECTION)
     assert idx_results < idx_overview < idx_detail
 
     # single group: no income-treatment titles, no old summary grid
@@ -253,7 +258,7 @@ def test_apptest_single_mode_summary_first_unchanged():
 
     idx_summary = _first_index(texts, "📊 Simulation Overview")
     idx_results = _first_index(texts, "📋 Decision Results")
-    idx_detail = _first_index(texts, ALL_SECTIONS[0])
+    idx_detail = _first_index(texts, INTEGRATED_SECTION)
     assert idx_summary < idx_results < idx_detail
 
     # no comparison scaffolding on a single-mode run

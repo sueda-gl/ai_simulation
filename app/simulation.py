@@ -614,8 +614,8 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: st
     """
     Apply Decision 4 (rejected_transaction_defaults) configuration to the orchestrator.
 
-    The four mechanisms' coefficients, priority sequences and sigma constants are fixed
-    (verified vs Stata_File_Decision4_050626.dta); user-configurable per mechanism are
+    The five mechanisms' coefficients, priority sequences and sigma constants are fixed
+    (verified vs the professor's Stata files); user-configurable per mechanism are
     the income specification (continuous vs categorical budget-level effects; WTP and
     Risk-Taking only - TTP and Loyalty use no income), the sigma strategy (overall vs
     per-allowance-group), the x0-2 scale factor(s), and the stochastic anchor
@@ -637,23 +637,41 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: st
     rtd_config = orchestrator.config['rejected_transaction_defaults']
     rtd_config['model_enabled'] = True   # model path when selected; defaults path otherwise
 
-    # Income mode: explicit inc_mode (individual-run / Compare both) > session state
-    if inc_mode is not None:
-        rtd_config['income_mode'] = 'continuous' if 'continuous' in str(inc_mode).lower() else 'categorical'
-    elif 'rtd_income_mode' in st.session_state:
-        session_mode = str(st.session_state.rtd_income_mode)
-        if 'compare' in session_mode.lower() or 'both' in session_mode.lower():
-            rtd_config['income_mode'] = 'continuous'  # safeguard; runner passes explicit mode
-        else:
-            rtd_config['income_mode'] = 'continuous' if 'continuous' in session_mode.lower() else 'categorical'
+    # Saved configuration ("Use This Config" on an individual Decision 4 run) - applied
+    # in COMBINED / complete simulations (inc_mode is None there). Individual Decision 4
+    # runs keep reflecting the tab so new candidate configurations can be produced and
+    # selected. Mirrors _apply_disclose_income_config: the saved MODEL settings (income
+    # mode, intercepts, anchors, rank aggregation) override the tab; the stochastic
+    # toggles/settings below always follow the current UI state.
+    from app.pages.decision_execution import get_decision_config
+    saved_config = get_decision_config('rejected_transaction_defaults') if inc_mode is None else None
+    saved_anchors = {}
+    if saved_config is not None:
+        saved_anchors = _apply_saved_rejected_transaction_config(rtd_config, saved_config)
+    else:
+        # Income mode: explicit inc_mode (individual-run / Compare both) > session state
+        if inc_mode is not None:
+            rtd_config['income_mode'] = 'continuous' if 'continuous' in str(inc_mode).lower() else 'categorical'
+        elif 'rtd_income_mode' in st.session_state:
+            session_mode = str(st.session_state.rtd_income_mode)
+            if 'compare' in session_mode.lower() or 'both' in session_mode.lower():
+                rtd_config['income_mode'] = 'continuous'  # safeguard; runner passes explicit mode
+            else:
+                rtd_config['income_mode'] = 'continuous' if 'continuous' in session_mode.lower() else 'categorical'
 
-    # Per-element intercepts (doc notation beta0/beta1/beta2/beta3; research
-    # defaults from config/decisions.yaml - TTP beta0 = 0.05, others 0)
-    intercepts = rtd_config.setdefault('intercepts', {})
-    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
-        key = f'rtd_intercept_{mech}'
-        if key in st.session_state:
-            intercepts[mech] = float(st.session_state[key])
+        # Per-element intercepts (doc notation beta0/beta1/beta2/beta3/beta4; research
+        # defaults from config/decisions.yaml - TTP beta0 = 0.05, others 0)
+        intercepts = rtd_config.setdefault('intercepts', {})
+        for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'):
+            key = f'rtd_intercept_{mech}'
+            if key in st.session_state:
+                intercepts[mech] = float(st.session_state[key])
+
+        # Section-6 rank aggregation (tab sub-tab "Integrated Default List"): enable flag.
+        # The last-resort tie-break is always the document's random rule (config).
+        aggregation = rtd_config.setdefault('aggregation', {})
+        if 'rtd_aggregation_enabled' in st.session_state:
+            aggregation['enabled'] = bool(st.session_state['rtd_aggregation_enabled'])
 
     if 'stochastic' not in rtd_config:
         rtd_config['stochastic'] = {}
@@ -676,11 +694,11 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: st
         stoch['sigma_value'] = 0.0
         stoch['in_copula'] = False
 
-    # Sigma settings are DECISION-WIDE (one strategy + coefficient for all four
+    # Sigma settings are DECISION-WIDE (one strategy + coefficient for all five
     # elements); each element keeps its own base sigma from config. Anchors stay
     # per element.
     mechanisms = stoch.setdefault('mechanisms', {})
-    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking'):
+    for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'):
         mech_cfg = mechanisms.setdefault(mech, {})
         if 'rtd_sigma_strategy' in st.session_state:
             mech_cfg['sigma_strategy'] = st.session_state['rtd_sigma_strategy']
@@ -689,8 +707,38 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: st
         if 'rtd_quintile_scale_factors' in st.session_state:
             mech_cfg['quintile_scale_factors'] = st.session_state['rtd_quintile_scale_factors']
         anchor_key = f'rtd_anchor_{mech}'
-        if anchor_key in st.session_state:
+        if mech in saved_anchors:
+            mech_cfg['anchor'] = saved_anchors[mech]          # saved configuration wins
+        elif anchor_key in st.session_state:
             mech_cfg['anchor'] = st.session_state[anchor_key]
+
+
+def _apply_saved_rejected_transaction_config(rtd_config: dict, saved_config: dict) -> dict:
+    """
+    Apply a saved Decision 4 configuration's MODEL settings to the orchestrator config:
+    income mode (top-level, from the selected result cell, over params.income_mode),
+    per-element intercepts and the rank-aggregation enable flag. Returns the saved
+    stochastic anchors so the caller's stochastic block can apply them (the stochastic
+    on/off toggles, sigma strategy and coefficients follow the CURRENT UI state, as for
+    disclose_income).
+    """
+    params = saved_config.get('params', {}) or {}
+    income_mode = saved_config.get('income_mode', params.get('income_mode', 'Continuous only'))
+    rtd_config['income_mode'] = 'categorical' if 'categorical' in str(income_mode).lower() else 'continuous'
+
+    intercepts = rtd_config.setdefault('intercepts', {})
+    for mech, value in (params.get('intercepts') or {}).items():
+        intercepts[mech] = float(value)
+
+    aggregation = rtd_config.setdefault('aggregation', {})
+    saved_agg = params.get('aggregation') or {}
+    if 'enabled' in saved_agg:
+        aggregation['enabled'] = bool(saved_agg['enabled'])
+
+    print(f"[RejectedTransaction] Using saved configuration: "
+          f"{saved_config.get('population_mode', 'n/a')} + {income_mode} "
+          f"(result cell '{saved_config.get('result_key', 'n/a')}')")
+    return dict(params.get('anchors') or {})
 
 
 def apply_all_selected_configs(orchestrator, pop_mode: str, inc_mode: str = None):
@@ -1378,7 +1426,8 @@ def run_full_simulation():
                 # st.session_state.population_mode -- that is the user's UI choice
                 # and must not be changed by the simulation engine.
                 effective_pop_mode = None
-                for saved_cfg in [di_saved, dd_saved]:
+                rtd_saved = get_decision_config('rejected_transaction_defaults')
+                for saved_cfg in [di_saved, dd_saved, rtd_saved]:
                     if saved_cfg and saved_cfg.get('source') != 'auto_implied_single_config':
                         pop_mode = saved_cfg.get('population_mode')
                         if not pop_mode:
