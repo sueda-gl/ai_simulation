@@ -88,7 +88,7 @@ ALL_SECTIONS = ("1️⃣ Options List Length (Tendency to Plan)",
                 "2️⃣ Loyalty Ranking",
                 "3️⃣ Willingness-to-Pay Ranking",
                 "4️⃣ Risk-Taking Ranking",
-                "5️⃣ Cognitive Flexibility Ranking")
+                "5️⃣ Flexibility Ranking")
 
 
 def _assert_interleaved_two_groups(texts, first_detail_marker):

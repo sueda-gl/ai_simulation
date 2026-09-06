@@ -1539,12 +1539,11 @@ def calculate_disclose_documents_metrics(result_df):
 # ==================== REJECTED TRANSACTION DEFAULTS (Decision 4) CONFIG SELECTION ====================
 # Mirrors the disclose_income pattern: a Decision 4 result cell can be selected with
 # "Use This Config"; the tab settings at save time (income mode, per-element intercepts,
-# stochastic anchors, rank-aggregation settings, stochastic UI) are stored in the unified
+# Flexibility anchor mix, rank-aggregation settings, stochastic UI) are stored in the unified
 # selected_decision_configs store and applied by app.simulation._apply_rejected_transaction_config
 # in combined/complete simulations (individual Decision 4 runs keep reflecting the tab).
 
 RTD_CONFIG_MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
-RTD_ANCHOR_MECHANISMS = ('loyalty', 'risk_taking', 'flexibility')
 
 
 def extract_rejected_transaction_configuration_details(result_key):
@@ -1570,8 +1569,10 @@ def get_current_rejected_transaction_params():
         'income_mode': st.session_state.get('rtd_income_mode', 'Continuous only'),
         'intercepts': {m: float(st.session_state.get(f'rtd_intercept_{m}', 0.0) or 0.0)
                        for m in RTD_CONFIG_MECHANISMS},
-        'anchors': {m: st.session_state.get(f'rtd_anchor_{m}', 'continuous')
-                    for m in RTD_ANCHOR_MECHANISMS},
+        'flexibility_anchor': {
+            'observed_weight': float(st.session_state.get('rtd_flex_observed_weight', 0.25)),
+            'calculated_weight': 1.0 - float(st.session_state.get('rtd_flex_observed_weight', 0.25)),
+        },
         'aggregation': {
             'enabled': bool(st.session_state.get('rtd_aggregation_enabled', True)),
         },

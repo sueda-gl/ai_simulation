@@ -30,7 +30,7 @@ RTD_SECTION_TITLES = {
     'loyalty': "2️⃣ Loyalty Ranking",
     'wtp': "3️⃣ Willingness-to-Pay Ranking",
     'risk_taking': "4️⃣ Risk-Taking Ranking",
-    'flexibility': "5️⃣ Cognitive Flexibility Ranking",
+    'flexibility': "5️⃣ Flexibility Ranking",
 }
 
 
@@ -67,7 +67,7 @@ def test_whole_decision_workbook_sheets_and_columns(rtd_frame):
     assert list(sheets.keys()) == ['Integrated Default List', 'All Elements',
                                    'Options List Length', 'Loyalty',
                                    'Willingness-to-Pay', 'Risk-Taking',
-                                   'Cognitive Flexibility']
+                                   'Flexibility']
     assert list(sheets['All Elements'].columns) == [
         'Agent ID', 'ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
         'ConscientiousnessBig5', 'OpennessBig5', 'Education', 'income', 'stdactions',
@@ -99,9 +99,9 @@ def test_whole_decision_workbook_sheets_and_columns(rtd_frame):
         'ConscientiousnessBig5', 'NeuroticismBig5', 'income',
         'RT_score', 'z_RT', 'RT_segment_deterministic', 'RT_segment',
         'choice1', 'choice2', 'choice3', 'choice4', 'choice5', 'sigma_used_RT']
-    # Cognitive Flexibility: Big 5 + stdactions inputs, the Stata intermediates, the
+    # Flexibility: Big 5 + stdactions inputs, the Stata intermediates, the
     # anchored score / its z, segments, choices, sigma.
-    assert list(sheets['Cognitive Flexibility'].columns) == [
+    assert list(sheets['Flexibility'].columns) == [
         'Agent ID', 'ExtraversionBig5', 'OpennessBig5', 'NeuroticismBig5', 'Agreeable',
         'ConscientiousnessBig5', 'stdactions',
         'Flexibility_calculated_ivw', 'z_Flexibility_calculated_ivw', 'z_stdactions',
@@ -165,7 +165,7 @@ def test_categorical_frame_adds_allowance_level(rtd_frame_cat):
     sheets = _prepare_rtd_model_export(rtd_frame_cat)
     for name in ('Willingness-to-Pay', 'Risk-Taking'):
         assert 'Assigned Allowance Level' in sheets[name].columns
-    for name in ('Options List Length', 'Loyalty', 'Cognitive Flexibility'):
+    for name in ('Options List Length', 'Loyalty', 'Flexibility'):
         assert 'Assigned Allowance Level' not in sheets[name].columns
     for mech in ('wtp', 'risk_taking'):
         assert 'Assigned Allowance Level' in \
@@ -271,7 +271,7 @@ def test_apptest_element_run_then_whole_run():
     assert "📊 Download Loyalty Ranking Excel" in dls
     assert "📊 Download Decision 4 Agent-Level Excel" in dls
     assert not any("Options List Length" in l or "Willingness-to-Pay" in l
-                   or "Risk-Taking" in l or "Cognitive Flexibility" in l
+                   or "Risk-Taking" in l or "Flexibility" in l
                    or "all elements" in l or "Transaction-Level" in l for l in dls)
 
     # (ii) whole-decision run: flag cleared; ONLY the integrated ranking is shown
@@ -307,7 +307,7 @@ def test_apptest_element_run_then_whole_run():
                   "📊 Download Loyalty Ranking Excel",
                   "📊 Download Willingness-to-Pay Ranking Excel",
                   "📊 Download Risk-Taking Ranking Excel",
-                  "📊 Download Cognitive Flexibility Ranking Excel"):
+                  "📊 Download Flexibility Ranking Excel"):
         assert label not in dls, label
     assert not any("Transaction-Level" in l for l in dls)
 

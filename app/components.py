@@ -33,7 +33,7 @@ def rtd_overview_metric(df):
         'loyalty': ("Mean Loyalty score", 'rtd_loyalty_z', "{:.4f}"),
         'wtp': ("Mean Willingness-to-Pay score", 'rtd_wtp_z', "{:.4f}"),
         'risk_taking': ("Mean Risk-Taking score", 'rtd_rt_z', "{:.4f}"),
-        'flexibility': ("Mean Cognitive Flexibility score", 'rtd_flex_z', "{:.4f}"),
+        'flexibility': ("Mean Flexibility score", 'rtd_flex_z', "{:.4f}"),
     }
     if element in specs:
         label, col, fmt = specs[element]

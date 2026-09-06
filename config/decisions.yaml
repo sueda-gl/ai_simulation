@@ -222,7 +222,7 @@ disclose_documents:
       '5': 1.0
     in_copula: false
 # Decision 4: Rejected Transaction Defaults - FIVE trait-based sub-decision mechanisms
-# (TTP list length 0-5; Loyalty / WTP / Risk-Taking / Cognitive Flexibility priority
+# (TTP list length 0-5; Loyalty / WTP / Risk-Taking / Flexibility priority
 # rankings), integrated into ONE default list per agent by the Section-6 rank aggregation
 # (doc rev 280826-2): Kemeny-Young consensus + tie-break hierarchy Schulze -> Copeland ->
 # footrule -> random, then truncated to the TTP list length and at Option 5 (see
@@ -246,7 +246,7 @@ rejected_transaction_defaults:
     enabled: true
     mechanisms: null
     last_resort: random
-  # Cognitive Flexibility anchoring (doc Section 5): anchored_flexibility =
+  # Flexibility anchoring (doc Section 5): anchored_flexibility =
   # observed_weight * z_stdactions + calculated_weight * z_Flexibility_calculated_ivw
   # ("we start by giving the observed flexibility a weight of 25%"; .dta-verified 0.25/0.75).
   flexibility_anchor:
@@ -275,10 +275,10 @@ rejected_transaction_defaults:
       neuroticism: -0.025388697852
       income: 0.006874197106
     flexibility:               # IVW pooling (retained, doc Section 5); priority 2 > 4 > 3 > 1 > 5
-      extraversion: 0.0206     # doc/.dta literal values (audit: O/N/A weights inconsistent
-      openness: 0.0293241      # with their own inputs - flagged to the professor, not changed)
-      neuroticism: -0.053781925
-      agreeable: 0.04921357
+      extraversion: 0.0206     # O/N/A: arithmetically corrected values adopted in the
+      openness: 0.0294118      # professor's 2026-09 review (doc/.dta literal values were
+      neuroticism: -0.04921357 # 0.0293241 / -0.053781925 / 0.04921357; kept as
+      agreeable: 0.04339814    # DTA_FLEX_COEFFS in the model for the .dta verification tests)
       conscientiousness: 0.04811179
   # Income mode: 'continuous' (default, .dta-verified) or 'categorical'.
   income_mode: continuous

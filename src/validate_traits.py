@@ -9,7 +9,7 @@ EXPERIMENT_PATH = Path(__file__).resolve().parents[1] / "data" / "Student Experi
 # experiment cycle-weeks ('stdactions'). The experiment workbook only carries per-
 # participant totals, so this variable is taken from the professor's Stata file
 # (Stata_File_Decision4_290826.dta, identical in the 050626 file), keyed by
-# Participant ID. Used by Decision 4's Cognitive Flexibility mechanism (doc Section 5).
+# Participant ID. Used by Decision 4's Flexibility mechanism (doc Section 5).
 STDACTIONS_PATH = Path(__file__).resolve().parents[1] / "data" / "stata_stdactions.csv"
 
 traits = get_master_trait_list()

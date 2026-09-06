@@ -5,13 +5,13 @@ modelled decisions (disclose_income is the reference):
 - An individual Decision 4 run shows a "🎯 Use This Config" button UNDER its results
   (after the workbook download, like the other decisions);
   clicking it stores the run's tab settings (income mode, per-element intercepts,
-  stochastic anchors, rank-aggregation settings, stochastic UI) plus metrics in the
+  rank-aggregation settings, stochastic UI) plus metrics in the
   unified selected_decision_configs store and the button turns into "✅ Selected".
 - Page 2 "Saved Decision Configurations" shows the saved Decision 4 configuration with
   a Clear button; the results page shows the selected configuration (Clear) and the
   "Run Complete Simulation" section, like disclose_income.
 - Combined / complete simulations apply the saved MODEL settings (income mode,
-  intercepts, anchors, aggregation) instead of the tab state; individual Decision 4
+  intercepts, aggregation) instead of the tab state; individual Decision 4
   runs keep reflecting the tab.
 - The complete-simulation gate blocks a Decision 4 "Compare both" (or Compare-all
   population) selection until one configuration is selected, like disclose_income.
@@ -55,7 +55,6 @@ def _rtd_config_app_script():
                 'income_mode': cfg.get('income_mode'),
                 'intercepts': dict(cfg.get('intercepts', {})),
                 'aggregation': dict(cfg.get('aggregation', {})),
-                'anchor_loyalty': cfg['stochastic']['mechanisms']['loyalty'].get('anchor'),
             }
         st.session_state['_probe_result'] = probe
 
@@ -125,7 +124,7 @@ def test_apptest_select_display_apply_and_clear():
     assert set(cfg['params']['intercepts']) == {'ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'}
     assert cfg['params']['intercepts']['ttp'] == pytest.approx(0.05)     # research default
     assert cfg['params']['aggregation'] == {'enabled': True}
-    assert set(cfg['params']['anchors']) == {'loyalty', 'risk_taking', 'flexibility'}
+    assert cfg['params']['flexibility_anchor'] == {'observed_weight': 0.25, 'calculated_weight': 0.75}
     assert cfg['params']['stochastic']['sigma_strategy'] == 'overall'
     assert 'mean_choice_length' in cfg['metrics'] and 'first_option_shares' in cfg['metrics']
     assert abs(cfg['metrics']['mean_choice_length'] - results[result_key]['rtd_choice_length'].mean()) < 1e-9

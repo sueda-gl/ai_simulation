@@ -57,7 +57,7 @@ def test_combined_run_decision4_section_shows_integrated_ranking_only():
     assert "6️⃣ Integrated Default List (Rank Aggregation)" in text
     for element in ("1️⃣ Options List Length (Tendency to Plan)", "2️⃣ Loyalty Ranking",
                     "3️⃣ Willingness-to-Pay Ranking", "4️⃣ Risk-Taking Ranking",
-                    "5️⃣ Cognitive Flexibility Ranking"):
+                    "5️⃣ Flexibility Ranking"):
         assert element not in text, element
     # no comparison scaffolding and no other decision's analysis inside the section
     assert "Categorical Income Treatment" not in text

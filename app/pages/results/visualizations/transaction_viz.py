@@ -641,7 +641,7 @@ _RTD_MECHS = [
     ('loyalty', 'loyalty', 'Loyalty', _RTD_PRIORITY_SEQUENCES['loyalty']),
     ('wtp', 'wtp', 'Willingness-to-Pay', _RTD_PRIORITY_SEQUENCES['wtp']),
     ('risk_taking', 'rt', 'Risk-Taking', _RTD_PRIORITY_SEQUENCES['risk_taking']),
-    ('flexibility', 'flex', 'Cognitive Flexibility', _RTD_PRIORITY_SEQUENCES['flexibility']),
+    ('flexibility', 'flex', 'Flexibility', _RTD_PRIORITY_SEQUENCES['flexibility']),
 ]
 
 # Per-element sheet / section names for the Decision 4 exports.
@@ -650,7 +650,7 @@ _RTD_ELEMENT_SHEETS = {
     'loyalty': 'Loyalty',
     'wtp': 'Willingness-to-Pay',
     'risk_taking': 'Risk-Taking',
-    'flexibility': 'Cognitive Flexibility',
+    'flexibility': 'Flexibility',
 }
 # Section-6 rank aggregation (integrated default list) sheet / section name.
 _RTD_AGG_SHEET = 'Integrated Default List'
@@ -678,7 +678,7 @@ _RTD_ELEMENT_INPUTS = {
     'wtp': ['ExtraversionBig5', 'Agreeable', 'income'],
     'risk_taking': ['ExtraversionBig5', 'OpennessBig5', 'Agreeable',
                     'ConscientiousnessBig5', 'NeuroticismBig5', 'income'],
-    # Cognitive Flexibility: Big 5 (IVW equation order) + the observed anchor stdactions
+    # Flexibility: Big 5 (IVW equation order) + the observed anchor stdactions
     'flexibility': ['ExtraversionBig5', 'OpennessBig5', 'NeuroticismBig5', 'Agreeable',
                     'ConscientiousnessBig5', 'stdactions'],
 }
@@ -998,7 +998,7 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False,
         'wtp': ('rtd_wtp_z', "Willingness-to-Pay score"),
         'risk_taking': ('rtd_rt_z', "Risk-Taking score"),
         # z_anchored_flexibility (doc: `histogram z_anchored_flexibility`)
-        'flexibility': ('rtd_flex_z', "Cognitive Flexibility score"),
+        'flexibility': ('rtd_flex_z', "Flexibility score"),
     }
     for idx, (mech, col_key, label, seq) in enumerate(_RTD_MECHS, start=2):
         seg_col = f'rtd_{col_key}_segment'
@@ -1105,7 +1105,7 @@ def _render_rtd_aggregation_section(df, decision_name, chart_suffix, element_sec
     lists = df['rtd_default_list']
     inputs = df['rtd_consensus_inputs'].iloc[0] if 'rtd_consensus_inputs' in df.columns else []
     input_labels = {'loyalty': 'Loyalty', 'wtp': 'Willingness-to-Pay',
-                    'risk_taking': 'Risk-Taking', 'flexibility': 'Cognitive Flexibility'}
+                    'risk_taking': 'Risk-Taking', 'flexibility': 'Flexibility'}
     inputs_txt = ', '.join(input_labels.get(m, m) for m in inputs) if isinstance(inputs, list) else ''
 
     st.markdown("---")
@@ -1121,22 +1121,20 @@ def _render_rtd_aggregation_section(df, decision_name, chart_suffix, element_sec
                "their scores, distributions and rankings are in the Excel below, and each "
                "element has its own Run button on the Decision 4 tab.")
 
-    def _lists_chart():
-        # The ranking itself: share of agents per integrated default list (the most
-        # common lists; the list length is element 1's result and is not repeated here)
-        common = lists.apply(_rtd_list_str).value_counts()
-        top = common.head(8)
-        _rtd_fraction_bar(list(top.index), [c / n for c in top.values],
-                          "% of agents per integrated default list",
-                          "Integrated default list (options in order)",
-                          f"{decision_name}_rtd_agg_lists_chart{chart_suffix}")
-        rows = [{'Integrated default list': lst, '% of agents': f"{c / n * 100:.1f}%"}
-                for lst, c in common.head(10).items()]
-        if len(common) > 10:
-            rest = common.iloc[10:].sum()
-            rows.append({'Integrated default list': f"other ({len(common) - 10} lists)",
-                         '% of agents': f"{rest / n * 100:.1f}%"})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    def _length_chart():
+        lengths = list(range(0, 6))
+        counts = df['rtd_default_list_length'].astype(int).value_counts()
+        fractions = [counts.get(l, 0) / n for l in lengths]
+        _rtd_fraction_bar([str(l) for l in lengths], fractions,
+                          "% of integrated default list length",
+                          "Number of options in the integrated default list",
+                          f"{decision_name}_rtd_agg_length_chart{chart_suffix}")
+        trunc = df['rtd_consensus_truncated_by'].value_counts() \
+            if 'rtd_consensus_truncated_by' in df.columns else pd.Series(dtype=int)
+        st.dataframe(pd.DataFrame({
+            'List cut by': [_RTD_TRUNCATION_LABELS[k] for k in ('length', 'option5', 'both', 'none')],
+            '% of agents': [f"{trunc.get(k, 0) / n * 100:.1f}%" for k in ('length', 'option5', 'both', 'none')],
+        }), hide_index=True, use_container_width=True)
 
     def _first_choice_chart():
         firsts = lists.apply(lambda l: l[0] if isinstance(l, list) and len(l) else 0)
@@ -1154,9 +1152,9 @@ def _render_rtd_aggregation_section(df, decision_name, chart_suffix, element_sec
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
         st.caption(_RTD_OPTION_NUMBERING)
 
-    element_section(_lists_chart, _first_choice_chart)
+    element_section(_length_chart, _first_choice_chart)
 
-    # Tie-break diagnostics + the full consensus rankings (before the cut)
+    # Tie-break diagnostics + most common integrated lists
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown("**Tie-breaking stage that settled the consensus ranking**")
@@ -1169,11 +1167,11 @@ def _render_rtd_aggregation_section(df, decision_name, chart_suffix, element_sec
             opt_share = df['rtd_consensus_is_kemeny_optimal'].astype(bool).mean() * 100
             st.caption(f"Final consensus ranking is Kemeny-optimal for {opt_share:.1f}% of agents.")
     with col_b:
-        st.markdown("**Most common consensus rankings (full ranking before the cut)**")
-        consensus = df['rtd_consensus_ranking'].apply(_rtd_list_str).value_counts().head(10)
+        st.markdown("**Most common integrated default lists**")
+        common = lists.apply(_rtd_list_str).value_counts().head(10)
         st.dataframe(pd.DataFrame({
-            'Consensus ranking': consensus.index,
-            '% of agents': [f"{c / n * 100:.1f}%" for c in consensus.values],
+            'Integrated default list': common.index,
+            '% of agents': [f"{c / n * 100:.1f}%" for c in common.values],
         }), hide_index=True, use_container_width=True)
 
     export_df = _prepare_rtd_aggregation_export(df)
@@ -1251,7 +1249,7 @@ _RTD_STATA_NAMES = {'loyalty': ('loyalty', 'loyalty'), 'wtp': ('wtp', 'WTP'),
 
 
 def _rtd_flex_intermediates(out, df):
-    """Cognitive Flexibility intermediates in Stata naming: the calculated IVW score,
+    """Flexibility intermediates in Stata naming: the calculated IVW score,
     its population z, and z_stdactions (the anchored score / its z follow as
     Flexibility_score / z_Flexibility)."""
     for src, dst in (('rtd_flex_ivw', 'Flexibility_calculated_ivw'),
@@ -1288,7 +1286,7 @@ def _prepare_rtd_element_export(df, mech):
 def _prepare_rtd_model_export(df):
     """Whole-decision Decision 4 workbook, organized as one self-contained sheet per
     element ('Options List Length', 'Loyalty', 'Willingness-to-Pay', 'Risk-Taking',
-    'Cognitive Flexibility') plus the 'Integrated Default List' aggregation sheet.
+    'Flexibility') plus the 'Integrated Default List' aggregation sheet.
 
     Each sheet mirrors the per-element file (Agent ID + the element's own
     independent variables + choice1..choice5) and additionally carries the
@@ -1353,7 +1351,7 @@ def _prepare_rtd_all_elements_export(df):
     """One row per customer with every element side by side, columns grouped in
     the order of the decision: Agent ID -> inputs (traits, education, income /
     allowance level, stdactions) -> 1 Options List Length -> 2 Loyalty -> 3 WTP ->
-    4 Risk-Taking -> 5 Cognitive Flexibility (each: score, z, segment, option list)
+    4 Risk-Taking -> 5 Flexibility (each: score, z, segment, option list)
     -> 6 Integrated default list (consensus ranking, tie-break stage, final options).
     Stata-aligned column names, prefixed per element."""
     try:

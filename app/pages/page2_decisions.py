@@ -680,11 +680,16 @@ def render_selected_rejected_transaction_config_display():
             intercepts = params.get('intercepts', {}) or {}
             labels = [('ttp', 'β₀ Options List Length'), ('loyalty', 'β₁ Loyalty'),
                       ('wtp', 'β₂ Willingness-to-Pay'), ('risk_taking', 'β₃ Risk-Taking'),
-                      ('flexibility', 'β₄ Cognitive Flexibility')]
+                      ('flexibility', 'β₄ Flexibility')]
             int_cols = st.columns(len(labels))
             for col, (mech, label) in zip(int_cols, labels):
                 with col:
                     st.metric(label, f"{float(intercepts.get(mech, 0.0)):.4f}")
+            flex_anchor = params.get('flexibility_anchor') or {}
+            if flex_anchor:
+                st.caption(f"Flexibility anchor mix: W_OFlex = "
+                           f"{float(flex_anchor.get('observed_weight', 0.25)):.2f} observed · "
+                           f"W_CFlex = {float(flex_anchor.get('calculated_weight', 0.75)):.2f} calculated")
 
             det_col1, det_col2 = st.columns(2)
             with det_col1:
@@ -694,10 +699,6 @@ def render_selected_rejected_transaction_config_display():
                            f"Copula draws: {'on' if stochastic.get('sigma_in_copula', False) else 'off'}")
                 st.caption(f"σ mode: {stochastic.get('sigma_strategy', 'overall')} · "
                            f"σ coefficient: {float(stochastic.get('scale_factor', 1.0)):.2f}")
-                anchors = params.get('anchors', {}) or {}
-                if anchors:
-                    st.caption("Stochastic anchors: " + ", ".join(
-                        f"{m.replace('_', ' ')}={a}" for m, a in anchors.items()))
             with det_col2:
                 st.markdown("**🔗 Rank Aggregation:**")
                 agg = params.get('aggregation', {}) or {}

@@ -31,11 +31,15 @@ rtd_rank_aggregation.py and the RANK AGGREGATION section below):
        RT = 0.025942386297*z_E + 0.023699214948*z_O - 0.038734315188*z_A
             - 0.037739440732*z_C - 0.025388697852*z_N + 0.006874197106*z_income
        (Hunter & Schmidt pooling, doc section 4; .dta-exact)
-  5. COGNITIVE FLEXIBILITY ranking -> priority sequence Option 2 > 4 > 3 > 1 > 5
-       (doc rev 280826-2 Section 5; verified 280/280 against Stata_File_Decision4_290826.dta,
-        frozen extract data/stata_d4_flexibility_verification.csv)
-       Flexibility_calculated_ivw = 0.0206*z_E + 0.0293241*z_O - 0.053781925*z_N
-                                    + 0.04921357*z_A + 0.04811179*z_C     (IVW retained)
+  5. FLEXIBILITY ranking -> priority sequence Option 2 > 4 > 3 > 1 > 5
+       (doc rev 280826-2 Section 5; pipeline verified 280/280 against
+        Stata_File_Decision4_290826.dta, frozen extract
+        data/stata_d4_flexibility_verification.csv, with the .dta's own coefficients)
+       Flexibility_calculated_ivw = 0.0206*z_E + 0.0294118*z_O - 0.04921357*z_N
+                                    + 0.04339814*z_A + 0.04811179*z_C     (IVW retained;
+            O/N/A are the arithmetically corrected values adopted in the professor's
+            2026-09 review - the doc/.dta literal 0.0293241 / -0.053781925 / 0.04921357
+            are kept as DTA_FLEX_COEFFS; the correction moves 8/280 segments vs the file)
        z_Flexibility = std(Flexibility_calculated_ivw) [+ beta4]           (egen std, population)
        anchored_flexibility = 0.25*z_stdactions + 0.75*z_Flexibility      (doc: observed
             flexibility - the participant's SD in the number of actions per cycle over the
@@ -43,9 +47,9 @@ rtd_rank_aggregation.py and the RANK AGGREGATION section below):
             "0.2$5*$z_stdactions", the .dta embeds 0.25)
        z_anchored_flexibility = std(anchored_flexibility);  Flexibility_combined15 =
             floor(1 + (5-0.0001)*minmax(z_anchored_flexibility))  -> segments 1..5
-       The IVW coefficients are the document's/.dta's literal values (the spec audit found
-       the O/N/A weights arithmetically inconsistent with their own inputs - flagged to the
-       professor, NOT corrected here: the .dta is the arbiter). stdactions comes from the
+       The E/C coefficients are the document's literal values; O/N/A carry the correction
+       above (the spec audit found the document's O/N/A weights arithmetically inconsistent
+       with their own inputs; the professor adopted the corrected values). stdactions comes from the
        professor's Stata file (data/stata_stdactions.csv, merged by Participant ID; it is a
        copula trait for synthetic populations). z_stdactions uses the frozen original-280
        stats like the other traits; z_Flexibility and z_anchored use POPULATION stats
@@ -145,7 +149,7 @@ DTA-verified notes (Stata_File_Decision4_290826.dta):
     formula states (doc inconsistency, followed as stated; the WTP and RT stochastic
     sections are no longer in the accepted text of rev 280826-2, their June values
     are kept).
-  - Cognitive flexibility needs each agent's `stdactions` (SD in the number of actions
+  - Flexibility needs each agent's `stdactions` (SD in the number of actions
     per cycle over the eight experiment cycle-weeks). The experiment workbook has no
     per-cycle counts, so it is taken from the professor's .dta (data/stata_stdactions.csv,
     merged into the participant table by Participant ID in src/validate_traits.py) and
@@ -242,9 +246,16 @@ RT_COEFFS = {                        # Hunter & Schmidt pooling (doc line 2436)
     "neuroticism": -0.025388697852,
     "income": 0.006874197106,
 }
-FLEX_COEFFS = {                      # IVW pooling, retained (doc Section 5 final equation;
-    "extraversion": 0.0206,          # .dta Flexibility_calculated_ivw reproduces to 1.7e-8)
-    "openness": 0.0293241,
+FLEX_COEFFS = {                      # IVW pooling, retained (doc Section 5 final equation)
+    "extraversion": 0.0206,          # O/N/A: the arithmetically corrected values adopted in
+    "openness": 0.0294118,           # the professor's 2026-09 review (8/280 segments differ
+    "neuroticism": -0.04921357,      # from the .dta, which embeds DTA_FLEX_COEFFS below)
+    "agreeable": 0.04339814,
+    "conscientiousness": 0.04811179,
+}
+DTA_FLEX_COEFFS = {                  # doc rev 280826-2 / Stata_File_Decision4_290826.dta
+    "extraversion": 0.0206,          # literal values (Flexibility_calculated_ivw reproduces
+    "openness": 0.0293241,           # to 1.7e-8 with these) - verification tests only
     "neuroticism": -0.053781925,
     "agreeable": 0.04921357,
     "conscientiousness": 0.04811179,
@@ -434,7 +445,7 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
     c_rt = _coeffs(params, "risk_taking", RT_COEFFS)
     c_flex = _coeffs(params, "flexibility", FLEX_COEFFS)
 
-    # Cognitive Flexibility (Section 5): the CALCULATED score from the Big 5; its
+    # Flexibility (Section 5): the CALCULATED score from the Big 5; its
     # population standardisation and the 25/75 anchoring with z_stdactions happen in
     # flex_anchored_score() once the population stats exist. stdactions (observed SD
     # in actions per cycle) is a trait column; if it is absent the observed anchor is
@@ -690,7 +701,7 @@ def compute_rtd_population_stats(agents_df, all_incomes: List[float], params: Di
             if m != "flexibility":
                 raws[m].append(scores[m])
 
-    # Cognitive Flexibility is two-stage: `egen z_Flexibility = std(Flexibility_calculated_ivw)`
+    # Flexibility is two-stage: `egen z_Flexibility = std(Flexibility_calculated_ivw)`
     # over the population FIRST, then the 25/75 anchoring with z_stdactions - so the
     # anchored (operative) scores need the calculated score's population mean/sd.
     ivw = np.asarray([s["flexibility_ivw"] for s in all_scores], dtype=float)
@@ -701,7 +712,7 @@ def compute_rtd_population_stats(agents_df, all_incomes: List[float], params: Di
     n_missing = int(sum(s["stdactions_missing"] for s in all_scores))
     if n_missing:
         print(f"[Decision 4] WARNING: stdactions missing for {n_missing}/{len(all_scores)} agents - "
-              "the Cognitive Flexibility observed anchor is neutral (z = 0) for them.")
+              "the Flexibility observed anchor is neutral (z = 0) for them.")
 
     pop: Dict[str, Dict] = {"income": rtd_income_stats, "flexibility_ivw": pop_ivw}
     for m in MECHANISMS:
@@ -837,7 +848,7 @@ def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str,
                 "rtd_model_error": "missing rtd_population_stats"}
 
     scores = compute_rtd_scores(agent_state, params, sim)
-    # Cognitive Flexibility operative score: anchored_flexibility (beta4-free here;
+    # Flexibility operative score: anchored_flexibility (beta4-free here;
     # the intercept's raw-scale equivalent is added in the loop below like the others).
     scores["flexibility"], z_flex_ivw = flex_anchored_score(scores, pop, params)
     use_stochastic = _stochastic_enabled(params, pop_context)

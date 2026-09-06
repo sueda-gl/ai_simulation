@@ -10,7 +10,7 @@ Stata_File_Decision4_290826.dta):
   2. Loyalty ranking                        - priority sequence Option 3 > 1 > 4 > 5 > 2
   3. Willingness-to-Pay ranking             - priority sequence Option 3 > 2 > 1 > 4 > 5
   4. Risk-Taking ranking                    - priority sequence Option 4 > 2 > 1 > 3 > 5
-  5. Cognitive Flexibility ranking          - priority sequence Option 2 > 4 > 3 > 1 > 5
+  5. Flexibility ranking          - priority sequence Option 2 > 4 > 3 > 1 > 5
      (doc Section 5: IVW Big-5 score, standardized, anchored 25/75 with the observed
      SD in actions per cycle (stdactions), re-standardized and binned; verified vs
      Stata_File_Decision4_290826.dta)
@@ -25,7 +25,7 @@ separate are always broken at random, the document's rule).
 The model coefficients and sigma constants are fixed (dta-verified); the tab exposes
 the income specification (categorical / continuous / compare both; WTP and
 Risk-Taking are the only income-using elements) and the stochastic settings per
-mechanism (sigma strategy, x0-2 coefficient, and the stochastic anchor).
+mechanism (sigma strategy and x0-2 coefficient).
 Persistence follows the disclose_documents triple-layer pattern: canonical rtd_*
 read keys + rtd_tab_* widget keys + a tab-persistence dict.
 """
@@ -43,7 +43,7 @@ MECH_TITLES = {
     'loyalty': "2. Loyalty Ranking",
     'wtp': "3. Willingness-to-Pay Ranking",
     'risk_taking': "4. Risk-Taking Ranking",
-    'flexibility': "5. Cognitive Flexibility Ranking",
+    'flexibility': "5. Flexibility Ranking",
 }
 
 OPTION_LABELS = {
@@ -109,9 +109,10 @@ def initialize_rtd_session_state():
     }
     intercepts_cfg = config.get('intercepts') or {}
     for mech in MECHANISMS:
-        mech_cfg = _mech_stoch_config(config, mech)
-        defaults[f'rtd_anchor_{mech}'] = mech_cfg.get('anchor', 'continuous')
         defaults[f'rtd_intercept_{mech}'] = float(intercepts_cfg.get(mech, 0.0) or 0.0)
+    # Flexibility Anchor Mix (W_OFlex; W_CFlex = 1 - W_OFlex), config default 0.25
+    defaults['rtd_flex_observed_weight'] = float(
+        (config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
     # Section-6 rank aggregation settings (config/decisions.yaml `aggregation`)
     agg_cfg = config.get('aggregation') or {}
     defaults['rtd_aggregation_enabled'] = bool(agg_cfg.get('enabled', True))
@@ -193,7 +194,7 @@ def render_formula_section(config, mech):
     seq = sequences.get(mech, [])
     construct = {'loyalty': 'Loyalty to the vendor', 'wtp': 'Willingness to Pay',
                  'risk_taking': 'Risk-Taking propensity',
-                 'flexibility': 'Cognitive Flexibility'}[mech]
+                 'flexibility': 'Flexibility'}[mech]
     if mech == 'loyalty':
         st.markdown(f"Estimates **{construct}** based on Big-5 personality traits.")
         st.latex(
@@ -214,8 +215,9 @@ def render_formula_section(config, mech):
     seg_name = {'loyalty': 'Loyalty', 'wtp': 'WTP', 'risk_taking': 'RiskTaking',
                 'flexibility': 'Flexibility'}[mech]
     if mech == 'flexibility':
-        # binned on the re-standardized anchored score (Stata z_anchored_flexibility)
-        sym, sym_i = r"z_{AnchoredFlexibility}", r"z_{AnchoredFlexibility_i}"
+        # Stata bins the re-standardized anchored score (z_anchored_flexibility); min-max
+        # rescaling is affine-invariant, so binning AnchoredFlexibility itself is identical.
+        sym, sym_i = r"AnchoredFlexibility", r"AnchoredFlexibility_i"
     else:
         sym, sym_i = seg_name, rf"{seg_name}_i"
     st.latex(
@@ -233,38 +235,68 @@ def render_formula_section(config, mech):
         st.caption(OPTION_LABELS[num])
 
 
+def _flex_anchor_weights(config):
+    """(W_OFlex, W_CFlex): the Anchor Mix slider's current value (session state) over the
+    config default; the calculated weight is always 1 - W_OFlex."""
+    default_w = float((config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
+    w_obs = float(st.session_state.get('rtd_flex_observed_weight', default_w))
+    return w_obs, 1.0 - w_obs
+
+
 def _render_flexibility_formula(config, coeffs):
-    """Cognitive Flexibility (doc Section 5): the IVW Big-5 equation, its population
-    standardization, the 25/75 anchoring with the observed SD in actions per cycle
-    (stdactions) and the re-standardization that feeds the binning."""
-    anchor = config.get('flexibility_anchor', {}) or {}
-    w_obs = float(anchor.get('observed_weight', 0.25))
-    w_calc = float(anchor.get('calculated_weight', 0.75))
+    """Flexibility (doc Section 5): the IVW Big-5 equation with its intercept beta4, and
+    the anchoring of the calculated score on the observed flexibility (stdactions, the
+    SD in the number of actions per cycle) with the Anchor Mix weights W_OFlex / W_CFlex."""
+    w_obs, w_calc = _flex_anchor_weights(config)
     st.markdown(
-        "Estimates **Cognitive Flexibility** based on Big-5 personality traits "
-        "(inverse-variance-weighted meta-analytic coefficients), anchored on the "
-        "customer's **observed flexibility** in the experiment - the standard deviation "
-        "in the number of actions per cycle over the eight cycle-weeks (stdactions)."
+        "Estimates **Flexibility** based on Big-5 personality traits and observed "
+        "flexibility in the experiment (captured by standard deviation in the number of "
+        "actions across the eight cycle-weeks)."
     )
     st.latex(
-        rf"Flexibility_i ="
-        rf" {coeffs.get('extraversion', 0.0206):.4f} \times z_{{Extroversion_i}}"
-        rf" + {coeffs.get('openness', 0.0293241):.7f} \times z_{{Openness_i}}"
-        rf" {coeffs.get('neuroticism', -0.053781925):.9f} \times z_{{Neuroticism_i}}"
-        rf" + {coeffs.get('agreeable', 0.04921357):.8f} \times z_{{Agreeableness_i}}"
+        rf"Flexibility_i = \beta_4"
+        rf" + {coeffs.get('extraversion', 0.0206):.4f} \times z_{{Extroversion_i}}"
+        rf" + {coeffs.get('openness', 0.0294118):.7f} \times z_{{Openness_i}}"
+        rf" {coeffs.get('neuroticism', -0.04921357):.8f} \times z_{{Neuroticism_i}}"
+        rf" + {coeffs.get('agreeable', 0.04339814):.8f} \times z_{{Agreeableness_i}}"
         rf" + {coeffs.get('conscientiousness', 0.04811179):.8f} \times z_{{Conscientiousness_i}}"
     )
-    st.latex(r"z_{Flexibility_i} = \operatorname{std}(Flexibility_i) + \beta_4")
     st.latex(
-        rf"AnchoredFlexibility_i = {w_obs:.2f} \times z_{{stdactions_i}}"
-        rf" + {w_calc:.2f} \times z_{{Flexibility_i}},"
-        r"\qquad z_{AnchoredFlexibility_i} = \operatorname{std}(AnchoredFlexibility_i)"
+        rf"AnchoredFlexibility_i = W_{{OFlex}} \times z_{{obs\_Flex_i}}"
+        rf" + W_{{CFlex}} \times z_{{calc\_Flex_i}}"
+        rf" = {w_obs:.2f} \times stdactions_i + {w_calc:.2f} \times Flexibility_i",
+        help="All variables are standardized prior to calculation. Observed flexibility is "
+             "a copula trait for synthetic populations and participant's value in the "
+             "research baseline / specification modes",
     )
-    st.caption(
-        "std(·) standardizes over the simulated population (Stata `egen std`). The "
-        "observed anchor stdactions is a copula trait for synthetic populations and the "
-        "participant's own value in the Research Baseline / Specification modes."
+
+
+def render_flex_anchor_mix(config):
+    """Anchor Mix (Flexibility sub-tab): the W_OFlex slider, mirroring Decision 1's
+    W_OPB control. W_CFlex is always 1 - W_OFlex."""
+    st.markdown("**Anchor Mix**")
+    default_w = float((config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
+    widget_key, storage_key = 'rtd_tab_flex_observed_weight', 'rtd_flex_observed_weight'
+    current = restore_widget_from_storage(
+        widget_key, st.session_state.rejected_transaction_tab_persistence,
+        storage_key, st.session_state.get(storage_key, default_w))
+
+    def on_change():
+        st.session_state['rtd_flex_observed_weight'] = float(
+            st.session_state['rtd_tab_flex_observed_weight'])
+        save_to_rtd_storage('rtd_tab_flex_observed_weight', 'rtd_flex_observed_weight')
+
+    w_obs = st.slider(
+        "W_OFlex: Observed vs Calculated flexibility weight",
+        min_value=0.0, max_value=1.0, value=float(current), step=0.01,
+        help="AnchoredFlexibility = W_OFlex × observed flexibility (stdactions) + "
+             "(1 - W_OFlex) × calculated Flexibility (Big-5 equation); "
+             f"Default: {default_w:.2f}",
+        key=widget_key, on_change=on_change,
     )
+    st.session_state['rtd_flex_observed_weight'] = float(w_obs)
+    st.markdown(f"Observed flexibility weight (W_OFlex): {w_obs:.2f} · "
+                f"Calculated flexibility weight (W_CFlex): {1.0 - w_obs:.2f}")
 
 
 def _categorical_effects(config, mech):
@@ -363,7 +395,7 @@ def _render_income_element_formula(config, coeffs, mech):
 
 ELEMENT_SHORT = {'ttp': 'Options List Length', 'loyalty': 'Loyalty',
                  'wtp': 'Willingness-to-Pay', 'risk_taking': 'Risk-Taking',
-                 'flexibility': 'Cognitive Flexibility'}
+                 'flexibility': 'Flexibility'}
 
 
 def render_decision_sigma_controls(config):
@@ -464,35 +496,6 @@ def render_decision_sigma_controls(config):
         return pd.DataFrame(eff_rows)
 
 
-def render_anchor_control(mech):
-    """Advanced stochastic-anchor option (loyalty / risk_taking only)."""
-    with st.expander("Advanced: stochastic anchor", expanded=False):
-        anchor_widget_key = f'rtd_tab_anchor_{mech}'
-        anchor_storage_key = f'rtd_anchor_{mech}'
-        anchor_val = restore_widget_from_storage(
-            anchor_widget_key, st.session_state.rejected_transaction_tab_persistence,
-            anchor_storage_key, st.session_state.get(anchor_storage_key, 'continuous'))
-        anchor_val = 'binned' if str(anchor_val) == 'binned' else 'continuous'
-
-        def on_anchor_change(m=mech):
-            st.session_state[f'rtd_anchor_{m}'] = st.session_state[f'rtd_tab_anchor_{m}']
-            save_to_rtd_storage(f'rtd_tab_anchor_{m}', f'rtd_anchor_{m}')
-
-        anchor = st.radio(
-            "Anchor of the Normal(anchor, σ) draw",
-            options=['continuous', 'binned'],
-            format_func=lambda x: ('Continuous score (default)'
-                                   if x == 'continuous' else 'Binned 1-5 segment'),
-            index=0 if anchor_val == 'continuous' else 1,
-            key=anchor_widget_key, on_change=on_anchor_change,
-        )
-        st.session_state[f'rtd_anchor_{mech}'] = anchor
-        st.caption(
-            "'Continuous' anchors the draw on the mechanism's continuous score; "
-            "'binned' anchors it on the deterministic 1-5 segment."
-        )
-
-
 # Intercept symbols per the Decision 4 document's notation: beta0 (TTP, doc line
 # "β0 = Intercept that sets a baseline tendency to plan"), beta1 (Loyalty),
 # beta2 (WTP), beta3 (Risk-Taking).
@@ -551,14 +554,13 @@ def render_stochastic_explanation(mech):
     decisions' Final Decision text (same structure for all four elements)."""
     score = {'ttp': 'TTP_i', 'loyalty': 'Loyalty_i', 'wtp': 'WTP_i',
              'risk_taking': 'RiskTaking_i',
-             'flexibility': 'z_AnchoredFlexibility_i'}[mech]
+             'flexibility': 'AnchoredFlexibility_i'}[mech]
     bins = {'ttp': 'the 0-5 options list length',
             'loyalty': 'the 1-5 Loyalty segment',
             'wtp': 'the 1-5 WTP segment',
             'risk_taking': 'the 1-5 Risk-Taking segment',
             'flexibility': 'the 1-5 Flexibility segment'}[mech]
-    anchor = (f"the continuous {score} score (or the binned segment, see Advanced below)"
-              if mech in ('loyalty', 'risk_taking', 'flexibility') else f"the continuous {score} score")
+    anchor = f"the continuous {score} score"
     st.markdown("**Stochastic Component:**")
     st.markdown(
         f"- If stochastic enabled: `{score} ~ Normal(μ = anchor, σ)` where the anchor is "
@@ -568,8 +570,9 @@ def render_stochastic_explanation(mech):
 
 
 def render_element_reset_button(mech):
-    """Per-element reset: restores only this element's settings (intercept and,
-    where applicable, stochastic anchor). Decision-wide σ settings are untouched."""
+    """Per-element reset: restores only this element's settings (intercept; for
+    Flexibility also the Anchor Mix weight).
+    Decision-wide σ settings are untouched."""
     if st.button(f"Reset {ELEMENT_SHORT[mech]} to Defaults", type="secondary",
                  help="Reset this element's settings to research defaults "
                       "(decision-wide σ settings are not affected)",
@@ -584,7 +587,7 @@ ELEMENT_RUN_TITLES = {
     'loyalty': 'Loyalty Ranking',
     'wtp': 'Willingness-to-Pay Ranking',
     'risk_taking': 'Risk-Taking Ranking',
-    'flexibility': 'Cognitive Flexibility Ranking',
+    'flexibility': 'Flexibility Ranking',
 }
 
 
@@ -605,15 +608,15 @@ def render_element_run_button(mech):
 
 
 def render_mechanism_subtab(config, mech):
-    """Render one mechanism's sub-tab: formula + stochastic explanation + intercept
-    (+ anchor option) + per-element reset + per-element run."""
+    """Render one mechanism's sub-tab: formula + stochastic explanation
+    (+ Anchor Mix for Flexibility) + intercept + per-element reset + per-element run."""
     render_formula_section(config, mech)
     render_stochastic_explanation(mech)
+    if mech == 'flexibility':
+        st.markdown("---")
+        render_flex_anchor_mix(config)
     st.markdown("---")
     render_intercept_control(config, mech)
-    if mech in ('loyalty', 'risk_taking', 'flexibility'):
-        st.markdown("---")
-        render_anchor_control(mech)
     st.markdown("---")
     render_element_reset_button(mech)
     st.markdown("---")
@@ -640,7 +643,7 @@ def render_aggregation_subtab(config):
     are always broken at random, the document's rule)."""
     sequences = config.get('priority_sequences', {}) or {}
     st.markdown(
-        "The Loyalty, Willingness-to-Pay, Risk-Taking and Cognitive Flexibility "
+        "The Loyalty, Willingness-to-Pay, Risk-Taking and Flexibility "
         "mechanisms each produce a priority list of the five options for a customer. "
         "These lists do not necessarily concur, so they are reconciled into **one "
         "integrated ranking** (all four inputs weighted equally), from which the "
@@ -656,7 +659,7 @@ def render_aggregation_subtab(config):
         {'Mechanism': 'Loyalty', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('loyalty', [3, 1, 4, 5, 2]))},
         {'Mechanism': 'Willingness-to-Pay', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('wtp', [3, 2, 1, 4, 5]))},
         {'Mechanism': 'Risk-Taking', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('risk_taking', [4, 2, 1, 3, 5]))},
-        {'Mechanism': 'Cognitive Flexibility', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('flexibility', [2, 4, 3, 1, 5]))},
+        {'Mechanism': 'Flexibility', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('flexibility', [2, 4, 3, 1, 5]))},
     ])
     st.dataframe(inputs_df, hide_index=True, use_container_width=True)
     st.caption(
@@ -725,18 +728,23 @@ def reset_rtd_to_defaults():
 
 
 def reset_rtd_element_to_defaults(mech):
-    """Reset ONLY one element's settings (intercept + anchor) to research defaults.
+    """Reset ONLY one element's settings (intercept; for Flexibility also the
+    Anchor Mix weight) to research defaults.
 
     Surgical version of reset_rtd_to_defaults: deletes only this element's canonical
     rtd_* keys, its rtd_tab_* widget keys, and its persistence-dict entries, then
     re-initializes so the widgets revert on rerun. Sigma is decision-wide and is
     deliberately NOT touched here (the whole-page reset covers it)."""
-    for key in (f'rtd_intercept_{mech}', f'rtd_anchor_{mech}',
-                f'rtd_tab_intercept_{mech}', f'rtd_tab_anchor_{mech}'):
+    keys = [f'rtd_intercept_{mech}', f'rtd_tab_intercept_{mech}']
+    storage_keys = [f'rtd_intercept_{mech}']
+    if mech == 'flexibility':
+        keys += ['rtd_flex_observed_weight', 'rtd_tab_flex_observed_weight']
+        storage_keys.append('rtd_flex_observed_weight')
+    for key in keys:
         if key in st.session_state:
             del st.session_state[key]
     persistence = st.session_state.get('rejected_transaction_tab_persistence', {})
-    for storage_key in (f'rtd_intercept_{mech}', f'rtd_anchor_{mech}'):
+    for storage_key in storage_keys:
         persistence.pop(storage_key, None)
     initialize_rtd_session_state()
     return True
@@ -860,7 +868,7 @@ def render_rejected_transaction_defaults_tab():
     st.markdown(
         "**Run Rejected Transaction Defaults Only** produces the **integrated ranking** "
         "only (each element's own results come from its Run button above). Per customer, "
-        "the Loyalty, Willingness-to-Pay, Risk-Taking and Cognitive Flexibility priority "
+        "the Loyalty, Willingness-to-Pay, Risk-Taking and Flexibility priority "
         "lists are reconciled into one consensus ranking of the five options by "
         "Kemeny-Young aggregation (equal weights; ties settled Schulze → Copeland → "
         "footrule → random), which is then cut to the customer's Options List Length. "

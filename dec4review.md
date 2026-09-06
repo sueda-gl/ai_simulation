@@ -78,8 +78,9 @@ its mean is ≈ **−1.54**, which is impossible for a draw centered on that val
 Stata run anchored the draw on the **raw score**, with the **single overall σ** (the
 per-budget-group σ option fits the data measurably worse). Continuous-score anchoring is the
 default for all four mechanisms in the implementation (it's also the only reading under which
-the σ formulas' scaling makes dimensional sense), and the doc-literal "binned" option is
-selectable in each ranking sub-tab's Advanced expander.
+the σ formulas' scaling makes dimensional sense). The doc-literal "binned" reading is kept
+only as a config option (`stochastic.mechanisms.<m>.anchor: binned` in config/decisions.yaml);
+the app's per-element "Advanced: stochastic anchor" expander was removed on 2026-09-06.
 
 ## Issue 4 — Verified-harmless quirks (no action needed)
 
@@ -139,7 +140,7 @@ reading is available as a toggle.
 | 1. Mapping direction | Segment 1 (lowest score) → full list starting with Option 3; segment 5 → one option | **.dta** (= the doc's Stata code) | The doc's **prose** contradicts what was actually run. Substantively, the prose matches the theory (loyal people should get the loyal option first), so the *code/data* may be the real mistake — only the professor can say |
 | 2. "20% of observations" | Equal-width fifths of the score range | **.dta** (= the doc's Stata code) | The doc's **prose** — the code never produces 20% groups |
 | 3. WTP stochastic anchor | Draw centered on the raw continuous score, one common σ = 0.4527 | **.dta** | The doc's **text** (says binned anchor, offers per-quintile σ) — the data proves neither was used |
-| 3b. Loyalty/RT stochastic anchor | Continuous score by default (consistent with the WTP ground truth); "binned" doc-literal option in the Advanced expander | .dta *pattern* (no direct arbiter exists) | Unresolvable — the .dta has no stochastic loyalty/RT columns at all |
+| 3b. Loyalty/RT stochastic anchor | Continuous score by default (consistent with the WTP ground truth); "binned" doc-literal reading available via config only (UI toggle removed 2026-09-06) | .dta *pattern* (no direct arbiter exists) | Unresolvable — the .dta has no stochastic loyalty/RT columns at all |
 | 4a. Loyalty std()+β₀ step | Raw composite, no standardization, no β₀ | **.dta** | The doc's **code listing** (step was never executed) — provably zero effect on outputs either way |
 | 4b. WTP weight sum 4764 vs 4765 | The 4764-based coefficients | **.dta** | The doc's **arithmetic** (sum is 4765) — provably zero effect on outputs |
 | 4c. Loyalty σ, €32 row | 0.0304975281 | Doc's own **formula** (no .dta arbiter) | The doc's **table cell** (0.04975281, a dropped digit) |

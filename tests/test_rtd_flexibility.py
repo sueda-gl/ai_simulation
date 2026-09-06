@@ -1,5 +1,5 @@
 """
-Validation tests for Decision 4, Section 5: the Cognitive Flexibility mechanism.
+Validation tests for Decision 4, Section 5: the Flexibility mechanism.
 
 Ground truth: data/stata_d4_flexibility_verification.csv - a frozen extract of the
 professor's `Stata_File_Decision4_290826.dta` (280 participants) holding the raw
@@ -24,7 +24,8 @@ import pytest
 import yaml
 
 from src.decisions.rejected_transaction_defaults import (
-    DEFAULT_Z_SCORING, FLEX_ANCHOR_WEIGHTS, FLEX_COEFFS, MECHANISMS, PRIORITY_SEQUENCES,
+    DEFAULT_Z_SCORING, DTA_FLEX_COEFFS, FLEX_ANCHOR_WEIGHTS, FLEX_COEFFS, MECHANISMS,
+    PRIORITY_SEQUENCES,
     SIGMA_OVERALL, SIGMA_FACTORS, MEAN_STDACTIONS,
     compute_rtd_population_stats, compute_rtd_scores, flex_anchored_score,
     rejected_transaction_defaults,
@@ -48,10 +49,14 @@ def flexgold():
 def params():
     with open(DECISIONS_YAML) as f:
         cfg = yaml.safe_load(f)
-    p = dict(cfg["rejected_transaction_defaults"])
+    p = copy.deepcopy(cfg["rejected_transaction_defaults"])
     p["model_enabled"] = True
     # the .dta embeds no intercepts
     p["intercepts"] = {m: 0.0 for m in MECHANISMS}
+    # the .dta embeds the document's literal O/N/A coefficients; the model carries the
+    # corrected values adopted in the professor's 2026-09 review, so the .dta
+    # verification pins the .dta's coefficients (the PIPELINE is what is verified)
+    p["coefficients"]["flexibility"] = dict(DTA_FLEX_COEFFS)
     return p
 
 
@@ -111,10 +116,17 @@ def results(flexgold, params, sim_config):
 # Constants (doc Section 5 / .dta)
 # ---------------------------------------------------------------------------
 def test_constants_follow_the_document(params):
-    assert FLEX_COEFFS == {"extraversion": 0.0206, "openness": 0.0293241,
-                           "neuroticism": -0.053781925, "agreeable": 0.04921357,
-                           "conscientiousness": 0.04811179}
-    assert params["coefficients"]["flexibility"] == FLEX_COEFFS
+    corrected = {"extraversion": 0.0206, "openness": 0.0294118,
+                 "neuroticism": -0.04921357, "agreeable": 0.04339814,
+                 "conscientiousness": 0.04811179}
+    assert FLEX_COEFFS == corrected
+    with open(DECISIONS_YAML) as f:
+        yaml_cfg = yaml.safe_load(f)["rejected_transaction_defaults"]
+    assert yaml_cfg["coefficients"]["flexibility"] == corrected
+    assert DTA_FLEX_COEFFS == {"extraversion": 0.0206, "openness": 0.0293241,
+                               "neuroticism": -0.053781925, "agreeable": 0.04921357,
+                               "conscientiousness": 0.04811179}
+    assert params["coefficients"]["flexibility"] == DTA_FLEX_COEFFS
     assert PRIORITY_SEQUENCES["flexibility"] == SEQ == params["priority_sequences"]["flexibility"]
     assert FLEX_ANCHOR_WEIGHTS == {"observed": 0.25, "calculated": 0.75}
     assert params["flexibility_anchor"] == {"observed_weight": 0.25, "calculated_weight": 0.75}
@@ -167,6 +179,18 @@ def test_flexibility_segments_exact(flexgold, results):
     assert (np.array([r["rtd_flex_segment_deterministic"] for r in results]) == segs).all()
     dist = pd.Series(segs).value_counts().to_dict()
     assert dist == EXPECTED_FLEX_DIST
+
+
+def test_corrected_coefficients_move_eight_segments(flexgold, params, sim_config):
+    """With the model's (corrected O/N/A) coefficients the segments differ from the
+    .dta for 8 of the 280 participants (17/83/141/35/4 -> 17/85/137/37/4)."""
+    p = copy.deepcopy(params)
+    p["coefficients"]["flexibility"] = dict(FLEX_COEFFS)
+    rows, _ = _run(flexgold, p, sim_config)
+    segs = np.array([r["rtd_flex_segment"] for r in rows])
+    changed = int((segs != flexgold["Flexibility_combined15"].astype(int).values).sum())
+    assert changed == 8
+    assert {k: int((segs == k).sum()) for k in range(1, 6)} == {1: 17, 2: 85, 3: 137, 4: 37, 5: 4}
 
 
 def test_flexibility_choice_lists_match_stata_columns(flexgold, results):

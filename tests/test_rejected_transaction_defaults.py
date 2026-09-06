@@ -78,7 +78,7 @@ def _agent_state(row) -> dict:
         "Education": row["education"],
         "Assigned Allowance Level": row["assignedallowancelevel"],
         "income": row["income"],
-        "stdactions": row["stdactions"],   # Cognitive Flexibility observed anchor
+        "stdactions": row["stdactions"],   # Flexibility observed anchor
     }
 
 

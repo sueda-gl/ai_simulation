@@ -9,7 +9,7 @@ evaluation the document quotes) and "Reconciling Four Rankings into One" review.
 
 The mechanisms of Sections 2-5 each yield a priority list of the five rejected-
 transaction options for a participant (loyalty, willingness to pay, risk-taking,
-cognitive flexibility). These lists do not necessarily concur, so a single
+flexibility). These lists do not necessarily concur, so a single
 consensus ranking of the five options is formed and then two output rules are
 applied:
   (1) the list is truncated to the configured list length (choice_length from the

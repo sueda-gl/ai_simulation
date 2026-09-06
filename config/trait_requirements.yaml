@@ -43,7 +43,7 @@ disclose_documents:
 
 rejected_transaction_defaults:
   # Decision 4: Rejected Transaction Defaults - five trait-based mechanisms
-  # (TTP length, Loyalty / WTP / Risk-Taking / Cognitive Flexibility rankings).
+  # (TTP length, Loyalty / WTP / Risk-Taking / Flexibility rankings).
   # Traits per the design doc: Big 5 z-scores + Education (reducation = Education - 1)
   # + continuous income (runtime-generated from Assigned Allowance Level, like the
   # disclose_* decisions) + stdactions (observed SD in the number of actions per
