@@ -2,7 +2,7 @@
 """
 Decision 4, Section 6 - integrating the mechanism rankings into ONE default list.
 
-Source: "Decision 4 - Rejected Transaction Defaults" design document, rev 280826-2,
+Source: "Decision 4 - Rejected Transaction Defaults" design document, rev 040926-2,
 Section 6 "Integrating the model effects to predict rejected transaction defaults",
 plus the professor's earlier "Ranking Cascade Results (V1)" report (the 100,000-case
 evaluation the document quotes) and "Reconciling Four Rankings into One" review.
@@ -11,11 +11,17 @@ The mechanisms of Sections 2-5 each yield a priority list of the five rejected-
 transaction options for a participant (loyalty, willingness to pay, risk-taking,
 flexibility). These lists do not necessarily concur, so a single
 consensus ranking of the five options is formed and then two output rules are
-applied:
+applied TO THE INTEGRATED CONSENSUS LIST ONLY:
   (1) the list is truncated to the configured list length (choice_length from the
       Tendency-to-Plan equation of Section 1), and
   (2) every option listed after Option 5 (forgo the transaction) is dropped - once
       the customer forgoes the transaction there can be no subsequent default.
+NEITHER rule applies to a MECHANISM's own priority list: those are tails of a fixed
+priority sequence and may legitimately continue past Option 5 (e.g. the Loyalty
+sequence is 3 > 1 > 4 > 5 > 2, so a segment-5 participant's Loyalty list ends with
+Option 2 after Option 5) and are not cut to the TTP length. The rules are applied
+once, by apply_output_rules(), to the consensus ranking that aggregate_rankings()
+returns.
 
 THE AGGREGATION: Kemeny-Young with the document's tie-breaking hierarchy
 -------------------------------------------------------------------------
@@ -56,7 +62,10 @@ The final ranking is one of the Kemeny-optimal orderings in all but a tiny share
 cases (doc: 99.93%); the exceptions arise only through the last resort.
 
 INPUT RANKINGS MAY BE PARTIAL. The mechanisms' priority lists are TAILS of a fixed
-priority sequence (segment s -> the last s options of the sequence), so a
+priority sequence (segment s -> the last s options of the sequence; segment 5 = the
+full list, segment 1 = one option - the direction flipped on the professor's
+2026-09-16 instruction and adopted by doc rev 040926-2 /
+Stata_File_Decision4_050926.dta, see rejected_transaction_defaults._ranking_for_segment), so a
 participant's loyalty list may be e.g. [4, 5, 2] with Options 3 and 1 absent. The
 document's aggregation text assumes complete rankings; here the options absent from
 a list are treated as TIED AT THE BOTTOM of that list - the mechanism prefers each
@@ -391,12 +400,30 @@ def aggregate_rankings(rankings: Sequence[Sequence[int]],
                first, i.e. the deterministic V1 rule, regardless of last_resort).
     Returns a dict with:
       consensus          full ranking of the five options (list of option numbers)
-      settled_by         stage that produced the full ranking: one of STAGES
-      kemeny_status      'unique' | 'unique_with_ties' | 'multiple'
-      phase1             'kemeny' (its ordering was continued) | 'schulze'
-      kemeny_distance    minimal total Kendall-tau distance to the inputs
-      n_kemeny_optimal   number of Kemeny-optimal permutations
-      is_kemeny_optimal  whether the final ranking is one of them
+      settled_by         the stage that produced the FULL strict ranking - one of
+                         STAGES ('kemeny', 'schulze', 'copeland', 'footrule',
+                         'random'); the last stage that still had work to do
+      kemeny_status      what the Kemeny step (Phase 1) returned:
+                           'unique'            exactly ONE optimal permutation - a
+                                               fully ordered ranking, procedure ends
+                           'unique_with_ties'  several optimal permutations that are
+                                               exactly the linear extensions of ONE
+                                               weak order (i.e. a single optimal list
+                                               that still contains tied options)
+                           'multiple'          several optimal orderings that are NOT
+                                               the extensions of one weak order ->
+                                               Schulze supplies the Phase-1 ordering
+                         "% of initial ties" in the reports = the share of agents with
+                         kemeny_status != 'unique' (the Kemeny step did not yield a
+                         unique fully ordered ranking)
+      phase1             'kemeny' (the Kemeny weak order was carried into Phase 2) |
+                         'schulze' (kemeny_status was 'multiple', so Schulze's
+                         ordering was carried in instead)
+      kemeny_distance    the minimal total Kendall-tau distance to the inputs
+      n_kemeny_optimal   how many of the 120 permutations attain that minimum (1 when
+                         kemeny_status == 'unique')
+      is_kemeny_optimal  whether the FINAL consensus is one of those optimal
+                         permutations; only the random last resort can make this False
       stages             {stage: weak order after that stage} for the stages run
       n_inputs           number of input rankings
     """
@@ -451,9 +478,18 @@ def aggregate_rankings(rankings: Sequence[Sequence[int]],
 
 def apply_output_rules(consensus: Sequence[int], choice_length: int) -> Tuple[List[int], str]:
     """
-    The two output rules on the integrated ranking: truncate to choice_length, and
-    drop everything after Option 5. Returns (default_list, truncated_by) with
-    truncated_by in {'none', 'length', 'option5', 'both'}.
+    The two output rules on the INTEGRATED consensus ranking (never on a mechanism's
+    own priority list): truncate to choice_length, and drop everything after Option 5.
+
+    Returns (default_list, truncated_by) with truncated_by describing which rule
+    actually bound:
+      'none'    neither rule cut anything - the full 5-option consensus is returned
+                (only possible when choice_length == 5 and Option 5 is last),
+      'length'  the TTP choice length cut the list (and did so at or before the
+                Option-5 position, so the Option-5 rule was not the binding one),
+      'option5' the Option-5 cut bound (Option 5 appears before position 5 and at or
+                before the length cut),
+      'both'    both rules cut at the SAME position.
     """
     consensus = list(consensus)
     cut_len = int(np.clip(int(choice_length), 0, N_OPTIONS))

@@ -3,13 +3,17 @@ Tests for the Decision 4 Section-6 rank aggregation
 (src/decisions/rtd_rank_aggregation.py) and its integration into
 rejected_transaction_defaults().
 
-Spec: "Decision 4 - Rejected Transaction Defaults" rev 280826-2, Section 6 -
+Spec: "Decision 4 - Rejected Transaction Defaults" rev 040926-2, Section 6 -
 Kemeny-Young consensus (minimum total Kendall-tau distance over the 120 orderings,
 equal weights) with the tie-break hierarchy Schulze -> Copeland -> footrule -> random,
 then truncation to the TTP choice length and at Option 5. The professor's "Ranking
 Cascade Results (V1)" report gives the reference stage shares over 100,000 random
 complete-ranking cases (Kemeny alone 7.7%, Schulze 0.0%, Copeland 43.3%, Footrule
-22.7%, last resort 26.3%; final ranking Kemeny-optimal in 99.93%).
+22.7%, last resort 26.3%; final ranking Kemeny-optimal in 99.93%). Section 6 is
+UNCHANGED in rev 040926-2; the inputs it reconciles moved, because rev 040926-2
+corrected the Loyalty Agreeableness weight and adopted the Flexibility O/N/A
+coefficients and the segment -> option-list direction (all four mechanism lists now
+equal Stata_File_Decision4_050926.dta's stored choice1..5_* columns directly).
 """
 import copy
 import os
@@ -21,7 +25,7 @@ import pytest
 import yaml
 
 from src.decisions.rtd_rank_aggregation import (
-    ALL_PERMS, OPTIONS, STAGES,
+    ALL_PERMS, KEMENY_STATUSES, OPTIONS, STAGES,
     aggregate_rankings, apply_output_rules, collapse_to_groups, copeland_scores,
     footrule_positions, integrate_default_list, kemeny_optimal_set, kemeny_phase,
     kendall_tau_distance, pairwise_matrix, refine_by_copeland, refine_by_footrule,
@@ -398,9 +402,12 @@ def test_default_template_path_ignores_aggregation(gold, params, sim_config):
 # AppTest end-to-end: tab sub-tab 5 + results section 5 + export
 # ---------------------------------------------------------------------------
 def test_apptest_aggregation_subtab_and_results_section():
-    """The Decision 4 tab shows the 'Integrated Default List' sub-tab with its two
-    settings; a whole-decision run renders results section 5 with its Excel
-    download and the agent-level export columns; a per-element run does not."""
+    """The Decision 4 tab shows the 'Integrated Default List' sub-tab (aggregation is
+    always on: no enable checkbox); a whole-decision run renders every element section
+    plus the reduced integrated section (first integrated option only, no tie
+    statistics) with the all-elements workbook; a per-element run hides the integrated
+    section; the 'Run Integrated Default List Only' button renders the integrated
+    section with the tie statistics and the Integrated Default List Excel."""
     from streamlit.testing.v1 import AppTest
     from tests.test_rtd_batch4_ui import _rtd_app_script, _all_markdown, _download_labels
 
@@ -418,45 +425,50 @@ def test_apptest_aggregation_subtab_and_results_section():
     at.run(timeout=600)
     assert not at.exception
 
-    # sub-tab 6 and its settings (defaults from config: enabled, random last resort)
+    # sub-tab 6 exists; the aggregation is always on (no checkbox, no last-resort setting)
     tab_labels = [str(t.label) for t in at.tabs]
     assert "6. Integrated Default List (Rank Aggregation)" in tab_labels
-    assert at.checkbox(key='rtd_tab_aggregation_enabled').value is True
+    assert 'rtd_tab_aggregation_enabled' not in at.session_state
     assert at.session_state['rtd_aggregation_enabled'] is True
-    # the last-resort rule is not a user setting any more: always the document's random rule
     assert 'rtd_tab_aggregation_last_resort' not in at.session_state
     md = _all_markdown(at)
     assert "Kemeny-Young with a tie-breaking hierarchy" in md
 
-    # whole-decision run -> section 6 + download present
+    # whole-decision run -> all elements + reduced integrated section + workbook
     at.button(key='run_rejected_transaction_defaults_only_btn').click().run(timeout=600)
     assert not at.exception
     md = _all_markdown(at)
-    assert "6️⃣ Integrated Default List (Rank Aggregation)" in md
-    assert "Tie-breaking stage that settled the consensus ranking" in md
+    assert "1️⃣ Options List Length (Tendency to Plan)" in md
+    assert "6️⃣ Integrated Default List" in md
+    assert "Tie statistics of the Kemeny aggregation" not in md
+    assert "Stage that settled the ranking" not in md
     dls = _download_labels(at)
-    assert "📊 Download Integrated Default List Excel" in dls
     assert "📊 Download Decision 4 Excel (all elements)" in dls
+    assert "📊 Download Integrated Default List Excel" not in dls
     df = _results_frame(at)
     assert 'rtd_default_list' in df.columns
     assert all(isinstance(v, list) for v in df['rejected_transaction_defaults'])
     assert (df['rtd_default_list_length'] <= df['rtd_choice_length']).all()
     assert set(df['rtd_consensus_settled_by']).issubset(set(STAGES))
 
-    # per-element (Loyalty) run -> section 6 hidden
+    # per-element (Loyalty) run -> integrated section hidden
     at.button(key='rtd_run_loyalty_btn').click().run(timeout=600)
     assert not at.exception
     md = _all_markdown(at)
-    assert "6️⃣ Integrated Default List (Rank Aggregation)" not in md
+    assert "6️⃣ Integrated Default List" not in md
     assert "📊 Download Integrated Default List Excel" not in _download_labels(at)
 
-    # disabling the aggregation on the tab flows into the run: no integrated list
-    at.button(key='run_rejected_transaction_defaults_only_btn').click().run(timeout=600)
-    at.checkbox(key='rtd_tab_aggregation_enabled').uncheck().run(timeout=600)
-    assert at.session_state['rtd_aggregation_enabled'] is False
-    at.button(key='run_rejected_transaction_defaults_only_btn').click().run(timeout=600)
+    # integrated-only run -> integrated section with the tie statistics + its Excel
+    at.button(key='rtd_run_aggregation_btn').click().run(timeout=600)
     assert not at.exception
+    assert at.session_state['rtd_run_element'] == 'aggregation'
+    md = _all_markdown(at)
+    assert "6️⃣ Integrated Default List" in md
+    assert "Tie statistics of the Kemeny aggregation" in md
+    assert "% of agents with initial ties after Kemeny" in md
+    assert "Stage that settled the ranking" in md
+    assert "1️⃣ Options List Length (Tendency to Plan)" not in md
+    assert "📊 Download Integrated Default List Excel" in _download_labels(at)
     df = _results_frame(at)
-    assert 'rtd_default_list' not in df.columns
-    assert all(v == [] for v in df['rejected_transaction_defaults'])
-    assert "6️⃣ Integrated Default List (Rank Aggregation)" not in _all_markdown(at)
+    assert 'rtd_default_list' in df.columns
+    assert set(df['rtd_consensus_kemeny_status']).issubset(set(KEMENY_STATUSES))

@@ -19,8 +19,9 @@ Each mechanism yields its own per-agent output; the four ranking mechanisms' lis
 are then integrated into ONE default list per agent by the document's Section-6 rank
 aggregation (Kemeny-Young consensus with the tie-break hierarchy Schulze -> Copeland
 -> footrule -> random, truncated to the options list length and at Option 5) -
-sub-tab 6 explains the procedure and exposes its enable flag (ties no criterion can
-separate are always broken at random, the document's rule).
+sub-tab 6 explains the procedure and carries its own Run button. The aggregation is
+always on (no user switch; ties no criterion can separate are always broken at
+random, the document's rule).
 
 The model coefficients and sigma constants are fixed (dta-verified); the tab exposes
 the income specification (categorical / continuous / compare both; WTP and
@@ -60,10 +61,12 @@ LEVEL_LABELS = {
 }
 
 # Fallback sigma constants (config/decisions.yaml is the source of truth).
+# Values from the professor's revised Decision 4 document (2026-09): loyalty, WTP,
+# risk-taking and flexibility sigmas were all restated; TTP is unchanged.
 FALLBACK_SIGMA_OVERALL = {
-    'ttp': 0.395446, 'loyalty': 0.423918958,
-    'wtp': 0.45265807275, 'risk_taking': 0.332208167,
-    'flexibility': 0.4359172665,
+    'ttp': 0.395446, 'loyalty': 0.4665145336,
+    'wtp': 0.4526575455, 'risk_taking': 0.39522204,
+    'flexibility': 0.4346228732,
 }
 
 # Fallback categorical-income effects (config/decisions.yaml is the source of truth).
@@ -78,8 +81,11 @@ FALLBACK_CATEGORICAL_EFFECTS = {
 
 def load_rtd_config():
     """Load rejected_transaction_defaults configuration from YAML."""
-    with open(CONFIG_PATH, 'r') as f:
-        config = yaml.safe_load(f)
+    # Tolerates a concurrent non-atomic rewrite of decisions.yaml (the other tabs'
+    # "Reset Config to Defaults" buttons); a half-written file used to crash the
+    # whole app and force a new session (page 1, selections lost).
+    from app.models import read_yaml_config
+    config = read_yaml_config(CONFIG_PATH)
     return config.get('rejected_transaction_defaults', {})
 
 
@@ -113,9 +119,10 @@ def initialize_rtd_session_state():
     # Flexibility Anchor Mix (W_OFlex; W_CFlex = 1 - W_OFlex), config default 0.25
     defaults['rtd_flex_observed_weight'] = float(
         (config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
-    # Section-6 rank aggregation settings (config/decisions.yaml `aggregation`)
-    agg_cfg = config.get('aggregation') or {}
-    defaults['rtd_aggregation_enabled'] = bool(agg_cfg.get('enabled', True))
+    # Section-6 rank aggregation: always on. The flag is kept in session state because
+    # app/simulation.py and app/pages/decision_execution.py read it, but no widget
+    # renders it any more (it was a diagnostic switch with no basis in the document).
+    defaults['rtd_aggregation_enabled'] = True
 
     for key, default in defaults.items():
         if key not in st.session_state:
@@ -146,17 +153,42 @@ def save_to_rtd_storage(widget_key, storage_key):
         st.session_state.rejected_transaction_tab_persistence[storage_key] = st.session_state[widget_key]
 
 
+def _render_black_table(df, full_width=False):
+    """Render a DataFrame as a compact HTML table whose column TITLES are black.
+
+    st.dataframe renders its column headers in gray; the professor asked for black
+    header ink on every table of this tab, so the tables are emitted as plain HTML
+    with explicit header styling. All values come from the config / fixed labels
+    (no user-entered text), so no HTML escaping is required and the ">" separators
+    of the priority lists render literally.
+    """
+    head = "".join(
+        '<th style="text-align:left;color:#000000;font-weight:600;'
+        'border-bottom:1px solid #9aa0a6;padding:5px 14px 5px 0;">'
+        f'{col}</th>' for col in df.columns)
+    body = "".join(
+        "<tr>" + "".join(
+            '<td style="color:#262730;border-bottom:1px solid #ececec;'
+            f'padding:5px 14px 5px 0;">{val}</td>' for val in row) + "</tr>"
+        for row in df.astype(str).itertuples(index=False, name=None))
+    st.markdown(
+        f'<table style="border-collapse:collapse;font-size:0.88rem;'
+        f'width:{"100%" if full_width else "auto"};margin-bottom:0.6rem;">'
+        f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>',
+        unsafe_allow_html=True)
+
+
 def _segment_mapping_df(sequence, element_name):
     """Segment -> priority list table for a ranking mechanism.
 
-    STATA direction (the doc's replace statements and the .dta choice columns, 280/280):
-    segment s receives the tail of the priority sequence from position s, so segment 1
-    gets the full list starting with the top option and segment 5 only the last option.
+    Segment s (1..5) receives the LAST s options of the priority sequence
+    (seq[5 - s:]): segment 5 ("Highest 20%") gets the full sequence starting with the
+    top option, segment 1 ("Lowest 20%") gets only the last option (Option 5).
     Mirrors src.decisions.rejected_transaction_defaults._ranking_for_segment.
     """
     rows = []
     for seg in range(1, 6):
-        tail = sequence[seg - 1:]
+        tail = sequence[len(sequence) - seg:] if sequence else []
         label = {1: f'1 (Lowest 20% of {element_name} score segment)',
                  5: f'5 (Highest 20% of {element_name} score segment)'}.get(seg, str(seg))
         rows.append({
@@ -167,6 +199,12 @@ def _segment_mapping_df(sequence, element_name):
     return pd.DataFrame(rows)
 
 
+def render_option_labels():
+    """The five rejected-transaction options, one line per option, in regular black
+    markdown text (they used to be st.caption, which renders gray)."""
+    st.markdown("  \n".join(OPTION_LABELS[num] for num in range(1, 6)))
+
+
 def render_formula_section(config, mech):
     """Render the mechanism's equation, coefficients, and segment mapping."""
     coeffs = (config.get('coefficients', {}) or {}).get(mech, {}) or {}
@@ -174,7 +212,7 @@ def render_formula_section(config, mech):
 
     if mech == 'ttp':
         st.markdown(
-            "Estimates each customer's **Tendency to Plan** based on Big-5 "
+            "Estimates each agent's **Tendency to Plan** based on Big-5 "
             "personality traits and education, and then converts it into the "
             "number of pre-selected default options (0-5)."
         )
@@ -201,7 +239,7 @@ def render_formula_section(config, mech):
             rf"Loyalty_i = \beta_1"
             rf" {coeffs.get('extraversion', -0.009828468):.9f} \times z_{{Extroversion_i}}"
             rf" + {coeffs.get('openness', 0.01096706):.8f} \times z_{{Openness_i}}"
-            rf" + {coeffs.get('agreeable', 0.03092465):.8f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs.get('agreeable', 0.0123046):.7f} \times z_{{Agreeableness_i}}"
         )
     elif mech == 'wtp':
         st.markdown(f"Estimates **{construct}** based on personality traits and income.")
@@ -215,8 +253,8 @@ def render_formula_section(config, mech):
     seg_name = {'loyalty': 'Loyalty', 'wtp': 'WTP', 'risk_taking': 'RiskTaking',
                 'flexibility': 'Flexibility'}[mech]
     if mech == 'flexibility':
-        # Stata bins the re-standardized anchored score (z_anchored_flexibility); min-max
-        # rescaling is affine-invariant, so binning AnchoredFlexibility itself is identical.
+        # Stata bins the re-standardized anchored score; min-max rescaling is
+        # affine-invariant, so binning AnchoredFlexibility itself is identical.
         sym, sym_i = r"AnchoredFlexibility", r"AnchoredFlexibility_i"
     else:
         sym, sym_i = seg_name, rf"{seg_name}_i"
@@ -229,10 +267,8 @@ def render_formula_section(config, mech):
                 f"{' > '.join('Option ' + str(o) for o in seq)}")
     map_col, _ = st.columns(2)
     with map_col:
-        st.dataframe(_segment_mapping_df(seq, ELEMENT_SHORT[mech]), hide_index=True,
-                     use_container_width=True)
-    for num in range(1, 6):
-        st.caption(OPTION_LABELS[num])
+        _render_black_table(_segment_mapping_df(seq, ELEMENT_SHORT[mech]), full_width=True)
+    render_option_labels()
 
 
 def _flex_anchor_weights(config):
@@ -262,12 +298,15 @@ def _render_flexibility_formula(config, coeffs):
         rf" + {coeffs.get('conscientiousness', 0.04811179):.8f} \times z_{{Conscientiousness_i}}"
     )
     st.latex(
-        rf"AnchoredFlexibility_i = W_{{OFlex}} \times z_{{obs\_Flex_i}}"
-        rf" + W_{{CFlex}} \times z_{{calc\_Flex_i}}"
-        rf" = {w_obs:.2f} \times stdactions_i + {w_calc:.2f} \times Flexibility_i",
-        help="All variables are standardized prior to calculation. Observed flexibility is "
-             "a copula trait for synthetic populations and participant's value in the "
-             "research baseline / specification modes",
+        rf"AnchoredFlexibility_i = W_{{OFlex}} \times ObservedFlexibility_i"
+        rf" + W_{{CFlex}} \times Flexibility_i"
+        rf" = {w_obs:.2f} \times ObservedFlexibility_i + {w_calc:.2f} \times Flexibility_i"
+    )
+    st.markdown(
+        "ObservedFlexibility is the observed flexibility variable stdactions (the "
+        "standard deviation in the number of actions across the eight cycle-weeks): a "
+        "copula trait for synthetic populations and the participant's own value in the "
+        "research baseline and research specification modes."
     )
 
 
@@ -326,7 +365,7 @@ def render_categorical_effects_table(config, mech):
             f"{base + eff['level_5']:.7f}",
         ],
     })
-    st.dataframe(table, hide_index=True, use_container_width=False)
+    _render_black_table(table)
     st.markdown("β_income_q: Income quintile effects based on agent's income category (Quintiles 1-5)")
     st.markdown(
         f"Each value = base intercept ({base:.7f}) + the quintile's differential "
@@ -532,11 +571,12 @@ def render_intercept_control(config, mech):
             value=float(current), step=0.01, format="%.4f",
             key=widget_key, on_change=on_change,
             help=f"{symbol} baseline for this element (research default "
-                 f"{research_default:.4f}). Shifts the element's "
-                 "score distribution and thereby the allocation: the segment boundaries are "
-                 "fixed from the intercept-free population scores, so a nonzero intercept "
-                 "moves agents across them (a negative value shifts agents toward the lower "
-                 "segments, a positive value toward the higher ones, capped at the end bins).",
+                 f"{research_default:.4f}). The intercept shifts the element's "
+                 "standardized score by β and thereby the allocation across the segment "
+                 "boundaries: the boundaries are fixed from the intercept-free population "
+                 "scores, so a nonzero intercept moves agents across them (a negative "
+                 "value shifts agents toward the lower segments, a positive value toward "
+                 "the higher ones, capped at the end bins).",
         )
         st.session_state[storage_key] = float(value)
     with col3:
@@ -560,12 +600,12 @@ def render_stochastic_explanation(mech):
             'wtp': 'the 1-5 WTP segment',
             'risk_taking': 'the 1-5 Risk-Taking segment',
             'flexibility': 'the 1-5 Flexibility segment'}[mech]
-    anchor = f"the continuous {score} score"
     st.markdown("**Stochastic Component:**")
     st.markdown(
-        f"- If stochastic enabled: `{score} ~ Normal(μ = anchor, σ)` where the anchor is "
-        f"{anchor} and σ = base σ × coefficient (overall or per budget level); the drawn "
-        f"values are re-rescaled over the population and re-binned into {bins}."
+        f"If stochastic enabled: {score} ~ Normal(μ = anchor, σ) where the anchor is "
+        f"the continuous {score} score and σ = base σ × coefficient (overall or per "
+        f"budget level); the drawn values are re-rescaled over the population and "
+        f"re-binned into {bins}."
     )
 
 
@@ -625,94 +665,86 @@ def render_mechanism_subtab(config, mech):
 
 AGGREGATION_TITLE = "6. Integrated Default List (Rank Aggregation)"
 
-# Share of the 100,000 randomly generated test cases settled at each stage of the
-# tie-breaking hierarchy, as reported in the design document (Section 6).
-DOC_STAGE_SHARES = [
-    ("Kemeny alone (already a full ranking)", "7.7%"),
-    ("Schulze", "0.0%"),
-    ("Copeland", "43.3%"),
-    ("Footrule", "22.7%"),
-    ("Last resort (random)", "26.3%"),
-]
+
+def render_aggregation_run_button():
+    """Run button of the aggregation sub-tab: the SAME individual Decision 4 run as
+    the other Run buttons, flagged with rtd_run_element = 'aggregation' so the
+    results page presents the integrated default list plus the tie statistics."""
+    if st.button("🔬 Run Integrated Default List Only", type="primary",
+                 key='rtd_run_aggregation_btn',
+                 help="Run the Decision 4 simulation with the current settings and "
+                      "present the integrated default list together with the "
+                      "tie-resolution statistics"):
+        st.session_state.rtd_run_element = 'aggregation'
+        from app.pages.decision_execution import run_individual_decision
+        run_individual_decision('rejected_transaction_defaults')
 
 
 def render_aggregation_subtab(config):
-    """Sub-tab 5: the Section-6 rank aggregation that integrates the ranking
-    mechanisms' lists into one default list per customer - method explanation,
-    the two output rules, and the enable flag (ties that no criterion can separate
-    are always broken at random, the document's rule)."""
+    """Sub-tab 6: the Section-6 rank aggregation that integrates the ranking
+    mechanisms' lists into one default list per agent - method explanation, the two
+    output rules and the sub-tab's own Run button. The aggregation is always on
+    (ties that no criterion can separate are always broken at random, the
+    document's rule)."""
     sequences = config.get('priority_sequences', {}) or {}
     st.markdown(
         "The Loyalty, Willingness-to-Pay, Risk-Taking and Flexibility "
-        "mechanisms each produce a priority list of the five options for a customer. "
-        "These lists do not necessarily concur, so they are reconciled into **one "
-        "integrated ranking** (all four inputs weighted equally), from which the "
-        "customer's default list is cut using two output rules:"
+        "mechanisms each produce a priority list of the five options per agent. "
+        "These lists do not necessarily concur, so they are reconciled into one "
+        "integrated ranking (all sub-decision mechanisms receive equal weight), "
+        "following two rules:"
     )
     st.markdown(
-        "1. the list is **truncated to the Options List Length** (Tendency to Plan, element 1);  \n"
-        "2. every option listed **after Option 5** (forgo the transaction) is dropped - once the "
-        "customer forgoes the transaction there can be no subsequent default option."
+        "1. the integrated list is truncated to the Options List Length (Tendency to "
+        "Plan, element 1);  \n"
+        "2. every option listed after Option 5 (forgo the transaction) is dropped."
     )
-    st.markdown("**Inputs (priority lists per mechanism):**")
+    st.markdown(
+        "Both rules apply to the integrated ranking only. The mechanisms' own priority "
+        "lists are left as they are - the Loyalty sequence, for example, still lists "
+        "Option 2 after Option 5."
+    )
+    st.markdown("##### Inputs (priority lists per mechanism)")
     inputs_df = pd.DataFrame([
         {'Mechanism': 'Loyalty', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('loyalty', [3, 1, 4, 5, 2]))},
         {'Mechanism': 'Willingness-to-Pay', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('wtp', [3, 2, 1, 4, 5]))},
         {'Mechanism': 'Risk-Taking', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('risk_taking', [4, 2, 1, 3, 5]))},
         {'Mechanism': 'Flexibility', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('flexibility', [2, 4, 3, 1, 5]))},
     ])
-    st.dataframe(inputs_df, hide_index=True, use_container_width=True)
-    st.caption(
-        "Each customer's list is the tail of the mechanism's sequence selected by their "
-        "score segment; options absent from a list count as ranked below the listed ones."
-    )
+    _render_black_table(inputs_df)
 
-    st.markdown("**Aggregation method: Kemeny-Young with a tie-breaking hierarchy**")
+    st.markdown("##### Aggregation method: Kemeny-Young with a tie-breaking hierarchy")
     st.markdown(
-        "Kendall-tau distance counts the option pairs two rankings order differently "
-        "(10 pairs for five options). The consensus is the ranking with the **smallest "
-        "total Kendall-tau distance** to the input lists (Kemeny 1959; Kemeny & Snell 1962), "
-        "found by exhaustive search over all 120 orderings."
+        "The distance between two rankings is measured by the Kendall-tau distance: the "
+        "number of option pairs that the two rankings order differently. With five "
+        "options there are 10 pairs; a pair (x, y) counts 1 when one ranking places x "
+        "above y and the other places y above x, and 0 otherwise. The integrated ranking "
+        "is the ordering of the five options whose total Kendall-tau distance to the four "
+        "mechanism rankings is smallest (Kemeny-Young); it is found by checking all 120 "
+        "possible orderings."
     )
     st.latex(r"\pi^{*} = \arg\min_{\pi \in S_5} \sum_{j} d_{K}(\pi, r_j)")
     st.markdown(
-        "With few input rankings ties are pervasive, so the consensus is completed by a "
-        "fixed hierarchy:  \n"
-        "**Phase 1 - initial ranking.** A unique, fully ordered Kemeny ranking is used as is. "
-        "If Kemeny returns several equally good orderings, the **Schulze** (2011) strongest-"
-        "paths ordering is used as the starting point (it is itself Kemeny-optimal in almost "
-        "every case).  \n"
-        "**Phase 2 - leftover ties.** Tied options are separated by **Copeland** (pairwise wins "
-        "minus losses), then by **Spearman footrule** (smallest total positional displacement), "
-        "and finally **at random** - randomisation avoids the systematic bias a fixed rule "
-        "(e.g. lower-numbered option first) would introduce. The random draw uses the "
-        "customer's simulation seed, so runs are reproducible."
+        "After applying the Kemeny-Young method, remaining ranking ties are resolved in "
+        "two phases:  \n"
+        "Phase 1 - If Kemeny returns several equally good orderings, the Schulze (2011) "
+        "strongest-paths ordering is used to produce an initial ranking.  \n"
+        "Phase 2 - leftover ties. After applying Kemeny and Schulze, remaining ties are "
+        "resolved using Copeland (pairwise wins minus losses) and then by Spearman "
+        "footrule (smallest total positional displacement). Any remaining ties are "
+        "resolved by randomization which avoids any systematic bias."
     )
-    with st.expander("Share of cases settled at each stage (document, 100,000 random cases)"):
-        st.dataframe(pd.DataFrame(DOC_STAGE_SHARES, columns=['Settled by', 'Share']),
-                     hide_index=True, use_container_width=False)
-        st.caption("The final ranking is one of the Kemeny-optimal orderings in 99.93% of the "
-                   "test cases; the exceptions arise only through the random last resort.")
+    st.markdown(
+        "The random draw uses the agent's simulation seed, so runs are reproducible."
+    )
 
     st.markdown("---")
-    st.markdown("**Settings**")
-    enabled_val = restore_widget_from_storage(
-        'rtd_tab_aggregation_enabled', st.session_state.rejected_transaction_tab_persistence,
-        'rtd_aggregation_enabled', st.session_state.get('rtd_aggregation_enabled', True))
-
-    def on_enabled_change():
-        st.session_state.rtd_aggregation_enabled = bool(st.session_state.rtd_tab_aggregation_enabled)
-        save_to_rtd_storage('rtd_tab_aggregation_enabled', 'rtd_aggregation_enabled')
-
-    enabled = st.checkbox(
-        "Integrate the mechanism rankings into one default list per customer",
-        value=bool(enabled_val), key='rtd_tab_aggregation_enabled', on_change=on_enabled_change,
-        help="When disabled, the per-mechanism rankings are still computed but no integrated "
-             "default list is produced (the decision's main output stays empty).",
+    st.markdown(
+        "This run presents the integrated default list results together with the "
+        "tie-resolution statistics: the share of agents with initial ties after Kemeny "
+        "and the stage at which the ties were settled."
     )
-    st.session_state.rtd_aggregation_enabled = bool(enabled)
-    st.caption("Options that no criterion can separate are ordered at random "
-               "(document rule), using the customer's simulation seed.")
+    render_aggregation_run_button()
 
 
 def reset_rtd_to_defaults():
@@ -843,7 +875,7 @@ def render_rejected_transaction_defaults_tab():
     # page width (base σ and effective σ per element, per budget level).
     if quintile_sigma_table is not None:
         st.markdown("**Base σ and effective σ per budget level:**")
-        st.dataframe(quintile_sigma_table, hide_index=True, use_container_width=True)
+        _render_black_table(quintile_sigma_table, full_width=True)
 
     # ---- Four mechanism sub-tabs + the rank-aggregation sub-tab ----
     st.markdown('<h4 class="subsection-header">Sub-Decision Mechanisms</h4>', unsafe_allow_html=True)
@@ -864,18 +896,20 @@ def render_rejected_transaction_defaults_tab():
 
     # ---- What the whole-decision run produces (explained above its Run button) ----
     st.markdown("---")
-    st.markdown("**Running the whole decision**")
+    st.markdown("##### Running the whole decision")
     st.markdown(
-        "**Run Rejected Transaction Defaults Only** produces the **integrated ranking** "
-        "only (each element's own results come from its Run button above). Per customer, "
-        "the Loyalty, Willingness-to-Pay, Risk-Taking and Flexibility priority "
-        "lists are reconciled into one consensus ranking of the five options by "
-        "Kemeny-Young aggregation (equal weights; ties settled Schulze → Copeland → "
-        "footrule → random), which is then cut to the customer's Options List Length. "
-        "**Option 5 (forgo the transaction) is the final option of the produced list: "
-        "any option ranked after it is discarded.** The Excel of a whole-decision run "
-        "contains all elements, their intermediate distributions and rankings together "
-        "with the final ranking."
+        "Run Rejected Transaction Defaults Only presents every element's results - the "
+        "score distribution and the option allocation of each of the five mechanisms - "
+        "followed by the percentage share of each first integrated default option. The "
+        "integrated list per agent is the Kemeny-Young consensus of the Loyalty, "
+        "Willingness-to-Pay, Risk-Taking and Flexibility rankings, truncated to the "
+        "agent's Options List Length and cut after Option 5 (forgo the transaction). "
+        "The tie-resolution statistics are not part of this run; they are shown by the "
+        "Run Integrated Default List Only button on the Integrated Default List "
+        "sub-tab. The complete simulation presents only the default list length and the "
+        "first integrated option per agent. The Excel files contain all element "
+        "variables: each element's inputs, intermediate scores, segments and rankings "
+        "together with the integrated default list."
     )
 
     # ---- Simulation buttons ----

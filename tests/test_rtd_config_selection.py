@@ -144,14 +144,19 @@ def test_apptest_select_display_apply_and_clear():
     assert any("Selected Rejected Transaction Defaults Configuration" in t for t in _success_texts(at))
 
     # combined-run application: change the tab afterwards (through its widgets) ->
-    # combined runs still use the saved model settings, individual runs follow the tab
+    # combined runs still use the saved model settings, individual runs follow the tab.
+    # The aggregation enable checkbox was removed from the tab (the rank aggregation is
+    # always on); tolerate either tab state so this test does not depend on it.
     at.number_input(key='rtd_tab_intercept_ttp').set_value(0.9)
-    at.checkbox(key='rtd_tab_aggregation_enabled').uncheck()
+    agg_toggle = next((c for c in at.checkbox if c.key == 'rtd_tab_aggregation_enabled'), None)
+    if agg_toggle is not None:
+        agg_toggle.uncheck()
+    expected_agg = agg_toggle is None
     at.radio(key='rtd_tab_income_mode').set_value('Categorical only')
     at.session_state['_probe_apply'] = True
     at.run(timeout=600)
     assert at.session_state['rtd_intercept_ttp'] == pytest.approx(0.9)
-    assert at.session_state['rtd_aggregation_enabled'] is False
+    assert at.session_state['rtd_aggregation_enabled'] is expected_agg
     assert not at.exception
     probe = at.session_state['_probe_result']
     assert probe['combined']['income_mode'] == 'continuous'
@@ -159,7 +164,7 @@ def test_apptest_select_display_apply_and_clear():
     assert probe['combined']['aggregation']['enabled'] is True
     assert probe['individual']['income_mode'] == 'continuous'      # explicit inc_mode of the sub-run
     assert probe['individual']['intercepts']['ttp'] == pytest.approx(0.9)
-    assert probe['individual']['aggregation']['enabled'] is False
+    assert probe['individual']['aggregation']['enabled'] is expected_agg
 
     # clear (the button sits below the display it removes; a follow-up run shows the
     # post-clear page like the st.rerun() does in the app)

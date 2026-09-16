@@ -222,6 +222,40 @@ def _generate_income_within_percentile_range(
 # MAIN INCOME GENERATION FUNCTIONS (Category-First)
 # ============================================================================
 
+def _has_income(agent_state: dict) -> bool:
+    """True when agent_state already carries a usable income (NaN counts as absent)."""
+    income = agent_state.get('income', None)
+    if income is None:
+        return False
+    try:
+        return not np.isnan(float(income))
+    except (TypeError, ValueError):
+        return False
+
+
+def _ensure_actual_allowance(agent_state: dict) -> None:
+    """
+    Derive 'actual_allowance' (12-200 credit scale) from 'Assigned Allowance Level'
+    if it has not been set yet.
+
+    'actual_allowance' is a deterministic mapping, independent of the income draw, so
+    it must exist whenever income does - including when income was pre-attached to the
+    agent (Research Baseline / Research Specification use the professor's income).
+    Silently does nothing when the level is missing; the caller that actually needs a
+    level (the generation path) raises instead.
+    """
+    if agent_state.get('actual_allowance', None) is not None:
+        return
+    level = agent_state.get('Assigned Allowance Level')
+    if level is None:
+        return
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        return
+    agent_state['actual_allowance'] = float(ALLOWANCE_CREDIT_MAPPING.get(level, 200))
+
+
 def get_agent_income(agent_state: dict, simulation_config: dict, rng: np.random.Generator) -> float:
     """
     Get or generate agent income - CATEGORY-FIRST ARCHITECTURE.
@@ -230,48 +264,57 @@ def get_agent_income(agent_state: dict, simulation_config: dict, rng: np.random.
     
     LOGIC:
     ======
-    1. If 'income' already exists in agent_state, return it (cached)
+    1. If 'income' already exists in agent_state, return it (cached) - but still make
+       sure 'actual_allowance' is derived from 'Assigned Allowance Level', since the
+       cached income may have been supplied by the caller rather than generated here
+       (Research Baseline / Research Specification carry the professor's fixed income
+       on every original participant; see src/validate_traits.py)
     2. Otherwise, generate BOTH 'income' and 'actual_allowance' from the agent's
        'Assigned Allowance Level' and cache them in agent_state
     3. 'income' is drawn stochastically from the percentile bucket
     4. 'actual_allowance' is mapped deterministically (12-200 scale)
-    
+
     This ensures:
     - One-time generation per agent
     - Logical consistency between categorical level and continuous income
     - Correct scale for regression (actual_allowance) vs. realistic decisions (income)
-    
+
     Args:
         agent_state: Agent's state dict containing 'Assigned Allowance Level'
         simulation_config: Full simulation configuration from orchestrator
         rng: Random number generator for reproducibility
-        
+
     Returns:
         float: Agent's annual income in large-scale dollars
-        
+
     Example:
         income = get_agent_income(agent_state, simulation_config, rng)
         # First call: generates both 'income' ($47,500) and 'actual_allowance' (72)
         # Subsequent calls: returns cached $47,500
     """
-    
-    # Check if income already exists (already processed)
-    if 'income' in agent_state and agent_state['income'] is not None:
+
+    # Check if income already exists (already processed, or pre-attached by the caller)
+    if _has_income(agent_state):
+        # The derived 12-200 allowance credit is NOT part of the income draw - it is a
+        # deterministic function of 'Assigned Allowance Level' - so it must be set here
+        # too, otherwise a pre-attached income would leave donation_default's
+        # get_actual_allowance() without its regressor.
+        _ensure_actual_allowance(agent_state)
         return float(agent_state['income'])
-    
+
     # Get the agent's Assigned Allowance Level (the source of truth)
     level = agent_state.get('Assigned Allowance Level')
-    
+
     if level is None:
         # Fallback for edge cases (shouldn't happen in normal flow)
         raise ValueError("Agent missing 'Assigned Allowance Level' - cannot generate income")
-    
+
     level = int(level)
-    
+
     # STEP 1: Generate actual_allowance (12-200 scale for regression)
     actual_allowance = ALLOWANCE_CREDIT_MAPPING.get(level, 200)
     agent_state['actual_allowance'] = float(actual_allowance)
-    
+
     # STEP 2: Generate large-scale dollar income from percentile bucket
     sim_params = simulation_config.get('simulation', {})
     percentile_low, percentile_high = _get_percentile_range_for_level(level)
@@ -312,9 +355,15 @@ def get_actual_allowance(agent_state: dict, simulation_config: dict, rng: np.ran
     if 'actual_allowance' in agent_state and agent_state['actual_allowance'] is not None:
         return float(agent_state['actual_allowance'])
     
-    # Otherwise, trigger income generation (which generates both)
+    # Otherwise, trigger income generation (which generates both). When income was
+    # pre-attached, get_agent_income() only derives the allowance credit, which needs
+    # 'Assigned Allowance Level' - so surface a clear error if that is missing too.
     get_agent_income(agent_state, simulation_config, rng)
-    
+
+    if agent_state.get('actual_allowance', None) is None:
+        raise ValueError("Agent missing 'Assigned Allowance Level' - cannot derive "
+                         "'actual_allowance' (income was supplied without a level)")
+
     return float(agent_state['actual_allowance'])
 
 

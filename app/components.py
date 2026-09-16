@@ -15,30 +15,34 @@ import yaml
 from app.models import get_decision_global_parameters, get_all_global_parameters
 
 
-def rtd_overview_metric(df):
-    """Headline metric for a Decision 4 model run, element-aware.
+# Per-element runs of the four RANKING elements have no meaningful headline metric:
+# the professor asked (2026-09) to drop the "Mean <element> score" metric entirely, so
+# those runs show the agent count alone.
+_RTD_NO_HEADLINE_ELEMENTS = ('loyalty', 'wtp', 'risk_taking', 'flexibility')
 
-    On a per-element run (rtd_run_element set for an individual Decision 4 run) the
-    metric is the run element's own mean score; otherwise the whole-decision metric
-    (average options list length). Returns (label, formatted_value).
+
+def rtd_overview_metric(df):
+    """Headline metric for a Decision 4 model run, run-shape aware.
+
+    Returns (label, formatted_value), or (None, None) when the run shape has no
+    element-specific headline metric:
+      - Loyalty / WTP / Risk-Taking / Flexibility per-element run -> (None, None);
+      - "Run Integrated Default List Only"  -> average integrated default list length;
+      - Options List Length per-element run, whole-decision runs and combined runs
+        -> average options list length (the caller adds its min/max).
     """
     element = None
     if (getattr(st.session_state, 'custom_decisions', None) == ['rejected_transaction_defaults']
             and not getattr(st.session_state, 'default_decisions', [])):
         element = st.session_state.get('rtd_run_element')
 
-    specs = {
-        # All three use the STANDARDIZED score (matches the results charts;
-        # professor 2026-08: all elements present standardized results).
-        'loyalty': ("Mean Loyalty score", 'rtd_loyalty_z', "{:.4f}"),
-        'wtp': ("Mean Willingness-to-Pay score", 'rtd_wtp_z', "{:.4f}"),
-        'risk_taking': ("Mean Risk-Taking score", 'rtd_rt_z', "{:.4f}"),
-        'flexibility': ("Mean Flexibility score", 'rtd_flex_z', "{:.4f}"),
-    }
-    if element in specs:
-        label, col, fmt = specs[element]
-        if col in df.columns:
-            return label, fmt.format(df[col].mean())
+    if element in _RTD_NO_HEADLINE_ELEMENTS:
+        return None, None
+    if element == 'aggregation':
+        if 'rtd_default_list_length' in df.columns:
+            return ("Avg. integrated default list length",
+                    f"{df['rtd_default_list_length'].mean():.2f}")
+        return None, None
     return "Avg. Options List Length", f"{df['rtd_choice_length'].mean():.2f}"
 
 
@@ -77,12 +81,14 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     if has_rtd and not has_donation and not has_income and not has_documents:
         # Decision 4 (Rejected Transaction Defaults) model run: no donation /
         # disclosure metrics exist - show the D4-relevant headline metrics instead.
-        # On a per-ELEMENT run, the headline metric must be the run element's own
-        # (a Loyalty-only run must not show the Options List Length metric).
+        # The metric depends on the run shape (see rtd_overview_metric): a per-element
+        # run of a RANKING element shows no element metric at all (professor 2026-09).
         label, value = rtd_overview_metric(df)
-        if label == "Avg. Options List Length":
-            # Whole-decision run: min and max Options List Length shown next to
-            # the average (professor 2026-08 request).
+        if label is None:
+            st.metric("Total Agents", f"{len(df):,}")
+        elif label == "Avg. Options List Length":
+            # Options List Length element / whole-decision run: min and max Options
+            # List Length shown next to the average (professor 2026-08 request).
             lengths = df['rtd_choice_length'].astype(int)
             col1, col2, col3, col4 = st.columns([1, 1.2, 1, 1])
             col1.metric("Total Agents", f"{len(df):,}")

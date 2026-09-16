@@ -10,22 +10,22 @@ import yaml
 import pandas as pd
 from pathlib import Path
 
+from app.models import read_yaml_config, write_yaml_config
+
 
 CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
 
 
 def load_disclose_income_config():
     """Load disclose_income configuration from YAML."""
-    with open(CONFIG_PATH, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_config(CONFIG_PATH)
     return config.get('disclose_income', {})
 
 
 def save_disclose_income_config(updates: dict):
     """Save updates to disclose_income configuration in YAML."""
     try:
-        with open(CONFIG_PATH, 'r') as f:
-            config = yaml.safe_load(f)
+        config = read_yaml_config(CONFIG_PATH)
 
         # Update disclose_income section
         if 'disclose_income' not in config:
@@ -44,8 +44,7 @@ def save_disclose_income_config(updates: dict):
             else:
                 config['disclose_income'][key] = value
 
-        with open(CONFIG_PATH, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        write_yaml_config(CONFIG_PATH, config)
 
         return True
     except Exception as e:
@@ -297,6 +296,8 @@ def render_di_sigma_controls(mode_suffix: str):
 
 def render_disclose_income_tab():
     """Render disclose_income specific configuration."""
+    # Must run BEFORE any di_* widget is instantiated in this script run.
+    apply_pending_reset()
     initialize_disclose_income_session_state()
     config = load_disclose_income_config()
 
@@ -777,8 +778,11 @@ def _apply_config_to_widget_keys(config):
         )
 
 
+DI_RESET_PENDING_KEY = '_di_reset_to_defaults_pending'
+
+
 def reset_to_defaults():
-    """Reset all configuration values to their defaults."""
+    """Write the defaults to YAML and schedule the session-state reset."""
     default_config = {
         'intercept': 0.75,
         'income_mode': 'Categorical only',
@@ -800,20 +804,31 @@ def reset_to_defaults():
             success = False
 
     if success:
-        # 1. Clear all di_ keys and persistence storage
-        keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
-        for key in keys_to_clear:
-            del st.session_state[key]
-        if 'disclose_income_tab_persistence' in st.session_state:
-            del st.session_state['disclose_income_tab_persistence']
-
-        # 2. Re-read the now-reset YAML and SET every widget key to
-        #    the default value.  This prevents Streamlit's internal
-        #    widget cache from retaining stale slider values that would
-        #    be auto-saved back to YAML on the next rerun.
-        _apply_config_to_widget_keys(load_disclose_income_config())
+        # Schedule the session-state reset for the TOP of the next script run.
+        # Clearing / re-seeding the di_* widget keys here would happen AFTER
+        # those widgets were already instantiated in this run - a Streamlit
+        # anti-pattern that leaves widgets whose element id no longer has a
+        # session-state entry.
+        st.session_state[DI_RESET_PENDING_KEY] = True
 
     return success
+
+
+def apply_pending_reset():
+    """Apply a scheduled reset before any disclose_income widget renders."""
+    if not st.session_state.get(DI_RESET_PENDING_KEY, False):
+        return
+    del st.session_state[DI_RESET_PENDING_KEY]
+    # 1. Clear all di_ keys and persistence storage
+    for key in [k for k in st.session_state.keys() if k.startswith('di_')]:
+        del st.session_state[key]
+    if 'disclose_income_tab_persistence' in st.session_state:
+        del st.session_state['disclose_income_tab_persistence']
+
+    # 2. Re-read the now-reset YAML and SET every widget key to the default
+    #    value. This prevents Streamlit's internal widget cache from retaining
+    #    stale slider values that would be auto-saved back to YAML later.
+    _apply_config_to_widget_keys(load_disclose_income_config())
 
 
 def render_actions_and_management_section(config):

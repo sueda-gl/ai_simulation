@@ -360,31 +360,59 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
             else:
                 agent_record[f'rejected_transaction_{priority_num}_choice'] = 'N/A'
 
-        # Decision 4 MODEL outputs (four trait-based sub-decision mechanisms; present only
-        # when Decision 4 ran as a custom decision). Rankings exported as 'a > b > c'
-        # option-number strings; the dedicated Decision 4 Excel has the full breakdown.
+        # Decision 4 MODEL outputs (five trait-based sub-decision elements + the
+        # Section-6 rank aggregation; present only when Decision 4 ran as a custom
+        # decision). The complete-simulation results page shows only the integrated
+        # default list, so this workbook must carry EVERY element variable (professor
+        # 2026-09): the raw inputs, the z-scores the equations use, each element's
+        # score, intermediates, deterministic/final segment, its option list, and the
+        # integration diagnostics. Lists are exported as 'a > b > c' option-number
+        # strings; the dedicated Decision 4 Excel has the per-element sheets.
         if 'rtd_choice_length' in row:
-            # Element values (scores, standardized scores, segments, rankings) so the
-            # complete-simulation Excel carries every element even though the results
-            # page shows only the integrated ranking (professor, 2026-09).
+            # -- inputs the Decision 4 equations use (traits are already in the record
+            #    above; these add the ones only Decision 4 needs) --
+            agent_record['rtd_Conscientiousness'] = row.get('ConscientiousnessBig5', np.nan)
+            agent_record['rtd_Education'] = row.get('Education', np.nan)
+            agent_record['rtd_stdactions'] = row.get('stdactions', np.nan)
+            agent_record['rtd_income_mode'] = row.get('rtd_income_mode', 'N/A')
+            # -- z-scores actually multiplied by the coefficients (Stata names) --
+            for src, export_name in [
+                    ('rtd_z_extraversion', 'rtd_z_extraversionbig5'),
+                    ('rtd_z_agreeable', 'rtd_z_agreeable'),
+                    ('rtd_z_neuroticism', 'rtd_z_neuroticismbig5'),
+                    ('rtd_z_conscientiousness', 'rtd_z_conscientiousnessbig5'),
+                    ('rtd_z_openness', 'rtd_z_opennessbig5'),
+                    ('rtd_reducation', 'rtd_reducation'),
+                    ('rtd_z_income', 'rtd_z_net_income'),
+                    ('rtd_z_stdactions', 'rtd_z_stdactions')]:
+                if src in row:
+                    agent_record[export_name] = row.get(src, np.nan)
+            # -- 1. Options List Length (Tendency to Plan) --
             agent_record['rtd_weighted_ttp'] = row.get('rtd_weighted_ttp', np.nan)
+            agent_record['rtd_weighted_ttp06'] = row.get('rtd_weighted_ttp06', np.nan)
+            agent_record['rtd_choice_length_deterministic'] = row.get(
+                'rtd_choice_length_deterministic', np.nan)
             agent_record['rtd_choice_length'] = row.get('rtd_choice_length', np.nan)
+            # -- 2-5. Ranking elements --
+            for src in ('rtd_flex_ivw', 'rtd_flex_z_ivw'):
+                if src in row:
+                    agent_record[src] = row.get(src, np.nan)
             for mech_col, export_name in [('loyalty', 'rtd_loyalty'), ('wtp', 'rtd_wtp'),
                                           ('rt', 'rtd_risk_taking'), ('flex', 'rtd_flexibility')]:
                 if f'rtd_{mech_col}_segment' not in row:
                     continue
                 agent_record[f'{export_name}_score'] = row.get(f'rtd_{mech_col}_score', np.nan)
                 agent_record[f'{export_name}_z'] = row.get(f'rtd_{mech_col}_z', np.nan)
+                agent_record[f'{export_name}_segment_deterministic'] = row.get(
+                    f'rtd_{mech_col}_segment_deterministic', np.nan)
                 agent_record[f'{export_name}_segment'] = row.get(f'rtd_{mech_col}_segment', np.nan)
                 ranking = row.get(f'rtd_{mech_col}_ranking', None)
                 agent_record[f'{export_name}_ranking'] = (
                     ' > '.join(str(o) for o in ranking) if isinstance(ranking, list) else 'N/A'
                 )
-            if 'rtd_z_stdactions' in row:
-                agent_record['rtd_z_stdactions'] = row.get('rtd_z_stdactions', np.nan)
-            # Section-6 rank aggregation: the integrated default list (option numbers,
-            # after the list-length and Option-5 truncation), the full consensus
-            # ranking it was cut from, and the tie-break stage that settled it.
+            # -- 6. Section-6 rank aggregation: the integrated default list (option
+            # numbers, after the list-length and Option-5 truncation), the consensus
+            # ranking it was cut from, and the tie-break diagnostics.
             if 'rtd_default_list' in row:
                 default_list = row.get('rtd_default_list', None)
                 agent_record['rtd_default_list'] = (
@@ -394,9 +422,13 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
                 agent_record['rtd_consensus_ranking'] = (
                     ' > '.join(str(o) for o in consensus) if isinstance(consensus, list) else 'N/A'
                 )
+                agent_record['rtd_consensus_kemeny_status'] = row.get('rtd_consensus_kemeny_status', 'N/A')
+                agent_record['rtd_consensus_n_kemeny_optimal'] = row.get('rtd_consensus_n_kemeny_optimal', np.nan)
+                agent_record['rtd_consensus_is_kemeny_optimal'] = row.get('rtd_consensus_is_kemeny_optimal', 'N/A')
                 agent_record['rtd_consensus_settled_by'] = row.get('rtd_consensus_settled_by', 'N/A')
+                agent_record['rtd_consensus_truncated_by'] = row.get('rtd_consensus_truncated_by', 'N/A')
                 agent_record['rtd_default_list_length'] = row.get('rtd_default_list_length', np.nan)
-        
+
         # Decision 5: Vendor Choice Weights (flatten dict to columns)
         vendor_weights = row.get('vendor_choice_weights', {})
         if isinstance(vendor_weights, dict):
@@ -1528,23 +1560,41 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         # run produces no purchase requests, so no transaction-level file is offered.
         from app.pages.results.visualizations.transaction_viz import (
             _prepare_rtd_model_export, _rtd_active_element, _RTD_ELEMENT_SHEETS,
+            _RTD_AGG_SHEET, _rtd_selected_config_key,
         )
         active_element = _rtd_active_element()
+        # Once a configuration has been selected with "Use This Config" the export
+        # covers ONLY that configuration (professor 2026-09), mirroring the results
+        # display (transaction_viz.render_rtd_comparison_results).
+        selected_key = _rtd_selected_config_key(results_dict or {})
+        if selected_key is not None:
+            results_dict = {selected_key: results_dict[selected_key]}
+            df = results_dict[selected_key]
         export_all_configs = results_dict is not None and len(results_dict) > 1
 
-        if active_element:
+        if active_element == 'aggregation':
+            st.markdown(
+                "**Decision 4 Integrated Default List Export:** one row per agent with "
+                "every input and z-score, each element's score, segment and list, the "
+                "consensus ranking with its tie-break diagnostics and the integrated "
+                "default list."
+            )
+        elif active_element:
             st.markdown(
                 f"**Decision 4 Results Export ({_RTD_ELEMENT_SHEETS[active_element]} element):** "
-                "one row per agent with the element's independent variables, its score "
-                "and the resulting option sequence."
+                "one row per agent with the element's independent variables and the "
+                "z-scores its equation uses, its score, segments and the resulting "
+                "option sequence."
             )
         else:
             st.markdown(
                 "**Decision 4 (Rejected Transaction Defaults) Results Export:** one row "
-                "per agent with the Decision 4 element results - one self-contained "
-                "sheet per element with its independent variables, score, intermediate "
-                "distributions and the resulting option sequence."
+                "per agent with the Decision 4 element results - the integrated default "
+                "list sheet with every input, z-score, element score and segment, then "
+                "one self-contained sheet per element."
             )
+        if selected_key is not None:
+            st.caption("Selected configuration only.")
         if export_all_configs:
             st.caption(f"{len(results_dict)} configurations - sheet names are prefixed "
                        "with the configuration.")
@@ -1552,7 +1602,10 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         try:
             def _rtd_sheets_for(frame):
                 sheets = _prepare_rtd_model_export(frame) or {}
-                if active_element:
+                if active_element == 'aggregation':
+                    sheets = ({_RTD_AGG_SHEET: sheets[_RTD_AGG_SHEET]}
+                              if _RTD_AGG_SHEET in sheets else {})
+                elif active_element:
                     name = _RTD_ELEMENT_SHEETS[active_element]
                     sheets = {name: sheets[name]} if name in sheets else {}
                 return sheets

@@ -201,10 +201,12 @@ def _render_overview_section(results_dict, has_combined_simulation, has_explicit
             if donation_col in df.columns:
                 st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
             elif 'rtd_choice_length' in df.columns:
-                # Decision 4 model run: element-aware headline metric
+                # Decision 4 model run: run-shape-aware headline metric (a per-element
+                # run of a ranking element has none - professor 2026-09)
                 from app.components import rtd_overview_metric
                 rtd_label, rtd_value = rtd_overview_metric(df)
-                st.metric(rtd_label, rtd_value)
+                if rtd_label:
+                    st.metric(rtd_label, rtd_value)
 
         if 'rtd_choice_length' in df.columns and 'donation_default' not in df.columns:
             st.caption(f"📊 Mode: {mode_name.title()}")

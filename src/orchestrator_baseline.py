@@ -45,7 +45,13 @@ class OrchestratorBaseline:
         
         # Get required traits and load original data
         self.traits = get_master_trait_list()
-        self.original_data = merged[self.traits].copy().dropna()
+        # Carry the professor's fixed per-participant `income` alongside the traits so
+        # get_agent_income() finds it already cached and the research population
+        # reproduces his Stata file instead of drawing a fresh income. dropna() stays
+        # restricted to the trait columns so the 280-participant selection is unchanged.
+        income_cols = ['income'] if 'income' in merged.columns else []
+        self.original_data = (merged[self.traits + income_cols].copy()
+                              .dropna(subset=self.traits))
         print(f"Research Baseline mode: Using {len(self.original_data)} original participants (no stochastic component)")
         
         # Set population context for decision modules

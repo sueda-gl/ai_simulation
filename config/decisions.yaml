@@ -224,14 +224,16 @@ disclose_documents:
 # Decision 4: Rejected Transaction Defaults - FIVE trait-based sub-decision mechanisms
 # (TTP list length 0-5; Loyalty / WTP / Risk-Taking / Flexibility priority
 # rankings), integrated into ONE default list per agent by the Section-6 rank aggregation
-# (doc rev 280826-2): Kemeny-Young consensus + tie-break hierarchy Schulze -> Copeland ->
+# (doc rev 040926-2): Kemeny-Young consensus + tie-break hierarchy Schulze -> Copeland ->
 # footrule -> random, then truncated to the TTP list length and at Option 5 (see
 # `aggregation` below).
-# Source: "Decision 4 - Rejected Transaction Defaults" doc (rev 280826-2); ground truth
-# arbiter: Stata_File_Decision4_290826.dta (data/stata_d4_verification.csv is the frozen
+# Source: "Decision 4 - Rejected Transaction Defaults" doc (rev 040926-2); ground truth
+# arbiter: Stata_File_Decision4_050926.dta (data/stata_d4_verification.csv is the frozen
 # extract of all mechanisms incl. Flexibility, plus the June file's WTP stochastic columns;
 # data/stata_d4_flexibility_verification.csv holds the Flexibility columns alone). All
-# deterministic outputs (segments AND choice columns, Stata direction) verified 280/280.
+# deterministic outputs (segments AND choice columns) verified 280/280 - rev 040926-2 and
+# the 050926 file adopted the app's segment -> option-list direction, so the stored
+# choice1..5_* columns now equal the app's lists directly (no mirroring).
 rejected_transaction_defaults:
   uses_global_parameters: []
   placeholder: false
@@ -259,10 +261,12 @@ rejected_transaction_defaults:
       neuroticism: 0.01959
       conscientiousness: 0.00901465
       education: 0.0297        # applies to reducation = Education - 1 (0/1)
-    loyalty:                   # doc rev 280826-2 bs_weighted_loyalty; priority 3 > 1 > 4 > 5 > 2
-      extraversion: -0.009828468   # (.dta 290826: bs reproduces to 7e-9; std(bs) is binned)
+    loyalty:                   # doc rev 040926-2 bs_weighted_loyalty; priority 3 > 1 > 4 > 5 > 2
+      extraversion: -0.009828468   # (.dta 050926: bs reproduces to 3.7e-9; std(bs) is binned)
       openness: 0.01096706
-      agreeable: 0.03092465
+      agreeable: 0.0123046     # = 0.267139 * 0.04606063; rev 040926-2 corrected the w_A
+                               # typo that printed 0.67139 and gave the old 0.03092465
+                               # (segments move 14/71/137/56/2 -> 12/87/148/31/2)
     wtp:                       # Hunter & Schmidt pooling (doc code); priority 3 > 2 > 1 > 4 > 5
       extraversion: 0.078863062
       agreeable: -0.012326128
@@ -274,19 +278,19 @@ rejected_transaction_defaults:
       conscientiousness: -0.037739440732
       neuroticism: -0.025388697852
       income: 0.006874197106
-    flexibility:               # IVW pooling (retained, doc Section 5); priority 2 > 4 > 3 > 1 > 5
-      extraversion: 0.0206     # O/N/A: arithmetically corrected values adopted in the
-      openness: 0.0294118      # professor's 2026-09 review (doc/.dta literal values were
-      neuroticism: -0.04921357 # 0.0293241 / -0.053781925 / 0.04921357; kept as
-      agreeable: 0.04339814    # DTA_FLEX_COEFFS in the model for the .dta verification tests)
-      conscientiousness: 0.04811179
+    flexibility:               # IVW pooling (doc rev 040926-2 Section 5); priority 2 > 4 > 3 > 1 > 5
+      extraversion: 0.0206     # O/N/A: the arithmetically corrected values adopted in the
+      openness: 0.0294118      # professor's 2026-09 review; rev 040926-2 wrote them into the
+      neuroticism: -0.04921357 # document and Stata_File_Decision4_050926.dta now embeds them
+      agreeable: 0.04339814    # (the old literals 0.0293241 / -0.053781925 / 0.04921357 are
+      conscientiousness: 0.04811179   # obsolete - the file reproduces 280/280 with these)
   # Income mode: 'continuous' (default, .dta-verified) or 'categorical'.
   income_mode: continuous
-  # Categorical-income effects (doc rev 130826): score = intercept + level dummy
+  # Categorical-income effects (doc rev 040926-2): score = intercept + level dummy
   # + personality part (income term dropped, remaining coefficients as above).
   # Level 1 (EUR 12) is the base level (intercept only); level_2..5 = EUR 32/72/128/200.
   categorical_income_effects:
-    wtp:                       # doc rev 280826-2 section 3 cond() code
+    wtp:                       # doc rev 040926-2 section 3 cond() code
       intercept: -0.691843
       level_2: 0.2671588
       level_3: 0.5057716
@@ -298,11 +302,11 @@ rejected_transaction_defaults:
       level_3: 0.0050555
       level_4: 0.0092738
       level_5: 0.0179812
-  # Segment s (1..5) receives the tail seq[s-1:] - the STATA direction (doc replace
-  # statements + .dta choice1..5 columns, 280/280 for every mechanism): segment 1 gets the
-  # full list starting with the top option, segment 5 only the last option. The doc prose
-  # and the professor's 2026-08 feedback describe the mirror; per the 2026-09-04 rule the
-  # Stata file arbitrates.
+  # Segment s (1..5) receives the tail seq[5-s:]: segment 5 (highest scores) gets the full
+  # list starting with the top option, segment 1 (lowest) only the last option, list length 1.
+  # The professor instructed this direction on 2026-09-16; doc rev 040926-2 rewrote every
+  # `replace choice<p>_*` statement accordingly and Stata_File_Decision4_050926.dta's stored
+  # choice1..5_* columns now equal these lists exactly (280/280 for every mechanism).
   priority_sequences:
     loyalty: [3, 1, 4, 5, 2]
     wtp: [3, 2, 1, 4, 5]
@@ -342,12 +346,28 @@ rejected_transaction_defaults:
     stdactions:                # observed flexibility: SD in actions per cycle (original 280)
       mean: 1.1863375902
       sd: 0.6752842665
-  # sigma = (score range / 18) * mean(stdactions within allowance group); doc sigma tables.
-  # NOTES: loyalty sigmas are on the STANDARDIZED weighted_loyalty scale (doc rev
-  # 280826-2 table, factor 6.432015/18); risk_taking overall 0.332208167 = 5.979747/18 follows the doc as
-  # stated even though it omits the *mean(stdactions) factor the other mechanisms use;
-  # flexibility 0.4359172665 = (6.494119/18)*1.1863376 follows the doc's sigma table as
-  # stated even though the doc quotes the z_anchored range as 6.6140623.
+  # sigma = (score range / 18) * mean(stdactions within allowance group); doc rev 040926-2
+  # sigma tables. Every range the doc quotes was re-verified against
+  # Stata_File_Decision4_050926.dta on 2026-09-16 (weighted_loyalty 7.0783043 vs doc
+  # 7.0783045, z_WTP_calculated 6.868057 vs doc 6.868056, z_RT_calculated_hs 5.979747,
+  # z_anchored_flexibility 6.594423 vs doc 6.5944228).
+  # NOTES: loyalty sigmas are on the STANDARDIZED weighted_loyalty scale (factor
+  # 7.0783045/18 = 0.393239139 - the range grew with the corrected Agreeableness weight);
+  # risk_taking now INCLUDES the *mean(stdactions) factor that its own formula states
+  # (overall 0.332208167*1.1863376 = 0.39522204, quintile multiplier 0.332208167 - rev
+  # 040926-2 replaced the old factor-only 0.332208167 and the 0.28 ~ 5/18 quintile table);
+  # flexibility 0.4346228732 = 0.3663568222*1.1863376 with 0.3663568222 = 6.5944228/18
+  # (the doc's earlier "(6.494119/18)" numerator typo is gone); wtp 0.4526575455 =
+  # 0.3815586667*1.186338 from the range 6.868056 (supersedes the rev-280826 0.45265807275
+  # derived from 6.868064; 1.2e-6 relative).
+  # TWO ARITHMETIC SLIPS inside rev 040926-2's own tables, followed DOC-LITERALLY and
+  # flagged to the professor: (a) risk_taking sigma_overall - the doc prints
+  # "0.332208167 x 1.1863376 = 0.39522204" but that product is 0.39411104 (result 1.1e-3
+  # too high; the RT quintile column IS consistent with the factor); (b) the loyalty
+  # sigma_quintile column - the doc's factor 0.393239139 and Total row agree, but all
+  # five per-allowance entries are the previous revision's column (factor 0.357334167)
+  # multiplied once more by 1.0228235, implying 0.365489783. TTP / WTP / Flexibility are
+  # internally consistent throughout. See docs/d4_alignment_050926_2026-09-16.md.
   stochastic:
     sigma_value: 0             # >0 enables draws in Research Specification mode
     in_copula: false           # enables draws in Copula mode
@@ -371,13 +391,13 @@ rejected_transaction_defaults:
         anchor: continuous     # weighted_ttp06 (doc line 191)
       loyalty:
         sigma_strategy: overall
-        sigma_overall: 0.423918958
-        sigma_quintile:        # 0.357334167 * mean(stdactions within allowance group), doc table
-          '1': 0.3654897834
-          '2': 0.4061810687
-          '3': 0.4683390612
-          '4': 0.4379824517
-          '5': 0.448272175
+        sigma_overall: 0.4665145336   # 0.393239139 * 1.186338 (rev 040926-2)
+        sigma_quintile:        # 0.393239139 * mean(stdactions within allowance group), doc table
+          '1': 0.3738315395
+          '2': 0.4154515424
+          '3': 0.4790281978
+          '4': 0.4479787442
+          '5': 0.4585033149
         scale_factor: 1.0
         quintile_scale_factors:
           '1': 1.0
@@ -388,13 +408,13 @@ rejected_transaction_defaults:
         anchor: continuous     # population z = std(bs_weighted_loyalty) ('binned' = doc-literal)
       wtp:
         sigma_strategy: overall
-        sigma_overall: 0.45265807275
-        sigma_quintile:
-          '1': 0.390267757
-          '2': 0.4337176628
-          '3': 0.5000895873
-          '4': 0.4676749852
-          '5': 0.4786622888
+        sigma_overall: 0.4526575455   # 0.3815586667 * 1.186338 (rev 040926-2)
+        sigma_quintile:        # 0.3815586667 * mean(stdactions within allowance group), doc table
+          '1': 0.3902671709
+          '2': 0.4337170115
+          '3': 0.5000888363
+          '4': 0.4676742829
+          '5': 0.4786615699
         scale_factor: 1.0
         quintile_scale_factors:
           '1': 1.0
@@ -405,13 +425,13 @@ rejected_transaction_defaults:
         anchor: continuous     # raw WTP_calculated (.dta-verified: NOT the binned score)
       risk_taking:
         sigma_strategy: overall
-        sigma_overall: 0.332208167
-        sigma_quintile:
-          '1': 0.28639058
-          '2': 0.318275468
-          '3': 0.366981244
-          '4': 0.343194404
-          '5': 0.351257228
+        sigma_overall: 0.39522204     # 0.332208167 * 1.1863376 (rev 040926-2)
+        sigma_quintile:        # 0.332208167 * mean(stdactions within allowance group), doc table
+          '1': 0.33979032
+          '2': 0.37762039
+          '3': 0.43540774
+          '4': 0.40718566
+          '5': 0.41675186
         scale_factor: 1.0
         quintile_scale_factors:
           '1': 1.0
@@ -422,13 +442,13 @@ rejected_transaction_defaults:
         anchor: continuous     # population z of RT_calculated ('binned' = doc-literal)
       flexibility:
         sigma_strategy: overall
-        sigma_overall: 0.4359172665
-        sigma_quintile:        # 0.367448 * mean(stdactions within allowance group), doc table
-          '1': 0.3758343529
-          '2': 0.4176773361
-          '3': 0.4815946054
-          '4': 0.4503788034
-          '5': 0.4609597598
+        sigma_overall: 0.4346228732   # 0.3663568222 * 1.1863376 (rev 040926-2)
+        sigma_quintile:        # 0.3663568222 * mean(stdactions within allowance group), doc table
+          '1': 0.3747183671
+          '2': 0.4164371037
+          '3': 0.4801645799
+          '4': 0.4490414678
+          '5': 0.4595910065
         scale_factor: 1.0
         quintile_scale_factors:
           '1': 1.0

@@ -6,7 +6,8 @@ Donation Default decision tab configuration.
 import streamlit as st
 import pandas as pd
 from app.pages.decision_execution import run_individual_decision
-from app.models import load_donation_coefficients_from_yaml
+from app.models import (load_donation_coefficients_from_yaml, read_yaml_config,
+                        write_yaml_config)
 
 
 def ensure_coefficients_loaded():
@@ -1053,8 +1054,7 @@ def get_current_yaml_intercepts():
     
     config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
     
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_config(config_path)
     
     regression_coeffs = config['donation_default']['regression_coefficients']
     
@@ -1073,8 +1073,7 @@ def update_yaml_intercepts(override_values):
         config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
         
         # Load current configuration
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        config = read_yaml_config(config_path)
         
         # Update intercept values
         regression_coeffs = config['donation_default']['regression_coefficients']
@@ -1088,8 +1087,7 @@ def update_yaml_intercepts(override_values):
             regression_coeffs['continuous']['intercept'] = float(override_values['continuous'])
         
         # Write back to configuration file
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        write_yaml_config(config_path, config)
         
         return True
         
@@ -1253,8 +1251,7 @@ def get_current_yaml_adjustment():
     
     config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
     
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_config(config_path)
     
     adjustment_params = config['donation_default'].get('adjustment', {})
     
@@ -1272,8 +1269,7 @@ def update_yaml_adjustment(override_values):
         config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
         
         # Load current configuration
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        config = read_yaml_config(config_path)
         
         # Update adjustment values
         if 'adjustment' not in config['donation_default']:
@@ -1283,8 +1279,7 @@ def update_yaml_adjustment(override_values):
             config['donation_default']['adjustment']['shift_value'] = float(override_values['shift_value'])
         
         # Write back to configuration file
-        with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        write_yaml_config(config_path, config)
         
         return True
         

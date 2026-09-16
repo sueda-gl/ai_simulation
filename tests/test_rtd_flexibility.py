@@ -2,15 +2,19 @@
 Validation tests for Decision 4, Section 5: the Flexibility mechanism.
 
 Ground truth: data/stata_d4_flexibility_verification.csv - a frozen extract of the
-professor's `Stata_File_Decision4_290826.dta` (280 participants) holding the raw
+professor's `Stata_File_Decision4_050926.dta` (280 participants) holding the raw
 inputs, stdactions and every Flexibility column (Flexibility_calculated_ivw, its z,
-z_stdactions, anchored_flexibility, z_anchored_flexibility, min/max,
+z_stdactionsP, anchored_flexibility, z_anchored_flexibility, min/max,
 Flexibility_combined15, choice1-5_flex_deterministic).
 
 The deterministic pipeline must reproduce the .dta 280/280 at the bin level and to
-float32 storage tolerance on every continuous intermediate. The choice lists are
-asserted directly against the stored columns (STATA direction: segment s -> tail
-seq[s-1:], the project rule since 2026-09-04 that the Stata file arbitrates). Also tested: stdactions z-scoring
+float32 storage tolerance on every continuous intermediate. Doc rev 040926-2 and the
+050926 file ADOPTED both of the app's outstanding Flexibility differences: the
+corrected O/N/A IVW coefficients (so the former DTA_FLEX_COEFFS pin is gone - the
+file reproduces with FLEX_COEFFS) and the segment -> option-list direction
+(segment s -> SEQ[5-s:], so Flexibility_combined15 == 5 takes Option 2 first and
+== 1 takes only Option 5). The choice lists are therefore asserted DIRECTLY against
+the stored columns, NaN pattern included. Also tested: stdactions z-scoring
 constants, beta4 fixed-cutoff semantics, the neutral fallback when stdactions is
 absent, the stochastic layer's RNG replication, the copula trait, and the
 aggregation now receiving the document's four inputs.
@@ -24,7 +28,7 @@ import pytest
 import yaml
 
 from src.decisions.rejected_transaction_defaults import (
-    DEFAULT_Z_SCORING, DTA_FLEX_COEFFS, FLEX_ANCHOR_WEIGHTS, FLEX_COEFFS, MECHANISMS,
+    DEFAULT_Z_SCORING, FLEX_ANCHOR_WEIGHTS, FLEX_COEFFS, MECHANISMS,
     PRIORITY_SEQUENCES,
     SIGMA_OVERALL, SIGMA_FACTORS, MEAN_STDACTIONS,
     compute_rtd_population_stats, compute_rtd_scores, flex_anchored_score,
@@ -36,7 +40,7 @@ FLEX_CSV = os.path.join(REPO, "data", "stata_d4_flexibility_verification.csv")
 DECISIONS_YAML = os.path.join(REPO, "config", "decisions.yaml")
 
 ATOL = 5e-6                      # float32 storage tolerance
-EXPECTED_FLEX_DIST = {1: 17, 2: 83, 3: 141, 4: 35, 5: 4}
+EXPECTED_FLEX_DIST = {1: 17, 2: 85, 3: 137, 4: 37, 5: 4}
 SEQ = [2, 4, 3, 1, 5]
 
 
@@ -53,10 +57,9 @@ def params():
     p["model_enabled"] = True
     # the .dta embeds no intercepts
     p["intercepts"] = {m: 0.0 for m in MECHANISMS}
-    # the .dta embeds the document's literal O/N/A coefficients; the model carries the
-    # corrected values adopted in the professor's 2026-09 review, so the .dta
-    # verification pins the .dta's coefficients (the PIPELINE is what is verified)
-    p["coefficients"]["flexibility"] = dict(DTA_FLEX_COEFFS)
+    # NOTE: no coefficient override any more - the 050926 file embeds exactly the
+    # config's (corrected) Flexibility coefficients, so the whole element is verified
+    # end to end against the shipped configuration.
     return p
 
 
@@ -116,29 +119,40 @@ def results(flexgold, params, sim_config):
 # Constants (doc Section 5 / .dta)
 # ---------------------------------------------------------------------------
 def test_constants_follow_the_document(params):
-    corrected = {"extraversion": 0.0206, "openness": 0.0294118,
-                 "neuroticism": -0.04921357, "agreeable": 0.04339814,
-                 "conscientiousness": 0.04811179}
-    assert FLEX_COEFFS == corrected
+    """doc rev 040926-2 Section 5 / Stata_File_Decision4_050926.dta. The O/N/A values
+    the app corrected in the professor's 2026-09 review are now the document's and the
+    file's own values, so there is exactly ONE set of Flexibility coefficients."""
+    adopted = {"extraversion": 0.0206, "openness": 0.0294118,
+               "neuroticism": -0.04921357, "agreeable": 0.04339814,
+               "conscientiousness": 0.04811179}
+    assert FLEX_COEFFS == adopted
     with open(DECISIONS_YAML) as f:
         yaml_cfg = yaml.safe_load(f)["rejected_transaction_defaults"]
-    assert yaml_cfg["coefficients"]["flexibility"] == corrected
-    assert DTA_FLEX_COEFFS == {"extraversion": 0.0206, "openness": 0.0293241,
-                               "neuroticism": -0.053781925, "agreeable": 0.04921357,
-                               "conscientiousness": 0.04811179}
-    assert params["coefficients"]["flexibility"] == DTA_FLEX_COEFFS
+    assert yaml_cfg["coefficients"]["flexibility"] == adopted
+    assert params["coefficients"]["flexibility"] == adopted   # no .dta-only override
     assert PRIORITY_SEQUENCES["flexibility"] == SEQ == params["priority_sequences"]["flexibility"]
     assert FLEX_ANCHOR_WEIGHTS == {"observed": 0.25, "calculated": 0.75}
     assert params["flexibility_anchor"] == {"observed_weight": 0.25, "calculated_weight": 0.75}
-    assert SIGMA_OVERALL["flexibility"] == 0.4359172665
-    # the doc multiplies rounded factors (0.367448 * 1.1863376), so ~1e-7 slack
-    assert abs(SIGMA_FACTORS["flexibility"] * MEAN_STDACTIONS["overall"] - 0.4359172665) < 1e-6
-    doc_quintiles = {'1': 0.3758343529, '2': 0.4176773361, '3': 0.4815946054,
-                     '4': 0.4503788034, '5': 0.4609597598}
+    # rev 040926-2: range 3.6235049 - (-2.9709179) = 6.5944228 -> factor 6.5944228/18
+    assert SIGMA_FACTORS["flexibility"] == 0.3663568222
+    assert SIGMA_OVERALL["flexibility"] == 0.4346228732
+    # the doc multiplies rounded factors (0.3663568222 * 1.1863376), so ~1e-7 slack
+    assert abs(SIGMA_FACTORS["flexibility"] * MEAN_STDACTIONS["overall"] - 0.4346228732) < 1e-6
+    doc_quintiles = {'1': 0.3747183671, '2': 0.4164371037, '3': 0.4801645799,
+                     '4': 0.4490414678, '5': 0.4595910065}
+    assert params["stochastic"]["mechanisms"]["flexibility"]["sigma_overall"] == 0.4346228732
     assert params["stochastic"]["mechanisms"]["flexibility"]["sigma_quintile"] == doc_quintiles
     for lvl, val in doc_quintiles.items():
         assert abs(SIGMA_FACTORS["flexibility"] * MEAN_STDACTIONS[int(lvl)] - val) < 1e-6
     assert params["intercepts"]["flexibility"] == 0.0
+
+
+def test_flexibility_sigma_factor_is_the_dta_range_over_18(flexgold):
+    """The rev 040926-2 factor is the file's own z_anchored_flexibility range / 18."""
+    z = flexgold["z_anchored_flexibility"].to_numpy()
+    rng = float(z.max() - z.min())
+    assert abs(rng - 6.5944228) < 1e-5
+    assert abs(SIGMA_FACTORS["flexibility"] - rng / 18.0) < 1e-6
 
 
 def test_stdactions_z_scoring_uses_the_original_280_stats(flexgold, params):
@@ -154,7 +168,7 @@ def test_stdactions_z_scoring_uses_the_original_280_stats(flexgold, params):
 def test_flexibility_intermediates_match_stata(flexgold, results):
     for key, col in (("rtd_flex_ivw", "Flexibility_calculated_ivw"),
                      ("rtd_flex_z_ivw", "z_Flexibility_calculated_ivw"),
-                     ("rtd_z_stdactions", "z_stdactions"),
+                     ("rtd_z_stdactions", "z_stdactionsP"),   # renamed in the 050926 file
                      ("rtd_flex_score", "anchored_flexibility"),
                      ("rtd_flex_z", "z_anchored_flexibility")):
         got = np.array([r[key] for r in results])
@@ -181,32 +195,59 @@ def test_flexibility_segments_exact(flexgold, results):
     assert dist == EXPECTED_FLEX_DIST
 
 
-def test_corrected_coefficients_move_eight_segments(flexgold, params, sim_config):
-    """With the model's (corrected O/N/A) coefficients the segments differ from the
-    .dta for 8 of the 280 participants (17/83/141/35/4 -> 17/85/137/37/4)."""
+def test_adopted_coefficients_reproduce_the_dta_exactly(flexgold, params, sim_config):
+    """The coefficients the app corrected in the professor's 2026-09 review are the
+    ones doc rev 040926-2 and the 050926 file now use: running the SHIPPED config
+    against the file reproduces Flexibility_calculated_ivw to float32 tolerance and
+    all 280 segments (the 8-segment gap against the 290826 file is gone)."""
     p = copy.deepcopy(params)
     p["coefficients"]["flexibility"] = dict(FLEX_COEFFS)
     rows, _ = _run(flexgold, p, sim_config)
+    ivw = np.array([r["rtd_flex_ivw"] for r in rows])
+    assert np.allclose(ivw, flexgold["Flexibility_calculated_ivw"].values, atol=ATOL)
     segs = np.array([r["rtd_flex_segment"] for r in rows])
-    changed = int((segs != flexgold["Flexibility_combined15"].astype(int).values).sum())
-    assert changed == 8
-    assert {k: int((segs == k).sum()) for k in range(1, 6)} == {1: 17, 2: 85, 3: 137, 4: 37, 5: 4}
+    stata = flexgold["Flexibility_combined15"].astype(int).values
+    assert int((segs == stata).sum()) == len(flexgold) == 280
+    assert {k: int((segs == k).sum()) for k in range(1, 6)} == EXPECTED_FLEX_DIST
+    # the superseded literals would NOT reproduce the file any more
+    superseded = {"extraversion": 0.0206, "openness": 0.0293241,
+                  "neuroticism": -0.053781925, "agreeable": 0.04921357,
+                  "conscientiousness": 0.04811179}
+    p2 = copy.deepcopy(params)
+    p2["coefficients"]["flexibility"] = superseded
+    rows2, _ = _run(flexgold, p2, sim_config)
+    assert int((np.array([r["rtd_flex_segment"] for r in rows2]) == stata).sum()) < 280
 
 
 def test_flexibility_choice_lists_match_stata_columns(flexgold, results):
-    """STATA direction: segment s -> SEQ[s-1:] (segment 1 takes Option 2 first, segment
-    5 only Option 5), identical to the stored choice1-5_flex_deterministic columns."""
+    """2026-09-16 direction: segment s -> SEQ[5-s:] - the professor's instruction
+    ("5 (Highest 20% of Cognitive Flexibility score segment) corresponds to 2>4>3>1>5,
+    and (Lowest 20% ...) corresponds to 5 with option list length 1"). Doc rev 040926-2
+    rewrote the `replace choice<p>_flex_deterministic` statements in this direction and
+    the 050926 file's stored columns follow it, so the model's list for segment s must
+    now EQUAL the stored list for segment s, NaN pattern included."""
     choice_cols = [f"choice{i}_flex_deterministic" for i in range(1, 6)]
+    stored_by_segment = {}
+    for _, g in flexgold.iterrows():
+        seg = int(g["Flexibility_combined15"])
+        vals = list(g[choice_cols].values)
+        lst = [int(v) for v in vals if not pd.isna(v)]
+        assert stored_by_segment.setdefault(seg, lst) == lst
+        assert lst == SEQ[5 - seg:] and len(lst) == seg      # the file's own direction
+        # the trailing positions are NaN, contiguously
+        assert [pd.isna(v) for v in vals] == [False] * seg + [True] * (5 - seg)
+    assert set(stored_by_segment) == {1, 2, 3, 4, 5}
     for r, (_, g) in zip(results, flexgold.iterrows()):
         s = int(g["Flexibility_combined15"])
-        stored = [int(v) for v in g[choice_cols].values if not pd.isna(v)]
-        assert r["rtd_flex_ranking"] == SEQ[s - 1:] == stored
-        assert len(stored) == 6 - s
+        assert r["rtd_flex_ranking"] == SEQ[5 - s:]
+        assert len(r["rtd_flex_ranking"]) == s
+        assert r["rtd_flex_ranking"] == stored_by_segment[s]   # DIRECT, not mirrored
+    # the professor's two anchor cases, straight out of the file
+    assert stored_by_segment[5] == [2, 4, 3, 1, 5]            # segment 5 -> full list
+    assert stored_by_segment[1] == [5]                        # segment 1 -> Option 5
     firsts = pd.Series([r["rtd_flex_ranking"][0] for r in results]).value_counts().to_dict()
-    # segment counts 17/83/141/35/4 -> first options 2/4/3/1/5
-    assert firsts == {2: 17, 4: 83, 3: 141, 1: 35, 5: 4}
-    assert [r["rtd_flex_ranking"][0] for r in results] == \
-        flexgold["choice1_flex_deterministic"].astype(int).tolist()
+    # segment counts 17/85/137/37/4 (segments 1..5) -> first options 5/1/3/4/2
+    assert firsts == {5: 17, 1: 85, 3: 137, 4: 37, 2: 4}
 
 
 def test_other_mechanisms_unaffected_by_flexibility(flexgold, results):

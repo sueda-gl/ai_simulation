@@ -13,6 +13,8 @@ import yaml
 import pandas as pd
 from pathlib import Path
 
+from app.models import read_yaml_config, write_yaml_config
+
 
 CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
 
@@ -34,16 +36,14 @@ RESEARCH_DEFAULT_INTERCEPT = -0.75
 
 def load_disclose_documents_config():
     """Load disclose_documents configuration from YAML."""
-    with open(CONFIG_PATH, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_config(CONFIG_PATH)
     return config.get('disclose_documents', {})
 
 
 def save_disclose_documents_config(updates: dict):
     """Save updates to disclose_documents configuration in YAML."""
     try:
-        with open(CONFIG_PATH, 'r') as f:
-            config = yaml.safe_load(f)
+        config = read_yaml_config(CONFIG_PATH)
         if 'disclose_documents' not in config:
             config['disclose_documents'] = {}
         for key, value in updates.items():
@@ -57,8 +57,7 @@ def save_disclose_documents_config(updates: dict):
                 target[parts[-1]] = value
             else:
                 config['disclose_documents'][key] = value
-        with open(CONFIG_PATH, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+        write_yaml_config(CONFIG_PATH, config)
         return True
     except Exception as e:
         st.error(f"Error saving configuration: {e}")
@@ -218,6 +217,8 @@ def render_dd_sigma_controls(mode_suffix: str):
 
 def render_disclose_documents_tab():
     """Render disclose_documents specific configuration (mirrors disclose_income)."""
+    # Must run BEFORE any dd_* widget is instantiated in this script run.
+    apply_pending_reset()
     initialize_disclose_documents_session_state()
     config = load_disclose_documents_config()
 
@@ -521,8 +522,19 @@ def _apply_config_to_widget_keys(config):
     }
 
 
+DD_RESET_PENDING_KEY = '_dd_reset_to_defaults_pending'
+
+
 def reset_to_defaults():
-    """Reset all configuration values to their research defaults."""
+    """Write the research defaults to YAML and schedule the session-state reset.
+
+    The actual session-state reset runs at the TOP of the next script run (see
+    apply_pending_reset). Clearing and re-seeding the `dd_*` widget keys here
+    would happen AFTER those widgets were already instantiated in this run - a
+    Streamlit anti-pattern that leaves widgets whose element id no longer has a
+    session-state entry, so the following interaction can come back with stale
+    or missing values.
+    """
     default_config = {
         'intercept': RESEARCH_DEFAULT_INTERCEPT,
         'income_mode': 'Categorical only',
@@ -537,12 +549,20 @@ def reset_to_defaults():
     }
     success = all(save_disclose_documents_config({k: v}) for k, v in default_config.items())
     if success:
-        for key in [k for k in st.session_state.keys() if k.startswith('dd_')]:
-            del st.session_state[key]
-        if 'disclose_documents_tab_persistence' in st.session_state:
-            del st.session_state['disclose_documents_tab_persistence']
-        _apply_config_to_widget_keys(load_disclose_documents_config())
+        st.session_state[DD_RESET_PENDING_KEY] = True
     return success
+
+
+def apply_pending_reset():
+    """Apply a scheduled reset before any disclose_documents widget renders."""
+    if not st.session_state.get(DD_RESET_PENDING_KEY, False):
+        return
+    del st.session_state[DD_RESET_PENDING_KEY]
+    for key in [k for k in st.session_state.keys() if k.startswith('dd_')]:
+        del st.session_state[key]
+    if 'disclose_documents_tab_persistence' in st.session_state:
+        del st.session_state['disclose_documents_tab_persistence']
+    _apply_config_to_widget_keys(load_disclose_documents_config())
 
 
 def render_actions_and_management_section(config):

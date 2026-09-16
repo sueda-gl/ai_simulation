@@ -2,6 +2,9 @@
 """
 Data models and session state management for the Enhanced AI Agent Simulation.
 """
+import os
+import tempfile
+import time
 import streamlit as st
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -10,6 +13,77 @@ import yaml
 import numpy as np
 from scipy import stats
 from scipy.stats import gengamma
+
+
+# ---------------------------------------------------------------------------
+# Crash-safe YAML config I/O
+#
+# config/decisions.yaml is re-read on EVERY rerun by every decision tab (so on
+# every stochastic-component widget change) and is rewritten in place by the
+# tabs' "Reset Config to Defaults" buttons. A plain `open(path, 'w')` truncates
+# the file before the new document is written, so a reader that lands inside
+# that window sees a partial document: yaml.safe_load() then raises, or returns
+# None/a partial mapping. When that happens inside initialize_session_state()
+# the whole app dies before the page router runs, and the user's only way out is
+# to reload the browser - which in Streamlit means a NEW session, i.e. page back
+# to 'page1' with the selected decisions and results gone.
+#
+# read_yaml_config() retries briefly over that window; write_yaml_config()
+# closes it from the writer's side by renaming a fully-written temp file into
+# place (os.replace is atomic), so readers only ever see a complete document.
+# ---------------------------------------------------------------------------
+_YAML_READ_ATTEMPTS = 5
+_YAML_READ_RETRY_DELAY = 0.05
+
+
+def read_yaml_config(path, attempts: int = _YAML_READ_ATTEMPTS,
+                     retry_delay: float = _YAML_READ_RETRY_DELAY) -> dict:
+    """Read a YAML config file, tolerating a concurrent non-atomic writer.
+
+    Returns the parsed mapping. Retries a few times if the document is
+    unparseable or not a non-empty mapping (the signature of a half-written
+    file) and only raises once it is still unreadable after the last attempt.
+    """
+    last_error: Optional[BaseException] = None
+    for attempt in range(attempts):
+        try:
+            with open(path, 'r') as f:
+                data = yaml.safe_load(f)
+        except (yaml.YAMLError, OSError) as exc:
+            last_error = exc
+        else:
+            if isinstance(data, dict) and data:
+                return data
+            last_error = ValueError(
+                f"parsed as {type(data).__name__}, expected a non-empty mapping"
+            )
+        if attempt < attempts - 1:
+            time.sleep(retry_delay)
+    raise RuntimeError(f"Could not read config file {path}: {last_error}")
+
+
+def write_yaml_config(path, data) -> None:
+    """Write a YAML config file atomically.
+
+    The document is written to a temp file in the same directory and then
+    renamed over the target, so a concurrent reader never observes a truncated
+    file.
+    """
+    path = Path(path)
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent),
+                                    prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, 'w') as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 @dataclass
@@ -355,9 +429,8 @@ def load_donation_coefficients_from_yaml():
     If coefficients are missing from YAML, an error will be raised.
     """
     config_path = Path(__file__).parent.parent / "config" / "decisions.yaml"
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-    
+    config = read_yaml_config(config_path)
+
     # Get donation config - MUST exist
     donation_config = config['donation_default']
     regression_coeffs = donation_config['regression_coefficients']
