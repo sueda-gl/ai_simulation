@@ -752,6 +752,7 @@ def render_rejected_transaction_selection_button(result_key, result_df):
     Transaction Defaults) result cell - mirrors render_disclose_income_selection_button."""
     from app.pages.decision_execution import (
         save_decision_config,
+        clear_decision_config,
         is_decision_config_selected,
         get_current_rejected_transaction_params,
         calculate_rejected_transaction_metrics,
@@ -760,20 +761,20 @@ def render_rejected_transaction_selection_button(result_key, result_df):
 
     is_selected = is_decision_config_selected('rejected_transaction_defaults', result_key)
     st.markdown("---")
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        n = len(result_df)
-        summary = f"📊 Quick Summary: {n:,} agents"
-        if 'rtd_choice_length' in result_df.columns and n:
-            summary += f", avg options list length={result_df['rtd_choice_length'].mean():.2f}"
-        if 'rtd_default_list_length' in result_df.columns and n:
-            summary += f", avg integrated default list length={result_df['rtd_default_list_length'].mean():.2f}"
-        st.caption(summary)
+    # No "Quick Summary" caption here (professor 2026-09-17: it was unrelated to the
+    # element presented, e.g. list lengths under the Flexibility results).
+    _, col2 = st.columns([2, 1])
 
     with col2:
         if is_selected:
-            st.success("✅ Selected")
+            # The selection can be undone right here (professor 2026-09-17: it must be
+            # possible to unselect at any point so later runs present all alternatives).
+            if st.button("✅ Selected - click to unselect", key=f"rtd_inline_unselect_{result_key}",
+                         use_container_width=True,
+                         help="This configuration is selected for combined simulations. Click to "
+                              "unselect it; the next runs present all configurations again."):
+                clear_decision_config('rejected_transaction_defaults')
+                st.rerun()
         else:
             if st.button("🎯 Use This Config", key=f"rtd_inline_select_{result_key}", type="primary",
                          use_container_width=True,
@@ -1149,6 +1150,15 @@ def get_css_styles():
     border-left: 4px solid #3498db;
     background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
     border-radius: 0 0.5rem 0.5rem 0;
+}
+/* Decision 4 sub-decision mechanism tabs (st.container(key="rtd_subtabs") on the
+   Decision 4 tab): larger bold labels (professor 2026-09-17). The label markdown may
+   be wrapped in a p/span/div depending on the Streamlit build, so the rule targets the
+   tab and its descendants - FONT properties only, which cannot disturb the layout. */
+.st-key-rtd_subtabs [data-baseweb="tab"],
+.st-key-rtd_subtabs [data-baseweb="tab"] * {
+    font-size: 1.15rem;
+    font-weight: 700;
 }
 
 </style>

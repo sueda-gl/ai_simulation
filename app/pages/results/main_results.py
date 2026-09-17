@@ -363,7 +363,7 @@ def render_single_run_results():
                 if use_dropdown:
                     # Multiple decisions - use collapsible dropdown
                     with st.expander(f"✅ {decision_title} (Custom Parameters)", expanded=False):
-                        st.success("This decision was configured with custom parameters on Page 2")
+                        st.success("This decision was configured with custom parameters")
                         # Show selected config badge for relevant decisions
                         if decision in ['donation_default', 'disclose_income', 'disclose_documents',
                                         'rejected_transaction_defaults']:
@@ -395,7 +395,7 @@ def render_single_run_results():
                 else:
                     # Single decision - show content directly (better UX)
                     st.markdown(f'<h4 class="subsection-header">✅ {decision_title} (Custom Parameters)</h4>', unsafe_allow_html=True)
-                    st.success("This decision was configured with custom parameters on Page 2")
+                    st.success("This decision was configured with custom parameters")
                     # Show selected config badge for relevant decisions
                     if decision in ['donation_default', 'disclose_income', 'disclose_documents',
                                     'rejected_transaction_defaults']:

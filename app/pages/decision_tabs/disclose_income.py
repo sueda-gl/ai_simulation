@@ -700,19 +700,19 @@ def render_intercept_override_section(config):
         with col2:
             st.markdown("**Override Value**")
 
-            # Restore intercept widget key, defaulting to current config value
-            int_val = restore_widget_from_storage(
-                'di_override_intercept',
-                st.session_state.di_intercept_override_values,
-                'intercept',
-                current_config_value
-            )
+            # Seed the widget key ONLY when it is absent (after navigation); otherwise the
+            # live widget value wins. No rerun-dependent `value=` is passed below, so the
+            # widget id stays stable - re-seeding on every rerun plus a changing default
+            # made the +/- buttons jump back one step under fast clicks (professor
+            # 2026-09-17, "General comment").
+            if 'di_override_intercept' not in st.session_state:
+                st.session_state.di_override_intercept = float(
+                    st.session_state.di_intercept_override_values.get('intercept', current_config_value))
 
             new_intercept = st.number_input(
                 "Baseline disclosure tendency",
                 min_value=0.0,
                 max_value=5.0,
-                value=float(int_val),
                 step=0.01,
                 format="%.4f",
                 help="β₀ = 0.75 in the disclose income equation. Override value, with higher values increasing baseline probability of disclosure.",

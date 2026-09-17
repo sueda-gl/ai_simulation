@@ -101,12 +101,9 @@ def test_apptest_select_display_apply_and_clear():
     select_btn = at.button(key=f'rtd_inline_select_{result_key}')
     assert select_btn is not None
     assert "4. Rejected Transaction Defaults" not in _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
-    # placement: the button sits UNDER the decision's results (after the whole-decision
-    # workbook download and its preview), like the other decisions' buttons
+    # professor 2026-09-17: no "Quick Summary" caption next to the button
     captions = [str(c.value) for c in at.caption]
-    idx_quick_summary = next(i for i, c in enumerate(captions) if c.startswith("📊 Quick Summary"))
-    idx_last_preview = max(i for i, c in enumerate(captions) if c.startswith("Rows:"))
-    assert idx_quick_summary > idx_last_preview
+    assert not any(c.startswith("📊 Quick Summary") for c in captions)
     # no "Run Complete Simulation" offer before a configuration is selected
     assert "🚀 Run Complete Simulation" not in _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[0]
 
@@ -122,15 +119,18 @@ def test_apptest_select_display_apply_and_clear():
     assert cfg['source'] == 'individual_rejected_transaction_defaults_run'
     assert cfg['total_agents'] == 60
     assert set(cfg['params']['intercepts']) == {'ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'}
-    assert cfg['params']['intercepts']['ttp'] == pytest.approx(0.05)     # research default
+    assert cfg['params']['intercepts']['ttp'] == pytest.approx(0.0)      # research default (0 since 2026-09-17)
     assert cfg['params']['aggregation'] == {'enabled': True}
     assert cfg['params']['flexibility_anchor'] == {'observed_weight': 0.25, 'calculated_weight': 0.75}
     assert cfg['params']['stochastic']['sigma_strategy'] == 'overall'
     assert 'mean_choice_length' in cfg['metrics'] and 'first_option_shares' in cfg['metrics']
     assert abs(cfg['metrics']['mean_choice_length'] - results[result_key]['rtd_choice_length'].mean()) < 1e-9
-    # button replaced by the selected marker; Page 2 display present
+    # button replaced by the selected marker, which is itself an Unselect button
+    # (professor 2026-09-17: unselecting must be possible at any point); Page 2 display present
     assert f'rtd_inline_select_{result_key}' not in [b.key for b in at.button]   # replaced by the marker
-    assert "✅ Selected" in _success_texts(at)
+    unselect_btn = at.button(key=f'rtd_inline_unselect_{result_key}')
+    assert unselect_btn is not None and "✅ Selected" in str(unselect_btn.label)
+    assert at.button(key='rtd_tab_unselect_btn') is not None                    # on the Decision 4 tab too
     page2 = _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
     assert "4. Rejected Transaction Defaults" in page2
     assert any("Rejected Transaction Defaults Configuration" in t and "Research Baseline + Continuous only" in t
@@ -160,7 +160,7 @@ def test_apptest_select_display_apply_and_clear():
     assert not at.exception
     probe = at.session_state['_probe_result']
     assert probe['combined']['income_mode'] == 'continuous'
-    assert probe['combined']['intercepts']['ttp'] == pytest.approx(0.05)
+    assert probe['combined']['intercepts']['ttp'] == pytest.approx(0.0)
     assert probe['combined']['aggregation']['enabled'] is True
     assert probe['individual']['income_mode'] == 'continuous'      # explicit inc_mode of the sub-run
     assert probe['individual']['intercepts']['ttp'] == pytest.approx(0.9)
@@ -177,6 +177,9 @@ def test_apptest_select_display_apply_and_clear():
     button_keys = [b.key for b in at.button]
     assert 'run_complete_from_results' not in button_keys
     assert 'clear_rtd_selection' not in button_keys
+    assert 'rtd_tab_unselect_btn' not in button_keys
+    # ... and the alternatives are selectable again
+    assert f'rtd_inline_select_{result_key}' in button_keys
 
 
 def test_apptest_complete_simulation_gate_requires_a_selected_config():

@@ -1151,18 +1151,17 @@ def render_adjustment_override_section():
         with col2:
             st.markdown("**✏️ Override Value**")
             
-            # Restore adjustment widget key (default to research default -4.0)
-            adj_val = restore_widget_from_storage(
-                'override_adjustment_shift',
-                st.session_state.adjustment_override_values,
-                'shift_value',
-                research_default
-            )
+            # Seed the widget key only when absent (after navigation); the live widget
+            # value otherwise wins, and no rerun-dependent `value=` is passed, so the
+            # widget id stays stable (the +/- buttons used to jump back one step under
+            # fast clicks - professor 2026-09-17).
+            if 'override_adjustment_shift' not in st.session_state:
+                st.session_state.override_adjustment_shift = float(
+                    st.session_state.adjustment_override_values.get('shift_value', research_default))
             
             # Adjustment input field
             new_adjustment = st.number_input(
                 "Distribution Shift Value",
-                value=float(adj_val),
                 step=0.1,
                 format="%.3f",
                 help="Shift the distribution up (positive) or down (negative) on 0-100 scale before stochastic component",

@@ -426,7 +426,7 @@ def test_apptest_aggregation_subtab_and_results_section():
     assert not at.exception
 
     # sub-tab 6 exists; the aggregation is always on (no checkbox, no last-resort setting)
-    tab_labels = [str(t.label) for t in at.tabs]
+    tab_labels = [str(t.label).strip('*') for t in at.tabs]   # bold markdown labels
     assert "6. Integrated Default List (Rank Aggregation)" in tab_labels
     assert 'rtd_tab_aggregation_enabled' not in at.session_state
     assert at.session_state['rtd_aggregation_enabled'] is True
@@ -472,3 +472,62 @@ def test_apptest_aggregation_subtab_and_results_section():
     df = _results_frame(at)
     assert 'rtd_default_list' in df.columns
     assert set(df['rtd_consensus_kemeny_status']).issubset(set(KEMENY_STATUSES))
+
+
+# ---------------------------------------------------------------------------
+# Section-6 inputs are COMPLETE rankings (professor 2026-09-17)
+# ---------------------------------------------------------------------------
+def test_complete_ranking_for_segment_rotates_the_priority_sequence():
+    """Doc Section 6: the aggregation reconciles "four complete rankings of the five
+    rejected transaction default options ... each depending on the participant's
+    weighted factor score and the resulting first choice" - the priority sequence
+    rotated to start at that segment's first choice."""
+    from src.decisions.rejected_transaction_defaults import (
+        _complete_ranking_for_segment, _ranking_for_segment, PRIORITY_SEQUENCES)
+
+    assert _complete_ranking_for_segment('loyalty', 5) == [3, 1, 4, 5, 2]
+    assert _complete_ranking_for_segment('loyalty', 3) == [4, 5, 2, 3, 1]
+    assert _complete_ranking_for_segment('loyalty', 1) == [2, 3, 1, 4, 5]
+
+    for mech, seq in PRIORITY_SEQUENCES.items():
+        if mech == 'ttp':
+            continue
+        for seg in range(1, 6):
+            full = _complete_ranking_for_segment(mech, seg)
+            tail = _ranking_for_segment(mech, seg)
+            assert sorted(full) == [1, 2, 3, 4, 5], (mech, seg)   # every option, once
+            assert full[:len(tail)] == tail, (mech, seg)          # starts with the element list
+            assert full[len(tail):] == list(seq[:len(seq) - seg])  # then the omitted ones, in order
+
+
+def test_aggregation_is_fed_complete_rankings_not_the_element_lists(gold, params, sim_config):
+    """The element's own list stays the .dta-verified tail in rtd_<element>_ranking,
+    while the aggregation input carries all five options."""
+    for r in _run(gold, params, sim_config):
+        fed = r['rtd_consensus_input_rankings']
+        assert set(fed) == {'loyalty', 'wtp', 'risk_taking', 'flexibility'}
+        for mech, key in (('loyalty', 'loyalty'), ('wtp', 'wtp'),
+                          ('risk_taking', 'rt'), ('flexibility', 'flex')):
+            element_list = r[f'rtd_{key}_ranking']
+            assert sorted(fed[mech]) == [1, 2, 3, 4, 5], mech             # complete ranking
+            assert len(element_list) == int(r[f'rtd_{key}_segment'])      # element list = the tail
+            assert fed[mech][:len(element_list)] == element_list
+
+
+def test_complete_rankings_cut_the_random_last_resort(gold, params, sim_config):
+    """The professor's "close to 50% resolved randomly" came from feeding the aggregation
+    the TRUNCATED element lists: most option pairs then have a zero pairwise margin and no
+    method can separate them. With the document's complete rankings the random share falls
+    to roughly a third, near the document's own 100,000-case figure of 26.3%."""
+    results = _run(gold, params, sim_config)
+    n = len(results)
+    random_share = sum(r['rtd_consensus_settled_by'] == 'random' for r in results) / n
+    assert 0.25 <= random_share <= 0.45, random_share
+
+    # the same population scored with the OLD truncated inputs, for contrast
+    old = []
+    for r in results:
+        rankings = [r[f'rtd_{k}_ranking'] for k in ('loyalty', 'wtp', 'rt', 'flex')]
+        old.append(aggregate_rankings(rankings, rng=np.random.default_rng(0))['settled_by'])
+    old_share = sum(s == 'random' for s in old) / n
+    assert old_share > random_share + 0.15, (old_share, random_share)

@@ -463,13 +463,14 @@ def render_intercept_override_section(config):
             st.markdown("Fixed reference value from original research")
         with col2:
             st.markdown("**Override Value**")
-            int_val = restore_widget_from_storage(
-                'dd_override_intercept', st.session_state.dd_intercept_override_values,
-                'intercept', current_config_value
-            )
+            # Seed only when absent + no rerun-dependent `value=` (stable widget id): the
+            # +/- buttons used to jump back one step under fast clicks (professor 2026-09-17).
+            if 'dd_override_intercept' not in st.session_state:
+                st.session_state.dd_override_intercept = float(
+                    st.session_state.dd_intercept_override_values.get('intercept', current_config_value))
             new_intercept = st.number_input(
                 "Baseline disclosure tendency", min_value=-5.0, max_value=0.0,
-                value=float(int_val), step=0.01, format="%.4f",
+                step=0.01, format="%.4f",
                 help="β₀ = −0.75 in the disclose documents equation. Higher values increase baseline probability of disclosure.",
                 key="dd_override_intercept",
                 on_change=lambda: auto_save_intercept(st.session_state.dd_override_intercept)

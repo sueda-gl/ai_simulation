@@ -808,9 +808,24 @@ def _rtd_stata_bin_count(n):
     return max(1, int(math.floor(raw + 0.5)))
 
 
+# Upper bound on the histogram bin count (professor 2026-09-17: at the default 1,000
+# agents Stata's rule gives 30 bins, too fine to compare with the document's figures).
+# 17 is exactly what Stata's default rule gives for the 280 participants, so the
+# document's histograms and the app's charts share the same bins at every N >= 280.
+_RTD_MAX_BINS = 17
+
+
+def _rtd_bin_count(n):
+    """Number of bins the Decision 4 score histograms draw for n observations: Stata's
+    default rule (_rtd_stata_bin_count) capped at _RTD_MAX_BINS = 17 (the rule's own
+    value for the 280 participants), so charts at the app's default 1,000 agents
+    (rule: 30 bins) use the document's 17 bins."""
+    return min(_rtd_stata_bin_count(n), _RTD_MAX_BINS)
+
+
 def _rtd_stata_bins(series):
-    """(edges, counts) for a score under Stata's default histogram rule: k equal-width
-    bins spanning min..max, k = _rtd_stata_bin_count(number of non-missing values).
+    """(edges, counts) for a score histogram: k equal-width bins spanning min..max,
+    k = _rtd_bin_count(number of non-missing values) - Stata's default rule capped at 17.
 
     The maximum is included in the LAST bin (every other bin is half-open), so the
     counts always sum to N and the plotted proportions sum to 1. Bins that no agent
@@ -820,7 +835,7 @@ def _rtd_stata_bins(series):
     Pure helper (no Streamlit, no plotly) so the Stata-parity tests can call it."""
     s = pd.Series(series).dropna().astype(float)
     n = len(s)
-    k = _rtd_stata_bin_count(n)
+    k = _rtd_bin_count(n)
     vmin, vmax = (float(s.min()), float(s.max())) if n else (0.0, 0.0)
     if not n or vmax <= vmin:
         # Degenerate (constant or empty) score: one unit-wide bin holding everything.
@@ -835,11 +850,12 @@ def _rtd_stata_bins(series):
 
 
 def _rtd_density_hist(series, title, x_title, chart_key):
-    """Histogram of a continuous score over Stata's DEFAULT bins - k equal-width bins
-    spanning min..max with k = round(min(sqrt(N), 10*log10(N))), see
-    _rtd_stata_bin_count - so the chart reproduces the Stata figures in the design
-    document exactly (N = 280 -> 17 bins; empty bins are drawn at zero height, which is
-    where the document's 14- and 16-bar figures come from).
+    """Histogram of a continuous score over k equal-width bins spanning min..max with
+    k = min(round(min(sqrt(N), 10*log10(N))), 17), see _rtd_bin_count - Stata's default
+    rule, capped at the 17 bins it yields for the 280 participants - so the chart
+    reproduces the Stata figures in the design document exactly (N = 280 -> 17 bins;
+    empty bins are drawn at zero height, which is where the document's 14- and 16-bar
+    figures come from) and keeps the same 17 bins at the app's default 1,000 agents.
 
     Normalised with histnorm='probability' so each bar is the PROPORTION of agents in
     that bin and the bar heights SUM TO 1 (professor 2026-09). The series mean is marked
@@ -999,8 +1015,10 @@ def render_rtd_comparison_results(results_dict, decision_name):
     Two rules on top of that (professor 2026-09):
     - the income-FREE elements (Options List Length, Loyalty, Flexibility) are
       identical under both income specifications, so when both treatments are present
-      they are rendered ONCE, above the treatment groups; only Willingness-to-Pay,
-      Risk-Taking and the integrated results repeat per treatment;
+      they are rendered ONCE, above the treatment groups, with ONE income-neutral
+      overview row per population mode above them (professor 2026-09-17: the
+      overview must sit above the graphs); only Willingness-to-Pay, Risk-Taking and
+      the integrated results repeat per treatment;
     - once a configuration has been selected with "Use This Config", ONLY that
       configuration's results are shown and the alternatives are hidden.
 
@@ -1051,22 +1069,31 @@ def render_rtd_comparison_results(results_dict, decision_name):
                 return f" ({short}, {income})"
         return f" ({key.replace('_', ' ').title()})"
 
-    def overview_cell(key):
+    def population_suffix_for(key):
+        """Income-neutral overview title suffix (' (Copula)', ' (Research Spec)', ...)."""
+        for prefix, short in mode_short.items():
+            if key.startswith(prefix):
+                return f" ({short})"
+        return f" ({st.session_state.get('population_mode', 'Population')})"
+
+    def overview_cell(key, income_neutral=False):
+        suffix = population_suffix_for(key) if income_neutral else suffix_for(key)
         if combined_frame:
-            st.subheader(f"Simulation Overview{suffix_for(key)}")
+            st.subheader(f"Simulation Overview{suffix}")
             rtd_label, rtd_value = rtd_overview_metric(results_dict[key])
             st.metric("Total Agents", f"{len(results_dict[key]):,}")
             if rtd_label:
                 st.metric(rtd_label, rtd_value)
         else:
-            show_overview(results_dict[key], suffix_for(key), result_key=key)
+            show_overview(results_dict[key], suffix, result_key=key)
 
     # ---- Selected configuration: present ONLY that configuration ----
     selected_key = _rtd_selected_config_key(results_dict)
     if selected_key is not None:
         st.caption(
             f"Showing the selected configuration only: {format_result_name(selected_key)}. "
-            "Clear the selected configuration to compare the other configurations again.")
+            "Unselect it (the button under its results, on the Decision 4 tab or on Page 2) "
+            "to compare the other configurations again.")
         overview_cell(selected_key)
         _render_rtd_model_results(results_dict[selected_key], decision_name,
                                   chart_suffix=f"_{selected_key}", result_key=selected_key)
@@ -1101,6 +1128,19 @@ def render_rtd_comparison_results(results_dict, decision_name):
             if mode not in seen:
                 seen.add(mode)
                 shared_keys.append(key)
+        # Simulation overview ABOVE the graphs (professor 2026-09-17), once per
+        # population mode: the overview of these runs (Total Agents and the Options
+        # List Length metrics) carries no income term, so ONE income-neutral row here
+        # replaces the per-treatment overview rows further down.
+        for start in range(0, len(shared_keys), 3):
+            row_keys = shared_keys[start:start + 3]
+            if start:
+                st.markdown("---")
+            overview_cols = st.columns(len(row_keys))
+            for col, key in zip(overview_cols, row_keys):
+                with col:
+                    st.markdown(f"**{population_label_for(key)}**")
+                    overview_cell(key, income_neutral=True)
         st.markdown("#### Income-Independent Elements")
         st.caption("Identical for both income specifications; these elements use no income.")
         for start in range(0, len(shared_keys), 3):
@@ -1136,13 +1176,17 @@ def render_rtd_comparison_results(results_dict, decision_name):
             if start:
                 st.markdown("---")
 
-            overview_cols = st.columns(len(row_keys))
-            for col, key, label in zip(overview_cols, row_keys, row_labels):
-                with col:
-                    st.markdown(f"**{label}**")
-                    # summary cell; the per-cell "Use This Config" button sits under the
-                    # detail cell below (_render_rtd_model_results)
-                    overview_cell(key)
+            if not shared_elements:
+                # Overview row first, then the details for the same keys. (When the
+                # income-free elements are shared above, the overview already sits
+                # at the top of the page, above every graph.)
+                overview_cols = st.columns(len(row_keys))
+                for col, key, label in zip(overview_cols, row_keys, row_labels):
+                    with col:
+                        st.markdown(f"**{label}**")
+                        # summary cell; the per-cell "Use This Config" button sits under
+                        # the detail cell below (_render_rtd_model_results)
+                        overview_cell(key)
 
             detail_cols = st.columns(len(row_keys))
             for col, key, label in zip(detail_cols, row_keys, row_labels):
@@ -1192,7 +1236,8 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False,
                               first-option chart, then the whole-decision workbook;
     - integrated-only run  -> the integrated length and first-option charts plus the
                               aggregation's tie statistics + the integrated Excel;
-    - complete simulation  -> the integrated length and first-option charts only.
+    - complete simulation  -> the integrated length and first-option charts and the
+                              same workbook as the whole-decision run.
 
     chart_suffix disambiguates Streamlit element keys when this view is rendered once
     per result_key (comparison modes). compact=True stacks each section vertically for
@@ -1261,7 +1306,7 @@ def _render_rtd_ttp_section(df, decision_name, chart_suffix, element_section, do
         lengths = list(range(0, 6))
         fractions = [counts.get(l, 0) / n for l in lengths]
         _rtd_fraction_bar([str(l) for l in lengths], fractions,
-                          "% of pre-selected options",
+                          "Number of pre-selected options",
                           "Number of pre-selected options",
                           f"{decision_name}_rtd_length_chart{chart_suffix}")
         st.dataframe(pd.DataFrame({
@@ -1332,7 +1377,9 @@ def _render_rtd_integrated_section(df, decision_name, chart_suffix, element_sect
                       table belong to the integrated-only run);
       'aggregation' - the length chart + table, the first-option chart + table, the
                       aggregation's tie statistics, and the integrated Excel;
-      'combined'    - the length chart + table and the first-option chart + table only.
+      'combined'    - the length chart + table and the first-option chart + table, plus
+                      the same workbook as the whole-decision run (professor
+                      2026-09-17: the complete simulation's Decision 4 Excel was missing).
     """
     if 'rtd_default_list' not in df.columns:
         st.info("The rank aggregation is disabled on the Decision 4 tab, so no integrated "
@@ -1388,10 +1435,12 @@ def _render_rtd_integrated_section(df, decision_name, chart_suffix, element_sect
                 {_RTD_AGG_SHEET: integrated},
                 "📊 Download Integrated Default List Excel", "integrated_default_list",
                 "One row per agent: every input and z-score, each element's score, "
-                "segment and list, the consensus ranking with its tie-break "
+                "segment and list, the integrated ranking with its tie-break "
                 "diagnostics and the integrated default list",
                 f"rtd_dl_aggregation{chart_suffix}")
-    elif mode == 'whole':
+    elif mode in ('whole', 'combined'):
+        # The complete simulation offers the SAME Decision 4 workbook as the
+        # whole-decision run (professor 2026-09-17).
         st.markdown("---")
         st.markdown("**📥 Download Decision 4 Model Results**")
         _rtd_excel_download(
@@ -1399,7 +1448,7 @@ def _render_rtd_integrated_section(df, decision_name, chart_suffix, element_sect
             "📊 Download Decision 4 Excel (all elements)", "mechanisms",
             "The integrated default list with every input, z-score, element score, "
             "segment and the final list per agent, plus one sheet per element",
-            f"rtd_model_download{chart_suffix}",
+            f"rtd_model_download{'_combined' if mode == 'combined' else ''}{chart_suffix}",
             caption="The workbook holds the integrated default list first - one row per "
                     "agent with every input, z-score, element score, segment and the "
                     "final option list - then one self-contained sheet per element.",
@@ -1563,7 +1612,7 @@ def _prepare_rtd_integrated_export(df):
 
       Agent ID -> raw inputs (traits, Education, income / allowance level, stdactions)
       -> z-scores -> 1 Options List Length -> 2 Loyalty -> 3 Willingness-to-Pay
-      -> 4 Risk-Taking -> 5 Flexibility -> 6 integration (consensus ranking, Kemeny
+      -> 4 Risk-Taking -> 5 Flexibility -> 6 integration (integrated ranking, Kemeny
       diagnostics, tie-break stage, truncation, final_choice1..5).
 
     This sheet replaces the former separate 'All Elements' sheet (the two were
@@ -1622,7 +1671,7 @@ def _prepare_rtd_integrated_export(df):
 
         # ---- 6. Integration ----
         if 'rtd_default_list' in df.columns:
-            out['consensus_ranking'] = df['rtd_consensus_ranking'].apply(_rtd_list_str)
+            out['integrated_ranking'] = df['rtd_consensus_ranking'].apply(_rtd_list_str)
             for src, dst in (('rtd_consensus_kemeny_status', 'kemeny_status'),
                              ('rtd_consensus_n_kemeny_optimal', 'n_kemeny_optimal'),
                              ('rtd_consensus_is_kemeny_optimal', 'is_kemeny_optimal'),

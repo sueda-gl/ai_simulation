@@ -419,7 +419,9 @@ def _build_agent_level_dataframe(df, vendors_data=None, simulation_params=None):
                     ' > '.join(str(o) for o in default_list) if isinstance(default_list, list) else 'N/A'
                 )
                 consensus = row.get('rtd_consensus_ranking', None)
-                agent_record['rtd_consensus_ranking'] = (
+                # Exported as rtd_integrated_ranking (professor 2026-09-17: "integrated",
+                # not "consensus", in the Excel outputs); the model column keeps its name.
+                agent_record['rtd_integrated_ranking'] = (
                     ' > '.join(str(o) for o in consensus) if isinstance(consensus, list) else 'N/A'
                 )
                 agent_record['rtd_consensus_kemeny_status'] = row.get('rtd_consensus_kemeny_status', 'N/A')
@@ -1576,7 +1578,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             st.markdown(
                 "**Decision 4 Integrated Default List Export:** one row per agent with "
                 "every input and z-score, each element's score, segment and list, the "
-                "consensus ranking with its tie-break diagnostics and the integrated "
+                "integrated ranking with its tie-break diagnostics and the integrated "
                 "default list."
             )
         elif active_element:

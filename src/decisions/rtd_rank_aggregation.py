@@ -61,20 +61,26 @@ still contained tied options in 21.1%). The hierarchy:
 The final ranking is one of the Kemeny-optimal orderings in all but a tiny share of
 cases (doc: 99.93%); the exceptions arise only through the last resort.
 
-INPUT RANKINGS MAY BE PARTIAL. The mechanisms' priority lists are TAILS of a fixed
-priority sequence (segment s -> the last s options of the sequence; segment 5 = the
-full list, segment 1 = one option - the direction flipped on the professor's
-2026-09-16 instruction and adopted by doc rev 040926-2 /
-Stata_File_Decision4_050926.dta, see rejected_transaction_defaults._ranking_for_segment), so a
-participant's loyalty list may be e.g. [4, 5, 2] with Options 3 and 1 absent. The
-document's aggregation text assumes complete rankings; here the options absent from
-a list are treated as TIED AT THE BOTTOM of that list - the mechanism prefers each
-listed option to each unlisted one and expresses no preference among the unlisted
-ones. For the Kemeny objective this is equivalent to counting only the pairs the
-input actually orders (an all-tied pair contributes the same to every candidate),
-and it gives Copeland/Schulze the natural 'listed beats unlisted' preference.
-Footrule positions of unlisted options are the average of the remaining positions
-(standard mid-rank convention for ties).
+INPUTS ARE COMPLETE RANKINGS (since 2026-09-17). Doc Section 6 states that the
+aggregation reconciles "four complete rankings of the five rejected transaction default
+options ... each depending on the participant's weighted factor score and the resulting
+first choice", so the caller passes each element's priority sequence ROTATED to start at
+that segment's first choice (rejected_transaction_defaults._complete_ranking_for_segment),
+e.g. loyalty segment 3 -> [4, 5, 2, 3, 1]. The element's own shorter list (the tail
+seq[5-s:], which the .dta's choice1..5 columns store) is an OUTPUT of the element, not an
+input here, and the length truncation happens afterwards on the integrated ranking.
+
+PARTIAL RANKINGS ARE STILL ACCEPTED by every function below, because the module is used
+directly by tests and by the doc-replication experiment. Options absent from an input are
+treated as TIED AT THE BOTTOM of that ranking - the ranking prefers each listed option to
+each unlisted one and expresses no preference among the unlisted ones. For the Kemeny
+objective this is equivalent to counting only the pairs the input actually orders (an
+all-tied pair contributes the same to every candidate), and it gives Copeland/Schulze the
+natural 'listed beats unlisted' preference. Footrule positions of unlisted options are the
+average of the remaining positions (standard mid-rank convention for ties). Feeding
+partial lists leaves most option pairs with a zero margin, which is why doing so drove
+61.8% of participants to the random last resort against 33.2% with the complete rankings
+the document specifies.
 
 Randomness: the last-resort draws come from the numpy Generator passed in
 (the agent's Decision-4 RNG, consumed AFTER the mechanisms' four standard normals,

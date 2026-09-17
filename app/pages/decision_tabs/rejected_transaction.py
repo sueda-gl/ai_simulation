@@ -135,14 +135,29 @@ def initialize_rtd_session_state():
 
 
 def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
-    """Restore a widget key from the storage dictionary before the widget renders."""
-    if storage_dict and storage_key in storage_dict:
-        st.session_state[widget_key] = storage_dict[storage_key]
-        return storage_dict[storage_key]
+    """Seed a widget key before the widget renders and return its current value.
+
+    The LIVE widget value (st.session_state[widget_key]) always wins. The persistence
+    dict / default only seed the key when it is absent, i.e. after Streamlit culled the
+    widget on another page. Rewriting the key on every rerun (the previous behaviour)
+    forced the backend to push its value to the browser each rerun, which - together
+    with a rerun-dependent `value=` default - made the +/- buttons of the intercept
+    inputs jump back one step under fast clicks (professor 2026-09-17)."""
     if widget_key in st.session_state:
         return st.session_state[widget_key]
-    st.session_state[widget_key] = default_value
-    return default_value
+    if storage_dict and storage_key in storage_dict:
+        value = storage_dict[storage_key]
+    else:
+        value = default_value
+    st.session_state[widget_key] = value
+    return value
+
+
+def _seed_widget_value(widget_key, value):
+    """Overwrite a seeded widget key ONLY when the normalised value differs (an
+    unconditional assignment marks the key as changed and re-pushes it each rerun)."""
+    if st.session_state.get(widget_key) != value:
+        st.session_state[widget_key] = value
 
 
 def save_to_rtd_storage(widget_key, storage_key):
@@ -290,7 +305,7 @@ def _render_flexibility_formula(config, coeffs):
         "actions across the eight cycle-weeks)."
     )
     st.latex(
-        rf"Flexibility_i = \beta_4"
+        rf"CalculatedFlexibility_i = \beta_4"
         rf" + {coeffs.get('extraversion', 0.0206):.4f} \times z_{{Extroversion_i}}"
         rf" + {coeffs.get('openness', 0.0294118):.7f} \times z_{{Openness_i}}"
         rf" {coeffs.get('neuroticism', -0.04921357):.8f} \times z_{{Neuroticism_i}}"
@@ -299,14 +314,15 @@ def _render_flexibility_formula(config, coeffs):
     )
     st.latex(
         rf"AnchoredFlexibility_i = W_{{OFlex}} \times ObservedFlexibility_i"
-        rf" + W_{{CFlex}} \times Flexibility_i"
-        rf" = {w_obs:.2f} \times ObservedFlexibility_i + {w_calc:.2f} \times Flexibility_i"
+        rf" + W_{{CFlex}} \times CalculatedFlexibility_i"
+        rf" = {w_obs:.2f} \times ObservedFlexibility_i + {w_calc:.2f} \times CalculatedFlexibility_i"
     )
     st.markdown(
         "ObservedFlexibility is the observed flexibility variable stdactions (the "
         "standard deviation in the number of actions across the eight cycle-weeks): a "
         "copula trait for synthetic populations and the participant's own value in the "
-        "research baseline and research specification modes."
+        "research baseline and research specification modes. All variables are "
+        "standardized prior to calculation."
     )
 
 
@@ -325,9 +341,10 @@ def render_flex_anchor_mix(config):
             st.session_state['rtd_tab_flex_observed_weight'])
         save_to_rtd_storage('rtd_tab_flex_observed_weight', 'rtd_flex_observed_weight')
 
+    _seed_widget_value(widget_key, float(current))
     w_obs = st.slider(
         "W_OFlex: Observed vs Calculated flexibility weight",
-        min_value=0.0, max_value=1.0, value=float(current), step=0.01,
+        min_value=0.0, max_value=1.0, step=0.01,
         help="AnchoredFlexibility = W_OFlex × observed flexibility (stdactions) + "
              "(1 - W_OFlex) × calculated Flexibility (Big-5 equation); "
              f"Default: {default_w:.2f}",
@@ -458,6 +475,7 @@ def render_decision_sigma_controls(config):
         strategy_widget_key, st.session_state.rejected_transaction_tab_persistence,
         strategy_storage_key, current_strategy)
     strategy_val = 'quintile' if 'quintile' in str(strategy_val).lower() else 'overall'
+    _seed_widget_value(strategy_widget_key, strategy_val)
 
     def on_strategy_change():
         st.session_state.rtd_sigma_strategy = st.session_state.rtd_tab_sigma_strategy
@@ -467,7 +485,6 @@ def render_decision_sigma_controls(config):
         "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-        index=0 if strategy_val == 'overall' else 1,
         key=strategy_widget_key, on_change=on_strategy_change, horizontal=True,
     )
     st.session_state.rtd_sigma_strategy = sigma_strategy
@@ -483,9 +500,10 @@ def render_decision_sigma_controls(config):
             coeff_widget_key, st.session_state.rejected_transaction_tab_persistence,
             coeff_storage_key, scale_fallback)
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
+        _seed_widget_value(coeff_widget_key, coeff_val)
 
         sigma_coefficient = st.slider(
-            "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, value=coeff_val, step=0.01,
+            "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, step=0.01,
             help="Coefficient to multiply each element's base σ. Applies to all elements "
                  "of the decision. Final σ per element = base σ × coefficient.",
             key=coeff_widget_key,
@@ -514,9 +532,10 @@ def render_decision_sigma_controls(config):
                 widget_key, st.session_state.rejected_transaction_tab_persistence,
                 storage_key, level_scale)
             q_val = max(0.0, min(float(q_val), 2.0))
+            _seed_widget_value(widget_key, q_val)
 
             q_coeff = st.slider(
-                f"{LEVEL_LABELS[level]}", min_value=0.0, max_value=2.0, value=q_val, step=0.01,
+                f"{LEVEL_LABELS[level]}", min_value=0.0, max_value=2.0, step=0.01,
                 key=widget_key,
                 on_change=lambda l=level: save_to_rtd_storage(
                     f'rtd_tab_sigma_q{l}', f'rtd_sigma_quintile_{l}'),
@@ -559,16 +578,17 @@ def render_intercept_control(config, mech):
         st.session_state[f'rtd_intercept_{m}'] = st.session_state[f'rtd_tab_intercept_{m}']
         save_to_rtd_storage(f'rtd_tab_intercept_{m}', f'rtd_intercept_{m}')
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown(f"**Research Default: {research_default:.4f}**")
-        st.markdown(f"Intercept ({symbol})")
-        st.markdown("Baseline value")
-    with col2:
-        st.markdown("**Override Value**")
-        value = st.number_input(
+    # Narrow, vertically stacked control (professor 2026-09-17: the intercept override
+    # was too wide); the caller places it in the left of two columns. No `value=`
+    # argument: the seeded session-state key carries the value, so the widget id is
+    # stable across reruns (a rerun-dependent default would re-create the widget on
+    # every click, see restore_widget_from_storage).
+    _seed_widget_value(widget_key, float(current))
+    st.markdown(f"Research Default ({symbol}): **{research_default:.4f}**")
+    st.markdown("**Override Value**")
+    value = st.number_input(
             f"Baseline {ELEMENT_SHORT[mech]} tendency", min_value=-5.0, max_value=5.0,
-            value=float(current), step=0.01, format="%.4f",
+            step=0.01, format="%.4f",
             key=widget_key, on_change=on_change,
             help=f"{symbol} baseline for this element (research default "
                  f"{research_default:.4f}). The intercept shifts the element's "
@@ -577,16 +597,14 @@ def render_intercept_control(config, mech):
                  "scores, so a nonzero intercept moves agents across them (a negative "
                  "value shifts agents toward the lower segments, a positive value toward "
                  "the higher ones, capped at the end bins).",
-        )
-        st.session_state[storage_key] = float(value)
-    with col3:
-        st.markdown("**Impact Preview**")
-        change = float(value) - research_default
-        if abs(change) > 0.00001:
-            impact = "Higher baseline" if change > 0 else "Lower baseline"
-            st.metric("Change", f"{change:+.4f}", delta=impact)
-        else:
-            st.metric("Change", "No change")
+    )
+    st.session_state[storage_key] = float(value)
+    change = float(value) - research_default
+    if abs(change) > 0.00001:
+        impact = "Higher baseline" if change > 0 else "Lower baseline"
+        st.metric("Change", f"{change:+.4f}", delta=impact)
+    else:
+        st.metric("Change", "No change")
 
 
 def render_stochastic_explanation(mech):
@@ -652,11 +670,15 @@ def render_mechanism_subtab(config, mech):
     (+ Anchor Mix for Flexibility) + intercept + per-element reset + per-element run."""
     render_formula_section(config, mech)
     render_stochastic_explanation(mech)
-    if mech == 'flexibility':
-        st.markdown("---")
-        render_flex_anchor_mix(config)
     st.markdown("---")
-    render_intercept_control(config, mech)
+    # Intercept Override (left) and, for Flexibility, the Anchor Mix slider (right)
+    # side by side in two narrow columns (professor 2026-09-17).
+    left_col, right_col = st.columns(2)
+    with left_col:
+        render_intercept_control(config, mech)
+    if mech == 'flexibility':
+        with right_col:
+            render_flex_anchor_mix(config)
     st.markdown("---")
     render_element_reset_button(mech)
     st.markdown("---")
@@ -745,6 +767,32 @@ def render_aggregation_subtab(config):
         "and the stage at which the ties were settled."
     )
     render_aggregation_run_button()
+
+
+def render_selected_config_notice():
+    """Shows the Decision 4 configuration saved with "Use This Config" (if any) above the
+    run buttons, with an Unselect button. Professor 2026-09-17: once a configuration is
+    selected the runs present only that configuration, but it must be possible to
+    unselect it at any point of the process so later runs present all alternatives."""
+    from app.pages.decision_execution import get_decision_config, clear_decision_config
+    config = get_decision_config('rejected_transaction_defaults')
+    if not config or config.get('source') == 'auto_implied_single_config':
+        return
+    params = config.get('params') or {}
+    income_mode = config.get('income_mode', params.get('income_mode', 'Unknown'))
+    population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+    st.markdown("---")
+    text_col, button_col = st.columns([3, 1])
+    with text_col:
+        st.info(f"Selected configuration: {population_mode} + {income_mode}. Decision 4 runs "
+                "and the complete simulation present this configuration only until it is "
+                "unselected.")
+    with button_col:
+        if st.button("Unselect configuration", key="rtd_tab_unselect_btn",
+                     help="Remove the selected configuration so the next runs present "
+                          "all alternatives again"):
+            clear_decision_config('rejected_transaction_defaults')
+            st.rerun()
 
 
 def reset_rtd_to_defaults():
@@ -841,8 +889,9 @@ def render_rejected_transaction_defaults_tab():
         copula_val = restore_widget_from_storage(
             'rtd_tab_sigma_in_copula', st.session_state.rejected_transaction_tab_persistence,
             'rtd_sigma_in_copula', False)
+        _seed_widget_value('rtd_tab_sigma_in_copula', bool(copula_val))
         sigma_in_copula = st.checkbox(
-            "Add Normal(anchor, σ) draw to Copula runs", value=copula_val,
+            "Add Normal(anchor, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="rtd_tab_sigma_in_copula",
             on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_in_copula', 'rtd_sigma_in_copula'))
@@ -852,8 +901,9 @@ def render_rejected_transaction_defaults_tab():
         res_val = restore_widget_from_storage(
             'rtd_tab_sigma_enabled', st.session_state.rejected_transaction_tab_persistence,
             'rtd_sigma_enabled', True)
+        _seed_widget_value('rtd_tab_sigma_enabled', bool(res_val))
         sigma_enabled = st.checkbox(
-            "Use Normal(anchor, σ) draw in Research Specification mode", value=res_val,
+            "Use Normal(anchor, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="rtd_tab_sigma_enabled",
             on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_enabled', 'rtd_sigma_enabled'))
@@ -879,12 +929,16 @@ def render_rejected_transaction_defaults_tab():
 
     # ---- Four mechanism sub-tabs + the rank-aggregation sub-tab ----
     st.markdown('<h4 class="subsection-header">Sub-Decision Mechanisms</h4>', unsafe_allow_html=True)
-    sub_tabs = st.tabs([MECH_TITLES[m] for m in MECHANISMS] + [AGGREGATION_TITLE])
-    for tab, mech in zip(sub_tabs[:len(MECHANISMS)], MECHANISMS):
-        with tab:
-            render_mechanism_subtab(config, mech)
-    with sub_tabs[-1]:
-        render_aggregation_subtab(config)
+    # Larger bold sub-tab labels (professor 2026-09-17): bold markdown in the labels
+    # plus the .st-key-rtd_subtabs font rule in app.components.get_css_styles().
+    with st.container(key="rtd_subtabs"):
+        sub_tabs = st.tabs([f"**{MECH_TITLES[m]}**" for m in MECHANISMS]
+                           + [f"**{AGGREGATION_TITLE}**"])
+        for tab, mech in zip(sub_tabs[:len(MECHANISMS)], MECHANISMS):
+            with tab:
+                render_mechanism_subtab(config, mech)
+        with sub_tabs[-1]:
+            render_aggregation_subtab(config)
 
     # ---- Reset ----
     if st.button("Reset Decision 4 Settings to Defaults", type="secondary",
@@ -894,23 +948,11 @@ def render_rejected_transaction_defaults_tab():
             st.toast("Decision 4 settings reset to defaults", icon="🔄")
             st.rerun()
 
-    # ---- What the whole-decision run produces (explained above its Run button) ----
-    st.markdown("---")
-    st.markdown("##### Running the whole decision")
-    st.markdown(
-        "Run Rejected Transaction Defaults Only presents every element's results - the "
-        "score distribution and the option allocation of each of the five mechanisms - "
-        "followed by the percentage share of each first integrated default option. The "
-        "integrated list per agent is the Kemeny-Young consensus of the Loyalty, "
-        "Willingness-to-Pay, Risk-Taking and Flexibility rankings, truncated to the "
-        "agent's Options List Length and cut after Option 5 (forgo the transaction). "
-        "The tie-resolution statistics are not part of this run; they are shown by the "
-        "Run Integrated Default List Only button on the Integrated Default List "
-        "sub-tab. The complete simulation presents only the default list length and the "
-        "first integrated option per agent. The Excel files contain all element "
-        "variables: each element's inputs, intermediate scores, segments and rankings "
-        "together with the integrated default list."
-    )
+    # (The "Running the whole decision" explanation was removed on the professor's
+    # 2026-09-17 request: explanations belong in the documentation.)
+
+    # ---- Selected configuration ("Use This Config"): can be unselected here as well ----
+    render_selected_config_notice()
 
     # ---- Simulation buttons ----
     # The whole-decision and complete-simulation buttons must clear the per-element

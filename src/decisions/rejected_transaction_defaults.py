@@ -97,11 +97,17 @@ rtd_default_list / rtd_consensus_* diagnostics.
                            mechanism the model computes - loyalty, wtp, risk_taking,
                            flexibility - the document's four inputs)
   aggregation.last_resort  'random' (doc) | 'lowest_option' (the V1 report's rule)
-The mechanisms' lists are TAILS of their priority sequences (partial rankings); the
-options absent from a list are treated as tied at the bottom of that list. The two
-output rules (length truncation and the Option-5 cut) apply to the INTEGRATED
-consensus list only - a mechanism's own list may legitimately still contain options
-after Option 5 (e.g. Loyalty's segment-5 list 3 > 1 > 4 > 5 > 2 ends with Option 2).
+Each element's OWN list is the TAIL of its priority sequence (segment s -> the last s
+options; this is what rtd_<element>_ranking holds and what the .dta's choice1..5
+columns store). The AGGREGATION, however, consumes each element's COMPLETE ranking of
+all five options - the priority sequence rotated to start at that segment's first
+choice (_complete_ranking_for_segment) - per doc Section 6: "four complete rankings of
+the five rejected transaction default options ... each depending on the participant's
+weighted factor score and the resulting first choice". The two output rules (length
+truncation and the Option-5 cut) apply to the INTEGRATED consensus list only, "Once the
+integrated ranking is formed" - a mechanism's own list may legitimately still contain
+options after Option 5 (e.g. Loyalty's segment-5 list 3 > 1 > 4 > 5 > 2 ends with
+Option 2).
 
 CATEGORICAL INCOME (params['income_mode'] = 'categorical'; default 'continuous'):
 Only WTP and Risk-Taking use income; TTP and Loyalty are identical in both modes.
@@ -616,6 +622,49 @@ def _ranking_for_segment(mechanism: str, segment: int) -> List[int]:
     return list(seq[len(seq) - segment:])
 
 
+def _complete_ranking_for_segment(mechanism: str, segment: int) -> List[int]:
+    """Segment s (1..5) -> the mechanism's COMPLETE ranking of ALL FIVE options.
+
+    This is what the Section-6 rank aggregation consumes. Document rev 040926-2,
+    Section 6, first paragraph: "The preceding sections produce, for each participant,
+    four COMPLETE rankings of the five rejected transaction default options, one per
+    explanatory variable ..., each depending on the participant's weighted factor score
+    and the resulting first choice", and the two output rules (length truncation and the
+    Option-5 cut) are applied only "Once the integrated ranking is formed".
+
+    The complete ranking is the priority sequence ROTATED to start at the segment's
+    first choice:
+
+        seq[5 - s:] + seq[:5 - s]
+
+    i.e. the element's own list (_ranking_for_segment, the tail that the .dta's
+    choice1..5 columns store) followed by the options that list omits, kept in priority
+    order. The two natural readings of "complete ranking ... depending on the score and
+    the resulting first choice" - rotate the sequence to the first choice, or append the
+    unlisted options in priority order - coincide exactly.
+
+    Example (loyalty, sequence 3 > 1 > 4 > 5 > 2):
+        segment 5 -> [3, 1, 4, 5, 2]   (full sequence; identical to the element list)
+        segment 3 -> [4, 5, 2, 3, 1]   (element list [4, 5, 2], then 3 and 1)
+        segment 1 -> [2, 3, 1, 4, 5]   (element list [2], then the rest)
+
+    Before 2026-09-17 the aggregation was fed the TRUNCATED element lists with the
+    unlisted options tied at the bottom. That left most option pairs with a zero
+    pairwise margin, so Kemeny, Schulze, Copeland and the footrule could not separate
+    them and 61.8% of the 280 participants reached the random last resort (the
+    professor's "close to 50% of the rankings are resolved randomly"). Feeding the
+    document's complete rankings drops that to 33.2%, close to the document's own
+    100,000-case figure of 26.3%.
+
+    NOTE: the element's OWN output list (rtd_<element>_ranking) stays the truncated
+    tail - it is verified 280/280 against the file's choice1..5 columns. Only the
+    aggregation input is the complete ranking.
+    """
+    seq = PRIORITY_SEQUENCES[mechanism]
+    cut = len(seq) - int(segment)
+    return list(seq[cut:]) + list(seq[:cut])
+
+
 def _intercept(params: Dict, mechanism: str) -> float:
     """The element's configured intercept (params['intercepts'][mechanism]; 0 absent)."""
     return float((params.get("intercepts") or {}).get(mechanism, 0.0) or 0.0)
@@ -866,8 +915,18 @@ def _aggregate_mechanism_rankings(out: Dict[str, Any], params: Dict, rng) -> Non
     if not agg["enabled"]:
         return
     mechs = agg["mechanisms"] or [m for m in RANKING_KEYS if f"rtd_{RANKING_KEYS[m]}_ranking" in out]
-    inputs = {m: out.get(f"rtd_{RANKING_KEYS[m]}_ranking") for m in mechs
-              if m in RANKING_KEYS and isinstance(out.get(f"rtd_{RANKING_KEYS[m]}_ranking"), list)}
+    # The aggregation consumes each element's COMPLETE ranking of the five options
+    # (doc Section 6; _complete_ranking_for_segment), NOT the truncated element list -
+    # the element's own list stays the .dta-verified tail in rtd_<element>_ranking.
+    inputs = {}
+    for m in mechs:
+        if m not in RANKING_KEYS:
+            continue
+        key = RANKING_KEYS[m]
+        segment = out.get(f"rtd_{key}_segment")
+        if segment is None or not isinstance(out.get(f"rtd_{key}_ranking"), list):
+            continue
+        inputs[m] = _complete_ranking_for_segment(m, int(segment))
     if not inputs:
         return
     res = integrate_default_list(list(inputs.values()), int(out.get("rtd_choice_length", 0)),
@@ -885,6 +944,7 @@ def _aggregate_mechanism_rankings(out: Dict[str, Any], params: Dict, rng) -> Non
     out["rtd_consensus_is_kemeny_optimal"] = bool(res["is_kemeny_optimal"])
     out["rtd_consensus_truncated_by"] = res["truncated_by"]
     out["rtd_consensus_inputs"] = list(inputs.keys())
+    out["rtd_consensus_input_rankings"] = {m: list(r) for m, r in inputs.items()}
     out["rtd_consensus_last_resort"] = agg["last_resort"]
 
 

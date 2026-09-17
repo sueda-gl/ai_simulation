@@ -74,8 +74,10 @@ def rtd_frame_cat():
 # ---------------------------------------------------------------------------
 def test_density_hist_uses_stata_default_bins_and_probability_normalisation(monkeypatch):
     """Stata's default rule - k = round(min(sqrt(N), 10*log10(N))) equal-width bins
-    spanning min..max - so the chart reproduces the design document's figures (N = 500
-    -> min(22.36, 26.99) = 22.36 -> 22 bins; N = 280 -> 17). histnorm='probability', so
+    spanning min..max - CAPPED at 17, the rule's value for the 280 participants
+    (professor 2026-09-17: 30 bins at 1,000 agents were too fine to compare with the
+    document's figures), so N = 500 (rule: 22) and N = 1000 (rule: 30) draw 17 bins;
+    N = 280 -> 17 either way. histnorm='probability', so
     the bar heights are proportions that sum to 1 (professor: "Did you standardize the
     density values so that the values sum up to 1?").
 
@@ -85,8 +87,11 @@ def test_density_hist_uses_stata_default_bins_and_probability_normalisation(monk
     monkeypatch.setattr(viz.st, 'plotly_chart',
                         lambda fig, **kw: captured.__setitem__('fig', fig))
     s = pd.Series(np.random.default_rng(7).normal(size=500))
-    expected_k = viz._rtd_stata_bin_count(len(s))
-    assert expected_k == 22
+    assert viz._rtd_stata_bin_count(len(s)) == 22           # the uncapped rule
+    expected_k = viz._rtd_bin_count(len(s))
+    assert expected_k == 17                                 # capped
+    assert viz._rtd_bin_count(1000) == 17 and viz._rtd_bin_count(280) == 17
+    assert viz._rtd_bin_count(100) == 10                    # below the cap: the rule
 
     viz._rtd_density_hist(s, "title", "x", "k")
 
@@ -206,7 +211,7 @@ INTEGRATED_SHEET_COLUMNS = [
     'Flexibility_score', 'z_Flexibility', 'Flexibility_segment_deterministic',
     'Flexibility_segment', 'Flexibility_list',
     # 6 integration
-    'consensus_ranking', 'kemeny_status', 'n_kemeny_optimal', 'is_kemeny_optimal',
+    'integrated_ranking', 'kemeny_status', 'n_kemeny_optimal', 'is_kemeny_optimal',
     'settled_by', 'truncated_by', 'default_list_length',
     'final_choice1', 'final_choice2', 'final_choice3', 'final_choice4', 'final_choice5',
 ]

@@ -635,10 +635,10 @@ INTERCEPTS_MIXED = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0
 
 
 def test_research_default_intercepts(params):
-    """Config research defaults (professor, 2026-08): TTP beta0 = 0.05; the other
-    four elements' intercepts stay 0."""
+    """Config research defaults: all five intercepts 0 (TTP beta0 was 0.05 from the
+    professor's 2026-08 request until the 2026-09-17 review set it to 0)."""
     assert params["intercepts"] == {
-        "ttp": 0.05, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0, "flexibility": 0.0}
+        "ttp": 0.0, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0, "flexibility": 0.0}
 
 
 def test_ttp_intercept_is_on_the_standardized_scale(gold, model_params, sim_config):
@@ -1120,9 +1120,11 @@ def _apptest_rtd_script():
 
 
 def test_apptest_negative_ttp_intercept_end_to_end():
-    """AppTest end-to-end (professor's use case): rtd_intercept_ttp = -0.05 set via
+    """AppTest end-to-end (professor's use case): rtd_intercept_ttp = -0.5 set via
     the session key the tab widget writes must change the simulated
-    rtd_choice_length distribution and shift it stochastically lower."""
+    rtd_choice_length distribution and shift it lower. (-0.5 SD rather than the
+    original -0.05: since the research default became 0 on 2026-09-17, a 0.05-SD
+    nudge on the standardized scale moves no agent across a segment boundary.)"""
     from streamlit.testing.v1 import AppTest
 
     at0 = AppTest.from_function(_apptest_rtd_script)
@@ -1131,7 +1133,7 @@ def test_apptest_negative_ttp_intercept_end_to_end():
     base = at0.session_state['result_lengths']
 
     at1 = AppTest.from_function(_apptest_rtd_script)
-    at1.session_state['rtd_intercept_ttp'] = -0.05
+    at1.session_state['rtd_intercept_ttp'] = -0.5
     at1.run(timeout=300)
     assert not at1.exception
     shifted = at1.session_state['result_lengths']

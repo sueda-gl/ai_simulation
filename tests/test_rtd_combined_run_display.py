@@ -89,6 +89,10 @@ def test_combined_run_decision4_section_shows_integrated_results_only():
     assert "Simulation Overview (Categorical)" not in text
     assert "Donation Rate Analysis" not in text
     assert "Disclose Income Analysis" not in text
+    # professor 2026-09-17: the complete simulation offers the same Decision 4 workbook
+    # as the whole-decision run
+    labels = [str(e.label) for e in at.get("download_button")]
+    assert labels.count("📊 Download Decision 4 Excel (all elements)") == 1
 
 
 def test_combined_agent_level_export_carries_every_decision4_variable():
@@ -119,8 +123,9 @@ def test_combined_agent_level_export_carries_every_decision4_variable():
         for suffix in ('_score', '_z', '_segment_deterministic', '_segment', '_ranking'):
             assert f'{element}{suffix}' in columns, f'{element}{suffix}'
     # integration fields
-    for col in ('rtd_default_list', 'rtd_consensus_ranking', 'rtd_consensus_kemeny_status',
+    for col in ('rtd_default_list', 'rtd_integrated_ranking', 'rtd_consensus_kemeny_status',
                 'rtd_consensus_n_kemeny_optimal', 'rtd_consensus_is_kemeny_optimal',
                 'rtd_consensus_settled_by', 'rtd_consensus_truncated_by',
                 'rtd_default_list_length'):
         assert col in columns, col
+    assert 'rtd_consensus_ranking' not in columns     # renamed (professor 2026-09-17)

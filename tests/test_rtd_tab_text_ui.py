@@ -84,13 +84,19 @@ def test_flexibility_binning_formula_has_no_z(tab):
 
 def test_anchored_flexibility_line_and_plain_sentence(tab):
     tex = _latex(tab)
+    # professor 2026-09-17: the calculated score is named CalculatedFlexibility_i
+    assert r"CalculatedFlexibility_i = \beta_4" in tex
     assert (r"AnchoredFlexibility_i = W_{OFlex} \times ObservedFlexibility_i"
-            r" + W_{CFlex} \times Flexibility_i"
-            r" = 0.25 \times ObservedFlexibility_i + 0.75 \times Flexibility_i") in tex
+            r" + W_{CFlex} \times CalculatedFlexibility_i"
+            r" = 0.25 \times ObservedFlexibility_i + 0.75 \times CalculatedFlexibility_i") in tex
+    assert r"\times Flexibility_i" not in tex
     md = _md(tab)
     assert "ObservedFlexibility is the observed flexibility variable stdactions" in md
-    # the professor: do not mark the flexibility formulas as standardized
-    assert "standardized" not in md.split("ObservedFlexibility is")[1][:400]
+    # professor 2026-09-17: the standardization sentence follows the ObservedFlexibility
+    # sentence in the text itself (not in a tooltip)
+    after = md.split("ObservedFlexibility is")[1][:600]
+    assert ("research baseline and research specification modes. All variables are "
+            "standardized prior to calculation.") in after
     assert "All variables are standardized prior to calculation" not in _helps(tab)
 
 
@@ -206,7 +212,10 @@ def test_no_advanced_stochastic_anchor_section(tab):
 # ---------------------------------------------------------------------------
 def test_aggregation_subtab_wording(tab):
     md = _md(tab)
-    assert "6. Integrated Default List (Rank Aggregation)" in [str(t.label) for t in tab.tabs]
+    # sub-tab labels are bold markdown (professor 2026-09-17: larger bold tab text)
+    assert "6. Integrated Default List (Rank Aggregation)" in [
+        str(t.label).strip('*') for t in tab.tabs]
+    assert all(str(t.label).startswith("**") and str(t.label).endswith("**") for t in tab.tabs)
 
     assert ("priority list of the five options per agent") in md
     assert "all sub-decision mechanisms receive equal weight" in md
@@ -319,25 +328,33 @@ def test_aggregation_run_button_sets_element_flag():
 
 
 # ---------------------------------------------------------------------------
-# 7. "Running the whole decision" paragraph
+# 7. "Running the whole decision" paragraph - REMOVED (professor 2026-09-17:
+#    explanations belong in the documentation, not on the simulation page)
 # ---------------------------------------------------------------------------
-def test_running_the_whole_decision_paragraph(tab):
+def test_running_the_whole_decision_paragraph_is_gone(tab):
     md = _md(tab)
-    assert "##### Running the whole decision" in md
-    para = next(str(m.value) for m in tab.markdown
-                if str(m.value).startswith("Run Rejected Transaction Defaults Only presents"))
-    assert "every element's results" in para
-    assert "score distribution and the option allocation" in para
-    assert "percentage share of each first integrated default option" in para
-    assert ("Kemeny-Young consensus of the Loyalty, Willingness-to-Pay, Risk-Taking "
-            "and Flexibility rankings, truncated to the agent's Options List Length "
-            "and cut after Option 5") in para
-    assert "Run Integrated Default List Only button" in para
-    assert ("The complete simulation presents only the default list length and the "
-            "first integrated option per agent.") in para
-    assert "The Excel files contain all element variables" in para
-    assert "**" not in para
-    assert "customer" not in para.lower()
+    assert "Running the whole decision" not in md
+    assert not any(str(m.value).startswith("Run Rejected Transaction Defaults Only presents")
+                   for m in tab.markdown)
+
+
+# ---------------------------------------------------------------------------
+# 7b. Intercept Override + Anchor Mix side by side, no Quick Summary-style clutter
+# ---------------------------------------------------------------------------
+def test_intercept_override_is_compact_and_beside_the_anchor_mix(tab):
+    """Professor 2026-09-17: the Anchor Mix slider and the Intercept Override were too
+    wide - they now sit in two columns next to each other (Flexibility sub-tab), the
+    intercept control stacked vertically without its old three-column layout."""
+    md = _md(tab)
+    assert md.count("**Intercept Override**") == 5          # one per element sub-tab
+    assert "Research Default (β₄): **0.0000**" in md
+    assert "**Anchor Mix**" in md
+    assert "Baseline value" not in md                        # old three-column layout
+    assert "**Impact Preview**" not in md
+    # the widgets carry no rerun-dependent default (stable widget ids)
+    intercept = tab.number_input(key='rtd_tab_intercept_ttp')
+    assert intercept.value == 0.0
+    assert tab.slider(key='rtd_tab_flex_observed_weight').value == 0.25
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +362,7 @@ def test_running_the_whole_decision_paragraph(tab):
 # ---------------------------------------------------------------------------
 def test_intercept_help_text_is_standardized_scale(tab):
     help_text = str(tab.number_input(key='rtd_tab_intercept_ttp').help)
-    assert "β₀ baseline for this element (research default 0.0500)" in help_text
+    assert "β₀ baseline for this element (research default 0.0000)" in help_text
     assert ("The intercept shifts the element's standardized score by β and thereby "
             "the allocation across the segment boundaries") in help_text
     assert "raw" not in help_text.lower()

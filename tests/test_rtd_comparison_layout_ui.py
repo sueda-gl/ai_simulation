@@ -146,6 +146,46 @@ def _assert_interleaved_two_groups(texts, first_detail_marker):
     return joined
 
 
+def _assert_shared_overview_layout(texts, first_detail_marker):
+    """Layout when the income-free elements are shared (whole-decision run, both
+    income treatments), professor 2026-09-17 - the overview sits ABOVE the graphs:
+    Decision Results header < custom-parameters banner < ONE income-neutral overview
+    row (per population mode) < Income-Independent Elements < Categorical title
+    < categorical details < Continuous title < continuous details."""
+    idx_results = _first_index(texts, "📋 Decision Results")
+    idx_banner = _first_index(texts, "custom parameters")
+    idx_overview = _first_index(texts, "Simulation Overview (Copula)")
+    idx_shared = _first_index(texts, "Income-Independent Elements")
+    idx_cat_title = _first_index(texts, "Categorical Income Treatment")
+    idx_cont_title = _first_index(texts, "Continuous Income Treatment")
+
+    detail_indexes = [i for i, t in enumerate(texts) if first_detail_marker in t]
+    cat_details = [i for i in detail_indexes if idx_cat_title < i < idx_cont_title]
+    cont_details = [i for i in detail_indexes if i > idx_cont_title]
+    assert cat_details, "no categorical detail sections between the group titles"
+    assert cont_details, "no continuous detail sections after the Continuous title"
+
+    order = [idx_results, idx_banner, idx_overview, idx_shared, idx_cat_title,
+             cat_details[0], idx_cont_title, cont_details[0]]
+    assert order == sorted(order), f"overview-above-graphs order violated: {order}"
+
+    # exactly one overview per population mode, all above the shared block, and
+    # none of the old per-treatment overview rows
+    for overview in ("Simulation Overview (Copula)",
+                     "Simulation Overview (Research Spec)",
+                     "Simulation Overview (Research Baseline)"):
+        assert idx_banner < _first_index(texts, overview) < idx_shared, overview
+    assert _count(texts, "Simulation Overview") == 3
+    joined = "\n".join(texts)
+    assert "Simulation Overview (Copula, Cat)" not in joined
+    assert "Simulation Overview (Copula, Cont)" not in joined
+    assert _count(texts, "Categorical Income Treatment") == 1
+    assert _count(texts, "Continuous Income Treatment") == 1
+    assert "All Population Modes Comparison" not in joined
+    assert "Income Specification Comparison" not in joined
+    return joined
+
+
 # ---------------------------------------------------------------------------
 # (a) Compare all population x Compare both income (6 result keys)
 # ---------------------------------------------------------------------------
@@ -194,8 +234,9 @@ def test_apptest_compare_all_compare_both_interleaved():
     # whole-decision run (professor 2026-09): every element section, then the
     # integrated first-option chart, per result-key column - except the income-free
     # elements, which are identical under both income specifications and therefore
-    # render ONCE per population mode above the treatment groups.
-    joined = _assert_interleaved_two_groups(texts, INTEGRATED_SECTION)
+    # render ONCE per population mode above the treatment groups, with the overview
+    # row above them (professor 2026-09-17: overview above the graphs).
+    joined = _assert_shared_overview_layout(texts, INTEGRATED_SECTION)
     assert _count(texts, INTEGRATED_SECTION) == 6  # one per result-key column
     idx_shared = _first_index(texts, "Income-Independent Elements")
     idx_cat_title = _first_index(texts, "Categorical Income Treatment")
@@ -210,7 +251,7 @@ def test_apptest_compare_all_compare_both_interleaved():
     # the whole-decision run shows no tie statistics
     assert "Tie statistics of the Kemeny aggregation" not in joined
     metric_labels = [m.label for m in at.metric]
-    assert metric_labels.count("Avg. Options List Length") == 6
+    assert metric_labels.count("Avg. Options List Length") == 3   # one overview per population mode
 
 
 # ---------------------------------------------------------------------------
@@ -358,3 +399,45 @@ def test_apptest_selected_config_hides_the_other_configurations():
     assert any("Selected configuration only." in t for t in texts)
     labels = [str(e.label) for e in at.get("download_button")]
     assert labels.count("📊 Download Decision 4 Excel (all elements)") == 1
+
+
+# ---------------------------------------------------------------------------
+# (e) Income-free per-element run under both income treatments: overview above
+#     the graphs (professor 2026-09-17)
+# ---------------------------------------------------------------------------
+def test_apptest_income_free_element_run_overview_above_graphs():
+    """A per-element run of an income-free element (Flexibility) with Compare-both
+    income used to render the shared graphs first and the overview rows below them.
+    Now ONE income-neutral overview (per population mode) sits above the graphs, the
+    element renders once, and both income treatments keep a "Use This Config" button."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_function(_rtd_compare_both_app_script)
+    at.session_state['rtd_income_mode'] = 'Compare both'
+    at.run(timeout=600)
+    assert not at.exception
+
+    at.button(key='rtd_run_flexibility_btn').click().run(timeout=600)
+    assert not at.exception
+    assert at.session_state['rtd_run_element'] == 'flexibility'
+    assert sorted(at.session_state['simulation_results'].keys()) == ['categorical', 'continuous']
+
+    texts = _ordered_texts(at)
+    joined = "\n".join(texts)
+    flex_section = "5️⃣ Flexibility Ranking"
+    idx_overview = _first_index(texts, "Simulation Overview (Research Baseline)")
+    idx_shared = _first_index(texts, "Income-Independent Elements")
+    idx_flex = _first_index(texts, flex_section)
+    assert idx_overview < idx_shared < idx_flex
+    # income-neutral overview only: no per-treatment overview rows any more
+    assert "Simulation Overview (Categorical)" not in joined
+    assert "Simulation Overview (Continuous)" not in joined
+    assert _count(texts, flex_section) == 1
+    for other in ALL_SECTIONS:
+        if other != flex_section:
+            assert other not in joined, other
+    # both income treatments remain selectable (the saved config carries the income mode)
+    button_keys = [b.key for b in at.button]
+    assert 'rtd_inline_select_categorical' in button_keys
+    assert 'rtd_inline_select_continuous' in button_keys
+    assert not any(str(c.value).startswith("📊 Quick Summary") for c in at.caption)
