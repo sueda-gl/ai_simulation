@@ -2,9 +2,10 @@
 > historical record of the Sep-2026 work. One statement here no longer describes the
 > migrated code: the TTP intercept **β₀ applies on the RAW `weighted_ttp` composite**
 > (the scale the Decision 4 document gives it: `TTP_i = β0 + ...`, no "after
-> standardization" qualifier), not on the standardized score, and the app default stays
-> **β₀ = 0.05** (owner ruling 2026-10-06). With every intercept at its Stata value 0 the
-> model reproduces `Stata_File_Decision4_050926.dta` 280/280. See
+> standardization" qualifier), not on the standardized score; the app default is
+> **β₀ = 0**, as in the owner's September version (owner ruling 2026-10-07; between
+> 2026-10-06 and 2026-10-07 the port briefly defaulted to 0.05). With every intercept at its
+> Stata value 0 the model reproduces `Stata_File_Decision4_050926.dta` 280/280. See
 > `src/decisions/rejected_transaction_defaults.py` (INTERCEPTS) and
 > `tests/test_rejected_transaction_defaults.py`.
 
@@ -197,7 +198,7 @@ Each mechanism carries its own intercept, which sets a baseline level for that e
 
 | Symbol | Element | Research default | Scale on which it applies |
 |---|---|---|---|
-| β₀ | Options List Length (Tendency to Plan) | 0.05 | Standardized Tendency to Plan score |
+| β₀ | Options List Length (Tendency to Plan) | 0.00 | Raw (unstandardized) Tendency to Plan score `weighted_ttp` |
 | β₁ | Loyalty | 0.00 | Standardized loyalty score |
 | β₂ | Willingness to Pay | 0.00 | Standardized willingness-to-pay score |
 | β₃ | Risk-Taking | 0.00 | Standardized risk-taking score |
@@ -207,7 +208,7 @@ The intercepts follow fixed-cutoff semantics. The segment boundaries (and, when 
 
 Because β₄ is added to the calculated flexibility score before the 25/75 anchoring, its effect on the anchored score is scaled by W_CFlex: a β₄ of 0.10 shifts the anchored flexibility score by 0.075 at the default weights.
 
-Note on β₀: the research specification states a default of 0.05 for the Tendency to Plan intercept but, unlike β₁ to β₄, does not state the scale on which it applies. The simulation applies it on the standardized score, consistently with the other four elements. Applied instead to the unstandardized composite, whose range across the 280 participants is only 0.21, a value of 0.05 would shift every agent by approximately 1.4 list positions and would leave no agent with an options list length of 0.
+Note on β₀: the research specification writes the Tendency to Plan score as `TTP_i = β₀ + …` and, unlike β₁ to β₄, does not say "after standardization", so the simulation applies β₀ on the raw (unstandardized) composite `weighted_ttp`. Its research default is 0, which reproduces the Stata allocation exactly. The raw composite spans only about 0.21 across the 280 participants (roughly −0.07 to 0.14), so small values already matter: each 0.01 moves every agent's 0–6 list score by about 0.28, a value of 0.05 shifts every agent by approximately 1.4 list positions and leaves no agent with an options list length of 0, and beyond ±0.21 every agent sits in an end segment. The Override input is therefore limited to −0.25 … 0.25 in steps of 0.01 (the other four intercepts accept −5 … 5).
 
 ## 11. The Stochastic Component (σ)
 
@@ -366,7 +367,7 @@ The sixth sub-tab, "Integrated Default List (Rank Aggregation)", explains the ag
 
 | Parameter | Default Value | User-Adjustable | Location |
 |---|---|---|---|
-| β₀ (Options List Length) | 0.05 | Yes | Intercept Override, sub-tab 1 |
+| β₀ (Options List Length) | 0.00 | Yes | Intercept Override, sub-tab 1 (raw TTP scale, −0.25 … 0.25) |
 | β₁ (Loyalty) | 0.00 | Yes | Intercept Override, sub-tab 2 |
 | β₂ (Willingness to Pay) | 0.00 | Yes | Intercept Override, sub-tab 3 |
 | β₃ (Risk-Taking) | 0.00 | Yes | Intercept Override, sub-tab 4 |

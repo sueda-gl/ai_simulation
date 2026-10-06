@@ -118,7 +118,7 @@ def base_state(repo, selected=None, **overrides):
         "rtd_income_mode": "Continuous only", "rtd_sigma_enabled": True, "rtd_sigma_in_copula": False,
         "rtd_sigma_strategy": "overall", "rtd_scale_factor": 1.0,
         "rtd_quintile_scale_factors": {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0},
-        "rtd_intercept_ttp": 0.05, "rtd_intercept_loyalty": 0.0, "rtd_intercept_wtp": 0.0,
+        "rtd_intercept_ttp": 0.0, "rtd_intercept_loyalty": 0.0, "rtd_intercept_wtp": 0.0,
         "rtd_intercept_risk_taking": 0.0, "rtd_intercept_flexibility": 0.0,
         "rtd_flex_observed_weight": 0.25, "rtd_aggregation_enabled": True,
     }

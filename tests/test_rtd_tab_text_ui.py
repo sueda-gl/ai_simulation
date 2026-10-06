@@ -358,14 +358,20 @@ def test_intercept_override_is_compact_and_beside_the_anchor_mix(tab):
 
 
 # ---------------------------------------------------------------------------
-# 8. TTP intercept help text: standardized-scale wording
+# 8. Intercept help text: β0 (Options List Length) on the RAW Tendency-to-Plan score,
+#    β1-β4 on the standardized score (owner ruling 2026-10-07: β0 stays on the doc's
+#    raw weighted_ttp scale, default 0)
 # ---------------------------------------------------------------------------
 def test_intercept_help_text_is_standardized_scale(tab):
     help_text = str(tab.number_input(key='rtd_tab_intercept_ttp').help)
     assert "β₀ baseline for this element (research default 0.0000)" in help_text
-    assert ("The intercept shifts the element's standardized score by β and thereby "
-            "the allocation across the segment boundaries") in help_text
-    assert "raw" not in help_text.lower()
+    assert "The intercept shifts the RAW Tendency-to-Plan score" in help_text
+    assert "and thereby the allocation across the segment boundaries" in help_text
+    assert "standardized" not in help_text.lower()
+    ttp = tab.number_input(key='rtd_tab_intercept_ttp')
+    assert (ttp.min, ttp.max, ttp.step) == (-0.25, 0.25, 0.01)   # raw span ~0.21
     for mech in ('loyalty', 'wtp', 'risk_taking', 'flexibility'):
-        assert "standardized score by β" in str(
-            tab.number_input(key=f'rtd_tab_intercept_{mech}').help)
+        w = tab.number_input(key=f'rtd_tab_intercept_{mech}')
+        assert ("The intercept shifts the element's standardized score by β and thereby "
+                "the allocation across the segment boundaries") in str(w.help)
+        assert (w.min, w.max) == (-5.0, 5.0)

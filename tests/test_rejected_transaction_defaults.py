@@ -81,13 +81,13 @@ DOC_SIGMA_QUINTILES = {
 DOC_RANGES = {"loyalty": 7.0783045, "wtp": 6.868056,
               "risk_taking": 5.979747, "flexibility": 6.5944228}
 WTP_SIGMA = DOC_SIGMA_OVERALL["wtp"]   # the sigma the stochastic tests pin
-# App default beta0 = 0.05 on the RAW weighted_ttp composite - the scale the document
-# specifies (Section 1: TTP_i = beta0 + ..., no "after standardization" qualifier).
-# Migration port, owner ruling 2026-10-06: keep the app default, apply beta0 on the
-# doc's scale, reproduce Stata exactly at beta0 = 0. The raw composite spans only
-# ~0.21 on the 280, so 0.05 moves weighted_ttp06 by ~+1.43 and leaves no zero-length
-# lists (the Sep-2026 original moved beta0 to the standardized scale and set it to 0
-# instead; that semantics gave {0:17, 1:88, 2:97, 3:59, 4:17, 5:2}).
+# beta0 applies on the RAW weighted_ttp composite - the scale the document specifies
+# (Section 1: TTP_i = beta0 + ..., no "after standardization" qualifier). App default
+# beta0 = 0 (owner ruling 2026-10-07, as in the owner's September version), which
+# reproduces Stata exactly. The raw composite spans only ~0.21 on the 280, so an
+# explicit beta0 = 0.05 moves weighted_ttp06 by ~+1.43 and leaves no zero-length lists
+# (on the standardized scale the Sep-2026 original used, 0.05 gave
+# {0:17, 1:88, 2:97, 3:59, 4:17, 5:2}).
 EXPECTED_LENGTH_DIST_BETA0_005 = {0: 0, 1: 6, 2: 59, 3: 95, 4: 86, 5: 34}
 
 
@@ -481,9 +481,9 @@ def _run_model(gold, model_params, sim_config, stochastic=False, in_copula=False
 
 
 def test_model_path_deterministic_matches_stata(gold, model_params, sim_config):
-    # Explicit zero intercepts: the .dta embeds NO intercepts, while the config's
-    # research default is now ttp beta0 = 0.05 (professor, 2026-08). Parity of the
-    # mechanism arithmetic is therefore asserted at beta = 0 (bit-identical to a
+    # Explicit zero intercepts: the .dta embeds NO intercepts (the config's research
+    # defaults are all 0 too, owner ruling 2026-10-07). Parity of the
+    # mechanism arithmetic is asserted at explicit beta = 0 (bit-identical to a
     # no-intercepts run per test_zero_intercepts_bit_identical).
     results = _run_model(gold, model_params, sim_config, stochastic=False,
                          intercepts={m: 0.0 for m in MECHANISMS})
@@ -637,11 +637,11 @@ INTERCEPTS_MIXED = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0
 
 
 def test_research_default_intercepts(params):
-    """Config defaults: TTP beta0 = 0.05 (the doc's stated default; owner ruling
-    2026-10-06 keeps the app default), the other four 0 (doc placeholders 'XXX').
+    """Config defaults: all five 0 - TTP beta0 = 0 as in the owner's September
+    version (owner ruling 2026-10-07), the other four doc placeholders 'XXX'.
     The Stata value of every intercept is 0 - see the parity tests."""
     assert params["intercepts"] == {
-        "ttp": 0.05, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0, "flexibility": 0.0}
+        "ttp": 0.0, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0, "flexibility": 0.0}
 
 
 def test_ttp_intercept_is_on_the_raw_composite_scale(gold, model_params, sim_config):
@@ -666,18 +666,19 @@ def test_ttp_intercept_is_on_the_raw_composite_scale(gold, model_params, sim_con
 
 
 def test_app_default_ttp_intercept_allocation(gold, model_params, sim_config):
-    """App default beta0 = 0.05 on the raw composite (doc scale) lengthens every list
-    by ~1.43 positions and leaves no zero-length lists; beta0 = 0 (the Stata value)
-    reproduces the Stata allocation exactly, participant by participant."""
+    """beta0 = 0.05 on the raw composite (doc scale) lengthens every list by ~1.43
+    positions and leaves no zero-length lists; the app default beta0 = 0 (the Stata
+    value, owner ruling 2026-10-07) reproduces the Stata allocation exactly,
+    participant by participant."""
     zeros = {m: 0.0 for m in MECHANISMS}
     res = _run_model(gold, model_params, sim_config, stochastic=False,
                      intercepts={**zeros, "ttp": 0.05})
     lengths = np.array([r["rtd_choice_length"] for r in res])
     assert {k: int((lengths == k).sum()) for k in range(6)} == EXPECTED_LENGTH_DIST_BETA0_005
-    # the config default IS 0.05, so the fixture params give the same allocation
+    # the config default is 0, so the fixture params give the Stata allocation
     dflt = _run_model(gold, model_params, sim_config, stochastic=False)
-    assert [r["rtd_choice_length"] for r in dflt] == list(lengths)
     base = _run_model(gold, model_params, sim_config, stochastic=False, intercepts=zeros)
+    assert [r["rtd_choice_length"] for r in dflt] == [r["rtd_choice_length"] for r in base]
     assert ([r["rtd_choice_length"] for r in base]
             == list(gold["choice_length_deterministic"].astype(int)))
 
@@ -703,8 +704,7 @@ def test_intercepts_shift_scores_on_natural_scale(gold, model_params, sim_config
     """TTP beta0 shifts the RAW composite by exactly the entered value (doc scale);
     loyalty/wtp/risk_taking intercepts shift their STANDARDIZED score by exactly the
     entered value, so their raw operative score shifts by beta * sd0."""
-    # Intercept-free baseline (the YAML research default is now ttp beta0 = 0.05,
-    # which would otherwise contaminate the exact-shift assertions below).
+    # Explicit intercept-free baseline (independent of the YAML research defaults).
     zeros = {m: 0.0 for m in MECHANISMS}
     base = _run_model(gold, model_params, sim_config, stochastic=False,
                       intercepts=zeros)
@@ -771,8 +771,7 @@ def test_intercepts_shift_stochastic_draws_and_rebinning(gold, model_params, sim
     outcomes shift weakly in the intercept's direction; the hook's bit-for-bit RNG
     replication still reproduces the shifted draws."""
     seed = 321
-    # Intercept-free baseline (YAML research default ttp beta0 = 0.05 would
-    # otherwise offset the exact draw-shift assertions).
+    # Explicit intercept-free baseline (independent of the YAML research defaults).
     base = _run_model(gold, model_params, sim_config, stochastic=True, seed=seed,
                       intercepts={m: 0.0 for m in MECHANISMS})
     shifted = _run_model(gold, model_params, sim_config, stochastic=True, seed=seed,
@@ -859,8 +858,8 @@ def test_categorical_intercepts_apply_same_way(gold, cat_model_params, sim_confi
     semantics on the categorical scores - beta=0 bit-identical, z shifts by exactly
     beta, segments shift weakly in beta's direction (income-free elements and any
     element with beta=0 unchanged)."""
-    # No-intercepts-key baseline: the YAML research default (ttp beta0 = 0.05)
-    # must be excluded so that explicit zeros == no intercepts at all.
+    # No-intercepts-key baseline: the YAML research defaults are excluded so that
+    # explicit zeros == no intercepts at all.
     import copy
     cat_no_key = copy.deepcopy(cat_model_params)
     cat_no_key.pop("intercepts", None)

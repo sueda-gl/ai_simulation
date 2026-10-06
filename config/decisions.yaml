@@ -365,9 +365,10 @@ rejected_transaction_defaults:
   # beta1 (loyalty, on the standardized weighted_loyalty = std(bs)), beta2 (WTP, on
   # the standardized score), beta3 (risk_taking, on the standardized score), beta4
   # (flexibility, on the standardized CALCULATED score before the 25/75 anchoring).
-  # App defaults: TTP beta0 = 0.05 (the doc's stated default; owner ruling 2026-10-06:
-  # the app default is kept - the Sep-2026 original repo had set it to 0 and moved it
-  # to the standardized scale); the other four 0 (doc placeholders 'XXX'). The Stata
+  # App defaults: all five 0. TTP beta0 = 0 as in the owner's September 2026 version
+  # (owner ruling 2026-10-07; it was 0.05 - the doc's stated default - from 2026-08
+  # until the professor's 2026-09-17 review), still applied on the RAW composite; the
+  # other four are doc placeholders 'XXX'. The Stata
   # file embeds no intercept: with ALL FIVE set to 0 the model reproduces
   # Stata_File_Decision4_050926.dta 280/280. FIXED-CUTOFF semantics: the
   # segment cutoffs are anchored on the intercept-free population scores, so a
@@ -375,7 +376,7 @@ rejected_transaction_defaults:
   # fixed segment boundaries (capped at the end bins); 0 reproduces the
   # intercept-free pipeline exactly.
   intercepts:
-    ttp: 0.05
+    ttp: 0.0
     loyalty: 0.0
     wtp: 0.0
     risk_taking: 0.0

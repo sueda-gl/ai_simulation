@@ -772,7 +772,7 @@ def build_rejected_transaction_patch(snapshot: Mapping, config_repo: DecisionsCo
                 patch["income_mode"] = normalize_income_mode(session_mode)
 
         # Per-element intercepts (doc notation beta0..beta4; research defaults from
-        # config/decisions.yaml - TTP beta0 = 0.05, others 0)
+        # config/decisions.yaml - all five 0; TTP beta0 on the raw composite)
         intercepts: Dict[str, float] = {}
         for mech in RTD_MECHANISMS:
             key = f"rtd_intercept_{mech}"

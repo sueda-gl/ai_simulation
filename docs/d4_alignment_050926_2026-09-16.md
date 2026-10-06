@@ -2,9 +2,10 @@
 > historical record of the Sep-2026 work. One statement here no longer describes the
 > migrated code: the TTP intercept **β₀ applies on the RAW `weighted_ttp` composite**
 > (the scale the Decision 4 document gives it: `TTP_i = β0 + ...`, no "after
-> standardization" qualifier), not on the standardized score, and the app default stays
-> **β₀ = 0.05** (owner ruling 2026-10-06). With every intercept at its Stata value 0 the
-> model reproduces `Stata_File_Decision4_050926.dta` 280/280. See
+> standardization" qualifier), not on the standardized score; the app default is
+> **β₀ = 0**, as in the owner's September version (owner ruling 2026-10-07; between
+> 2026-10-06 and 2026-10-07 the port briefly defaulted to 0.05). With every intercept at its
+> Stata value 0 the model reproduces `Stata_File_Decision4_050926.dta` 280/280. See
 > `src/decisions/rejected_transaction_defaults.py` (INTERCEPTS) and
 > `tests/test_rejected_transaction_defaults.py`.
 

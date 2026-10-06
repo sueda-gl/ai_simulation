@@ -563,6 +563,13 @@ def render_decision_sigma_controls(config):
 INTERCEPT_SYMBOLS = {'ttp': 'β₀', 'loyalty': 'β₁', 'wtp': 'β₂', 'risk_taking': 'β₃',
                      'flexibility': 'β₄'}
 
+# (min, max, step) of each Intercept Override input. β0 lives on the RAW weighted_ttp
+# composite (doc: TTP_i = β0 + ...; src/decisions/rejected_transaction_defaults.py),
+# whose span over the 280 participants is ~0.21 (about -0.07 ... 0.14): beyond ±0.21
+# every agent sits in an end bin, so ±0.25 covers the whole useful range (the September
+# widget's ±5 would be ~24× saturated). β1-β4 shift standardized scores (±5 SD).
+INTERCEPT_RANGES = {'ttp': (-0.25, 0.25, 0.01)}
+
 
 def render_intercept_control(config, mech):
     """Per-element intercept override (β0/β1/β2/β3 per the doc), mirroring the
@@ -589,13 +596,21 @@ def render_intercept_control(config, mech):
     _seed_widget_value(widget_key, float(current))
     st.markdown(f"Research Default ({symbol}): **{research_default:.4f}**")
     st.markdown("**Override Value**")
+    lo, hi, step = INTERCEPT_RANGES.get(mech, (-5.0, 5.0, 0.01))
+    if mech == 'ttp':
+        scale_text = ("The intercept shifts the RAW Tendency-to-Plan score (weighted_ttp, "
+                      "which spans only about −0.07 … 0.14 across the 280 participants, so "
+                      "±0.21 already moves every agent to an end bin; one step of 0.01 "
+                      "moves each agent's 0–6 list score by about 0.28)")
+    else:
+        scale_text = "The intercept shifts the element's standardized score by β"
     value = st.number_input(
-            f"Baseline {ELEMENT_SHORT[mech]} tendency", min_value=-5.0, max_value=5.0,
-            step=0.01, format="%.4f",
+            f"Baseline {ELEMENT_SHORT[mech]} tendency", min_value=lo, max_value=hi,
+            step=step, format="%.4f",
             key=widget_key, on_change=on_change,
             help=f"{symbol} baseline for this element (research default "
-                 f"{research_default:.4f}). The intercept shifts the element's "
-                 "standardized score by β and thereby the allocation across the segment "
+                 f"{research_default:.4f}). {scale_text} and thereby the allocation "
+                 "across the segment "
                  "boundaries: the boundaries are fixed from the intercept-free population "
                  "scores, so a nonzero intercept moves agents across them (a negative "
                  "value shifts agents toward the lower segments, a positive value toward "
