@@ -229,6 +229,10 @@ anchor weight). Since 2026-10-07 the Monte-Carlo runner also builds the ordinary
 plan from the same snapshot and hands its sub-run to the subprocess as a plan file
 (`app/seam/mc.py`), so every tab setting reaches the Monte-Carlo runs exactly as it
 reaches a single run (Q-29 in [`rulings-and-quirks.md`](rulings-and-quirks.md)).
+A selected ("Use This Config") saved configuration pins the Monte-Carlo agent count
+and population exactly as it pins a complete run's (the subprocess gets the plan's
+`n_agents`, not Page 1's); only the seed still varies (`base_seed + i`), and the
+screen says so ("🔑 Using saved config: agents N, population P; seeds vary per run").
 
 ---
 

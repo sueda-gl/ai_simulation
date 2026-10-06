@@ -16,7 +16,8 @@ This module is the only place that touches ``st``; the seam and the engine
 never import Streamlit.  ``run_monte_carlo_study`` runs the scripts as a
 subprocess, handing them the single-run plan's sub-run as a plan file
 (app/seam/mc.py), so a Monte-Carlo repetition uses exactly the settings of a
-single run with the same seed.
+single run with the same seed - including a selected saved configuration's
+pinned agent count and population; only the seed varies per repetition.
 """
 import streamlit as st
 import pandas as pd
@@ -41,7 +42,12 @@ from app.seam.build_plan import (
 )
 from app.seam.config_repo import get_config_repo
 from app.seam.execute import execute, verify_saved_expectations
-from app.seam.mc import select_mc_sub_run, write_mc_plan_file
+from app.seam.mc import (
+    pinned_config_caption,
+    population_mode_name,
+    select_mc_sub_run,
+    write_mc_plan_file,
+)
 from app.seam.snapshot import take_snapshot
 
 
@@ -116,18 +122,28 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         # The SAME plan a single run builds (every Page-1 / Page-2 setting, each
         # decision's own income mode, saved configs) - Monte Carlo repeats one of its
         # sub-runs with seed base_seed + i (app/seam/mc.py; Q-29 fixed 2026-10-07).
-        plan = build_plan_from_session()
+        from app.state.saved_configs import get_simulation_seed_from_configs
+        seed_resolution = get_simulation_seed_from_configs()
+        pinned_config = seed_resolution[2] == 'configs'
+        plan = build_plan_from_session(seed_resolution)
         mc_sub_run = select_mc_sub_run(plan, pop_mode_arg, income_mode_arg)
         if mc_sub_run.income_mode != income_mode_arg:
             # e.g. a decision-only run whose tab chose its own income mode
             income_mode_arg = mc_sub_run.income_mode
             income_label = income_mode_arg.title()
+        if mc_sub_run.population != pop_mode_arg:
+            # a selected ("Use This Config") saved configuration pins the population
+            # of a complete run, exactly as in a single run (R14)
+            pop_mode_arg = mc_sub_run.population
+            pop_label = population_mode_name(pop_mode_arg).replace(' (synthetic)', '').replace(' ', '_')
+        # ... and the agent count of every run (Page 1's only without a pinned config)
+        n_agents = mc_sub_run.n_agents
         plan_file = write_mc_plan_file(
             Path(__file__).resolve().parents[1] / 'outputs'
             / f"mc_plan_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.pkl",
             mc_sub_run, plan.metadata.custom_decisions)
 
-        if len(pop_modes) > 1 or len(income_modes) > 1:
+        if len({(s.population, s.income_mode) for s in plan.sub_runs}) > 1:
             st.warning(f"⚠️ **Comparison Mode Limitation**: Monte Carlo will run with **{pop_label} + {income_label}** mode only")
             st.info("""
             💡 **To compare multiple modes with Monte Carlo:**
@@ -140,7 +156,9 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             This approach gives you better control and avoids extremely long run times.
             """)
         
-        st.info(f"🔄 Starting Monte-Carlo study with {st.session_state.n_runs} runs of {st.session_state.n_agents} agents each...")
+        st.info(f"🔄 Starting Monte-Carlo study with {st.session_state.n_runs} runs of {n_agents} agents each...")
+        if pinned_config:
+            st.caption(pinned_config_caption(mc_sub_run))
         st.caption(f"📊 Mode: {pop_label} + {income_label}")
         
         # Show estimated time
@@ -151,7 +169,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         # Build command
         cmd = [
             sys.executable, 'scripts/run_mc_study.py',
-            '--agents', str(st.session_state.n_agents),
+            '--agents', str(n_agents),
             '--runs', str(st.session_state.n_runs),
             '--base-seed', str(st.session_state.base_seed),
             '--anchor-observed', str(st.session_state.anchor_observed_weight),
@@ -178,7 +196,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             st.caption(f"Income mode: {st.session_state.get('income_spec_mode', 'categorical only')} → {income_mode_arg}")
             st.caption(f"Selected decisions: {st.session_state.decision_params.selected_decisions}")
             st.caption(f"Number of runs: {st.session_state.n_runs}")
-            st.caption(f"Agents per run: {st.session_state.n_agents}")
+            st.caption(f"Agents per run: {n_agents}")
         
         # Create progress tracking elements
         progress_bar = st.progress(0)
@@ -387,13 +405,17 @@ def _run_metadata_dict(metadata: RunMetadata) -> dict:
     }
 
 
-def build_plan_from_session() -> RunPlan:
-    """Snapshot the session ONCE and build the plan for this click (R15)."""
+def build_plan_from_session(seed_resolution=None) -> RunPlan:
+    """Snapshot the session ONCE and build the plan for this click (R15).
+
+    seed_resolution: (seed, n_agents, source) when the caller already resolved it
+    (``get_simulation_seed_from_configs``); resolved here otherwise."""
     from app.pages.decision_execution import DEFAULT_DECISION_VALUES
     from app.state.saved_configs import get_simulation_seed_from_configs
 
     snapshot = take_snapshot(st.session_state)
-    seed_resolution = get_simulation_seed_from_configs()
+    if seed_resolution is None:
+        seed_resolution = get_simulation_seed_from_configs()
     return build_run_plan(
         snapshot,
         get_config_repo(),

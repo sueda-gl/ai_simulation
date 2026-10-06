@@ -15,8 +15,15 @@ Now the app builds the ordinary ``RunPlan`` from the session (the same
 ``build_run_plan`` a single run uses), picks the one sub-run the study
 repeats, and hands it to the subprocess as a plan file.  The subprocess
 replays that sub-run through ``app.seam.execute.run_sub_run`` with only the
-seed (and the agent count) replaced - so ``runs = 1, base_seed = S`` gives
-exactly the per-agent results of a single run with seed ``S``.
+seed replaced - so ``runs = 1, base_seed = S`` gives exactly the per-agent
+results of a single run with seed ``S``.
+
+A selected ("Use This Config") saved configuration is honoured exactly as a
+single run honours it (owner ruling, 2026-10-07): the plan already carries the
+pinned agent count and - for a complete run - the pinned population mode
+(``build_plan.resolve_seed_and_n``, R14), and the app passes the sub-run's own
+``n_agents`` to the subprocess instead of Page 1's.  Only the seed differs:
+Monte Carlo deliberately varies it (``base_seed + i``).
 
 The file is a pickle: the patches carry ``Replace`` markers and Python tuples
 that JSON would not round-trip exactly.  It is written by the app into
@@ -32,10 +39,27 @@ import pandas as pd
 
 from src.contract.plan import RunPlan, SubRun
 from src.engine.postprocess import assign_global_transaction_ids
+from app.seam.build_plan import POP_TYPE_BY_MODE
 from app.seam.config_repo import DecisionsConfig
 from app.seam.execute import run_sub_run
 
 PLAN_FILE_VERSION = 1
+
+# internal population type -> the Page-1 name ("baseline" -> "Research Baseline")
+POPULATION_MODE_BY_TYPE = {pop_type: mode for mode, pop_type in POP_TYPE_BY_MODE.items()}
+
+
+def population_mode_name(pop_type: str) -> str:
+    """The Page-1 name of an internal population type."""
+    return POPULATION_MODE_BY_TYPE.get(pop_type, pop_type)
+
+
+def pinned_config_caption(sub_run: SubRun) -> str:
+    """The Monte-Carlo counterpart of a single run's "🔑 Using saved seed" caption:
+    the pinned agent count and population the study runs with; the seed is not
+    pinned, because every repetition uses its own (base_seed + i)."""
+    return (f"🔑 Using saved config: agents {sub_run.n_agents:,}, "
+            f"population {population_mode_name(sub_run.population)}; seeds vary per run")
 
 
 def select_mc_sub_run(plan: RunPlan, population: Optional[str] = None,
@@ -96,4 +120,5 @@ def run_mc_repetition(sub_run: SubRun, seed: int, n_agents: Optional[int] = None
     return assign_global_transaction_ids(df)
 
 
-__all__ = ["load_mc_plan_file", "run_mc_repetition", "select_mc_sub_run", "write_mc_plan_file"]
+__all__ = ["POPULATION_MODE_BY_TYPE", "load_mc_plan_file", "pinned_config_caption", "population_mode_name",
+           "run_mc_repetition", "select_mc_sub_run", "write_mc_plan_file"]
