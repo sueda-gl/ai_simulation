@@ -158,6 +158,85 @@ def calculate_disclose_documents_metrics(result_df):
     return metrics
 
 
+# ==================== REJECTED TRANSACTION DEFAULTS (Decision 4) CONFIG SELECTION ====================
+# Mirrors the disclose_income pattern: a Decision 4 result cell can be selected with
+# "Use This Config"; the tab settings at save time (income mode, per-element intercepts,
+# Flexibility anchor mix, rank-aggregation settings, stochastic UI) are stored in the unified
+# selected_decision_configs store and applied by the seam
+# (app.seam.build_plan.build_rejected_transaction_patch) in combined/complete simulations
+# (individual Decision 4 runs keep reflecting the tab).
+
+RTD_CONFIG_MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
+
+
+def extract_rejected_transaction_configuration_details(result_key):
+    """Income mode and population mode of a Decision 4 result cell from its result key
+    ('categorical'/'continuous' single-mode keys, 'copula_continuous' etc. Compare-all keys)."""
+    # Imported lazily: extract_configuration_details still lives in the page
+    # module, which imports this one.
+    from app.pages.decision_execution import extract_configuration_details
+    key = str(result_key or '').lower()
+    if 'categorical' in key:
+        income_mode = 'Categorical only'
+    elif 'continuous' in key:
+        income_mode = 'Continuous only'
+    else:
+        income_mode = str(st.session_state.get('rtd_income_mode', 'Continuous only'))
+        if 'compare' in income_mode.lower() or 'both' in income_mode.lower():
+            income_mode = 'Continuous only'   # a single cell always has one mode
+    population_mode = extract_configuration_details(result_key)['population_mode']
+    return {'income_mode': income_mode, 'population_mode': population_mode}
+
+
+def get_current_rejected_transaction_params():
+    """Collect the current Decision 4 tab settings from session state (the model
+    coefficients and sigma constants are fixed in config/decisions.yaml)."""
+    return {
+        'income_mode': st.session_state.get('rtd_income_mode', 'Continuous only'),
+        'intercepts': {m: float(st.session_state.get(f'rtd_intercept_{m}', 0.0) or 0.0)
+                       for m in RTD_CONFIG_MECHANISMS},
+        'flexibility_anchor': {
+            'observed_weight': float(st.session_state.get('rtd_flex_observed_weight', 0.25)),
+            'calculated_weight': 1.0 - float(st.session_state.get('rtd_flex_observed_weight', 0.25)),
+        },
+        'aggregation': {
+            'enabled': bool(st.session_state.get('rtd_aggregation_enabled', True)),
+        },
+        'stochastic': {
+            # R18: the Decision 4 tab's own default is ON.
+            'sigma_enabled': st.session_state.get('rtd_sigma_enabled', True),
+            'sigma_in_copula': st.session_state.get('rtd_sigma_in_copula', False),
+            'scale_factor': st.session_state.get('rtd_scale_factor', 1.0),
+            'sigma_strategy': st.session_state.get('rtd_sigma_strategy', 'overall'),
+            'quintile_scale_factors': st.session_state.get('rtd_quintile_scale_factors', {}),
+        },
+    }
+
+
+def calculate_rejected_transaction_metrics(result_df):
+    """Key metrics of a Decision 4 result frame: options list length, integrated default
+    list, first integrated option shares, per-element mean segments."""
+    metrics = {'total_agents': int(len(result_df))}
+    n = len(result_df)
+    if 'rtd_choice_length' in result_df.columns:
+        lengths = result_df['rtd_choice_length'].astype(int)
+        metrics['mean_choice_length'] = float(lengths.mean()) if n else 0.0
+        metrics['choice_length_distribution'] = {int(k): int(v) for k, v in lengths.value_counts().sort_index().items()}
+    if 'rtd_default_list_length' in result_df.columns and n:
+        metrics['mean_default_list_length'] = float(result_df['rtd_default_list_length'].mean())
+    if 'rtd_default_list' in result_df.columns and n:
+        firsts = result_df['rtd_default_list'].apply(lambda l: l[0] if isinstance(l, list) and len(l) else 0)
+        metrics['first_option_shares'] = {int(o): float((firsts == o).sum() / n) for o in range(1, 6)}
+        metrics['empty_list_rate'] = float((firsts == 0).mean())
+    for mech, col in (('loyalty', 'rtd_loyalty_segment'), ('wtp', 'rtd_wtp_segment'),
+                      ('risk_taking', 'rtd_rt_segment'), ('flexibility', 'rtd_flex_segment')):
+        if col in result_df.columns and n:
+            metrics[f'mean_{mech}_segment'] = float(result_df[col].astype(float).mean())
+    if 'rtd_consensus_is_kemeny_optimal' in result_df.columns and n:
+        metrics['kemeny_optimal_rate'] = float(result_df['rtd_consensus_is_kemeny_optimal'].astype(bool).mean())
+    return metrics
+
+
 # ==================== UNIFIED DECISION CONFIGURATION SYSTEM ====================
 # This unified system replaces the fragmented per-decision config storage.
 # All decision configs are now stored in a single dict: selected_decision_configs
@@ -342,8 +421,10 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     if extra_data:
         config.update(extra_data)
     
-    # For disclose_income / disclose_documents, ensure population_mode is stored
-    if decision_name in ('disclose_income', 'disclose_documents') and 'population_mode' not in config:
+    # For disclose_income / disclose_documents / rejected_transaction_defaults, ensure
+    # population_mode is stored
+    if decision_name in ('disclose_income', 'disclose_documents', 'rejected_transaction_defaults') \
+            and 'population_mode' not in config:
         # Imported lazily: extract_configuration_details still lives in the page
         # module, which imports this one.
         from app.pages.decision_execution import extract_configuration_details

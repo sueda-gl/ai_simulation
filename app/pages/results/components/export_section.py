@@ -540,25 +540,42 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         # DECISION 4-ONLY EXPORT: agent-level workbook only. An individual Decision 4
         # run produces no purchase requests, so no transaction-level file is offered.
         from app.pages.results.visualizations.transaction_viz import (
-            _prepare_rtd_model_export, _rtd_active_element,
+            _prepare_rtd_model_export, _rtd_active_element, _rtd_selected_config_key,
         )
-        from app.reports.rtd import RTD_ELEMENT_SHEETS
+        from app.reports.rtd import RTD_AGGREGATION_ELEMENT, RTD_ELEMENT_SHEETS
         active_element = _rtd_active_element()
+        # Once a configuration has been selected with "Use This Config" the export
+        # covers ONLY that configuration (professor 2026-09), mirroring the results
+        # display (transaction_viz.render_rtd_comparison_results).
+        selected_key = _rtd_selected_config_key(results_dict or {})
+        if selected_key is not None:
+            results_dict = {selected_key: results_dict[selected_key]}
+            df = results_dict[selected_key]
         export_all_configs = results_dict is not None and len(results_dict) > 1
 
-        if active_element:
+        if active_element == RTD_AGGREGATION_ELEMENT:
+            st.markdown(
+                "**Decision 4 Integrated Default List Export:** one row per agent with "
+                "every input and z-score, each element's score, segment and list, the "
+                "integrated ranking with its tie-break diagnostics and the integrated "
+                "default list."
+            )
+        elif active_element:
             st.markdown(
                 f"**Decision 4 Results Export ({RTD_ELEMENT_SHEETS[active_element]} element):** "
-                "one row per agent with the element's independent variables, its score "
-                "and the resulting option sequence."
+                "one row per agent with the element's independent variables and the "
+                "z-scores its equation uses, its score, segments and the resulting "
+                "option sequence."
             )
         else:
             st.markdown(
                 "**Decision 4 (Rejected Transaction Defaults) Results Export:** one row "
-                "per agent with the Decision 4 element results - one self-contained "
-                "sheet per element with its independent variables, score, intermediate "
-                "distributions and the resulting option sequence."
+                "per agent with the Decision 4 element results - the integrated default "
+                "list sheet with every input, z-score, element score and segment, then "
+                "one self-contained sheet per element."
             )
+        if selected_key is not None:
+            st.caption("Selected configuration only.")
         if export_all_configs:
             st.caption(f"{len(results_dict)} configurations - sheet names are prefixed "
                        "with the configuration.")

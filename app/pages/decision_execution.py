@@ -24,6 +24,10 @@ from app.state.saved_configs import (  # noqa: F401
     extract_disclose_documents_configuration_details,
     get_current_disclose_documents_params,
     calculate_disclose_documents_metrics,
+    RTD_CONFIG_MECHANISMS,
+    extract_rejected_transaction_configuration_details,
+    get_current_rejected_transaction_params,
+    calculate_rejected_transaction_metrics,
     get_selected_decision_configs,
     validate_seed_consistency,
     get_decision_result_columns,
@@ -192,6 +196,33 @@ def can_run_complete_simulation():
             })
 
     # ========================================================================
+    # CHECK REJECTED_TRANSACTION_DEFAULTS (only if selected) - mirrors disclose_income
+    # ========================================================================
+
+    rtd_income_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
+    rtd_income_count = 2 if ('compare' in str(rtd_income_mode).lower() or 'both' in str(rtd_income_mode).lower()) else 1
+    rtd_selected = 'rejected_transaction_defaults' in selected_decisions
+    rtd_total_configs = population_count * rtd_income_count
+    has_rtd_config = False
+    rtd_saved_info = None
+
+    if rtd_selected:
+        if 'rejected_transaction_defaults' in configs:
+            # R13: every stored config is an explicit "Use This Config" selection.
+            rc = configs['rejected_transaction_defaults']
+            has_rtd_config = True
+            rtd_saved_info = (f"{rc.get('population_mode', 'Unknown')} + "
+                              f"{rc.get('income_mode', rc.get('params', {}).get('income_mode', 'Unknown'))}")
+
+        if rtd_total_configs > 1 and not has_rtd_config:
+            blocking_issues.append({
+                'decision': 'rejected_transaction_defaults',
+                'block_type': 'rejected_transaction_defaults',
+                'config_count': rtd_total_configs,
+                'reason': f"Rejected Transaction Defaults has {rtd_total_configs} configurations (population: {population_count}, income: {rtd_income_count}) - please run rejected_transaction_defaults only and select one"
+            })
+
+    # ========================================================================
     # CHECK DONATION_DEFAULT (only if selected)
     # ========================================================================
 
@@ -248,10 +279,15 @@ def can_run_complete_simulation():
     if has_disclose_documents_config and dd_saved_mode:
         config_parts.append(f"Disclose Documents: {dd_saved_mode}")
 
+    # Show rejected_transaction_defaults config if selected and saved
+    if has_rtd_config and rtd_saved_info:
+        config_parts.append(f"Rejected Transaction Defaults: {rtd_saved_info}")
+
     # Determine total config count for display
     total_configs = max(di_total_configs if disclose_income_selected else 1,
                        donation_total_configs if donation_default_selected else 1,
-                       dd_total_configs if disclose_documents_selected else 1)
+                       dd_total_configs if disclose_documents_selected else 1,
+                       rtd_total_configs if rtd_selected else 1)
     
     if config_parts:
         return (True, f"Using saved configuration(s): {', '.join(config_parts)}", total_configs, None, [])
@@ -806,6 +842,10 @@ def run_combined_simulation(selected_decisions):
             pop_mode = config.get('population_mode', 'Unknown')
             inc_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
             saved_config_info['donation_default'] = f"{pop_mode} + {inc_mode}"
+        elif decision_name == 'rejected_transaction_defaults':
+            pop_mode = config.get('population_mode', 'Unknown')
+            inc_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+            saved_config_info['rejected_transaction_defaults'] = f"{pop_mode} + {inc_mode}"
         else:
             saved_config_info[decision_name] = "custom config"
     

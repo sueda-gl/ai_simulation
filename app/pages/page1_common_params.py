@@ -848,7 +848,10 @@ BUDGET_SHOP,5.25,50,0""")
         
         # Income Distribution Section
         st.markdown('<h3 class="section-header">💵 Annual Income Distribution</h3>', unsafe_allow_html=True)
-        
+        st.caption("Research Baseline and Research Specification use each original participant's "
+                   "income from the professor's data file; these distribution settings apply to "
+                   "Copula populations.")
+
         # Initialize the widget key if it doesn't exist
         if "page1_income_distribution" not in st.session_state:
             st.session_state.page1_income_distribution = st.session_state.sim_params.income_distribution if st.session_state.sim_params.income_distribution in ["lognormal", "generalised_gamma", "dagum"] else "lognormal"

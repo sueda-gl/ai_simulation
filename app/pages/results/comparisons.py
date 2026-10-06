@@ -12,7 +12,8 @@ from app.pages.results.run_context import RunContext
 
 
 def should_enable_selection(ctx=None):
-    """Check if selection buttons should be enabled for individual decision runs (donation_default or disclose_income)"""
+    """Check if selection buttons should be enabled for individual decision runs
+    (donation_default, disclose_income, disclose_documents or rejected_transaction_defaults)"""
     ctx = ctx if ctx is not None else RunContext.from_session()
     return ctx.should_enable_selection
 

@@ -39,6 +39,11 @@ from app.seam.snapshot import SessionSnapshot, take_snapshot
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_COMMIT = "80ee344"          # last pre-migration app/simulation.py
+# The owner's September 2026 work in the original repo (Decision 4: Flexibility element,
+# Section-6 rank aggregation, "Use This Config"). Decision 4's mapping is checked
+# against THIS version of app/simulation.py; every other mapping against LEGACY_COMMIT.
+SEPTEMBER_COMMIT = "e973a99"
+_SEPTEMBER_FUNCTIONS = ("_apply_rejected_transaction_config", "_apply_saved_rejected_transaction_config")
 ALL = list(DECISION_ORDER)
 
 # --------------------------------------------------------------------------- fixtures
@@ -114,9 +119,8 @@ def base_state(repo, selected=None, **overrides):
         "rtd_sigma_strategy": "overall", "rtd_scale_factor": 1.0,
         "rtd_quintile_scale_factors": {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0},
         "rtd_intercept_ttp": 0.05, "rtd_intercept_loyalty": 0.0, "rtd_intercept_wtp": 0.0,
-        "rtd_intercept_risk_taking": 0.0,
-        "rtd_anchor_ttp": "continuous", "rtd_anchor_loyalty": "continuous",
-        "rtd_anchor_wtp": "continuous", "rtd_anchor_risk_taking": "continuous",
+        "rtd_intercept_risk_taking": 0.0, "rtd_intercept_flexibility": 0.0,
+        "rtd_flex_observed_weight": 0.25, "rtd_aggregation_enabled": True,
     }
     state.update(_donation_keys(repo))
     state.update(_unsuffixed_donation_keys(repo, "categorical"))
@@ -173,8 +177,8 @@ _LEGACY_FUNCTIONS = (
     "_apply_simulation_params", "_apply_decision_settings", "_apply_donation_config",
     "_apply_disclose_income_config", "_apply_saved_disclose_income_config",
     "_apply_disclose_income_from_session_state", "_apply_disclose_documents_config",
-    "_apply_rejected_transaction_config", "apply_selected_donation_config",
-    "collect_decision_settings",
+    "_apply_rejected_transaction_config", "_apply_saved_rejected_transaction_config",
+    "apply_selected_donation_config", "collect_decision_settings",
 )
 
 _IMPORT_RE = re.compile(r"^(\s*)from app\.(?:pages\.decision_execution|models) import (\w+)\s*$", re.M)
@@ -183,22 +187,29 @@ _IMPORT_RE = re.compile(r"^(\s*)from app\.(?:pages\.decision_execution|models) i
 @pytest.fixture(scope="module")
 def legacy(default_values):
     """The pre-migration mapping functions, bound to a stub session state."""
-    try:
-        source = subprocess.run(
-            ["git", "show", f"{LEGACY_COMMIT}:app/simulation.py"],
-            cwd=str(PROJECT_ROOT), capture_output=True, text=True, check=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
-        pytest.skip(f"legacy app/simulation.py not available from git: {exc}")
-
     import ast
-    tree = ast.parse(source)
-    lines = source.splitlines()
-    chunks = []
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and node.name in _LEGACY_FUNCTIONS:
-            chunks.append("\n".join(lines[node.lineno - 1:node.end_lineno]))
-    assert len(chunks) == len(_LEGACY_FUNCTIONS), "legacy function set changed"
+
+    def functions_at(commit, names):
+        try:
+            source = subprocess.run(
+                ["git", "show", f"{commit}:app/simulation.py"],
+                cwd=str(PROJECT_ROOT), capture_output=True, text=True, check=True,
+            ).stdout
+        except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
+            pytest.skip(f"legacy app/simulation.py not available from git: {exc}")
+        tree = ast.parse(source)
+        lines = source.splitlines()
+        found = {}
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef) and node.name in names:
+                found[node.name] = "\n".join(lines[node.lineno - 1:node.end_lineno])
+        assert set(found) == set(names), f"legacy function set changed at {commit}"
+        return found
+
+    legacy_chunks = functions_at(LEGACY_COMMIT, [n for n in _LEGACY_FUNCTIONS
+                                                 if n not in _SEPTEMBER_FUNCTIONS])
+    legacy_chunks.update(functions_at(SEPTEMBER_COMMIT, _SEPTEMBER_FUNCTIONS))
+    chunks = [legacy_chunks[name] for name in _LEGACY_FUNCTIONS]
     code = "\n\n".join(chunks)
     # the runtime switch removed in step 1 (owner ruling R23)
     code = "\n".join(l for l in code.splitlines() if "model_enabled" not in l)
@@ -686,6 +697,43 @@ def test_saved_di_config_patch_matches_legacy(legacy, repo, default_values):
     legacy_cfg, _ = legacy_orchestrator_config(legacy, repo, state, "documentation", "continuous", None)
     new_cfg, _ = seam_engine_config(repo, sub)
     assert new_cfg["disclose_income"] == legacy_cfg["disclose_income"]
+
+
+def test_saved_rtd_config_patch_matches_september(legacy, repo, default_values):
+    """A saved Decision 4 configuration ("Use This Config", September 2026) pins the
+    population, and its MODEL settings override the tab in a complete run, while the
+    stochastic settings follow the current tab - the e973a99 mapping, via the seam."""
+    rtd_cfg = {"result_key": "research_spec_categorical",
+               "params": {"income_mode": "Compare both",
+                          "intercepts": {"ttp": 0.1, "loyalty": -0.2, "wtp": 0.0,
+                                         "risk_taking": 0.3, "flexibility": 0.15},
+                          "flexibility_anchor": {"observed_weight": 0.4, "calculated_weight": 0.6},
+                          "aggregation": {"enabled": True},
+                          "stochastic": {"sigma_enabled": False}},
+               "income_mode": "Categorical only", "population_mode": "Research Specification",
+               "source": "individual_rejected_transaction_defaults_run",
+               "original_seed": 5, "original_n_agents": 50}
+    state = base_state(repo, selected_decision_configs={"rejected_transaction_defaults": rtd_cfg},
+                       rtd_income_mode="Continuous only", rtd_intercept_ttp=-0.3,
+                       rtd_flex_observed_weight=0.9, rtd_scale_factor=0.6)
+    plan = plan_for(repo, default_values, state)
+    (sub,) = plan.sub_runs
+    assert sub.population == "documentation"           # pinned by the saved config
+    assert (sub.seed, sub.n_agents) == (5, 50)
+    assert "🔄 Running with saved population mode: Research Specification" in [t for _, t in texts(plan)]
+    assert_full_parity(legacy, repo, state, sub, None)
+    rtd = seam_engine_config(repo, sub)[0]["rejected_transaction_defaults"]
+    assert rtd["income_mode"] == "categorical"
+    assert rtd["intercepts"]["ttp"] == 0.1 and rtd["intercepts"]["flexibility"] == 0.15
+    assert rtd["flexibility_anchor"] == {"observed_weight": 0.4, "calculated_weight": 0.6}
+    # stochastic: current tab, not the saved snapshot
+    assert rtd["stochastic"]["sigma_value"] > 0
+    assert rtd["stochastic"]["mechanisms"]["flexibility"]["scale_factor"] == 0.6
+    # an individual Decision 4 run keeps reflecting the tab
+    state["decision_params"] = SimpleNamespace(selected_decisions=["rejected_transaction_defaults"])
+    patch = bp.build_rejected_transaction_patch(state, repo, "documentation", "continuous")
+    assert patch["intercepts"]["ttp"] == -0.3
+    assert patch["flexibility_anchor"]["observed_weight"] == 0.9
 
 
 def test_default_settings_message_matches_legacy_builder(legacy, repo, default_values):

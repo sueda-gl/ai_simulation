@@ -38,11 +38,13 @@ COMPARE_ALL_KEYS: Tuple[str, ...] = (
     "research_baseline_categorical", "research_baseline_continuous",
 )
 
-# Individual runs whose overview cells carry a "Use This Config" button.
+# Individual runs that offer a "Use This Config" button (Decision 4's renders under
+# its detailed results, the others in their overview cells).
 _SELECTABLE_INDIVIDUAL_RUNS = (
     ("donation_default",),
     ("disclose_income",),
     ("disclose_documents",),
+    ("rejected_transaction_defaults",),
 )
 
 
@@ -152,7 +154,7 @@ class RunContext:
 
     @property
     def should_enable_selection(self) -> bool:
-        """Overview cells of an individual donation / DI / DD run offer 'Use This Config'."""
+        """An individual donation / DI / DD / Decision 4 run offers 'Use This Config'."""
         return self.custom_decisions in _SELECTABLE_INDIVIDUAL_RUNS and not self.default_decisions
 
     @property

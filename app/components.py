@@ -13,12 +13,24 @@ from datetime import datetime
 from app.reports import mc as mc_report
 
 
-def rtd_overview_metric(df):
-    """Headline metric for a Decision 4 model run, element-aware.
+# Per-element runs of the four RANKING elements have no meaningful headline metric:
+# the professor asked (2026-09) to drop the "Mean <element> score" metric entirely, so
+# those runs show the agent count alone.
+_RTD_NO_HEADLINE_ELEMENTS = ('loyalty', 'wtp', 'risk_taking', 'flexibility')
 
-    On a per-element run (rtd_run_element set for an individual Decision 4 run) the
-    metric is the run element's own mean score; otherwise the whole-decision metric
-    (average options list length). Returns (label, formatted_value).
+
+def rtd_overview_metric(df):
+    """Headline metric for a Decision 4 model run, run-shape aware.
+
+    Returns (label, formatted_value), or (None, None) when the run shape has no
+    element-specific headline metric:
+      - Loyalty / WTP / Risk-Taking / Flexibility per-element run -> (None, None);
+      - "Run Integrated Default List Only"  -> average integrated default list length;
+      - Options List Length per-element run, whole-decision runs and combined runs
+        -> average options list length (the caller adds its min/max).
+
+    Whether the run was an individual Decision 4 run comes from the run's own
+    decision lists (R28: RunContext), the element from the rtd_run_element flag.
     """
     from app.pages.results.run_context import RunContext
 
@@ -26,17 +38,13 @@ def rtd_overview_metric(df):
     if RunContext.from_session().is_individual_run('rejected_transaction_defaults'):
         element = st.session_state.get('rtd_run_element')
 
-    specs = {
-        # All three use the STANDARDIZED score (matches the results charts;
-        # professor 2026-08: all elements present standardized results).
-        'loyalty': ("Mean Loyalty score", 'rtd_loyalty_z', "{:.4f}"),
-        'wtp': ("Mean Willingness-to-Pay score", 'rtd_wtp_z', "{:.4f}"),
-        'risk_taking': ("Mean Risk-Taking score", 'rtd_rt_z', "{:.4f}"),
-    }
-    if element in specs:
-        label, col, fmt = specs[element]
-        if col in df.columns:
-            return label, fmt.format(df[col].mean())
+    if element in _RTD_NO_HEADLINE_ELEMENTS:
+        return None, None
+    if element == 'aggregation':
+        if 'rtd_default_list_length' in df.columns:
+            return ("Avg. integrated default list length",
+                    f"{df['rtd_default_list_length'].mean():.2f}")
+        return None, None
     return "Avg. Options List Length", f"{df['rtd_choice_length'].mean():.2f}"
 
 
@@ -74,12 +82,14 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     if has_rtd and not has_donation and not has_income and not has_documents:
         # Decision 4 (Rejected Transaction Defaults) model run: no donation /
         # disclosure metrics exist - show the D4-relevant headline metrics instead.
-        # On a per-ELEMENT run, the headline metric must be the run element's own
-        # (a Loyalty-only run must not show the Options List Length metric).
+        # The metric depends on the run shape (see rtd_overview_metric): a per-element
+        # run of a RANKING element shows no element metric at all (professor 2026-09).
         label, value = rtd_overview_metric(df)
-        if label == "Avg. Options List Length":
-            # Whole-decision run: min and max Options List Length shown next to
-            # the average (professor 2026-08 request).
+        if label is None:
+            st.metric("Total Agents", f"{len(df):,}")
+        elif label == "Avg. Options List Length":
+            # Options List Length element / whole-decision run: min and max Options
+            # List Length shown next to the average (professor 2026-08 request).
             lengths = df['rtd_choice_length'].astype(int)
             col1, col2, col3, col4 = st.columns([1, 1.2, 1, 1])
             col1.metric("Total Agents", f"{len(df):,}")
@@ -234,6 +244,10 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     # Disclose income/documents have their own selection buttons in their rate-analysis helpers
     if enable_selection and result_key and 'donation_default' in df.columns:
         render_inline_selection_button(result_key, df)
+
+    # Decision 4 (Rejected Transaction Defaults): its "Use This Config" button renders
+    # UNDER the decision's detailed results (transaction_viz._render_rtd_model_results),
+    # like the other decisions' buttons sit under their result charts - not here.
 
 
 def render_seed_mismatch_error(decision_name, error_info):
@@ -652,6 +666,53 @@ def render_disclose_documents_selection_button(result_key, result_df):
                     render_seed_mismatch_error('disclose_documents', error_info)
 
 
+def render_rejected_transaction_selection_button(result_key, result_df):
+    """Render the 'Use This Config' selection button for a Decision 4 (Rejected
+    Transaction Defaults) result cell - mirrors render_disclose_income_selection_button."""
+    from app.pages.decision_execution import (
+        save_decision_config,
+        clear_decision_config,
+        is_decision_config_selected,
+        get_current_rejected_transaction_params,
+        calculate_rejected_transaction_metrics,
+        extract_rejected_transaction_configuration_details,
+    )
+
+    is_selected = is_decision_config_selected('rejected_transaction_defaults', result_key)
+    st.markdown("---")
+    # No "Quick Summary" caption here (professor 2026-09-17: it was unrelated to the
+    # element presented, e.g. list lengths under the Flexibility results).
+    _, col2 = st.columns([2, 1])
+
+    with col2:
+        if is_selected:
+            # The selection can be undone right here (professor 2026-09-17: it must be
+            # possible to unselect at any point so later runs present all alternatives).
+            if st.button("✅ Selected - click to unselect", key=f"rtd_inline_unselect_{result_key}",
+                         use_container_width=True,
+                         help="This configuration is selected for combined simulations. Click to "
+                              "unselect it; the next runs present all configurations again."):
+                clear_decision_config('rejected_transaction_defaults')
+                st.rerun()
+        else:
+            if st.button("🎯 Use This Config", key=f"rtd_inline_select_{result_key}", type="primary",
+                         use_container_width=True,
+                         help="Select this Rejected Transaction Defaults configuration for combined simulations"):
+                params = get_current_rejected_transaction_params()
+                metrics = calculate_rejected_transaction_metrics(result_df)
+                details = extract_rejected_transaction_configuration_details(result_key)
+                extra_data = {'income_mode': details['income_mode'],
+                              'population_mode': details['population_mode']}
+                success, config, error_info = save_decision_config(
+                    'rejected_transaction_defaults', result_key, result_df, params, metrics, extra_data
+                )
+                if success:
+                    st.success("Rejected Transaction Defaults configuration selected!")
+                    st.rerun()
+                else:
+                    render_seed_mismatch_error('rejected_transaction_defaults', error_info)
+
+
 def show_monte_carlo_results(mc_data):
     """Display Monte Carlo simulation results"""
     if mc_data['summary'] is not None:
@@ -927,6 +988,15 @@ def get_css_styles():
     border-left: 4px solid #3498db;
     background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
     border-radius: 0 0.5rem 0.5rem 0;
+}
+/* Decision 4 sub-decision mechanism tabs (st.container(key="rtd_subtabs") on the
+   Decision 4 tab): larger bold labels (professor 2026-09-17). The label markdown may
+   be wrapped in a p/span/div depending on the Streamlit build, so the rule targets the
+   tab and its descendants - FONT properties only, which cannot disturb the layout. */
+.st-key-rtd_subtabs [data-baseweb="tab"],
+.st-key-rtd_subtabs [data-baseweb="tab"] * {
+    font-size: 1.15rem;
+    font-weight: 700;
 }
 
 </style>

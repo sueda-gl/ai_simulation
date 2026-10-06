@@ -1,16 +1,19 @@
 """Pure (Streamlit-free) Decision 4 sheet builders.
 
 The workbook/frame builders behind the "rejected transaction defaults" MODEL run
-(Decision 4): the four sub-decision elements (Options List Length / Tendency to
-Plan, Loyalty, Willingness-to-Pay, Risk-Taking). Moved verbatim from
-`app/pages/results/visualizations/transaction_viz.py`, which now imports them
-back and keeps only the Streamlit rendering (charts, captions, download
-buttons).
+(Decision 4): the five sub-decision elements (Options List Length / Tendency to
+Plan, Loyalty, Willingness-to-Pay, Risk-Taking, Flexibility) and the Section-6
+rank aggregation's integrated default list.  Ported from the owner's September
+2026 `app/pages/results/visualizations/transaction_viz.py` (original repo,
+e973a99), which kept them next to the charts; the page now imports them back
+and keeps only the Streamlit rendering (charts, captions, download buttons).
 
 Nothing here imports Streamlit or reads session state: every input is passed in
-explicitly. The two `prepare_*` builders RAISE on a malformed frame; the page
-turns that back into the same inline `st.error(...)` it always showed.
+explicitly.  The `prepare_*` builders RAISE on a malformed frame; the page
+turns that back into the same inline `st.error(...)` the original showed.
 """
+import math
+
 import numpy as np
 import pandas as pd
 
@@ -22,6 +25,34 @@ RTD_ELEMENT_SHEETS = {
     'loyalty': 'Loyalty',
     'wtp': 'Willingness-to-Pay',
     'risk_taking': 'Risk-Taking',
+    'flexibility': 'Flexibility',
+}
+# Section-6 rank aggregation (integrated default list) sheet / section name.
+RTD_AGG_SHEET = 'Integrated Default List'
+# The value of rtd_run_element for "Run Integrated Default List Only".
+RTD_AGGREGATION_ELEMENT = 'aggregation'
+RTD_ALL_ELEMENTS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
+# Elements whose equations contain NO income term: identical under the categorical and
+# the continuous income specification, so a comparison layout renders them only once.
+RTD_INCOME_FREE_ELEMENTS = ('ttp', 'loyalty', 'flexibility')
+
+RTD_STAGE_LABELS = {
+    'kemeny': 'Kemeny alone (unique full ranking)',
+    'schulze': 'Schulze',
+    'copeland': 'Copeland',
+    'footrule': 'Footrule',
+    'random': 'Last resort (random)',
+}
+RTD_TRUNCATION_LABELS = {
+    'none': 'Not truncated (full ranking kept)',
+    'length': 'Options list length',
+    'option5': 'Option 5 stop rule',
+    'both': 'Both rules bind at the same position',
+}
+RTD_KEMENY_STATUS_LABELS = {
+    'unique': 'Unique full ranking (no ties)',
+    'unique_with_ties': 'Unique ordering with ties',
+    'multiple': 'Several equally good orderings',
 }
 
 # Independent variables per element (Stata-aligned trait column names, in each
@@ -34,7 +65,29 @@ RTD_ELEMENT_INPUTS = {
     'wtp': ['ExtraversionBig5', 'Agreeable', 'income'],
     'risk_taking': ['ExtraversionBig5', 'OpennessBig5', 'Agreeable',
                     'ConscientiousnessBig5', 'NeuroticismBig5', 'income'],
+    # Flexibility: Big 5 (IVW equation order) + the observed anchor stdactions
+    'flexibility': ['ExtraversionBig5', 'OpennessBig5', 'NeuroticismBig5', 'Agreeable',
+                    'ConscientiousnessBig5', 'stdactions'],
 }
+
+# Raw input column -> (model column holding the standardized value, Stata name).
+# These are the values the equations actually multiply, so every Decision 4 Excel
+# carries them next to their raw inputs (professor 2026-09: "we are missing all the
+# variables that are used in the calculation for all decision elements").
+RTD_INPUT_Z = {
+    'ExtraversionBig5': ('rtd_z_extraversion', 'z_extraversionbig5'),
+    'Agreeable': ('rtd_z_agreeable', 'z_agreeable'),
+    'NeuroticismBig5': ('rtd_z_neuroticism', 'z_neuroticismbig5'),
+    'ConscientiousnessBig5': ('rtd_z_conscientiousness', 'z_conscientiousnessbig5'),
+    'OpennessBig5': ('rtd_z_openness', 'z_opennessbig5'),
+    'Education': ('rtd_reducation', 'reducation'),
+    'income': ('rtd_z_income', 'z_net_income'),
+    'stdactions': ('rtd_z_stdactions', 'z_stdactions'),
+}
+
+# mech -> (model column key, Stata name)
+RTD_STATA_NAMES = {'loyalty': ('loyalty', 'loyalty'), 'wtp': ('wtp', 'WTP'),
+                   'risk_taking': ('rt', 'RT'), 'flexibility': ('flex', 'Flexibility')}
 
 
 def rtd_frame_income_mode(df):
@@ -53,16 +106,27 @@ def rtd_agent_id_series(df):
 
 
 def rtd_element_inputs_frame(df, mech):
-    """Agent ID + the element's OWN independent variables (Stata-aligned names).
-    Categorical income adds 'Assigned Allowance Level' for wtp / risk_taking."""
+    """Agent ID + the element's OWN independent variables: each raw input followed
+    immediately by the standardized value its equation uses (Stata names
+    z_extraversionbig5, reducation, z_net_income, z_stdactions, ...).
+
+    With CATEGORICAL income the WTP / Risk-Taking equations replace the z_net_income
+    term with the budget-level dummies, so those files carry 'Assigned Allowance Level'
+    instead of z_net_income."""
     out = pd.DataFrame(index=df.index)
     out['Agent ID'] = rtd_agent_id_series(df)
-    inputs = list(RTD_ELEMENT_INPUTS[mech])
-    if mech in ('wtp', 'risk_taking') and rtd_frame_income_mode(df) == 'categorical':
-        inputs.append('Assigned Allowance Level')
-    for col in inputs:
+    categorical = (mech in ('wtp', 'risk_taking')
+                   and rtd_frame_income_mode(df) == 'categorical')
+    for col in RTD_ELEMENT_INPUTS[mech]:
         if col in df.columns:
             out[col] = df[col]
+        if col == 'income' and categorical:
+            if 'Assigned Allowance Level' in df.columns:
+                out['Assigned Allowance Level'] = df['Assigned Allowance Level']
+            continue
+        src, dst = RTD_INPUT_Z.get(col, (None, None))
+        if src and src in df.columns:
+            out[dst] = df[src]
     return out
 
 
@@ -73,73 +137,165 @@ def rtd_choice_columns(out, rankings):
             lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
 
 
-RTD_STATA_NAMES = {'loyalty': ('loyalty', 'loyalty'), 'wtp': ('wtp', 'WTP'),
-                   'risk_taking': ('rt', 'RT')}
+def rtd_list_str(lst):
+    """'a > b > c' rendering of an option-number list ('(empty)' for no options)."""
+    if isinstance(lst, (list, tuple)):
+        return ' > '.join(str(o) for o in lst) if len(lst) else '(empty)'
+    return 'N/A'
+
+
+def _rtd_flex_intermediates(out, df):
+    """Flexibility intermediates in Stata naming: the calculated IVW score and its
+    population z (z_stdactions travels with the inputs; the anchored score and its z
+    follow as Flexibility_score / z_Flexibility)."""
+    for src, dst in (('rtd_flex_ivw', 'Flexibility_calculated_ivw'),
+                     ('rtd_flex_z_ivw', 'z_Flexibility_calculated_ivw')):
+        if src in df.columns:
+            out[dst] = df[src]
 
 
 def prepare_rtd_element_export(df, mech):
-    """Per-element Excel frame: Agent ID, ONLY this element's independent variables,
-    its score, the segment (or list length for TTP) and the resulting option
-    sequence per customer as choice1..choice5. Stata-aligned column names."""
+    """Per-element Excel frame: Agent ID, ONLY this element's independent variables and
+    the z-scores its equation uses, its score and intermediates, the deterministic and
+    final segment (or the deterministic and final list length for the Options List
+    Length), the sigma used, and the resulting option sequence as choice1..choice5.
+    Stata-aligned column names. Used for both the per-element file and the element's
+    sheet in the whole-decision workbook."""
     out = rtd_element_inputs_frame(df, mech)
     if mech == 'ttp':
-        out['weighted_ttp'] = df['rtd_weighted_ttp']
-        out['choice_length'] = df['rtd_choice_length']
+        for src, dst in (('rtd_weighted_ttp', 'weighted_ttp'),
+                         ('rtd_weighted_ttp06', 'weighted_ttp06'),
+                         ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
+                         ('rtd_choice_length', 'choice_length'),
+                         ('rtd_sigma_used_ttp', 'sigma_used_ttp')):
+            if src in df.columns:
+                out[dst] = df[src]
         return out
     col_key, stata = RTD_STATA_NAMES[mech]
+    if mech == 'flexibility':
+        _rtd_flex_intermediates(out, df)
     out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
     if f'rtd_{col_key}_z' in df.columns:
         out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
+    if f'rtd_{col_key}_segment_deterministic' in df.columns:
+        out[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
     out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
+    if f'rtd_sigma_used_{col_key}' in df.columns:
+        out[f'sigma_used_{stata}'] = df[f'rtd_sigma_used_{col_key}']
     rtd_choice_columns(out, df[f'rtd_{col_key}_ranking'])
     return out
 
 
-def prepare_rtd_model_export(df):
-    """Whole-decision Decision 4 workbook, organized as one self-contained sheet per
-    element ('Options List Length', 'Loyalty', 'Willingness-to-Pay', 'Risk-Taking').
+def prepare_rtd_integrated_export(df):
+    """The 'Integrated Default List' sheet: ONE row per agent holding EVERY variable the
+    decision uses, grouped left to right (professor 2026-09: "In the integrated Excel
+    output we are missing all the variables that are used in the calculation for all
+    decision elements"):
 
-    Each sheet mirrors the per-element file (Agent ID + the element's own
-    independent variables + choice1..choice5) and additionally carries the
-    intermediate distributions: score, z (where present), deterministic and final
-    segment / list length, and the sigma used. Stata-aligned column names.
+      Agent ID -> raw inputs (traits, Education, income / allowance level, stdactions)
+      -> z-scores -> 1 Options List Length -> 2 Loyalty -> 3 Willingness-to-Pay
+      -> 4 Risk-Taking -> 5 Flexibility -> 6 integration (integrated ranking, Kemeny
+      diagnostics, tie-break stage, truncation, final_choice1..5).
+
+    This sheet replaces the former separate 'All Elements' sheet (the two were
+    near-identical).
+    """
+    out = pd.DataFrame(index=df.index)
+    out['Agent ID'] = rtd_agent_id_series(df)
+    categorical = rtd_frame_income_mode(df) == 'categorical'
+
+    # ---- raw inputs ----
+    raw_inputs = ['ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
+                  'ConscientiousnessBig5', 'OpennessBig5', 'Education', 'income']
+    if categorical:
+        raw_inputs.append('Assigned Allowance Level')
+    raw_inputs.append('stdactions')
+    for col in raw_inputs:
+        if col in df.columns:
+            out[col] = df[col]
+
+    # ---- z-scores actually used by the equations ----
+    z_inputs = ['ExtraversionBig5', 'Agreeable', 'NeuroticismBig5',
+                'ConscientiousnessBig5', 'OpennessBig5', 'Education']
+    if not categorical:
+        # categorical WTP / RT use the budget-level dummies instead of z_net_income
+        z_inputs.append('income')
+    for col in z_inputs:
+        src, dst = RTD_INPUT_Z[col]
+        if src in df.columns:
+            out[dst] = df[src]
+
+    # ---- 1. Options List Length ----
+    for src, dst in (('rtd_weighted_ttp', 'weighted_ttp'),
+                     ('rtd_weighted_ttp06', 'weighted_ttp06'),
+                     ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
+                     ('rtd_choice_length', 'choice_length')):
+        if src in df.columns:
+            out[dst] = df[src]
+
+    # ---- 2-5. Ranking elements ----
+    for mech in ('loyalty', 'wtp', 'risk_taking', 'flexibility'):
+        col_key, stata = RTD_STATA_NAMES[mech]
+        if f'rtd_{col_key}_score' not in df.columns:
+            continue
+        if mech == 'flexibility':
+            _rtd_flex_intermediates(out, df)
+            if 'rtd_z_stdactions' in df.columns:
+                out['z_stdactions'] = df['rtd_z_stdactions']
+        out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
+        if f'rtd_{col_key}_z' in df.columns:
+            out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
+        if f'rtd_{col_key}_segment_deterministic' in df.columns:
+            out[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
+        out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
+        out[f'{stata}_list'] = df[f'rtd_{col_key}_ranking'].apply(rtd_list_str)
+
+    # ---- 6. Integration ----
+    if 'rtd_default_list' in df.columns:
+        out['integrated_ranking'] = df['rtd_consensus_ranking'].apply(rtd_list_str)
+        for src, dst in (('rtd_consensus_kemeny_status', 'kemeny_status'),
+                         ('rtd_consensus_n_kemeny_optimal', 'n_kemeny_optimal'),
+                         ('rtd_consensus_is_kemeny_optimal', 'is_kemeny_optimal'),
+                         ('rtd_consensus_settled_by', 'settled_by'),
+                         ('rtd_consensus_truncated_by', 'truncated_by'),
+                         ('rtd_default_list_length', 'default_list_length')):
+            if src in df.columns:
+                out[dst] = df[src]
+        for pos in range(1, 6):
+            out[f'final_choice{pos}'] = df['rtd_default_list'].apply(
+                lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
+    return out
+
+
+def prepare_rtd_model_export(df):
+    """Whole-decision Decision 4 workbook: the 'Integrated Default List' sheet first
+    (one row per agent with EVERY input, z-score, element score, segment, list and the
+    integration diagnostics - see prepare_rtd_integrated_export), then one
+    self-contained sheet per element ('Options List Length', 'Loyalty',
+    'Willingness-to-Pay', 'Risk-Taking', 'Flexibility'), each identical to that
+    element's own per-element file.
 
     Returns an ordered {sheet_name: DataFrame} dict; raises on a malformed frame.
     """
     sheets = {}
-
-    # ---- Options List Length (TTP) ----
-    ttp = rtd_element_inputs_frame(df, 'ttp')
-    for src, dst in [('rtd_weighted_ttp', 'weighted_ttp'),
-                     ('rtd_weighted_ttp06', 'weighted_ttp06'),
-                     ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
-                     ('rtd_choice_length', 'choice_length'),
-                     ('rtd_sigma_used_ttp', 'sigma_used_ttp')]:
-        if src in df.columns:
-            ttp[dst] = df[src]
-    sheets[RTD_ELEMENT_SHEETS['ttp']] = ttp
-
-    # ---- Rankings: Loyalty / Willingness-to-Pay / Risk-Taking ----
-    for mech, (col_key, stata) in RTD_STATA_NAMES.items():
-        if f'rtd_{col_key}_score' not in df.columns:
+    if 'rtd_default_list' in df.columns:
+        sheets[RTD_AGG_SHEET] = prepare_rtd_integrated_export(df)
+    for mech in RTD_ALL_ELEMENTS:
+        if mech == 'ttp':
+            if 'rtd_weighted_ttp' not in df.columns:
+                continue
+        elif f'rtd_{RTD_STATA_NAMES[mech][0]}_score' not in df.columns:
             continue
-        sheet = rtd_element_inputs_frame(df, mech)
-        sheet[f'{stata}_score'] = df[f'rtd_{col_key}_score']
-        if f'rtd_{col_key}_z' in df.columns:
-            sheet[f'z_{stata}'] = df[f'rtd_{col_key}_z']
-        if f'rtd_{col_key}_segment_deterministic' in df.columns:
-            sheet[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
-        sheet[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
-        rtd_choice_columns(sheet, df[f'rtd_{col_key}_ranking'])
-        if f'rtd_sigma_used_{col_key}' in df.columns:
-            sheet[f'sigma_used_{stata}'] = df[f'rtd_sigma_used_{col_key}']
-        sheets[RTD_ELEMENT_SHEETS[mech]] = sheet
+        sheet = prepare_rtd_element_export(df, mech)
+        if sheet is not None and not sheet.empty:
+            sheets[RTD_ELEMENT_SHEETS[mech]] = sheet
     return sheets
 
 
 # Human-readable filename slugs ('ttp' reads too much like 'wtp')
 RTD_ELEMENT_FILE_SLUGS = {'ttp': 'options_list_length', 'loyalty': 'loyalty',
-                          'wtp': 'willingness_to_pay', 'risk_taking': 'risk_taking'}
+                          'wtp': 'willingness_to_pay', 'risk_taking': 'risk_taking',
+                          'flexibility': 'flexibility'}
 
 
 def rtd_element_xlsx_bytes(export_df, mech):
@@ -148,7 +304,7 @@ def rtd_element_xlsx_bytes(export_df, mech):
 
 
 def rtd_model_xlsx_bytes(sheets):
-    """Whole-decision workbook bytes: one sheet per element, in dict order, unformatted."""
+    """Decision 4 workbook bytes: one sheet per entry, in dict order, unformatted."""
     return to_xlsx_bytes(sheets)
 
 
@@ -180,15 +336,124 @@ def rtd_prefixed_sheet_name(prefix, sheet_name):
 
 
 def rtd_element_subset(sheets, active_element):
-    """`sheets` restricted to `active_element`'s sheet (all of them when None)."""
+    """`sheets` restricted to what `active_element`'s run exports: all of them for a
+    whole-decision run (None), the 'Integrated Default List' sheet for "Run
+    Integrated Default List Only" ('aggregation'), else that element's sheet."""
     if not active_element:
         return sheets
-    name = RTD_ELEMENT_SHEETS[active_element]
+    name = RTD_AGG_SHEET if active_element == RTD_AGGREGATION_ELEMENT else RTD_ELEMENT_SHEETS[active_element]
     return {name: sheets[name]} if name in sheets else {}
 
 
+# ---------------------------------------------------------------------------
+# Chart data: score histograms (Stata's bin rule), allocation shares
+# ---------------------------------------------------------------------------
+
+# Upper bound on the histogram bin count (professor 2026-09-17: at the default 1,000
+# agents Stata's rule gives 30 bins, too fine to compare with the document's figures).
+# 17 is exactly what Stata's default rule gives for the 280 participants, so the
+# document's histograms and the app's charts share the same bins at every N >= 280.
+RTD_MAX_BINS = 17
+
+
+def rtd_stata_bin_count(n):
+    """Stata's DEFAULT number of histogram bins for n non-missing observations:
+
+        k = round( min( sqrt(n), 10 * log10(n) ) )
+
+    (`help histogram`: "bins = min(sqrt(N), 10*ln(N)/ln(10))", rounded). Stata rounds
+    half AWAY FROM ZERO, so this uses floor(x + 0.5) rather than Python's round(),
+    which rounds half to even. n = 280 -> min(16.733, 24.472) = 16.733 -> 17 bins,
+    which is what the Decision 4 figures in the design document use; n = 1000 -> 30.
+    Never fewer than one bin."""
+    n = int(n)
+    if n < 1:
+        return 1
+    raw = min(math.sqrt(n), 10.0 * math.log10(n))
+    return max(1, int(math.floor(raw + 0.5)))
+
+
+def rtd_bin_count(n):
+    """Number of bins the Decision 4 score histograms draw for n observations: Stata's
+    default rule (rtd_stata_bin_count) capped at RTD_MAX_BINS = 17 (the rule's own
+    value for the 280 participants), so charts at the app's default 1,000 agents
+    (rule: 30 bins) use the document's 17 bins."""
+    return min(rtd_stata_bin_count(n), RTD_MAX_BINS)
+
+
+def rtd_stata_bins(series):
+    """(edges, counts) for a score histogram: k equal-width bins spanning min..max,
+    k = rtd_bin_count(number of non-missing values) - Stata's default rule capped at 17.
+
+    The maximum is included in the LAST bin (every other bin is half-open), so the
+    counts always sum to N and the plotted proportions sum to 1. Bins that no agent
+    falls into simply have a count of 0 - Stata does not draw them at all, which is why
+    a 17-bin figure in the document can show only 14 or 16 bars."""
+    s = pd.Series(series).dropna().astype(float)
+    n = len(s)
+    k = rtd_bin_count(n)
+    vmin, vmax = (float(s.min()), float(s.max())) if n else (0.0, 0.0)
+    if not n or vmax <= vmin:
+        # Degenerate (constant or empty) score: one unit-wide bin holding everything.
+        return np.array([vmin, vmin + 1.0]), np.array([n])
+    # Edges built as vmin + i * size (NOT np.linspace) so they are bit-for-bit the
+    # boundaries plotly derives from xbins(start=vmin, size=size) in the page's chart.
+    size = (vmax - vmin) / k
+    edges = vmin + size * np.arange(k + 1, dtype=float)
+    edges[-1] = max(edges[-1], vmax)
+    counts = np.histogram(s.to_numpy(), bins=edges)[0]
+    return edges, counts
+
+
 def rtd_score_stats_caption(series):
-    """Summary line matching Stata's `summarize` output for the score variable."""
+    """Range line under each score chart - Min and Max only (professor 2026-09: mean,
+    SD and N dropped from the caption)."""
     s = pd.Series(series).astype(float)
-    return (f"Mean {s.mean():.4f} · SD {s.std(ddof=1):.4f} · "
-            f"Min {s.min():.4f} · Max {s.max():.4f} · N {s.notna().sum():,}")
+    return f"Min {s.min():.4f} · Max {s.max():.4f}"
+
+
+def rtd_first_choice(df, col_key):
+    """Each agent's FIRST-ranked option for a ranking element, read from the element's
+    own ranking column (rtd_<col_key>_ranking[0]).
+
+    Never derive this from the segment: that would hard-code the segment -> priority
+    sequence mapping direction, which the model owns. The ranking column is whatever
+    the model produced, so every chart built on this helper stays correct in either
+    direction. Agents with an empty ranking map to 0."""
+    col = f'rtd_{col_key}_ranking'
+    if col not in df.columns:
+        return pd.Series(0, index=df.index)
+    return df[col].apply(lambda lst: lst[0] if isinstance(lst, (list, tuple)) and len(lst) else 0)
+
+
+def rtd_reversed_sequence(seq):
+    """Allocation-chart category order: the element's priority sequence REVERSED, so the
+    least likely option sits on the left and the most likely on the right (professor
+    2026-09). Applied in every context - per-element, whole-decision and comparison."""
+    return list(reversed(list(seq)))
+
+
+def rtd_integrated_first_choice(df):
+    """First option of each agent's integrated default list (0 = empty list)."""
+    return df['rtd_default_list'].apply(lambda l: l[0] if isinstance(l, list) and len(l) else 0)
+
+
+def rtd_kemeny_status_frame(df):
+    """'Kemeny outcome' table of the tie statistics (share of agents per status)."""
+    n = len(df)
+    counts = df['rtd_consensus_kemeny_status'].astype(str).value_counts()
+    return pd.DataFrame({
+        'Kemeny outcome': [RTD_KEMENY_STATUS_LABELS[s] for s in RTD_KEMENY_STATUS_LABELS],
+        '% of agents': [f"{counts.get(s, 0) / n * 100:.1f}%" for s in RTD_KEMENY_STATUS_LABELS],
+    })
+
+
+def rtd_settled_by_frame(df):
+    """'Stage that settled the ranking' table of the tie statistics."""
+    n = len(df)
+    settled = df['rtd_consensus_settled_by'].astype(str).value_counts() \
+        if 'rtd_consensus_settled_by' in df.columns else pd.Series(dtype=int)
+    return pd.DataFrame({
+        'Settled by': [RTD_STAGE_LABELS[s] for s in RTD_STAGE_LABELS],
+        '% of agents': [f"{settled.get(s, 0) / n * 100:.1f}%" for s in RTD_STAGE_LABELS],
+    })

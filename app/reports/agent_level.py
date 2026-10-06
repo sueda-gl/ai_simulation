@@ -174,18 +174,78 @@ def build_agent_level_dataframe(
             else:
                 agent_record[f'rejected_transaction_{priority_num}_choice'] = 'N/A'
 
-        # Decision 4 MODEL outputs (four trait-based sub-decision mechanisms; present only
-        # when Decision 4 ran as a custom decision). Rankings exported as 'a > b > c'
-        # option-number strings; the dedicated Decision 4 Excel has the full breakdown.
+        # Decision 4 MODEL outputs (five trait-based sub-decision elements + the
+        # Section-6 rank aggregation; present only when Decision 4 ran as a custom
+        # decision). The complete-simulation results page shows only the integrated
+        # default list, so this workbook must carry EVERY element variable (professor
+        # 2026-09): the raw inputs, the z-scores the equations use, each element's
+        # score, intermediates, deterministic/final segment, its option list, and the
+        # integration diagnostics. Lists are exported as 'a > b > c' option-number
+        # strings; the dedicated Decision 4 Excel has the per-element sheets.
         if 'rtd_choice_length' in row:
+            # -- inputs the Decision 4 equations use (traits are already in the record
+            #    above; these add the ones only Decision 4 needs) --
+            agent_record['rtd_Conscientiousness'] = row.get('ConscientiousnessBig5', np.nan)
+            agent_record['rtd_Education'] = row.get('Education', np.nan)
+            agent_record['rtd_stdactions'] = row.get('stdactions', np.nan)
+            agent_record['rtd_income_mode'] = row.get('rtd_income_mode', 'N/A')
+            # -- z-scores actually multiplied by the coefficients (Stata names) --
+            for src, export_name in [
+                    ('rtd_z_extraversion', 'rtd_z_extraversionbig5'),
+                    ('rtd_z_agreeable', 'rtd_z_agreeable'),
+                    ('rtd_z_neuroticism', 'rtd_z_neuroticismbig5'),
+                    ('rtd_z_conscientiousness', 'rtd_z_conscientiousnessbig5'),
+                    ('rtd_z_openness', 'rtd_z_opennessbig5'),
+                    ('rtd_reducation', 'rtd_reducation'),
+                    ('rtd_z_income', 'rtd_z_net_income'),
+                    ('rtd_z_stdactions', 'rtd_z_stdactions')]:
+                if src in row:
+                    agent_record[export_name] = row.get(src, np.nan)
+            # -- 1. Options List Length (Tendency to Plan) --
+            agent_record['rtd_weighted_ttp'] = row.get('rtd_weighted_ttp', np.nan)
+            agent_record['rtd_weighted_ttp06'] = row.get('rtd_weighted_ttp06', np.nan)
+            agent_record['rtd_choice_length_deterministic'] = row.get(
+                'rtd_choice_length_deterministic', np.nan)
             agent_record['rtd_choice_length'] = row.get('rtd_choice_length', np.nan)
-            for mech_col, export_name in [('loyalty', 'rtd_loyalty'), ('wtp', 'rtd_wtp'), ('rt', 'rtd_risk_taking')]:
+            # -- 2-5. Ranking elements --
+            for src in ('rtd_flex_ivw', 'rtd_flex_z_ivw'):
+                if src in row:
+                    agent_record[src] = row.get(src, np.nan)
+            for mech_col, export_name in [('loyalty', 'rtd_loyalty'), ('wtp', 'rtd_wtp'),
+                                          ('rt', 'rtd_risk_taking'), ('flex', 'rtd_flexibility')]:
+                if f'rtd_{mech_col}_segment' not in row:
+                    continue
+                agent_record[f'{export_name}_score'] = row.get(f'rtd_{mech_col}_score', np.nan)
+                agent_record[f'{export_name}_z'] = row.get(f'rtd_{mech_col}_z', np.nan)
+                agent_record[f'{export_name}_segment_deterministic'] = row.get(
+                    f'rtd_{mech_col}_segment_deterministic', np.nan)
                 agent_record[f'{export_name}_segment'] = row.get(f'rtd_{mech_col}_segment', np.nan)
                 ranking = row.get(f'rtd_{mech_col}_ranking', None)
                 agent_record[f'{export_name}_ranking'] = (
                     ' > '.join(str(o) for o in ranking) if isinstance(ranking, list) else 'N/A'
                 )
-        
+            # -- 6. Section-6 rank aggregation: the integrated default list (option
+            # numbers, after the list-length and Option-5 truncation), the consensus
+            # ranking it was cut from, and the tie-break diagnostics.
+            if 'rtd_default_list' in row:
+                default_list = row.get('rtd_default_list', None)
+                agent_record['rtd_default_list'] = (
+                    ' > '.join(str(o) for o in default_list) if isinstance(default_list, list) else 'N/A'
+                )
+                consensus = row.get('rtd_consensus_ranking', None)
+                # Exported as rtd_integrated_ranking (professor 2026-09-17: "integrated",
+                # not "consensus", in the Excel outputs); the model column keeps its name.
+                agent_record['rtd_integrated_ranking'] = (
+                    ' > '.join(str(o) for o in consensus) if isinstance(consensus, list) else 'N/A'
+                )
+                agent_record['rtd_consensus_kemeny_status'] = row.get('rtd_consensus_kemeny_status', 'N/A')
+                agent_record['rtd_consensus_n_kemeny_optimal'] = row.get('rtd_consensus_n_kemeny_optimal', np.nan)
+                agent_record['rtd_consensus_is_kemeny_optimal'] = row.get('rtd_consensus_is_kemeny_optimal', 'N/A')
+                agent_record['rtd_consensus_settled_by'] = row.get('rtd_consensus_settled_by', 'N/A')
+                agent_record['rtd_consensus_truncated_by'] = row.get('rtd_consensus_truncated_by', 'N/A')
+                agent_record['rtd_default_list_length'] = row.get('rtd_default_list_length', np.nan)
+
+
         # Decision 5: Vendor Choice Weights (flatten dict to columns)
         vendor_weights = row.get('vendor_choice_weights', {})
         if isinstance(vendor_weights, dict):

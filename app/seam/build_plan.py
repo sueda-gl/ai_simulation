@@ -66,7 +66,7 @@ POP_TYPE_BY_MODE: Dict[str, str] = {
     "Research Baseline": "baseline",
 }
 
-RTD_MECHANISMS: Tuple[str, ...] = ("ttp", "loyalty", "wtp", "risk_taking")
+RTD_MECHANISMS: Tuple[str, ...] = ("ttp", "loyalty", "wtp", "risk_taking", "flexibility")
 
 # session-key stem -> coefficient location in the flat donation set
 _DONATION_SCALAR_KEYS = {
@@ -733,31 +733,65 @@ def build_rejected_transaction_patch(snapshot: Mapping, config_repo: DecisionsCo
     """
     Decision 4 patch (the former ``_apply_rejected_transaction_config``).
 
-    Income mode: explicit inc_mode (passed ONLY for an individual Decision-4
-    run, incl. the two Compare-both sub-runs) > rtd_income_mode session state;
-    a 'Compare both' tab setting without an explicit mode falls back to
-    'continuous'.  Per-element intercepts from rtd_intercept_{mech}; the
-    stochastic enable follows the three-way rule (rtd_sigma_enabled defaults
-    True, R18); sigma strategy / scale / quintiles are decision-wide and
-    replicated to each mechanism, anchors stay per element.
+    The five mechanisms' coefficients, priority sequences and sigma constants
+    are fixed in config/decisions.yaml.  MODEL settings, by precedence:
+
+    * a saved configuration ("Use This Config" on an individual Decision-4
+      run, R14) - applied when the run is NOT an individual Decision-4 run
+      (inc_mode is None, i.e. combined / complete simulations): its income
+      mode (top-level, from the selected result cell, over params.income_mode),
+      per-element intercepts, Flexibility anchor mix and rank-aggregation flag
+      override the tab, exactly as a saved Disclose Income config does;
+    * otherwise the tab: explicit inc_mode (passed ONLY for an individual
+      Decision-4 run, incl. the two Compare-both sub-runs) > rtd_income_mode;
+      a 'Compare both' tab setting without an explicit mode falls back to
+      'continuous'.  Per-element intercepts from rtd_intercept_{mech}, the
+      Flexibility anchor mix from rtd_flex_observed_weight
+      (W_CFlex = 1 - W_OFlex), the Section-6 aggregation flag from
+      rtd_aggregation_enabled.
+
+    The stochastic toggles and settings always follow the CURRENT tab: the
+    three-way enable rule (rtd_sigma_enabled defaults True, R18); sigma
+    strategy / scale / quintiles are decision-wide and replicated to each
+    mechanism.  (The September 2026 tab removed the per-element stochastic
+    anchor control, so no ``anchor`` is sent; the model keeps its default.)
     """
     patch: Dict[str, Any] = {}
 
-    if inc_mode is not None:
-        patch["income_mode"] = normalize_income_mode(inc_mode)
-    elif "rtd_income_mode" in snapshot:
-        session_mode = str(snapshot["rtd_income_mode"])
-        if is_compare_income_mode(session_mode):
-            patch["income_mode"] = "continuous"  # safeguard; runner passes explicit mode
-        else:
-            patch["income_mode"] = normalize_income_mode(session_mode)
+    saved = explicit_saved_configs(snapshot).get("rejected_transaction_defaults") if inc_mode is None else None
+    if saved is not None:
+        _saved_rejected_transaction_model_settings(patch, saved)
+    else:
+        if inc_mode is not None:
+            patch["income_mode"] = normalize_income_mode(inc_mode)
+        elif "rtd_income_mode" in snapshot:
+            session_mode = str(snapshot["rtd_income_mode"])
+            if is_compare_income_mode(session_mode):
+                patch["income_mode"] = "continuous"  # safeguard; runner passes explicit mode
+            else:
+                patch["income_mode"] = normalize_income_mode(session_mode)
 
-    intercepts: Dict[str, float] = {}
-    for mech in RTD_MECHANISMS:
-        key = f"rtd_intercept_{mech}"
-        if key in snapshot:
-            intercepts[mech] = float(snapshot[key])
-    patch["intercepts"] = intercepts
+        # Per-element intercepts (doc notation beta0..beta4; research defaults from
+        # config/decisions.yaml - TTP beta0 = 0.05, others 0)
+        intercepts: Dict[str, float] = {}
+        for mech in RTD_MECHANISMS:
+            key = f"rtd_intercept_{mech}"
+            if key in snapshot:
+                intercepts[mech] = float(snapshot[key])
+        patch["intercepts"] = intercepts
+
+        # Flexibility Anchor Mix (sub-tab 5): W_OFlex slider, W_CFlex = 1 - W_OFlex
+        if "rtd_flex_observed_weight" in snapshot:
+            w_obs = float(snapshot["rtd_flex_observed_weight"])
+            patch["flexibility_anchor"] = {"observed_weight": w_obs,
+                                           "calculated_weight": 1.0 - w_obs}
+
+        # Section-6 rank aggregation: enable flag (the last-resort tie-break is
+        # always the document's random rule, from the config file).
+        aggregation: Dict[str, Any] = {}
+        if "rtd_aggregation_enabled" in snapshot:
+            aggregation["enabled"] = bool(snapshot["rtd_aggregation_enabled"])
+        patch["aggregation"] = aggregation
 
     sigma_enabled = snapshot.get("rtd_sigma_enabled", True)
     sigma_in_copula = snapshot.get("rtd_sigma_in_copula", False)
@@ -772,13 +806,40 @@ def build_rejected_transaction_patch(snapshot: Mapping, config_repo: DecisionsCo
             mech_cfg["scale_factor"] = snapshot["rtd_scale_factor"]
         if "rtd_quintile_scale_factors" in snapshot:
             mech_cfg["quintile_scale_factors"] = copy.deepcopy(snapshot["rtd_quintile_scale_factors"])
-        anchor_key = f"rtd_anchor_{mech}"
-        if anchor_key in snapshot:
-            mech_cfg["anchor"] = snapshot[anchor_key]
         mechanisms[mech] = mech_cfg
     stochastic["mechanisms"] = mechanisms
     patch["stochastic"] = stochastic
     return patch
+
+
+def _saved_rejected_transaction_model_settings(patch: Dict[str, Any], saved: Mapping) -> None:
+    """
+    A saved Decision 4 configuration's MODEL settings, written into ``patch``:
+    income mode (top-level, from the selected result cell, over
+    params.income_mode), per-element intercepts, the Flexibility anchor mix and
+    the rank-aggregation enable flag.  The stochastic on/off toggles, sigma
+    strategy and coefficients follow the CURRENT tab, as for disclose_income.
+    """
+    params = saved.get("params", {}) or {}
+    income_mode = saved.get("income_mode", params.get("income_mode", "Continuous only"))
+    patch["income_mode"] = "categorical" if "categorical" in str(income_mode).lower() else "continuous"
+
+    patch["intercepts"] = {mech: float(value)
+                           for mech, value in (params.get("intercepts") or {}).items()}
+
+    aggregation: Dict[str, Any] = {}
+    saved_agg = params.get("aggregation") or {}
+    if "enabled" in saved_agg:
+        aggregation["enabled"] = bool(saved_agg["enabled"])
+    patch["aggregation"] = aggregation
+
+    saved_anchor = params.get("flexibility_anchor") or {}
+    if "observed_weight" in saved_anchor:
+        w_obs = float(saved_anchor["observed_weight"])
+        patch["flexibility_anchor"] = {
+            "observed_weight": w_obs,
+            "calculated_weight": float(saved_anchor.get("calculated_weight", 1.0 - w_obs)),
+        }
 
 
 def build_decision_patches(snapshot: Mapping, config_repo: DecisionsConfig, pop_mode: str,
@@ -982,7 +1043,8 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
         # Population mode for THIS run: a saved config pins it (R14) - the user's
         # population_mode is read, never changed.
         effective_pop_mode = None
-        for saved_cfg in (di_saved, donation_saved, dd_saved):
+        rtd_saved = saved_configs.get("rejected_transaction_defaults")
+        for saved_cfg in (di_saved, donation_saved, dd_saved, rtd_saved):
             if saved_cfg:
                 pop_mode = saved_cfg.get("population_mode")
                 if not pop_mode:

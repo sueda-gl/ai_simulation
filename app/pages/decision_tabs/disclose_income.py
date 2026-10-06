@@ -309,6 +309,8 @@ def render_di_sigma_controls(mode_suffix: str):
 
 def render_disclose_income_tab():
     """Render disclose_income specific configuration."""
+    # Must run BEFORE any di_* widget is instantiated in this script run.
+    apply_pending_reset()
     initialize_disclose_income_session_state()
     config = load_disclose_income_config()
 
@@ -711,19 +713,19 @@ def render_intercept_override_section(config):
         with col2:
             st.markdown("**Override Value**")
 
-            # Restore intercept widget key, defaulting to current config value
-            int_val = restore_widget_from_storage(
-                'di_override_intercept',
-                st.session_state.di_intercept_override_values,
-                'intercept',
-                current_config_value
-            )
+            # Seed the widget key ONLY when it is absent (after navigation); otherwise the
+            # live widget value wins. No rerun-dependent `value=` is passed below, so the
+            # widget id stays stable - re-seeding on every rerun plus a changing default
+            # made the +/- buttons jump back one step under fast clicks (professor
+            # 2026-09-17, "General comment").
+            if 'di_override_intercept' not in st.session_state:
+                st.session_state.di_override_intercept = float(
+                    st.session_state.di_intercept_override_values.get('intercept', current_config_value))
 
             new_intercept = st.number_input(
                 "Baseline disclosure tendency",
                 min_value=0.0,
                 max_value=5.0,
-                value=float(int_val),
                 step=0.01,
                 format="%.4f",
                 help="β₀ = 0.75 in the disclose income equation. Override value, with higher values increasing baseline probability of disclosure.",
@@ -804,29 +806,55 @@ def _apply_config_to_widget_keys(config):
     }
 
 
-def reset_to_defaults():
-    """Reset all configuration values to their defaults (session state only)."""
-    default_config = {
-        'intercept': 0.75,
-        'income_mode': 'Categorical only',
-        'anchor_weights.observed_prosocial': 0.25,
-        'anchor_weights.prosocial_weight': 0.50,
-        'stochastic.scale_factor': 1.0,
-        'stochastic.sigma_strategy': 'overall',
-        'stochastic.quintile_scale_factors.1': 1.0,
-        'stochastic.quintile_scale_factors.2': 1.0,
-        'stochastic.quintile_scale_factors.3': 1.0,
-        'stochastic.quintile_scale_factors.4': 1.0,
-        'stochastic.quintile_scale_factors.5': 1.0,
-    }
+DI_RESET_PENDING_KEY = '_di_reset_to_defaults_pending'
 
+_DI_RESET_DEFAULTS = {
+    'intercept': 0.75,
+    'income_mode': 'Categorical only',
+    'anchor_weights.observed_prosocial': 0.25,
+    'anchor_weights.prosocial_weight': 0.50,
+    'stochastic.scale_factor': 1.0,
+    'stochastic.sigma_strategy': 'overall',
+    'stochastic.quintile_scale_factors.1': 1.0,
+    'stochastic.quintile_scale_factors.2': 1.0,
+    'stochastic.quintile_scale_factors.3': 1.0,
+    'stochastic.quintile_scale_factors.4': 1.0,
+    'stochastic.quintile_scale_factors.5': 1.0,
+}
+
+
+def reset_to_defaults():
+    """Build the default configuration and schedule the session-state reset.
+
+    The actual session-state reset runs at the TOP of the next script run (see
+    apply_pending_reset). Clearing / re-seeding the di_* widget keys here would
+    happen AFTER those widgets were already instantiated in this run - a
+    Streamlit anti-pattern that leaves widgets whose element id no longer has a
+    session-state entry (professor 2026-09-17: values jumped back after a reset).
+    """
     try:
-        # The configuration file is read-only: build the reset configuration in
-        # memory from a read-only load instead of writing the defaults to disk.
-        reset_config = apply_updates_to_config(load_disclose_income_config(), default_config)
+        # The configuration file is read-only: the reset configuration is built
+        # in memory from a read-only load instead of writing the defaults to disk.
+        apply_updates_to_config(load_disclose_income_config(), _DI_RESET_DEFAULTS)
     except Exception as e:
         st.error(f"Error saving configuration: {e}")
         return False
+
+    st.session_state[DI_RESET_PENDING_KEY] = True
+    return True
+
+
+def apply_pending_reset():
+    """Apply a scheduled reset before any disclose_income widget renders."""
+    if not st.session_state.get(DI_RESET_PENDING_KEY, False):
+        return
+    del st.session_state[DI_RESET_PENDING_KEY]
+    _reset_session_to_defaults()
+
+
+def _reset_session_to_defaults():
+    """Clear every di_ key and the persistence dict, then seed the defaults."""
+    reset_config = apply_updates_to_config(load_disclose_income_config(), _DI_RESET_DEFAULTS)
 
     # 1. Clear all di_ keys and persistence storage
     keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
@@ -839,8 +867,6 @@ def reset_to_defaults():
     #    Streamlit's internal widget cache from retaining stale slider
     #    values on the next rerun.
     _apply_config_to_widget_keys(reset_config)
-
-    return True
 
 
 def reset_intercept_to_default():
@@ -855,6 +881,11 @@ def reset_intercept_to_default():
     st.session_state.di_intercept = default_intercept
     if 'di_intercept_override_values' in st.session_state:
         st.session_state.di_intercept_override_values['intercept'] = default_intercept
+    # The override input is seeded only while its key is absent (September 2026
+    # stable-widget fix), so drop the key: the rerun that follows re-seeds it from
+    # the value just stored instead of keeping the old number on screen.
+    if 'di_override_intercept' in st.session_state:
+        del st.session_state['di_override_intercept']
 
     return True
 

@@ -212,6 +212,8 @@ def render_dd_sigma_controls(mode_suffix: str):
 
 def render_disclose_documents_tab():
     """Render disclose_documents specific configuration (mirrors disclose_income)."""
+    # Must run BEFORE any dd_* widget is instantiated in this script run.
+    apply_pending_reset()
     initialize_disclose_documents_session_state()
     config = load_disclose_documents_config()
 
@@ -456,13 +458,14 @@ def render_intercept_override_section(config):
             st.markdown("Fixed reference value from original research")
         with col2:
             st.markdown("**Override Value**")
-            int_val = restore_widget_from_storage(
-                'dd_override_intercept', st.session_state.dd_intercept_override_values,
-                'intercept', current_config_value
-            )
+            # Seed only when absent + no rerun-dependent `value=` (stable widget id): the
+            # +/- buttons used to jump back one step under fast clicks (professor 2026-09-17).
+            if 'dd_override_intercept' not in st.session_state:
+                st.session_state.dd_override_intercept = float(
+                    st.session_state.dd_intercept_override_values.get('intercept', current_config_value))
             new_intercept = st.number_input(
                 "Baseline disclosure tendency", min_value=-5.0, max_value=0.0,
-                value=float(int_val), step=0.01, format="%.4f",
+                step=0.01, format="%.4f",
                 help="β₀ = −0.75 in the disclose documents equation. Higher values increase baseline probability of disclosure.",
                 key="dd_override_intercept",
                 on_change=lambda: auto_save_intercept(st.session_state.dd_override_intercept)
@@ -516,33 +519,53 @@ def _apply_config_to_widget_keys(config):
     }
 
 
+DD_RESET_PENDING_KEY = '_dd_reset_to_defaults_pending'
+
+_DD_RESET_DEFAULTS = {
+    'intercept': RESEARCH_DEFAULT_INTERCEPT,
+    'income_mode': 'Categorical only',
+    'stochastic.scale_factor': 1.0,
+    'stochastic.sigma_strategy': 'overall',
+    'stochastic.quintile_scale_factors.1': 1.0,
+    'stochastic.quintile_scale_factors.2': 1.0,
+    'stochastic.quintile_scale_factors.3': 1.0,
+    'stochastic.quintile_scale_factors.4': 1.0,
+    'stochastic.quintile_scale_factors.5': 1.0,
+}
+
+
 def reset_to_defaults():
-    """Reset all configuration values to their research defaults (session state only)."""
-    default_config = {
-        'intercept': RESEARCH_DEFAULT_INTERCEPT,
-        'income_mode': 'Categorical only',
-        'stochastic.scale_factor': 1.0,
-        'stochastic.sigma_strategy': 'overall',
-        'stochastic.quintile_scale_factors.1': 1.0,
-        'stochastic.quintile_scale_factors.2': 1.0,
-        'stochastic.quintile_scale_factors.3': 1.0,
-        'stochastic.quintile_scale_factors.4': 1.0,
-        'stochastic.quintile_scale_factors.5': 1.0,
-    }
+    """Build the research-default configuration and schedule the session-state reset.
+
+    The actual session-state reset runs at the TOP of the next script run (see
+    apply_pending_reset). Clearing and re-seeding the `dd_*` widget keys here
+    would happen AFTER those widgets were already instantiated in this run - a
+    Streamlit anti-pattern that leaves widgets whose element id no longer has a
+    session-state entry, so the following interaction can come back with stale
+    or missing values.
+    """
     try:
-        # The configuration file is read-only: build the reset configuration in
+        # The configuration file is read-only: the reset configuration is built in
         # memory from a read-only load instead of writing the defaults to disk.
-        reset_config = apply_updates_to_config(load_disclose_documents_config(), default_config)
+        apply_updates_to_config(load_disclose_documents_config(), _DD_RESET_DEFAULTS)
     except Exception as e:
         st.error(f"Error saving configuration: {e}")
         return False
+    st.session_state[DD_RESET_PENDING_KEY] = True
+    return True
 
+
+def apply_pending_reset():
+    """Apply a scheduled reset before any disclose_documents widget renders."""
+    if not st.session_state.get(DD_RESET_PENDING_KEY, False):
+        return
+    del st.session_state[DD_RESET_PENDING_KEY]
+    reset_config = apply_updates_to_config(load_disclose_documents_config(), _DD_RESET_DEFAULTS)
     for key in [k for k in st.session_state.keys() if k.startswith('dd_')]:
         del st.session_state[key]
     if 'disclose_documents_tab_persistence' in st.session_state:
         del st.session_state['disclose_documents_tab_persistence']
     _apply_config_to_widget_keys(reset_config)
-    return True
 
 
 def reset_intercept_to_default():
@@ -556,6 +579,10 @@ def reset_intercept_to_default():
     st.session_state.dd_intercept = default_intercept
     if 'dd_intercept_override_values' in st.session_state:
         st.session_state.dd_intercept_override_values['intercept'] = default_intercept
+    # The override input is seeded only while its key is absent (September 2026
+    # stable-widget fix): drop the key so the rerun re-seeds it from the default.
+    if 'dd_override_intercept' in st.session_state:
+        del st.session_state['dd_override_intercept']
     return True
 
 
