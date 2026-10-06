@@ -284,8 +284,18 @@ def render_overview_tab(selected_decisions):
    or change its Income Specification to **"Categorical only"** / **"Continuous only"**
 3. Return here to run complete simulation
                     """)
-                else:
-                    # donation_config block type
+                elif block_type == "disclose_documents":
+                    st.warning(f"""
+⚠️ **Disclose Documents Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
+3. Return here to run complete simulation
+                    """)
+                elif block_type == "donation_config":
                     st.warning(f"""
 ⚠️ **Multiple Donation Configurations Detected**
 
@@ -296,6 +306,13 @@ def render_overview_tab(selected_decisions):
 2. Run **donation_default only**
 3. Select your preferred configuration from results
 4. Return here to run complete simulation
+                    """)
+                else:
+                    # an unknown block type: say what is wrong without naming a decision
+                    st.warning(f"""
+⚠️ **Configuration Issue**
+
+{reason}
                     """)
         elif config_count > 1:
             dd_config = get_decision_config('donation_default')

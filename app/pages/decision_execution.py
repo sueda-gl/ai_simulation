@@ -367,8 +367,18 @@ def render_simulation_buttons(decision_name, selected_decisions):
         blocking_issues = result[4] if len(result) > 4 else []
         
         if not can_run:
+            # The single-issue wording follows the ONE blocking issue's own type (the
+            # legacy block_type is the first issue's type; they agree, but the issue is
+            # the source of truth). Each type has its own heading; the donation heading
+            # is used for the donation block only, never as a catch-all.
+            if len(blocking_issues) == 1:
+                block_type = blocking_issues[0]['block_type']
             # Disabled button with explanation
-            help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Disclose Income is in Compare mode" if block_type == "disclose_income" else ("Select a Rejected Transaction Defaults configuration first" if block_type == "rejected_transaction_defaults" else "Multiple configurations detected - select one first"))
+            help_text = (f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1
+                         else {"disclose_income": "Disclose Income is in Compare mode",
+                               "disclose_documents": "Select a Disclose Documents configuration first",
+                               "rejected_transaction_defaults": "Select a Rejected Transaction Defaults configuration first",
+                               }.get(block_type, "Multiple configurations detected - select one first"))
             st.button(
                 "🎯 Run Complete Simulation", 
                 type="primary",
@@ -472,8 +482,7 @@ This ensures all decisions produce a single result set.
 
 This ensures all decisions produce a single result set.
                     """)
-                else:
-                    # donation_config block type
+                elif block_type == "donation_config":
                     st.warning(f"""
 ⚠️ **Multiple Donation Configurations Detected**
 
@@ -487,6 +496,13 @@ This ensures all decisions produce a single result set.
 4. Return here and click **Run Complete Simulation**
 
 This ensures all decisions use consistent settings.
+                    """)
+                else:
+                    # an unknown block type: say what is wrong without naming a decision
+                    st.warning(f"""
+⚠️ **Configuration Issue**
+
+{reason}
                     """)
             
         else:
