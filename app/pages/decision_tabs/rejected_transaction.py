@@ -31,6 +31,7 @@ Persistence follows the disclose_documents triple-layer pattern: canonical rtd_*
 read keys + rtd_tab_* widget keys + a tab-persistence dict.
 """
 import streamlit as st
+from app.state.widgets import stateful
 import yaml
 import pandas as pd
 from pathlib import Path
@@ -345,7 +346,7 @@ def render_flex_anchor_mix(config):
         save_to_rtd_storage('rtd_tab_flex_observed_weight', 'rtd_flex_observed_weight')
 
     _seed_widget_value(widget_key, float(current))
-    w_obs = st.slider(
+    w_obs = stateful(st.slider,
         "W_OFlex: Observed vs Calculated flexibility weight",
         min_value=0.0, max_value=1.0, step=0.01,
         help="AnchoredFlexibility = W_OFlex × observed flexibility (stdactions) + "
@@ -484,7 +485,7 @@ def render_decision_sigma_controls(config):
         st.session_state.rtd_sigma_strategy = st.session_state.rtd_tab_sigma_strategy
         save_to_rtd_storage('rtd_tab_sigma_strategy', 'rtd_sigma_strategy')
 
-    sigma_strategy = st.radio(
+    sigma_strategy = stateful(st.radio,
         "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
@@ -505,7 +506,7 @@ def render_decision_sigma_controls(config):
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
         _seed_widget_value(coeff_widget_key, coeff_val)
 
-        sigma_coefficient = st.slider(
+        sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, step=0.01,
             help="Coefficient to multiply each element's base σ. Applies to all elements "
                  "of the decision. Final σ per element = base σ × coefficient.",
@@ -537,7 +538,7 @@ def render_decision_sigma_controls(config):
             q_val = max(0.0, min(float(q_val), 2.0))
             _seed_widget_value(widget_key, q_val)
 
-            q_coeff = st.slider(
+            q_coeff = stateful(st.slider,
                 f"{LEVEL_LABELS[level]}", min_value=0.0, max_value=2.0, step=0.01,
                 key=widget_key,
                 on_change=lambda l=level: save_to_rtd_storage(
@@ -604,7 +605,7 @@ def render_intercept_control(config, mech):
                       "moves each agent's 0–6 list score by about 0.28)")
     else:
         scale_text = "The intercept shifts the element's standardized score by β"
-    value = st.number_input(
+    value = stateful(st.number_input,
             f"Baseline {ELEMENT_SHORT[mech]} tendency", min_value=lo, max_value=hi,
             step=step, format="%.4f",
             key=widget_key, on_change=on_change,
@@ -879,7 +880,7 @@ def render_rejected_transaction_defaults_tab():
                               "Continuous only")
             st.session_state.rtd_tab_income_mode = income_val
 
-        income_mode = st.radio(
+        income_mode = stateful(st.radio,
             "Income Specification for Rejected Transaction Model",
             mode_options,
             help="""
@@ -908,7 +909,7 @@ def render_rejected_transaction_defaults_tab():
             'rtd_tab_sigma_in_copula', st.session_state.rejected_transaction_tab_persistence,
             'rtd_sigma_in_copula', False)
         _seed_widget_value('rtd_tab_sigma_in_copula', bool(copula_val))
-        sigma_in_copula = st.checkbox(
+        sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="rtd_tab_sigma_in_copula",
@@ -920,7 +921,7 @@ def render_rejected_transaction_defaults_tab():
             'rtd_tab_sigma_enabled', st.session_state.rejected_transaction_tab_persistence,
             'rtd_sigma_enabled', True)
         _seed_widget_value('rtd_tab_sigma_enabled', bool(res_val))
-        sigma_enabled = st.checkbox(
+        sigma_enabled = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="rtd_tab_sigma_enabled",

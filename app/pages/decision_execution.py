@@ -368,7 +368,7 @@ def render_simulation_buttons(decision_name, selected_decisions):
         
         if not can_run:
             # Disabled button with explanation
-            help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Disclose Income is in Compare mode" if block_type == "disclose_income" else "Multiple configurations detected - select one first")
+            help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Disclose Income is in Compare mode" if block_type == "disclose_income" else ("Select a Rejected Transaction Defaults configuration first" if block_type == "rejected_transaction_defaults" else "Multiple configurations detected - select one first"))
             st.button(
                 "🎯 Run Complete Simulation", 
                 type="primary",
@@ -404,6 +404,17 @@ def render_simulation_buttons(decision_name, selected_decisions):
 1. Go to the **Disclose Documents** tab
 2. Run **disclose_documents only** and select one configuration
 3. Or change to **"Categorical only"** or **"Continuous only"** mode
+                        """)
+                    elif issue['block_type'] == "rejected_transaction_defaults":
+                        st.warning(f"""
+**Issue {i}: Rejected Transaction Defaults**
+
+{issue['reason']}
+
+**Action Required:**
+1. Go to the **Rejected Transaction Defaults** tab
+2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config")
+3. Or change its Income Specification to **"Categorical only"** or **"Continuous only"**
                         """)
                     else:
                         # donation_config block type
@@ -442,6 +453,21 @@ This ensures all decisions produce a single result set.
 
 1. Go to the **Disclose Documents** tab
 2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
+3. Return here and click **Run Complete Simulation**
+
+This ensures all decisions produce a single result set.
+                    """)
+                elif block_type == "rejected_transaction_defaults":
+                    st.warning(f"""
+⚠️ **Rejected Transaction Defaults Configuration Required**
+
+{reason}
+
+**Action Required:**
+
+1. Go to the **Rejected Transaction Defaults** tab
+2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config"),
+   or change its Income Specification to **"Categorical only"** / **"Continuous only"**
 3. Return here and click **Run Complete Simulation**
 
 This ensures all decisions produce a single result set.

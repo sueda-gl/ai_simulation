@@ -3,6 +3,7 @@
 Page 1: Common Simulation Parameters for the Enhanced AI Agent Simulation.
 """
 import streamlit as st
+from app.state.widgets import stateful
 import pandas as pd
 from app.components import show_income_distribution_histogram
 from app.pages.navigation import render_navigation
@@ -16,7 +17,10 @@ def initialize_widget_keys():
     passes `value=` / `index=` (2026-10-07). Passing both a default and a key that
     was set through the Session State API made Streamlit print "The widget with
     key ... was created with a default value but also had its value set via the
-    Session State API" (Q-41); the key's value is what the widget shows either way."""
+    Session State API" (Q-41). They are drawn through `stateful()`
+    (app/state/widgets.py), which pushes the key's value to a browser that has not
+    drawn the widget in the previous run - without that, such a browser shows (and
+    sends back) the widget's built-in default instead."""
     
     # Initialize keys for all number_input and slider widgets
     # Only initialize if key doesn't exist - this preserves user changes
@@ -152,7 +156,7 @@ def render_page1():
         if "page1_simulation_execution_mode" not in st.session_state:
             st.session_state.page1_simulation_execution_mode = "Snapshot" if st.session_state.sim_params.simulation_execution_mode == "snapshot" else "Live Simulation"
         
-        simulation_execution_mode = st.radio(
+        simulation_execution_mode = stateful(st.radio,
             "Execution Mode",
             ["Snapshot", "Live Simulation"],
             horizontal=True,
@@ -170,7 +174,7 @@ def render_page1():
         if "page1_simulation_mode" not in st.session_state:
             st.session_state.page1_simulation_mode = st.session_state.sim_params.simulation_mode
         
-        simulation_mode = st.radio(
+        simulation_mode = stateful(st.radio,
             "Analysis Mode",
             ["Single Run", "Monte-Carlo Study"],
             horizontal=True,
@@ -193,7 +197,7 @@ def render_page1():
             # Simulation Settings Section
             st.markdown('<h3 class="section-header">⚙️ Simulation Settings</h3>', unsafe_allow_html=True)
         
-        n_agents = st.number_input(
+        n_agents = stateful(st.number_input,
             "Number of Agents",
             min_value=10,
             max_value=50000,
@@ -204,7 +208,7 @@ def render_page1():
         )
         
         if st.session_state.sim_params.simulation_mode == "Single Run":
-            seed = st.number_input(
+            seed = stateful(st.number_input,
                 "Random Seed",
                 min_value=1,
                 max_value=2147483647,
@@ -213,7 +217,7 @@ def render_page1():
                 on_change=lambda: setattr(st.session_state, 'seed', st.session_state.seed_input)
             )
         else:
-            n_runs = st.number_input(
+            n_runs = stateful(st.number_input,
                 "Number of Runs",
                 min_value=2,
                 max_value=1000,
@@ -223,7 +227,7 @@ def render_page1():
                 on_change=lambda: setattr(st.session_state, 'n_runs', st.session_state.n_runs_input)
             )
             
-            base_seed = st.number_input(
+            base_seed = stateful(st.number_input,
                 "Base Seed",
                 min_value=1,
                 max_value=2147483647,
@@ -254,7 +258,7 @@ def render_page1():
             # Time Parameters Section
             st.markdown('<h3 class="section-header">⏱️ Time Parameters</h3>', unsafe_allow_html=True)
         
-        periods = st.number_input(
+        periods = stateful(st.number_input,
             "Number of Periods",
             min_value=1,
             max_value=100,
@@ -263,7 +267,7 @@ def render_page1():
             on_change=lambda: setattr(st.session_state.sim_params, 'periods', st.session_state.periods_input)
         )
         
-        duration_hours = st.number_input(
+        duration_hours = stateful(st.number_input,
             "Duration per Period (hours)",
             min_value=1,
             max_value=24,
@@ -282,7 +286,7 @@ def render_page1():
 
         
         # Number of Vendors (moved from Market Parameters)
-        num_vendors = st.number_input(
+        num_vendors = stateful(st.number_input,
             "Number of Vendors (N)",
             min_value=1,
             max_value=50,
@@ -300,7 +304,7 @@ def render_page1():
             
             with col_single_left:
                 # Single vendor price
-                single_vendor_price = st.number_input(
+                single_vendor_price = stateful(st.number_input,
                     "Product Price ($)",
                     min_value=0.01,
                     max_value=1000.0,
@@ -316,7 +320,7 @@ def render_page1():
                 
             with col_single_right:
                 # Single vendor products
-                single_vendor_products = st.number_input(
+                single_vendor_products = stateful(st.number_input,
                     "Products Offered",
                     min_value=1,
                     max_value=10000,
@@ -337,7 +341,7 @@ def render_page1():
                 st.session_state.sim_params.global_carryover = st.session_state.single_vendor_carryover
                 st.session_state.sim_params.override_carryover = True  # Always override in single vendor mode
             
-            single_vendor_carryover = st.checkbox(
+            single_vendor_carryover = stateful(st.checkbox,
                 "Enable Product Carryover to Next Period",
                 help="If checked, unsold products carry over to the next period",
                 key="single_vendor_carryover",
@@ -356,7 +360,7 @@ def render_page1():
             if "page1_vendor_setup_mode" not in st.session_state:
                 st.session_state.page1_vendor_setup_mode = "Generate Randomly" if st.session_state.sim_params.vendor_config_mode == "random" else "Upload Vendor Config File"
             
-            vendor_setup_mode = st.radio(
+            vendor_setup_mode = stateful(st.radio,
                 "Vendor Setup Mode",
                 ["Generate Randomly", "Upload Vendor Config File"],
                 horizontal=True,
@@ -378,7 +382,7 @@ def render_page1():
                     # Price Configuration
                     st.markdown('<h4 class="subsection-header">💰 Price Configuration</h4>', unsafe_allow_html=True)
                     
-                    vendor_price_min = st.number_input(
+                    vendor_price_min = stateful(st.number_input,
                         "Min Price per Vendor ($)",
                         min_value=0.01,
                         max_value=1000.0,
@@ -401,7 +405,7 @@ def render_page1():
                         current_max = min_for_max
                         st.warning(f"⚠️ Auto-adjusted: Max price was set to ${min_for_max:.2f} (cannot be below min price)")
                     
-                    vendor_price_max = st.number_input(
+                    vendor_price_max = stateful(st.number_input,
                         "Max Price per Vendor ($)",
                         min_value=min_for_max,
                         max_value=1000.0,
@@ -430,7 +434,7 @@ def render_page1():
                         current_price_dollars = max_price_dollars
                         st.warning(f"⚠️ Auto-adjusted: Average price was set to ${max_price_dollars:.2f} (cannot be above max price)")
                     
-                    market_price = st.number_input(
+                    market_price = stateful(st.number_input,
                         "Average Price per Vendor ($)",
                         min_value=min_price_dollars,
                         max_value=max_price_dollars,
@@ -453,7 +457,7 @@ def render_page1():
                     # Products Configuration
                     st.markdown('<h4 class="subsection-header">📦 Products Configuration</h4>', unsafe_allow_html=True)
                     
-                    vendor_products_min = st.number_input(
+                    vendor_products_min = stateful(st.number_input,
                     "Min Products per Vendor/Period",
                     min_value=1,
                     max_value=10000,
@@ -474,7 +478,7 @@ def render_page1():
                         current_max_products = min_for_max_products
                         st.warning(f"⚠️ Auto-adjusted: Max products was set to {min_for_max_products} (cannot be below min products)")
                     
-                    vendor_products_max = st.number_input(
+                    vendor_products_max = stateful(st.number_input,
                     "Max Products per Vendor/Period",
                     min_value=min_for_max_products,
                     max_value=10000,
@@ -501,7 +505,7 @@ def render_page1():
                         current_avg_products = max_products
                         st.warning(f"⚠️ Auto-adjusted: Average products was set to {max_products} (cannot be above max products)")
                     
-                    vendor_products_avg = st.number_input(
+                    vendor_products_avg = stateful(st.number_input,
                     "Average Products per Vendor/Period",
                     min_value=min_products,
                     max_value=max_products,
@@ -530,7 +534,7 @@ def render_page1():
                     else:
                         st.session_state.page1_carryover_mode = "Use probability"
                 
-                carryover_mode = st.radio(
+                carryover_mode = stateful(st.radio,
                     "Carryover Mode",
                     ["All vendors have carryover", "No vendors have carryover", "Use probability"],
                     horizontal=True,
@@ -554,7 +558,7 @@ def render_page1():
                 else:  # Use probability
                     st.session_state.sim_params.override_carryover = False
                     
-                    vendor_carryover_probability = st.slider(
+                    vendor_carryover_probability = stateful(st.slider,
                         "Carryover Probability (p)",
                         min_value=0.0,
                         max_value=1.0,
@@ -766,7 +770,7 @@ BUDGET_SHOP,5.25,50,0""")
         # Market Parameters Section
         st.markdown('<h3 class="section-header">🏪 Market Parameters</h3>', unsafe_allow_html=True)
         
-        platform_markup = st.slider(
+        platform_markup = stateful(st.slider,
             "Platform Markup (m)",
             min_value=0.0,
             max_value=0.5,
@@ -776,7 +780,7 @@ BUDGET_SHOP,5.25,50,0""")
             on_change=lambda: setattr(st.session_state.sim_params, 'platform_markup', st.session_state.platform_markup_slider)
         )
         
-        price_range = st.slider(
+        price_range = stateful(st.slider,
             "Price Range (r)",
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 for simulation flexibility
@@ -786,7 +790,7 @@ BUDGET_SHOP,5.25,50,0""")
             on_change=lambda: setattr(st.session_state.sim_params, 'price_range', st.session_state.price_range_slider)
         )
         
-        bidding_percentage = st.slider(
+        bidding_percentage = stateful(st.slider,
             "Bidding Percentage (bp)",
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 as requested
@@ -807,7 +811,7 @@ BUDGET_SHOP,5.25,50,0""")
             if "nfic_manually_set" in st.session_state:
                 st.session_state.nfic_manually_set = False
         
-        price_grid = st.number_input(
+        price_grid = stateful(st.number_input,
             "Price Grid Categories (g)",
             min_value=3,
             max_value=21,
@@ -841,7 +845,7 @@ BUDGET_SHOP,5.25,50,0""")
         if "page1_income_distribution" not in st.session_state:
             st.session_state.page1_income_distribution = st.session_state.sim_params.income_distribution if st.session_state.sim_params.income_distribution in ["lognormal", "generalised_gamma", "dagum"] else "lognormal"
         
-        income_distribution = st.selectbox(
+        income_distribution = stateful(st.selectbox,
             "Income Distribution Type",
             ["lognormal", "generalised_gamma", "dagum"],
             help="Distribution function for generating agent incomes",
@@ -872,7 +876,7 @@ BUDGET_SHOP,5.25,50,0""")
             col_mu, col_sigma = st.columns(2)
             
             with col_mu:
-                lognormal_mu = st.number_input(
+                lognormal_mu = stateful(st.number_input,
                     "μ (mu) - Mean of ln(Y)",
                     min_value=0.0,
                     max_value=15.0,
@@ -883,7 +887,7 @@ BUDGET_SHOP,5.25,50,0""")
                 )
             
             with col_sigma:
-                lognormal_sigma = st.number_input(
+                lognormal_sigma = stateful(st.number_input,
                     "σ (sigma) - Std Dev of ln(Y)",
                     min_value=0.1,
                     max_value=3.0,
@@ -897,7 +901,7 @@ BUDGET_SHOP,5.25,50,0""")
             col_min, col_max = st.columns(2)
             
             with col_min:
-                lognormal_min = st.number_input(
+                lognormal_min = stateful(st.number_input,
                     "a - Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
@@ -980,7 +984,7 @@ BUDGET_SHOP,5.25,50,0""")
             col_k, col_c, col_lambda = st.columns(3)
             
             with col_k:
-                gg_k = st.number_input(
+                gg_k = stateful(st.number_input,
                     "k - Shape 1 (tail)",
                     min_value=0.1,
                     max_value=10.0,
@@ -991,7 +995,7 @@ BUDGET_SHOP,5.25,50,0""")
                 )
             
             with col_c:
-                gg_c = st.number_input(
+                gg_c = stateful(st.number_input,
                     "c - Shape 2 (skew)",
                     min_value=0.1,
                     max_value=10.0,
@@ -1002,7 +1006,7 @@ BUDGET_SHOP,5.25,50,0""")
                 )
             
             with col_lambda:
-                gg_lambda = st.number_input(
+                gg_lambda = stateful(st.number_input,
                     "λ - Scale ($)",
                     min_value=100.0,
                     max_value=1000000.0,
@@ -1016,7 +1020,7 @@ BUDGET_SHOP,5.25,50,0""")
             col_min, col_max = st.columns(2)
             
             with col_min:
-                gg_min = st.number_input(
+                gg_min = stateful(st.number_input,
                     "a - Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
@@ -1099,7 +1103,7 @@ BUDGET_SHOP,5.25,50,0""")
             col_a, col_p, col_b = st.columns(3)
             
             with col_a:
-                dagum_a = st.number_input(
+                dagum_a = stateful(st.number_input,
                     "a - Shape (tail)",
                     min_value=0.1,
                     max_value=10.0,
@@ -1110,7 +1114,7 @@ BUDGET_SHOP,5.25,50,0""")
                 )
             
             with col_p:
-                dagum_p = st.number_input(
+                dagum_p = stateful(st.number_input,
                     "p - Shape (body)",
                     min_value=0.1,
                     max_value=10.0,
@@ -1121,7 +1125,7 @@ BUDGET_SHOP,5.25,50,0""")
                 )
             
             with col_b:
-                dagum_b = st.number_input(
+                dagum_b = stateful(st.number_input,
                     "b - Scale ($)",
                     min_value=100.0,
                     max_value=1000000.0,
@@ -1135,7 +1139,7 @@ BUDGET_SHOP,5.25,50,0""")
             col_min, col_max = st.columns(2)
             
             with col_min:
-                dagum_min = st.number_input(
+                dagum_min = stateful(st.number_input,
                     "Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
@@ -1213,7 +1217,7 @@ BUDGET_SHOP,5.25,50,0""")
             current_threshold = income_max
             st.warning(f"⚠️ Auto-adjusted: Discount threshold was set to ${income_max:,.0f} (cannot be above income maximum)")
         
-        discount_income_threshold = st.number_input(
+        discount_income_threshold = stateful(st.number_input,
             "Threshold Income for Discount ($)",
             min_value=income_min,
             max_value=income_max,
@@ -1243,7 +1247,7 @@ BUDGET_SHOP,5.25,50,0""")
         # Use narrower columns with gaps to keep buttons close while maintaining same level
         col_cat1, col_gap, col_cat2 = st.columns([1.2, 0.6, 1.2])
         with col_cat1:
-            num_discount_categories = st.number_input(
+            num_discount_categories = stateful(st.number_input,
                 "Discount Income Categories (NDIC)",
                 min_value=1,
                 max_value=10,
@@ -1270,7 +1274,7 @@ BUDGET_SHOP,5.25,50,0""")
                 st.session_state.sim_params.num_fixed_categories = st.session_state.num_fixed_categories_input
                 st.session_state.nfic_manually_set = True
             
-            num_fixed_categories = st.number_input(
+            num_fixed_categories = stateful(st.number_input,
                 "Fixed Income Categories (NFIC)",
                 min_value=1,
                 max_value=50,
@@ -1292,7 +1296,7 @@ BUDGET_SHOP,5.25,50,0""")
             # Use the existing apply_purchasing_limits value
             st.session_state.page1_apply_limits = "Yes" if st.session_state.sim_params.apply_purchasing_limits else "No"
 
-        apply_limits = st.radio(
+        apply_limits = stateful(st.radio,
             "Apply Purchasing Limits?",
             ["Yes", "No"],
             horizontal=True,
@@ -1366,7 +1370,7 @@ BUDGET_SHOP,5.25,50,0""")
                     if key not in st.session_state:
                         st.session_state[key] = st.session_state.sim_params.purchasing_limits.get(cat_key, st.session_state.uniform_purchasing_limit)
 
-                    limit = st.number_input(
+                    limit = stateful(st.number_input,
                         label,
                         min_value=0,
                         key=key,
@@ -1392,7 +1396,7 @@ BUDGET_SHOP,5.25,50,0""")
                 st.session_state.sim_params.max_purchases_per_term = st.session_state.artificial_limit_input
             
             # Input field for artificial purchasing limit
-            artificial_limit = st.number_input(
+            artificial_limit = stateful(st.number_input,
                 "Max Purchases per Term (All Agents)",
                 min_value=1,
                 help=f"Maximum number of items any agent can purchase over the entire term ({term_hours}h total). This represents a practical constraint based on customer budget preferences and assumed purchasing patterns.",
@@ -1420,7 +1424,7 @@ BUDGET_SHOP,5.25,50,0""")
             from app.pages.decision_execution import clear_decision_config
             clear_decision_config('donation_default')
         
-        population_mode = st.radio(
+        population_mode = stateful(st.radio,
             "Population Mode",
             ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
             horizontal=True,
@@ -1445,10 +1449,14 @@ BUDGET_SHOP,5.25,50,0""")
     with col_reset1:
         st.caption("💡 Reset all simulation parameters (vendors, prices, distributions) to system defaults.")
     with col_reset2:
-        if st.button("🔄 Reset to Default Values", help="Reset all Page 1 parameters to system defaults", key="reset_page1_defaults"):
-            reset_all_page1_defaults()
+        # on_click (2026-10-07, Q-39): the reset runs BEFORE the script, while no
+        # widget exists yet, so it may write every widget key. Called from the
+        # script body (September version) the first widget-key write raised
+        # StreamlitAPIException and the widgets, agents, seed and population mode
+        # were never reset.
+        if st.button("🔄 Reset to Default Values", help="Reset all Page 1 parameters to system defaults",
+                     key="reset_page1_defaults", on_click=reset_all_page1_defaults):
             st.success("✅ All parameters reset to defaults")
-            st.rerun()
     
     # Navigation
     render_navigation('page1')
@@ -1526,17 +1534,14 @@ def reset_all_page1_defaults():
     st.session_state.lognormal_mu_input = 10.0
     st.session_state.lognormal_sigma_input = 0.5
     st.session_state.lognormal_min_input = 0.0
-    st.session_state.lognormal_max_text_input = "None"
     st.session_state.gg_k_input = 1.5
     st.session_state.gg_c_input = 2.0
     st.session_state.gg_lambda_input = 20000.0
     st.session_state.gg_min_input = 0.0
-    st.session_state.gg_max_text_input = "None"
     st.session_state.dagum_a_input = 2.0
     st.session_state.dagum_p_input = 1.5
     st.session_state.dagum_b_input = 25000.0
     st.session_state.dagum_min_input = 0.0
-    st.session_state.dagum_max_text_input = "None"
     
     st.session_state.discount_threshold_input = 20000.0
     st.session_state.num_discount_categories_input = 2
@@ -1545,7 +1550,6 @@ def reset_all_page1_defaults():
     
     st.session_state.page1_apply_limits = "No"
     st.session_state.artificial_limit_input = 10
-    st.session_state.uniform_purchasing_limit_input = 10
     
     # Simulation Settings
     st.session_state.n_agents = 1000
@@ -1560,3 +1564,19 @@ def reset_all_page1_defaults():
     st.session_state.page1_simulation_execution_mode = "Live Simulation"
     st.session_state.page1_simulation_mode = "Single Run"
     st.session_state.page1_population_mode = "Copula (synthetic)"
+    # The radio's on_change (on_population_mode_change) does not fire for a write
+    # through the Session State API: mirror it here.
+    if st.session_state.get("population_mode") != "Copula (synthetic)":
+        st.session_state.population_mode = "Copula (synthetic)"
+        from app.pages.decision_execution import clear_decision_config
+        clear_decision_config('donation_default')
+
+    # Widgets that still pass value= (derived from sim_params / a canonical key):
+    # drop their keys so they re-initialise from that value instead of being
+    # written here (a write plus value= is the Q-41 warning).
+    st.session_state.uniform_purchasing_limit = 10
+    st.session_state.pop("lognormal_max_text_input", None)
+    st.session_state.pop("gg_max_text_input", None)
+    st.session_state.pop("dagum_max_text_input", None)
+    st.session_state.pop("uniform_purchasing_limit_input", None)
+    st.session_state.pop("show_individual_agents_checkbox", None)

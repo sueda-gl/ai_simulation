@@ -4,6 +4,7 @@ UI components for configuring default decision parameters before simulation.
 These parameters apply to decisions that are NOT selected for custom configuration.
 """
 import streamlit as st
+from app.state.widgets import stateful
 from app.pages.decision_execution import DEFAULT_DECISION_VALUES
 
 
@@ -158,7 +159,7 @@ def render_probability_default_config(decision_name, default_value):
         
         # Widget uses key parameter - value is read from session state
         # SHADOW STATE: Use on_change to save to persistent storage
-        probability = st.slider(
+        probability = stateful(st.slider,
             slider_label,
             min_value=0.0,
             max_value=1.0,
@@ -233,7 +234,7 @@ def render_prioritized_default_config(decision_name, default_value):
         st.markdown("**Add Option to List:**")
         
         if available_options:
-            selected_to_add = st.selectbox(
+            selected_to_add = stateful(st.selectbox,
                 "Choose an option to add:",
                 options=[""] + available_options,
                 format_func=lambda x: "-- Select option --" if x == "" else option_names.get(x, x),
@@ -317,7 +318,7 @@ def render_radio_default_config(decision_name, default_value):
         
         # Widget uses explicit index derived from session state
         # SHADOW STATE: Use on_change to save to persistent storage
-        selected = st.radio(
+        selected = stateful(st.radio,
             "Default Option",
             options=option_codes,
             format_func=lambda x: option_names.get(x, x),
@@ -364,7 +365,7 @@ def render_checkbox_default_config(decision_name, default_value):
             
             # Create checkbox - reads from session state
             # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
-            is_selected = st.checkbox(
+            is_selected = stateful(st.checkbox,
                 f"{param_info['name']} - {param_info['description']}",
                 key=checkbox_key,
                 on_change=save_to_persistent_storage,
@@ -439,7 +440,7 @@ def render_numeric_default_config(decision_name, default_value):
             
             # Widget reads from session state
             # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
-            value = st.slider(
+            value = stateful(st.slider,
                 "Default Value",
                 min_value=0.0,
                 max_value=1.0,
@@ -454,7 +455,7 @@ def render_numeric_default_config(decision_name, default_value):
         else:
             # Widget reads from session state
             # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
-            value = st.number_input(
+            value = stateful(st.number_input,
                 "Default Value",
                 min_value=0.0,
                 step=0.1,
@@ -507,7 +508,7 @@ def render_final_donation_rate_with_config(default_value, config=None):
     with col1:
         # Show slider with the config's mean donation as initial value, but allow changes
         # Step of 0.01 allows 1% increments, display shows 4 decimal places
-        value = st.slider(
+        value = stateful(st.slider,
             "Default Value",
             min_value=0.0,
             max_value=1.0,

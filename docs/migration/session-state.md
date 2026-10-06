@@ -81,6 +81,20 @@ change it after the widget has been created in the same run. **A widget key only
 survives while its widget keeps rendering.** Switch to another tab and the widget
 stops rendering; Streamlit is then free to drop the key.
 
+**The browser has its own copy.** Streamlit sends a key's value to the browser only
+in the run in which the key is *written* through `st.session_state`. A widget drawn
+without `value=` / `index=` whose key was seeded in an *earlier* run reaches a
+browser that has not drawn it before (fresh session, a decision tab just selected,
+a page navigated back to, a changed label or range) with only its built-in default
+— min / `False` / option 0 — and the browser sends that back on the next rerun. So
+every keyed widget whose value lives in session state is drawn through
+`stateful(st.<widget>, …, key=…)` from `app/state/widgets.py`: it re-writes the key
+(unchanged) whenever the widget was not drawn in the previous run with the same
+arguments, using a per-run render log (`_widget_render_log`, rotated by
+`begin_script_run()` at the top of `app_enhanced_new.py`). `tests/browser_sim.py`
+models the browser for AppTest; `tests/test_widget_browser_state.py` uses it, and
+also checks statically that no value-less keyed widget bypasses `stateful()`.
+
 Registry categories: `page1-widget`, `page2-widget`. Names follow a convention —
 Page 1 uses `*_input` / `*_slider` / `page1_*`, the decision tabs use a `*_tab_*`
 infix (`tab_sigma_in_copula`, `di_tab_income_mode`, `rtd_tab_intercept_{mech}`).

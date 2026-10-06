@@ -3,6 +3,7 @@
 Page 2: Decision-Specific Parameters for the Enhanced AI Agent Simulation.
 """
 import streamlit as st
+from app.state.widgets import stateful
 from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
 from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
@@ -395,7 +396,7 @@ def render_page2():
             st.session_state.page2_manual_multiselect = [
                 d for d in st.session_state.page2_manual_selections if d in ALL_DECISIONS
             ]
-        selected_decisions = st.multiselect(
+        selected_decisions = stateful(st.multiselect,
             "Select Decisions to Run",
             ALL_DECISIONS,
             format_func=lambda d: format_decision_title(d, include_number=True),

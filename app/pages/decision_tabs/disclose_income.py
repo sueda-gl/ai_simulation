@@ -6,6 +6,7 @@ Decision 1: Disclose income for Fixed status at time of registration/review.
 Uses a two-stage mediation model when specified (research spec mode).
 """
 import streamlit as st
+from app.state.widgets import stateful
 import yaml
 import pandas as pd
 from pathlib import Path
@@ -185,7 +186,7 @@ def render_di_sigma_controls(mode_suffix: str):
         save_to_disclose_income_storage(strategy_widget_key, strategy_storage_key)
         st.session_state.di_sigma_strategy = new_strategy
 
-    sigma_strategy = st.radio(
+    sigma_strategy = stateful(st.radio,
         "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
@@ -224,7 +225,7 @@ def render_di_sigma_controls(mode_suffix: str):
             # Also fix the widget key so Streamlit picks up the corrected value
             st.session_state[coeff_widget_key] = coeff_val
 
-        sigma_coefficient = st.slider(
+        sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)",
             min_value=0.0,
             max_value=2.0,
@@ -284,7 +285,7 @@ def render_di_sigma_controls(mode_suffix: str):
 
             col_slider, col_result = st.columns([3, 1])
             with col_slider:
-                q_coeff = st.slider(
+                q_coeff = stateful(st.slider,
                     f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
                     min_value=0.0,
                     max_value=2.0,
@@ -380,7 +381,7 @@ def render_disclose_income_tab():
                 income_val = "Categorical only"
                 st.session_state.di_tab_income_mode = income_val
 
-        income_mode = st.radio(
+        income_mode = stateful(st.radio,
             "Income Specification for Disclosure Model",
             mode_options,
             help="""
@@ -412,7 +413,7 @@ def render_disclose_income_tab():
             'di_sigma_in_copula',
             False
         )
-        sigma_in_copula = st.checkbox(
+        sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="di_tab_sigma_in_copula",
@@ -428,7 +429,7 @@ def render_disclose_income_tab():
             'sigma_enabled',
             True
         )
-        sigma_enabled = st.checkbox(
+        sigma_enabled = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="di_tab_sigma_enabled",
@@ -460,7 +461,7 @@ def render_disclose_income_tab():
         )
 
         # WOPB - Weight for observed vs calculated prosocial behavior
-        new_wopb = st.slider(
+        new_wopb = stateful(st.slider,
             "W_OPB: Observed vs Calculated prosocial behavior weight",
             min_value=0.0,
             max_value=1.0,
@@ -481,7 +482,7 @@ def render_disclose_income_tab():
         )
 
         # WPB - Weight for prosocial effect in disclosure equation
-        new_wpb = st.slider(
+        new_wpb = stateful(st.slider,
             "W_PB: Prosocial behavior (Equation 1) effect weight",
             min_value=0.0,
             max_value=1.0,
@@ -715,7 +716,7 @@ def render_intercept_override_section(config):
                 st.session_state.di_override_intercept = float(
                     st.session_state.di_intercept_override_values.get('intercept', current_config_value))
 
-            new_intercept = st.number_input(
+            new_intercept = stateful(st.number_input,
                 "Baseline disclosure tendency",
                 min_value=0.0,
                 max_value=5.0,

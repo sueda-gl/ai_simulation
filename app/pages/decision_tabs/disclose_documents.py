@@ -9,6 +9,7 @@ Decision 2 file); the tab exposes the income mode, optional intercept override, 
 stochastic settings. UI mirrors the Disclose Income tab for consistency.
 """
 import streamlit as st
+from app.state.widgets import stateful
 import yaml
 import pandas as pd
 from pathlib import Path
@@ -128,7 +129,7 @@ def render_dd_sigma_controls(mode_suffix: str):
         st.session_state.dd_sigma_strategy = st.session_state[strategy_widget_key]
         save_to_dd_storage(strategy_widget_key, strategy_storage_key)
 
-    sigma_strategy = st.radio(
+    sigma_strategy = stateful(st.radio,
         "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
@@ -150,7 +151,7 @@ def render_dd_sigma_controls(mode_suffix: str):
         )
         coeff_val = max(0.0, min(float(coeff_val), 2.0)) or 1.0
 
-        sigma_coefficient = st.slider(
+        sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, step=0.01,
             help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL} × coefficient",
             key=coeff_widget_key,
@@ -195,7 +196,7 @@ def render_dd_sigma_controls(mode_suffix: str):
 
             col_slider, col_result = st.columns([3, 1])
             with col_slider:
-                q_coeff = st.slider(
+                q_coeff = stateful(st.slider,
                     f"{LEVEL_LABELS[level]} (base σ={base_sigma:.4f})",
                     min_value=0.0, max_value=2.0, step=0.01,
                     key=widget_key,
@@ -244,7 +245,7 @@ def render_disclose_documents_tab():
             income_val = next((o for o in mode_options if str(income_val).lower() == o.lower()), "Categorical only")
             st.session_state.dd_tab_income_mode = income_val
 
-        income_mode = st.radio(
+        income_mode = stateful(st.radio,
             "Income Specification for Disclosure Model",
             mode_options,
             help="""
@@ -269,7 +270,7 @@ def render_disclose_documents_tab():
             'dd_tab_sigma_in_copula', st.session_state.disclose_documents_tab_persistence,
             'dd_sigma_in_copula', False
         )
-        sigma_in_copula = st.checkbox(
+        sigma_in_copula = stateful(st.checkbox,
             "Add Normal(score, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="dd_tab_sigma_in_copula",
@@ -282,7 +283,7 @@ def render_disclose_documents_tab():
             'dd_tab_sigma_enabled', st.session_state.disclose_documents_tab_persistence,
             'sigma_enabled', True
         )
-        sigma_enabled = st.checkbox(
+        sigma_enabled = stateful(st.checkbox,
             "Use Normal(score, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(score, σ) draws.",
             key="dd_tab_sigma_enabled",
@@ -462,7 +463,7 @@ def render_intercept_override_section(config):
             if 'dd_override_intercept' not in st.session_state:
                 st.session_state.dd_override_intercept = float(
                     st.session_state.dd_intercept_override_values.get('intercept', current_config_value))
-            new_intercept = st.number_input(
+            new_intercept = stateful(st.number_input,
                 "Baseline disclosure tendency", min_value=-5.0, max_value=0.0,
                 step=0.01, format="%.4f",
                 help="β₀ = −0.75 in the disclose documents equation. Higher values increase baseline probability of disclosure.",

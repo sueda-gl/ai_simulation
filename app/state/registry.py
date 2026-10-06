@@ -158,6 +158,13 @@ RTD_INIT = "decision_tabs.rejected_transaction.initialize_rtd_session_state"
 _NAVIGATION = (
     _row("page", "page1", MODELS_INIT, "navigation",
          notes="'page1' | 'page2' | 'results'; app_enhanced_new.py dispatches on it."),
+    _row("_widget_render_log", {}, "state.widgets.begin_script_run", "navigation",
+         notes="widget key -> argument signature of every stateful() widget drawn in "
+               "the current run (what the browser will hold)."),
+    _row("_widget_render_log_previous", {}, "state.widgets.begin_script_run",
+         "navigation",
+         notes="the previous run's render log; stateful() re-pushes a key's value "
+               "to the browser when its widget is not in it (2026-10-07)."),
 )
 
 

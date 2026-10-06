@@ -46,6 +46,9 @@ MAPPING_METHODS = {
 # ``key=`` is a session-state key only on a Streamlit call; ``sorted(key=...)``
 # and ``list.sort(key=...)`` take a callable of the same keyword name.
 WIDGET_CALL_PREFIX = "st."
+# ``app.state.widgets.stateful(st.slider, ..., key=...)`` draws the widget it is
+# handed; its ``key=`` binds that widget (2026-10-07).
+WIDGET_WRAPPERS = {"stateful"}
 
 
 # --------------------------------------------------------------------------- #
@@ -281,7 +284,7 @@ class _Visitor(ast.NodeVisitor):
             self._emit(node.args[1], func.id, mode, node.lineno)
         # widget key=
         name = ast.unparse(func).strip()
-        if name.startswith(WIDGET_CALL_PREFIX):
+        if name.startswith(WIDGET_CALL_PREFIX) or name in WIDGET_WRAPPERS:
             for kw in node.keywords:
                 if kw.arg == "key":
                     self._emit(kw.value, "key=", "widget", node.lineno)

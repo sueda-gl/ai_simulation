@@ -4,6 +4,7 @@ Donation Default decision tab configuration.
 """
 # Force rebuild timestamp: 2025-10-01
 import streamlit as st
+from app.state.widgets import stateful
 import pandas as pd
 import yaml
 from pathlib import Path
@@ -170,7 +171,7 @@ def render_donation_sigma_controls(mode_suffix: str):
         save_to_donation_storage(strategy_widget_key, strategy_storage_key)
         st.session_state.donation_sigma_strategy = new_strategy
 
-    sigma_strategy = st.radio(
+    sigma_strategy = stateful(st.radio,
         "Apply σ uniformly or per income level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
@@ -200,7 +201,7 @@ def render_donation_sigma_controls(mode_suffix: str):
         # Clamp value to valid range [0, 2]
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
 
-        sigma_coefficient = st.slider(
+        sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)",
             min_value=0.0,
             max_value=2.0,
@@ -257,7 +258,7 @@ def render_donation_sigma_controls(mode_suffix: str):
 
             col_slider, col_result = st.columns([3, 1])
             with col_slider:
-                q_coeff = st.slider(
+                q_coeff = stateful(st.slider,
                     f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
                     min_value=0.0,
                     max_value=2.0,
@@ -364,7 +365,7 @@ def render_donation_default_tab():
         if income_val not in ["categorical only", "continuous only", "Compare both"]:
             income_val = "categorical only"
 
-        income_spec_mode = st.radio(
+        income_spec_mode = stateful(st.radio,
             "Income Mode for Donation Model",
             ["categorical only", "continuous only", "Compare both"],
             help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
@@ -390,7 +391,7 @@ def render_donation_default_tab():
             'sigma_in_copula',
             False
         )
-        sigma_in_copula = st.checkbox(
+        sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="tab_sigma_in_copula",
@@ -406,7 +407,7 @@ def render_donation_default_tab():
             'sigma_in_research',
             True
         )
-        sigma_in_research = st.checkbox(
+        sigma_in_research = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="tab_sigma_in_research",
@@ -433,7 +434,7 @@ def render_donation_default_tab():
             0.75
         )
 
-        anchor_observed_weight = st.slider(
+        anchor_observed_weight = stateful(st.slider,
             "Weight for observed vs modeled prosocial behavior",
             min_value=0.0,
             max_value=1.0,
@@ -950,7 +951,7 @@ def render_intercept_override_section():
                     current_yaml_values['categorical']
                 )
                 
-                new_cat_intercept = st.number_input(
+                new_cat_intercept = stateful(st.number_input,
                     "Categorical",
                     step=0.001,
                     format="%.6f",
@@ -968,7 +969,7 @@ def render_intercept_override_section():
                     current_yaml_values['continuous']
                 )
                 
-                new_cont_intercept = st.number_input(
+                new_cont_intercept = stateful(st.number_input,
                     "Continuous", 
                     step=0.001,
                     format="%.6f",
@@ -989,7 +990,7 @@ def render_intercept_override_section():
                     current_yaml_values['continuous']
                 )
                 
-                new_cont_intercept = st.number_input(
+                new_cont_intercept = stateful(st.number_input,
                     "Continuous",
                     step=0.001,
                     format="%.6f", 
@@ -1010,7 +1011,7 @@ def render_intercept_override_section():
                     current_yaml_values['categorical']
                 )
                 
-                new_cat_intercept = st.number_input(
+                new_cat_intercept = stateful(st.number_input,
                     "Categorical",
                     step=0.001,
                     format="%.6f",
@@ -1181,7 +1182,7 @@ def render_adjustment_override_section():
                     st.session_state.adjustment_override_values.get('shift_value', research_default))
 
             # Adjustment input field
-            new_adjustment = st.number_input(
+            new_adjustment = stateful(st.number_input,
                 "Distribution Shift Value",
                 step=0.1,
                 format="%.3f",

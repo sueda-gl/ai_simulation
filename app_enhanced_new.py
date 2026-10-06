@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 from app.models import initialize_session_state
 from app.components import get_css_styles
 from app.pages import render_page1, render_page2, render_results_page
+from app.state.widgets import begin_script_run
 
 # Page configuration
 st.set_page_config(
@@ -27,6 +28,10 @@ st.markdown(get_css_styles(), unsafe_allow_html=True)
 
 # Initialize session state
 initialize_session_state()
+
+# Rotate the per-run widget render log (app/state/widgets.py): a keyed widget the
+# browser did not draw in the previous run gets its session-state value pushed.
+begin_script_run()
 
 # Main title
 st.markdown('<h1 class="main-header">COOPECON AI Agent Simulation</h1>', unsafe_allow_html=True)
