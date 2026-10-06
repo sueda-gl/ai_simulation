@@ -105,6 +105,10 @@ ordinary Python: no Streamlit, no globals, no writing to session state.
 * **`execute.py`** — `execute(plan) -> {result_key: DataFrame}`. For each sub-run it
   samples the agents, builds a fresh `Engine`, applies the patches and the Page-1
   parameters, runs it, and finally assigns global transaction IDs.
+* **`mc.py`** — Monte Carlo on the same plan: `select_mc_sub_run` picks the sub-run a
+  study repeats, `write_mc_plan_file` / `load_mc_plan_file` hand it to the subprocess,
+  and `run_mc_repetition(sub_run, seed)` replays it with another seed exactly as
+  `execute` would.
 
 ### Stores and reports — `app/state/`, `app/reports/`
 
@@ -127,8 +131,10 @@ ordinary Python: no Streamlit, no globals, no writing to session state.
   `DEFAULT_DECISION_VALUES` from `src/contract/defaults.py`.
 * `results/` — the results page. `results/run_context.py` is the piece to know: see §5.
 * `app/simulation.py` — **the only module that connects `st.session_state` to the
-  seam.** Roughly forty lines of real logic; the rest of the file is the unchanged
-  Monte-Carlo subprocess runner.
+  seam.** Roughly forty lines of real logic; the rest of the file is the Monte-Carlo
+  subprocess runner, which builds the same run plan and hands the subprocess its
+  sub-run as a plan file (`app/seam/mc.py`), so Monte-Carlo runs use exactly a single
+  run's settings.
 
 ---
 
@@ -337,7 +343,9 @@ python scripts/run_mc_study.py --agents 10000 --runs 500 --base-seed 1
 
 `--population-mode` takes `copula`, `documentation` or `baseline`;
 `--income-mode` takes `categorical` or `continuous`; `--decision` may be repeated.
-Results land in `outputs/` (git-ignored).
+`--plan-file F` (both scripts) replays the sub-run the app stored in `F` instead —
+every tab setting of the app's run, with the command line's seed and agent count;
+the app's Monte-Carlo button always passes one. Results land in `outputs/` (git-ignored).
 
 ### From Python: the engine directly
 

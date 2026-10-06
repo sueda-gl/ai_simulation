@@ -13,7 +13,10 @@ Single runs go through the seam:
     vendors / page are stored and the app reruns.
 
 This module is the only place that touches ``st``; the seam and the engine
-never import Streamlit.  ``run_monte_carlo_study`` (subprocess) is unchanged.
+never import Streamlit.  ``run_monte_carlo_study`` runs the scripts as a
+subprocess, handing them the single-run plan's sub-run as a plan file
+(app/seam/mc.py), so a Monte-Carlo repetition uses exactly the settings of a
+single run with the same seed.
 """
 import streamlit as st
 import pandas as pd
@@ -38,6 +41,7 @@ from app.seam.build_plan import (
 )
 from app.seam.config_repo import get_config_repo
 from app.seam.execute import execute, verify_saved_expectations
+from app.seam.mc import select_mc_sub_run, write_mc_plan_file
 from app.seam.snapshot import take_snapshot
 
 
@@ -108,7 +112,21 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         # For comparison mode, use the first mode and show a message
         pop_mode_arg, pop_label = pop_modes[0]
         income_mode_arg, income_label = income_modes[0]
-        
+
+        # The SAME plan a single run builds (every Page-1 / Page-2 setting, each
+        # decision's own income mode, saved configs) - Monte Carlo repeats one of its
+        # sub-runs with seed base_seed + i (app/seam/mc.py; Q-29 fixed 2026-10-07).
+        plan = build_plan_from_session()
+        mc_sub_run = select_mc_sub_run(plan, pop_mode_arg, income_mode_arg)
+        if mc_sub_run.income_mode != income_mode_arg:
+            # e.g. a decision-only run whose tab chose its own income mode
+            income_mode_arg = mc_sub_run.income_mode
+            income_label = income_mode_arg.title()
+        plan_file = write_mc_plan_file(
+            Path(__file__).resolve().parents[1] / 'outputs'
+            / f"mc_plan_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.pkl",
+            mc_sub_run, plan.metadata.custom_decisions)
+
         if len(pop_modes) > 1 or len(income_modes) > 1:
             st.warning(f"⚠️ **Comparison Mode Limitation**: Monte Carlo will run with **{pop_label} + {income_label}** mode only")
             st.info("""
@@ -138,7 +156,8 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             '--base-seed', str(st.session_state.base_seed),
             '--anchor-observed', str(st.session_state.anchor_observed_weight),
             '--population-mode', pop_mode_arg,
-            '--income-mode', income_mode_arg
+            '--income-mode', income_mode_arg,
+            '--plan-file', str(plan_file),
         ]
         
         # Handle multiple decisions for Monte Carlo

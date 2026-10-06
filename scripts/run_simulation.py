@@ -30,8 +30,16 @@ def main():
     parser.add_argument('--income-mode', type=str, default='categorical',
                        choices=['categorical', 'continuous'],
                        help='Income specification mode (default: categorical)')
+    parser.add_argument('--plan-file', type=str, default=None,
+                       help="Run the sub-run stored in this plan file (written by the app's "
+                            "Monte-Carlo runner, app/seam/mc.py) with --seed and --agents: "
+                            "exactly the settings of an app single run. Overrides "
+                            "--population-mode / --income-mode / --anchor-observed / --decision.")
     
     args = parser.parse_args()
+
+    if args.plan_file:
+        return _run_plan_file(args)
     
     # Initialize appropriate orchestrator based on population mode
     print("Initializing simulation...")
@@ -86,62 +94,96 @@ def main():
             single_decision=args.decision
         )
         
-        # Create output directory
-        output_dir = Path(args.output_dir)
-        output_dir.mkdir(exist_ok=True)
-        
-        # Generate output filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Create decision suffix for filename
-        if args.decision is None:
-            decision_suffix = "_all"
-        elif len(args.decision) == 1:
-            decision_suffix = f"_{args.decision[0]}"
-        else:
-            decision_suffix = f"_{len(args.decision)}decisions"
-        filename = f"simulation_seed{args.seed}_agents{args.agents}{decision_suffix}_{timestamp}"
-        
-        # Save results
-        if args.format == 'parquet':
-            output_path = output_dir / f"{filename}.parquet"
-            
-            # Prepare DataFrame for parquet saving
-            # Parquet can't handle complex nested structures, so convert purchase_requests to JSON
-            df_to_save = results_df.copy()
-            if 'purchase_requests' in df_to_save.columns:
-                import json
-                df_to_save['purchase_requests'] = df_to_save['purchase_requests'].apply(
-                    lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x)
-                )
-            
-            df_to_save.to_parquet(output_path, index=False)
-        else:
-            output_path = output_dir / f"{filename}.csv"
-            results_df.to_csv(output_path, index=False)
-        
-        print(f"\n✅ Simulation completed!")
-        print(f"Results saved to: {output_path}")
-        print(f"Shape: {results_df.shape}")
-        
-        # Show summary statistics for donation_default if it was computed
-        if 'donation_default' in results_df.columns:
-            donation_stats = results_df['donation_default'].describe()
-            print(f"\nDonation Default Summary:")
-            print(f"  Mean: {donation_stats['mean']:.4f}")
-            print(f"  Std:  {donation_stats['std']:.4f}")
-            print(f"  Min:  {donation_stats['min']:.4f}")
-            print(f"  Max:  {donation_stats['max']:.4f}")
-        
-        # Show available columns
-        print(f"\nOutput columns: {list(results_df.columns)}")
-        
-        return 0
-        
+        return _save_results(results_df, args)
+
     except Exception as e:
         print(f"Error during simulation: {e}")
         import traceback
         traceback.print_exc()
         return 1
+
+
+def _run_plan_file(args):
+    """One repetition of the app's run plan (app/seam/mc.py): the sub-run's decision
+    patches, Page-1 parameters, default-decision settings and decision list, with the
+    seed and agent count from the command line."""
+    from app.seam.mc import load_mc_plan_file, run_mc_repetition
+
+    sub_run, custom_decisions = load_mc_plan_file(args.plan_file)
+    print("Initializing simulation...")
+    print(f"Plan file: {args.plan_file}")
+    print(f"Population mode: {sub_run.population}")
+    print(f"Income specification: {sub_run.income_mode}")
+    if sub_run.decisions_to_run is None:
+        print("Running all 13 decisions")
+    else:
+        print(f"Running decisions: {', '.join(sub_run.decisions_to_run)}")
+    print(f"Generating {args.agents} agents with seed {args.seed}...")
+    try:
+        results_df = run_mc_repetition(sub_run, args.seed, args.agents,
+                                       custom_decisions=custom_decisions)
+        if args.decision is None and sub_run.decisions_to_run is not None:
+            args.decision = list(sub_run.decisions_to_run)   # output file name only
+        return _save_results(results_df, args)
+    except Exception as e:
+        print(f"Error during simulation: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
+
+def _save_results(results_df, args):
+    """Write the result frame (parquet / csv) and print the summary lines the MC study parses."""
+    # Create output directory
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(exist_ok=True)
+    
+    # Generate output filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Create decision suffix for filename
+    if args.decision is None:
+        decision_suffix = "_all"
+    elif len(args.decision) == 1:
+        decision_suffix = f"_{args.decision[0]}"
+    else:
+        decision_suffix = f"_{len(args.decision)}decisions"
+    filename = f"simulation_seed{args.seed}_agents{args.agents}{decision_suffix}_{timestamp}"
+    
+    # Save results
+    if args.format == 'parquet':
+        output_path = output_dir / f"{filename}.parquet"
+        
+        # Prepare DataFrame for parquet saving
+        # Parquet can't handle complex nested structures, so convert purchase_requests to JSON
+        df_to_save = results_df.copy()
+        if 'purchase_requests' in df_to_save.columns:
+            import json
+            df_to_save['purchase_requests'] = df_to_save['purchase_requests'].apply(
+                lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x)
+            )
+        
+        df_to_save.to_parquet(output_path, index=False)
+    else:
+        output_path = output_dir / f"{filename}.csv"
+        results_df.to_csv(output_path, index=False)
+    
+    print(f"\n✅ Simulation completed!")
+    print(f"Results saved to: {output_path}")
+    print(f"Shape: {results_df.shape}")
+    
+    # Show summary statistics for donation_default if it was computed
+    if 'donation_default' in results_df.columns:
+        donation_stats = results_df['donation_default'].describe()
+        print(f"\nDonation Default Summary:")
+        print(f"  Mean: {donation_stats['mean']:.4f}")
+        print(f"  Std:  {donation_stats['std']:.4f}")
+        print(f"  Min:  {donation_stats['min']:.4f}")
+        print(f"  Max:  {donation_stats['max']:.4f}")
+    
+    # Show available columns
+    print(f"\nOutput columns: {list(results_df.columns)}")
+    
+    return 0
 
 if __name__ == "__main__":
     exit(main())

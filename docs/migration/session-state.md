@@ -211,8 +211,10 @@ One more path exists outside the seam: `n_runs`, `n_agents`, `base_seed`,
 passed to the Monte-Carlo subprocess as command-line arguments by
 `app/simulation.py`. Of these only `n_runs` is not a seam input (the seam reads
 `base_seed` for the Monte-Carlo seed and `anchor_observed_weight` for the donation
-anchor weight). That path is separate from the seam and, as recorded in
-[`rulings-and-quirks.md`](rulings-and-quirks.md), still ignores the tab settings.
+anchor weight). Since 2026-10-07 the Monte-Carlo runner also builds the ordinary run
+plan from the same snapshot and hands its sub-run to the subprocess as a plan file
+(`app/seam/mc.py`), so every tab setting reaches the Monte-Carlo runs exactly as it
+reaches a single run (Q-29 in [`rulings-and-quirks.md`](rulings-and-quirks.md)).
 
 ---
 

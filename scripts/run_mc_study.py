@@ -32,6 +32,11 @@ def main():
     parser.add_argument('--income-mode', type=str, default='categorical',
                        choices=['categorical', 'continuous'],
                        help='Income specification mode (default: categorical)')
+    parser.add_argument('--plan-file', type=str, default=None,
+                       help='Run plan file written by the app (app/seam/mc.py): every run '
+                            'repeats that sub-run - all decision settings, income modes and '
+                            'Page-1 parameters - with seed base_seed + i. Overrides '
+                            '--population-mode / --income-mode / --anchor-observed / --decision.')
     
     args = parser.parse_args()
     
@@ -49,6 +54,8 @@ def main():
     print(f"Population mode: {args.population_mode}")
     print(f"Income specification: {args.income_mode}")
     print(f"Anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
+    if args.plan_file:
+        print(f"Plan file: {args.plan_file} (all decision settings from the app's run plan)")
     if args.decision:
         print(f"Decisions: {', '.join(args.decision)}")
     else:
@@ -73,6 +80,10 @@ def main():
         if args.decision:
             for decision in args.decision:
                 cmd.extend(['--decision', decision])
+        # individual run files go where the study's own outputs go (both default 'outputs')
+        cmd.extend(['--output-dir', str(output_dir)])
+        if args.plan_file:
+            cmd.extend(['--plan-file', args.plan_file])
         
         # Run simulation
         try:
@@ -194,6 +205,7 @@ def main():
         'decision': args.decision,
         'anchor_observed_weight': args.anchor_observed,
         'anchor_predicted_weight': 1 - args.anchor_observed,
+        'plan_file': args.plan_file,
         'seeds_used': list(range(args.base_seed, args.base_seed + args.runs)),
         'timestamp': timestamp
     }
