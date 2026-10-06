@@ -76,6 +76,11 @@ donation_default:
       '5': 1.0
     in_copula: false
     raw_output: false
+  # NOT READ by the engine (ruling R-D3). The final 0-1 rescale is the methodology doc's
+  # section 6 step 4: score_k = max(draw_k, 0) / max_j max(draw_j, 0), the population
+  # MAXIMUM of the floored draws (src/engine/core.py, Pass-1 hook). The doc's "99%" sentence
+  # is a prose summary that its own formula and Stata steps do not use, so percentile_max
+  # stays unwired; income_mode / beta_income_linear here are stale copies, also unread.
   truncation:
     lower_bound: 0
     percentile_max: 0.99
@@ -84,6 +89,49 @@ donation_default:
     - 1
     income_mode: categorical
     beta_income_linear: 0.0256
+  # Doc section 5 rescaling (ruling R-D3): s100 = (x - min) / (max - min) with the min/max of
+  # the 280 participants, fixed here like every other 280-sample statistic the app uses.
+  # predicted_range = r(min) / r(max) of `predict predprosocial` after each final regression
+  # (re-computed from Stata_File_Decision 1_Updated.dta by experiments/d3_doc_reference.py).
+  scaling:
+    observed_range: [0.0, 112.0]
+    predicted_range:
+      categorical: [-0.5084039942, 8.5422410303]
+      continuous: [-1.2783853173, 8.7549317689]
+  # Doc regressor i.studyprogramcategorycat (ruling R-D3). Agents with a `Study Program
+  # Category` trait (Research modes) use it directly; copula agents carry only `Study
+  # Program`, which maps to exactly one category in the 280-participant data.
+  study_program:
+    category_keys:
+      G 2-year Program: Grad2yr
+      UG 3-year Program: UG3yr
+      Law 5-year Program: Law5yr
+      Incoming: Incoming
+    program_to_category:
+      ACME: G 2-year Program
+      AFC: G 2-year Program
+      BAI: UG 3-year Program
+      BEMACS: UG 3-year Program
+      BESS-CLES: UG 3-year Program
+      BIEF: UG 3-year Program
+      BIEM: UG 3-year Program
+      BIG: UG 3-year Program
+      CLEACC: UG 3-year Program
+      CLEAM: UG 3-year Program
+      CLEF: UG 3-year Program
+      CLELI: G 2-year Program
+      CLMG: Law 5-year Program
+      CYBER: G 2-year Program
+      DES-ESS: G 2-year Program
+      DSBA: G 2-year Program
+      EMIT: G 2-year Program
+      FIN: G 2-year Program
+      GIO: G 2-year Program
+      IM: G 2-year Program
+      M: G 2-year Program
+      MM: G 2-year Program
+      PPA: G 2-year Program
+      RI: Incoming
   adjustment:
     shift_value: -4.0
 disclose_income:

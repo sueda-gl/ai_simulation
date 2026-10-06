@@ -519,13 +519,13 @@ def render_categorical_formula():
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
     st.latex(r"""
-    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{income\_q}[quintile_i] + \beta_{study}[study_i] + \beta_{hh} \times HH\_zscore_i
+    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{income\_q}[quintile_i] + \beta_{study}[study_i] + \beta_{hh} \times HH\_raw_i
     """)
     
     # Numerical formula with current values
     st.markdown("**🔢 With Current Coefficient Values:**")
     st.latex(f"""
-    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + \\beta_{{income\\_q}}[quintile_i] + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_zscore_i
+    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + \\beta_{{income\\_q}}[quintile_i] + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_raw_i
     """)
     
     # Show coefficient lookup tables
@@ -586,13 +586,13 @@ def render_continuous_formula():
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
     st.latex(r"""
-    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{linear} \times income\_level_i + \beta_{study}[study_i] + \beta_{hh} \times HH\_zscore_i
+    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{linear} \times income\_level_i + \beta_{study}[study_i] + \beta_{hh} \times HH\_raw_i
     """)
     
     # Numerical formula with current values
     st.markdown("**🔢 With Current Coefficient Values:**")
     st.latex(f"""
-    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + {linear_coeff:.6f} \\times income\\_level_i + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_zscore_i
+    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + {linear_coeff:.6f} \\times income\\_level_i + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_raw_i
     """)
     
     # Show coefficient lookup tables and linear effect
@@ -659,7 +659,7 @@ def render_variable_definitions():
             'β_linear × income_level_i',
             'β_study[study_i]',
             'β_hh',
-            'HH_zscore_i'
+            'HH_raw_i'
         ],
         'Definition': [
             'Predicted prosocial behavior for agent i',
@@ -668,8 +668,8 @@ def render_variable_definitions():
             'Income quintile effect (Q1, Q2, Q3 vs Q4_Q5 reference) - Categorical mode',
             'Linear income effect (coefficient × income level 1-5) - Continuous mode',
             'Study programme effect (Incoming, Law5yr, UG3yr vs Grad2yr reference)',
-            'Honesty-Humility coefficient (effect per z-score unit)',
-            'Standardized Honesty-Humility score: (HH_raw - 3.3922) / 0.5587'
+            'Honesty-Humility coefficient (effect per point of the raw score)',
+            'Raw Honesty-Humility score (not standardized), as in the methodology document'
         ]
     }
     
@@ -680,7 +680,7 @@ def render_variable_definitions():
     st.markdown("""
     - **Reference categories** have coefficient = 0.0 and serve as baseline for comparison
     - **Income Level Mapping (Categorical)**: 1→Q1, 2→Q2, 3→Q3, 4&5→Q4_Q5
-    - **Z-score standardization** ensures Honesty-Humility has mean=0, std=1 in original data
+    - **Honesty-Humility** enters as its raw score (the regression coefficient is per raw point)
     - **Final prediction** is sum of all terms: ŷᵢ = β₀ + Σ(effects)
     """)
     
@@ -695,7 +695,7 @@ def render_variable_definitions():
         4. **Anchor Computation**: anchor = 0.75 × observed + 0.25 × predicted
         5. **Stochastic Component**: (Optional) draw ~ Normal(anchor, σ)
         6. **Truncation**: Floor negative values at 0
-        7. **Final Scaling**: Convert to [0,1] proportion for donation rate
+        7. **Final Scaling**: Divide by the population maximum of the floored draws → [0,1] donation rate
         """)
         
         st.markdown("**📊 Scaling Constants:**")
@@ -707,7 +707,7 @@ def render_variable_definitions():
             ],
             'Range': [
                 '[0, 112] → [0, 100]',
-                '[-4.0778, 7.2030] → [0, 100]',
+                '280-sample [min, max] → [0, 100] (categorical [-0.5084, 8.5422]; continuous [-1.2784, 8.7549])',
                 'observed: 0.75, predicted: 0.25'
             ]
         }
@@ -773,13 +773,13 @@ def render_categorical_formula_specific():
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
     st.latex(r"""
-    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{income\_q}[quintile_i] + \beta_{study}[study_i] + \beta_{hh} \times HH\_zscore_i
+    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{income\_q}[quintile_i] + \beta_{study}[study_i] + \beta_{hh} \times HH\_raw_i
     """)
     
     # Numerical formula with current values
     st.markdown("**🔢 With Current Coefficient Values:**")
     st.latex(f"""
-    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + \\beta_{{income\\_q}}[quintile_i] + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_zscore_i
+    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + \\beta_{{income\\_q}}[quintile_i] + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_raw_i
     """)
     
     # Show coefficient lookup tables
@@ -841,13 +841,13 @@ def render_continuous_formula_specific():
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
     st.latex(r"""
-    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{linear} \times income\_level_i + \beta_{study}[study_i] + \beta_{hh} \times HH\_zscore_i
+    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{linear} \times income\_level_i + \beta_{study}[study_i] + \beta_{hh} \times HH\_raw_i
     """)
     
     # Numerical formula with current values
     st.markdown("**🔢 With Current Coefficient Values:**")
     st.latex(f"""
-    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + {linear_coeff:.6f} \\times income\\_level_i + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_zscore_i
+    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + {linear_coeff:.6f} \\times income\\_level_i + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_raw_i
     """)
     
     # Show coefficient lookup tables and linear effect

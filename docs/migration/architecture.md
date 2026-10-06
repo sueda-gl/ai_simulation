@@ -229,8 +229,9 @@ The run is two passes over the agents:
 
 * **Pass 1** — for each agent, take a base seed from `rng_pass1` and draw the income.
   Then compute the population statistics: income median, income mean and standard
-  deviation, and the extra population-level statistics Decisions 1, 2 and 4 need
-  (`_compute_population_stats`).
+  deviation, and the extra population-level statistics Decisions 1, 2, 3 and 4 need
+  (`_compute_population_stats`). Decision 3's is the maximum of every agent's floored
+  donation draw (ruling R-D3), found by replaying each agent's own Decision-3 stream.
 * **Pass 2** — for each agent, rebuild the income from the same base seed, then run
   the selected decisions in `DECISION_ORDER` order. Each decision's output dictionary
   is merged into the agent's state, so a later decision can read what an earlier one

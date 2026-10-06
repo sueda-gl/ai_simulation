@@ -215,6 +215,26 @@ class Engine:
                 self.simulation_config['dd_cont_stats'] = dd_cont_stats
                 log(f"Computed continuous DD stats: mean={dd_cont_stats['mean']:.6f}, sd={dd_cont_stats['sd']:.6f}")
 
+        # Decision 3 population maximum (ruling R-D3): the methodology doc's section 6
+        # step 4 rescales every agent's floored draw by the population maximum,
+        # score_k = max(draw_k, 0) / max_j max(draw_j, 0), in every mode. The maximum must
+        # be known before Pass 2, because Decisions 6 and 13 read donation_default inside
+        # the agent loop, so - like Decision 4 below - every agent's Pass-2 draw is replayed
+        # here with its own decision RNG stream (base seed + decision_index * 1000).
+        self.simulation_config.pop('donation_population_max', None)
+        from src.decisions.donation_default import (compute_donation_population_max,
+                                                    configured_default_value)
+        if ('donation_default' in decisions_to_run
+                and 'donation_default' in self.decision_modules
+                and configured_default_value(self.simulation_config) is None):
+            donation_max = compute_donation_population_max(
+                agents_df, self._decision_params('donation_default'), self.simulation_config,
+                pop_context=self.pop_context,
+                agent_base_seeds=[int(s) for s in agent_base_seeds],
+                decision_offset=decision_index['donation_default'] * 1000)
+            self.simulation_config['donation_population_max'] = donation_max
+            log(f"Computed Decision 3 population max of floored draws: {donation_max:.6f} (0-100 scale)")
+
         # Decision 4 population stats (min/max/std of the four mechanism scores;
         # egen min/max/std are population-level operations). The stochastic aggregates
         # replicate each agent's decision RNG stream, so pass the Pass-1 base seeds and

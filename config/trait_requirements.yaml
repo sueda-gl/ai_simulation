@@ -9,7 +9,13 @@ donation_default:
   # Predicted prosocial comes from regression on these traits:
   - Honesty_Humility                        # continuous variable (hh in regression)
   - Assigned Allowance Level                # allocated income variable from experiment
-  - Study Program                           # study program indicator
+  - Study Program                           # study program indicator (copula agents: mapped to its category)
+  - Study Program Category                  # doc regressor i.studyprogramcategorycat (ruling R-D3).
+                                            # Not in the fitted copula (config/trait_model.pkl); copula
+                                            # agents derive it from Study Program via
+                                            # decisions.yaml donation_default.study_program.program_to_category.
+                                            # A retrain would sample it separately from Study Program;
+                                            # donation_default prefers this column when present.
   - Group_experiment                        # experimental group indicator (use experiment version)
   - TWT+Sospeso [=AW2+AX2]{Periods 1+2}    # experimental prosocial score for 75% anchor weight
 
