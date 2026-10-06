@@ -609,7 +609,7 @@ def render_categorical_di_formula(config):
     
     # Show full expanded formula (per professor's specification - no separate "direct effects" line)
     st.latex(f"""
-    DiscloseIncome_i = \\beta_{{income\\_q}}[quintile_i] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00680238 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
+    DiscloseIncome_i = \\beta_{{income\\_q}}[quintile_i] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
     
     # Show level-specific intercepts table
@@ -617,11 +617,11 @@ def render_categorical_di_formula(config):
     intercept_data = {
         'Quintile': ['Q1 (€12)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)'],
         'β_income_q': [
-            '0.0089007',
-            '0.0055352',
-            '0.0023109',
-            '-0.0032216',
-            '-0.0145324'
+            '0.0089009',
+            '0.0055353',
+            '0.0023108',
+            '-0.0032214',
+            '-0.0145326'
         ]
     }
     intercept_df = pd.DataFrame(intercept_data)
@@ -639,7 +639,7 @@ def render_continuous_di_formula(config):
     
     # Show full expanded formula only (per professor's specification)
     st.latex(f"""
-    DiscloseIncome_i = [\\beta_0 = {beta0}] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00680238 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}} - 0.008988 \\times z_{{I_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
+    DiscloseIncome_i = [\\beta_0 = {beta0}] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00674934 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}} - 0.008988 \\times z_{{I_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
     st.markdown("z_I: Z-scored actual income of the agent (continuous)")
 

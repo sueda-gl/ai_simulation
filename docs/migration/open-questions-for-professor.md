@@ -3,9 +3,9 @@
 The migration split the logic from the screens. It did **not** re-derive the model.
 Along the way seven things turned up that look like modelling decisions rather than
 programming decisions, so they were left exactly as they were and written down here.
-Three are still open (items 1–3). Items 4–7 have since been ruled on by the owner and
-applied, and are kept below as records; the one thing left from item 7 is a data-file
-note, at the end.
+Two are still open (items 1 and 3). Item 2 and items 4–7 have since been resolved or
+ruled on by the owner and applied, and are kept below as records; the one thing left
+from item 7 is a data-file note, at the end.
 
 Each open item says three things: **what the code does today**, **why it looks
 suspicious**, and **what would change if it were altered**. None of them is a bug the
@@ -57,9 +57,26 @@ authoritative vendor score?
 
 ---
 
-## 2. Three frozen Decision 1 reference files that disagree
+## 2. Three frozen Decision 1 reference files that disagree — RESOLVED 2026-10-06 (R-D1)
 
-**What the code does today.** `data/` holds three files that all claim to be
+**Resolved; no longer open.** The reference for Decision 1 is the professor's corrected
+run: `Stata_File_Decision 1_Updated.dta`, documented in "Decision 1 - Disclosure of
+Income 110226_Final.docx" (`disclose_categorical` = 167 / 280, `disclose_cont` =
+169 / 280; the old error model is kept in that file's `*_err` columns and is not the
+reference). Its corrected columns are frozen in `data/stata_d1_verification.csv`, and
+`tests/test_disclose_income_stata.py` asserts the model reproduces both columns
+280 / 280 (and `fs_deterministic_*` to 1e-5) with β0 = 0.1, the Stata value. The app's
+own research default stays β0 = 0.75 (owner ruling R-D1; see Q-61 in
+`rulings-and-quirks.md`).
+
+The three files below — `data/stata_step5_results.csv`, `data/stata_results.csv`,
+`data/python_verification.csv` — and `stata/step5_full_pipeline.do` describe the
+**old error model**. They are kept, unchanged, as history only; nothing reads them at
+run time and no test uses them. `data/stata_incomes.csv` equals the `income` column of
+the corrected `.dta` (to 1.5 × 10⁻¹¹), so the frozen income realization is the
+professor's own. The record of the original question follows.
+
+**What the code did before.** `data/` holds three files that all claim to be
 Decision 1 (disclose income) results for the same 280 participants. They disagree,
 and the repository takes no position on which is right:
 

@@ -21,10 +21,10 @@ Equation 1: Prosocial Behavior (PB_i) - Mediating Variable
 
 Equation 2: Disclose Income (DI_i) - Dependent Variable
     For CONTINUOUS mode:
-        direct_effect = 0.00680238*z_E + 0.0173732*z_N + 0.0163905*z_HH - 0.008988*z_I
+        direct_effect = 0.00674934*z_E + 0.0173732*z_N + 0.0163905*z_HH - 0.008988*z_I
     
     For CATEGORICAL mode (level-specific intercepts, NO income coefficient):
-        direct_effect = intercept[level] + 0.00680238*z_E + 0.0173732*z_N + 0.0163905*z_HH
+        direct_effect = intercept[level] + 0.00674934*z_E + 0.0173732*z_N + 0.0163905*z_HH
     
     z_direct_effect = (direct_effect - mean_280) / sd_280  # Using fixed stats (categorical-specific)
     
@@ -40,11 +40,11 @@ from typing import Dict, Any, Optional, List
 # Level-specific intercepts for categorical mode (from regression in documentation)
 # These replace the income coefficient in categorical mode
 CATEGORICAL_INTERCEPTS = {
-    1: 0.0089007,                      # Base intercept for level 1
-    2: 0.0089007 - 0.0033655,          # = 0.0055352
-    3: 0.0089007 - 0.0065898,          # = 0.0023109
-    4: 0.0089007 - 0.0121223,          # = -0.0032216
-    5: 0.0089007 - 0.0234331,          # = -0.0145324
+    1: 0.0089009,                      # Base intercept for level 1
+    2: 0.0089009 - 0.0033656,          # = 0.0055353
+    3: 0.0089009 - 0.0065901,          # = 0.0023108
+    4: 0.0089009 - 0.0121223,          # = -0.0032214
+    5: 0.0089009 - 0.0234335,          # = -0.0145326
 }
 
 
@@ -222,13 +222,13 @@ def compute_pass1_values(
             intercept = cat_intercepts.get(f'level_{level}', 
                         cat_intercepts.get(str(level),
                         cat_intercepts.get(level, 
-                        CATEGORICAL_INTERCEPTS.get(level, 0.0089007))))
+                        CATEGORICAL_INTERCEPTS.get(level, 0.0089009))))
         else:
-            intercept = CATEGORICAL_INTERCEPTS.get(level, 0.0089007)
+            intercept = CATEGORICAL_INTERCEPTS.get(level, 0.0089009)
         
         direct_effect = (
             intercept +
-            eq2_coeffs.get('extraversion', 0.00680238) * z_extraversion +
+            eq2_coeffs.get('extraversion', 0.00674934) * z_extraversion +
             eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
             eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility
             # NO income coefficient in categorical mode!
@@ -248,7 +248,7 @@ def compute_pass1_values(
             z_income = 0.0
         
         direct_effect = (
-            eq2_coeffs.get('extraversion', 0.00680238) * z_extraversion +
+            eq2_coeffs.get('extraversion', 0.00674934) * z_extraversion +
             eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
             eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility +
             eq2_coeffs.get('income', -0.008988) * z_income
@@ -474,18 +474,18 @@ def disclose_income_stochastic(
     if is_continuous and simulation_config and 'di_cont_de_stats' in simulation_config:
         de_stats = simulation_config['di_cont_de_stats']
     else:
-        de_stats = composite_z.get('weighted_disclosure_categorical', {'mean': 0, 'sd': 0.025040462})
+        de_stats = composite_z.get('weighted_disclosure_categorical', {'mean': 0, 'sd': 0.0250386349})
     de_mean = de_stats.get('mean', 0)
-    de_sd = de_stats.get('sd', 0.025040462)
+    de_sd = de_stats.get('sd', 0.0250386349)
     if de_sd > 0:
         z_direct_effect = (direct_effect - de_mean) / de_sd
     else:
         z_direct_effect = direct_effect
     
     # z_anchored_pb using fixed stats from original 280 (uses stochastic value)
-    ap_stats = composite_z.get('anchored_pb', {'mean': 0, 'sd': 0.7984211971})
+    ap_stats = composite_z.get('anchored_pb', {'mean': 0, 'sd': 0.7971466830})
     ap_mean = ap_stats.get('mean', 0)
-    ap_sd = ap_stats.get('sd', 0.7984211971)
+    ap_sd = ap_stats.get('sd', 0.7971466830)
     if ap_sd > 0:
         z_anchored_pb = (stochastic_anchored_pb - ap_mean) / ap_sd
     else:
@@ -601,7 +601,7 @@ def compute_continuous_de_stats(agents_df, all_incomes: List[float], di_params: 
             z_income = 0.0
         
         de = (
-            eq2_coeffs.get('extraversion', 0.00680238) * z_e +
+            eq2_coeffs.get('extraversion', 0.00674934) * z_e +
             eq2_coeffs.get('neuroticism', 0.0173732) * z_n +
             eq2_coeffs.get('honesty_humility', 0.0163905) * z_hh +
             eq2_coeffs.get('income', -0.008988) * z_income
