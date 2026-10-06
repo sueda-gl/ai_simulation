@@ -46,7 +46,10 @@ CATEGORIES = (
 #: reviewed by hand and listed here so a *new* one fails the test.
 #:
 #: ``key``        - the parameter of ``default_config.save_to_persistent_storage``
-#:                  / ``restore_from_persistent_storage``, and the loop variable
+#:                  / ``restore_from_persistent_storage``; the parameter of the
+#:                  Decision-4 download helper ``transaction_viz._rtd_excel_download``
+#:                  (``rtd_dl_{mech}{chart_suffix}``, ``rtd_dl_aggregation{chart_suffix}``,
+#:                  ``rtd_model_download[_combined]{chart_suffix}``); and the loop variable
 #:                  of the ``dd_`` / ``di_`` / ``rtd_`` prefix resets and of the
 #:                  "Clear Results" wipe.
 #: ``k``          - the per-category purchasing-limit key on Page 1
@@ -346,23 +349,24 @@ _DD_MIRRORS = _rows((
 
 _RTD_MIRRORS = _rows((
     ("rtd_income_mode", "Continuous only"),
-    ("rtd_sigma_strategy", "overall", "decision-wide: one strategy for all four mechanisms"),
+    ("rtd_sigma_strategy", "overall", "decision-wide: one strategy for all five mechanisms"),
     ("rtd_scale_factor", 1.0, "decision-wide"),
     ("rtd_quintile_scale_factors", {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0}),
     ("rtd_intercept_{mech}", "<config intercepts[mech], else 0.0>",
-     "mech in ttp / loyalty / wtp / risk_taking"),
-    ("rtd_anchor_{mech}", "<mechanism anchor, else 'continuous'>"),
+     "mech in ttp / loyalty / wtp / risk_taking / flexibility"),
+    ("rtd_flex_observed_weight", "<config flexibility_anchor.observed_weight, else 0.25>",
+     "Flexibility Anchor Mix W_OFlex (September 2026); W_CFlex = 1 - W_OFlex"),
+    ("rtd_aggregation_enabled", True,
+     "Section-6 rank aggregation; always on - no widget renders it (September 2026)"),
+    ("rtd_sigma_enabled", True, "R18; also read by the saved-config store (get_current_rejected_transaction_params)"),
+    ("rtd_sigma_in_copula", False, "also read by the saved-config store"),
 ), RTD_INIT, "page2-mirror", engine_input=True)
-
-_RTD_SIGMA_TOGGLES = _rows((
-    ("rtd_sigma_enabled", True, "R18; written by the tab, read back only through the seam snapshot"),
-    ("rtd_sigma_in_copula", False, "written by the tab, read back only through the seam snapshot"),
-), RTD_INIT, "page2-mirror", engine_input=True, write_only=True)
 
 _RTD_DISPLAY = (
     _row("rtd_run_element", None, RTD_INIT, "page2-mirror",
-         notes="which Decision-4 element the per-element Run button selected; "
-               "display and export only - the model always computes all four."),
+         notes="which Decision-4 Run button started the run: an element, 'aggregation' "
+               "(Run Integrated Default List Only) or None (whole decision); display and "
+               "export only - the model always computes every element."),
 )
 
 
@@ -432,11 +436,26 @@ _RTD_WIDGETS = _rows((
     ("rtd_tab_sigma_strategy", "<rtd_sigma_strategy>"),
     ("rtd_tab_sigma_q{level}", "<rtd_quintile_scale_factors[level]>"),
     ("rtd_tab_intercept_{mech}", "<rtd_intercept_{mech}>"),
-    ("rtd_tab_anchor_{mech}", "<rtd_anchor_{mech}>"),
+    ("rtd_tab_flex_observed_weight", "<rtd_flex_observed_weight>", "Flexibility Anchor Mix slider"),
     ("rtd_reset_btn", WIDGET),
     ("rtd_reset_{mech}_btn", WIDGET, "per-element reset"),
     ("rtd_run_{mech}_btn", WIDGET, "per-element run"),
+    ("rtd_run_aggregation_btn", WIDGET, "Run Integrated Default List Only"),
+    ("rtd_tab_unselect_btn", WIDGET, "unselects a saved Decision-4 configuration"),
+    ("rtd_subtabs", WIDGET, "st.container key of the sub-decision tabs (CSS hook for the bold labels)"),
 ), RTD_INIT + " / render_rejected_transaction_tab", "page2-widget", is_widget=True)
+
+#: The whole-decision "Reset Config to Defaults" of the Disclose Income / Documents
+#: tabs is applied at the TOP of the next script run, before any of the tab's widgets
+#: is instantiated (September 2026); the button only raises this flag.
+_RESET_PENDING_FLAGS = (
+    _row("_di_reset_to_defaults_pending", True,
+         "decision_tabs.disclose_income.reset_to_defaults", "page2-mirror",
+         notes="consumed (deleted) by apply_pending_reset at the top of the Disclose Income tab"),
+    _row("_dd_reset_to_defaults_pending", True,
+         "decision_tabs.disclose_documents.reset_to_defaults", "page2-mirror",
+         notes="consumed (deleted) by apply_pending_reset at the top of the Disclose Documents tab"),
+)
 
 _PAGE2_WIDGETS = _rows((
     ("page2_tab_income_spec_mode", "<income_spec_mode mapped onto the radio options>"),
@@ -444,6 +463,7 @@ _PAGE2_WIDGETS = _rows((
     ("page2_select_all_checkbox", "<page2_select_all_state>"),
     ("clear_donation_config", WIDGET),
     ("clear_disclose_income_config", WIDGET),
+    ("clear_rejected_transaction_config", WIDGET),
     ("run_complete_simulation", WIDGET),
     ("run_complete_simulation_disabled", WIDGET, "the disabled twin of the button above"),
 ), P2_INIT + " / page2_decisions.render_page2", "page2-widget", is_widget=True)
@@ -547,10 +567,13 @@ _RESULT_WIDGETS = _rows((
     ("inline_select_{result_key}", WIDGET, "donation 'Use This Config' radio"),
     ("di_inline_select_{result_key}", WIDGET),
     ("dd_inline_select_{result_key}", WIDGET),
+    ("rtd_inline_select_{result_key}", WIDGET, "Decision-4 'Use This Config', under its results"),
+    ("rtd_inline_unselect_{result_key}", WIDGET, "the selected cell's unselect button"),
     ("clear_conflict_{decision_name}_{conflicting}", WIDGET,
      "shown when a saved config's seed clashes with another one"),
     ("clear_di_selection", WIDGET),
     ("clear_dd_selection", WIDGET),
+    ("clear_rtd_selection", WIDGET),
     ("clear_selection_top", WIDGET),
     ("save_single_config", WIDGET),
     ("run_complete_from_results", WIDGET),
@@ -562,8 +585,6 @@ _RESULT_WIDGETS = _rows((
     ("dd_raw_hist_{title_suffix}", WIDGET),
     ("rejected_transaction_option_chart", WIDGET),
     ("{decision_name}_option_{idx}_chart", WIDGET),
-    ("rtd_dl_{mech}{chart_suffix}", WIDGET, "per-element Decision-4 download"),
-    ("rtd_model_download{chart_suffix}", WIDGET),
     ("rtd_export_section_download", WIDGET),
     ("vendor_choice_weights_chart", WIDGET),
     ("show_all_proximity_matrix", WIDGET),
@@ -646,8 +667,9 @@ _DEFAULTS = (
 REGISTRY: Tuple[KeySpec, ...] = (
     _NAVIGATION
     + _PAGE1_WIDGETS + _PAGE1_INLINE_WIDGETS + _PAGE1_MIRRORS
-    + _PAGE2_MIRRORS + _DI_MIRRORS + _DD_MIRRORS + _RTD_MIRRORS + _RTD_SIGMA_TOGGLES + _RTD_DISPLAY
+    + _PAGE2_MIRRORS + _DI_MIRRORS + _DD_MIRRORS + _RTD_MIRRORS + _RTD_DISPLAY
     + _LEGACY_COEFF_INPUTS + _DONATION_WIDGETS + _DI_WIDGETS + _DD_WIDGETS + _RTD_WIDGETS
+    + _RESET_PENDING_FLAGS
     + _PAGE2_WIDGETS + _RUN_BUTTONS
     + _TAB_PERSISTENCE + _SAVED_CONFIG + _RUN_FLAGS
     + _RESULTS + _RESULT_WIDGETS + _DEFAULTS

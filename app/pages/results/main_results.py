@@ -41,7 +41,8 @@ from app.pages.results.decision_visualizations import (
 from app.pages.results.config_selection import (
     render_configuration_selection_ui,
     render_disclose_income_config_selection_ui,
-    render_disclose_documents_config_selection_ui
+    render_disclose_documents_config_selection_ui,
+    render_rejected_transaction_config_selection_ui
 )
 
 
@@ -93,6 +94,19 @@ def get_decision_config_display(decision_name):
         if not result['has_config']:
             result['has_config'] = True
             result['income_mode'] = st.session_state.get('dd_income_mode', 'Categorical only')
+            result['source'] = 'Page 2 Settings'
+    elif decision_name == 'rejected_transaction_defaults':
+        config = get_decision_config('rejected_transaction_defaults')
+        if config:
+            result['has_config'] = True
+            income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+            population_mode = config.get('population_mode')
+            result['income_mode'] = f"{population_mode} + {income_mode}" if population_mode else income_mode
+            result['source'] = 'Saved Configuration'
+            result['is_saved'] = True
+        if not result['has_config']:
+            result['has_config'] = True
+            result['income_mode'] = st.session_state.get('rtd_income_mode', 'Continuous only')
             result['source'] = 'Page 2 Settings'
 
     return result
@@ -187,17 +201,20 @@ def _render_overview_section(results_dict, ctx, has_explicit_donation_config):
             if donation_col in df.columns:
                 st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
             elif 'rtd_choice_length' in df.columns:
-                # Decision 4 model run: element-aware headline metric
+                # Decision 4 model run: run-shape-aware headline metric (a per-element
+                # run of a ranking element has none - professor 2026-09)
                 from app.components import rtd_overview_metric
                 rtd_label, rtd_value = rtd_overview_metric(df)
-                st.metric(rtd_label, rtd_value)
+                if rtd_label:
+                    st.metric(rtd_label, rtd_value)
 
         if 'rtd_choice_length' in df.columns and 'donation_default' not in df.columns:
             st.caption(f"📊 Mode: {mode_name.title()}")
         else:
             st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
 
-        # Check if we should enable selection for individual donation runs
+        # Check if we should enable selection for individual donation runs (Decision 4's
+        # "Use This Config" renders under its detailed results, not in this overview)
         enable_selection = ctx.is_individual_run('donation_default')
 
         show_overview(
@@ -319,9 +336,10 @@ def render_single_run_results():
 
                 # Single decision - show content directly (better UX)
                 st.markdown(f'<h4 class="subsection-header">✅ {decision_title} (Custom Parameters)</h4>', unsafe_allow_html=True)
-                st.success("This decision was configured with custom parameters on Page 2")
+                st.success("This decision was configured with custom parameters")
                 # Show selected config badge for relevant decisions
-                if decision in ['donation_default', 'disclose_income', 'disclose_documents']:
+                if decision in ['donation_default', 'disclose_income', 'disclose_documents',
+                                'rejected_transaction_defaults']:
                     render_decision_config_badge(decision)
 
                 # Show decision-specific results if available
@@ -336,7 +354,7 @@ def render_single_run_results():
                             render_all_modes_comparison(results_dict, ctx)
                         elif ctx.is_compare_both:
                             render_income_comparison(results_dict, ctx)
-                    elif is_comparison_mode and decision == "rejected_transaction_defaults":
+                    elif is_comparison_mode and decision == "rejected_transaction_defaults" and is_individual_decision_run:
                         # Decision 4: one tab per configuration, mirroring the other decisions' comparison labels
                         from app.pages.results.visualizations.transaction_viz import render_rtd_comparison_results
                         if not render_rtd_comparison_results(results_dict, decision):
@@ -428,6 +446,10 @@ def render_single_run_results():
 
     # Disclose Documents configuration selection UI
     render_disclose_documents_config_selection_ui(results_dict, ctx)
+
+    # Decision 4 (Rejected Transaction Defaults) configuration selection UI: selected
+    # configuration + "Run Complete Simulation", like the decisions above
+    render_rejected_transaction_config_selection_ui(results_dict, ctx)
 
     # Get DataFrame for individual agent analysis: the frame the run's own shape
     # points at (compare-all / compare-both keys), falling back to any available one

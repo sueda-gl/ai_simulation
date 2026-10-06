@@ -193,7 +193,7 @@ session-state values that can change a number.
 | Donation (3) | `sigma_in_copula`, `sigma_in_research`, `sigma_coefficient`, `anchor_observed_weight`, `donation_sigma_strategy`, `donation_quintile_scale_factors`, `donation_adjustment_shift`, `donation_coeff_{name}_{cat\|cont}` |
 | Disclose Income (1) | `di_intercept`, `di_wopb`, `di_wpb`, `di_income_mode`, `di_sigma_enabled`, `di_sigma_in_copula`, `di_sigma_strategy`, `di_scale_factor`, `di_quintile_scale_factors` |
 | Disclose Documents (2) | `dd_intercept`, `dd_income_mode`, `dd_sigma_enabled`, `dd_sigma_in_copula`, `dd_sigma_strategy`, `dd_scale_factor`, `dd_quintile_scale_factors` |
-| Rejected Transaction Defaults (4) | `rtd_income_mode`, `rtd_intercept_{mech}`, `rtd_anchor_{mech}`, `rtd_sigma_enabled`, `rtd_sigma_in_copula`, `rtd_sigma_strategy`, `rtd_scale_factor`, `rtd_quintile_scale_factors` |
+| Rejected Transaction Defaults (4) | `rtd_income_mode`, `rtd_intercept_{mech}` (five elements), `rtd_flex_observed_weight`, `rtd_aggregation_enabled`, `rtd_sigma_enabled`, `rtd_sigma_in_copula`, `rtd_sigma_strategy`, `rtd_scale_factor`, `rtd_quintile_scale_factors` |
 | Default decisions | `_persistent_defaults`, `{decision_name}_default_probability_y`, `_default_params`, `_default_selection`, `_priority_template`, `_default_value`, `final_donation_rate_default_value` |
 | Saved configs | `selected_decision_configs` |
 
@@ -230,10 +230,12 @@ owner can decide.
 | `individual_results` | same | seeded to `{}`; the per-decision results now live in `simulation_results` |
 | `_default_params_initialized` | `models.initialize_default_decision_parameters` | a debug marker; the comment above it already says the logic no longer branches on it |
 
-Three more keys are written and never read **inside `app/`** — but they are not
-candidates, because the seam reads them from the snapshot: `donation_adjustment_shift`,
-`rtd_sigma_enabled`, `rtd_sigma_in_copula`. The registry marks them
-`write_only=True, engine_input=True`, which is exactly that situation.
+One more key is written and never read **inside `app/`** — but it is not a
+candidate, because the seam reads it from the snapshot: `donation_adjustment_shift`.
+The registry marks it `write_only=True, engine_input=True`, which is exactly that
+situation. (`rtd_sigma_enabled` / `rtd_sigma_in_copula` used to be in the same
+position; since the September 2026 Decision 4 "Use This Config" port the saved-config
+store reads them too.)
 
 One family is stale in the other direction. `clear_input_field_cache()` in the
 Donation tab deletes sixteen `donation_coeff_*_input` keys when the income mode
@@ -266,8 +268,8 @@ disappears, and the registry's initialisers are what put it back.
 
 | Operation | What it deletes | Then |
 |---|---|---|
-| A decision tab's **Reset to research defaults** | every key starting with `di_`, `dd_` or `rtd_` (whichever tab), plus that tab's persistence dict | calls the tab's `initialize_*_session_state()` |
-| Decision 4's per-element reset | only `rtd_intercept_{mech}`, `rtd_anchor_{mech}` and their two widget keys, plus those entries in the persistence dict | same; σ is decision-wide and deliberately untouched |
+| A decision tab's **Reset to research defaults** | every key starting with `di_`, `dd_` or `rtd_` (whichever tab), plus that tab's persistence dict. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists (September 2026) | calls the tab's `initialize_*_session_state()` (DI/DD: re-seeds the widget keys from the defaults) |
+| Decision 4's per-element reset | only `rtd_intercept_{mech}` and its widget key (for Flexibility also `rtd_flex_observed_weight` and its slider key), plus those entries in the persistence dict | same; σ is decision-wide and deliberately untouched |
 | **Clear Results** on the results page | *every* key in `st.session_state` | calls `models.initialize_session_state()` and stays on the results page |
 
 The prefix list lives in the registry as `PREFIX_DELETE_PREFIXES` and the test
