@@ -162,7 +162,6 @@ def render_probability_default_config(decision_name, default_value):
             slider_label,
             min_value=0.0,
             max_value=1.0,
-            value=current_value,
             step=0.01,
             help=slider_help,
             key=prob_key,
@@ -322,7 +321,6 @@ def render_radio_default_config(decision_name, default_value):
             "Default Option",
             options=option_codes,
             format_func=lambda x: option_names.get(x, x),
-            index=default_index,
             help="Choose the default option for this decision",
             key=selection_key,  # Streamlit manages value automatically via session state
             on_change=save_to_persistent_storage,
@@ -368,7 +366,6 @@ def render_checkbox_default_config(decision_name, default_value):
             # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
             is_selected = st.checkbox(
                 f"{param_info['name']} - {param_info['description']}",
-                value=st.session_state[checkbox_key],  # Read directly from key (no fallback)
                 key=checkbox_key,
                 on_change=save_to_persistent_storage,
                 args=(checkbox_key,)
@@ -446,7 +443,6 @@ def render_numeric_default_config(decision_name, default_value):
                 "Default Value",
                 min_value=0.0,
                 max_value=1.0,
-                value=st.session_state[value_key],  # Read directly from key (no fallback)
                 step=step_size,
                 format=format_str,
                 help="Set the default value for this decision",
@@ -461,7 +457,6 @@ def render_numeric_default_config(decision_name, default_value):
             value = st.number_input(
                 "Default Value",
                 min_value=0.0,
-                value=float(st.session_state[value_key]),  # Read directly from key (no fallback)
                 step=0.1,
                 help="Set the default value for this decision",
                 key=value_key,  # Streamlit manages value automatically via session state
@@ -516,7 +511,6 @@ def render_final_donation_rate_with_config(default_value, config=None):
             "Default Value",
             min_value=0.0,
             max_value=1.0,
-            value=st.session_state[value_key],  # Read from session state (user modified)
             step=0.01,
             format="%.4f",
             help="This value is synced from the selected donation configuration. You can adjust it if needed.",

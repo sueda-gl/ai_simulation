@@ -189,7 +189,6 @@ def render_di_sigma_controls(mode_suffix: str):
         "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-        index=0 if strategy_val == 'overall' else 1,
         key=strategy_widget_key,
         on_change=on_strategy_change,
         horizontal=True
@@ -229,7 +228,6 @@ def render_di_sigma_controls(mode_suffix: str):
             "σ Coefficient (multiplier)",
             min_value=0.0,
             max_value=2.0,
-            value=coeff_val,
             step=0.01,
             help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
             key=coeff_widget_key,
@@ -290,7 +288,6 @@ def render_di_sigma_controls(mode_suffix: str):
                     f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
                     min_value=0.0,
                     max_value=2.0,
-                    value=q_val if q_val != 0.0 else 1.0,
                     step=0.01,
                     key=widget_key,
                     on_change=lambda l=level: save_to_disclose_income_storage(
@@ -417,7 +414,6 @@ def render_disclose_income_tab():
         )
         sigma_in_copula = st.checkbox(
             "Add Normal(anchor, σ) draw to Copula runs",
-            value=copula_val,
             help="When enabled, Copula mode will also use the stochastic component",
             key="di_tab_sigma_in_copula",
             on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_in_copula', 'di_sigma_in_copula')
@@ -434,7 +430,6 @@ def render_disclose_income_tab():
         )
         sigma_enabled = st.checkbox(
             "Use Normal(anchor, σ) draw in Research Specification mode",
-            value=res_val,
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="di_tab_sigma_enabled",
             on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled', 'sigma_enabled')
@@ -469,7 +464,6 @@ def render_disclose_income_tab():
             "W_OPB: Observed vs Calculated prosocial behavior weight",
             min_value=0.0,
             max_value=1.0,
-            value=float(wopb_val),
             step=0.01,
             help="anchored_PB = WOPB×Observed_PB + (1-WOPB×Calculated_PB based on Honesty-Humility, Agreeableness, Openness, and Religiosity); Default: 0.25",
             key="di_wopb_widget",
@@ -491,7 +485,6 @@ def render_disclose_income_tab():
             "W_PB: Prosocial behavior (Equation 1) effect weight",
             min_value=0.0,
             max_value=1.0,
-            value=float(wpb_val),
             step=0.01,
             help="DI = β0+(1-WPB)×(Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness) + WPB×(Prosocial Behavior×Income_High); Default: 0.5",
             key="di_wpb_widget",

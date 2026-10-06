@@ -10,7 +10,13 @@ from app.pages.navigation import render_navigation
 
 def initialize_widget_keys():
     """Initialize all widget keys from sim_params if they don't exist yet.
-    This ensures widget values persist across page navigation."""
+    This ensures widget values persist across page navigation.
+
+    The widgets below are driven by these session-state keys ONLY: none of them
+    passes `value=` / `index=` (2026-10-07). Passing both a default and a key that
+    was set through the Session State API made Streamlit print "The widget with
+    key ... was created with a default value but also had its value set via the
+    Session State API" (Q-41); the key's value is what the widget shows either way."""
     
     # Initialize keys for all number_input and slider widgets
     # Only initialize if key doesn't exist - this preserves user changes
@@ -191,7 +197,6 @@ def render_page1():
             "Number of Agents",
             min_value=10,
             max_value=50000,
-            value=st.session_state.n_agents_input,  # Read from widget key
             step=100,
             help="Number of agents to generate for the simulation",
             key="n_agents_input",
@@ -203,7 +208,6 @@ def render_page1():
                 "Random Seed",
                 min_value=1,
                 max_value=2147483647,
-                value=st.session_state.seed_input,  # Read from widget key
                 help="Seed for random number generation (for reproducible results)",
                 key="seed_input",
                 on_change=lambda: setattr(st.session_state, 'seed', st.session_state.seed_input)
@@ -213,7 +217,6 @@ def render_page1():
                 "Number of Runs",
                 min_value=2,
                 max_value=1000,
-                value=st.session_state.n_runs_input,  # Read from widget key
                 step=10,
                 help="Number of Monte-Carlo runs to execute",
                 key="n_runs_input",
@@ -224,7 +227,6 @@ def render_page1():
                 "Base Seed",
                 min_value=1,
                 max_value=2147483647,
-                value=st.session_state.base_seed_input,  # Read from widget key
                 help="Base seed for Monte-Carlo runs (each run uses base_seed + run_number)",
                 key="base_seed_input",
                 on_change=lambda: setattr(st.session_state, 'base_seed', st.session_state.base_seed_input)
@@ -256,7 +258,6 @@ def render_page1():
             "Number of Periods",
             min_value=1,
             max_value=100,
-            value=st.session_state.periods_input,  # Read from widget key (persists across navigation)
             help="Number of periods for simulation run",
             key="periods_input",
             on_change=lambda: setattr(st.session_state.sim_params, 'periods', st.session_state.periods_input)
@@ -266,7 +267,6 @@ def render_page1():
             "Duration per Period (hours)",
             min_value=1,
             max_value=24,
-            value=st.session_state.duration_hours_input,  # Read from widget key
             step=1,
             help="Duration of each period in hours (will be converted to seconds for simulation)",
             key="duration_hours_input",
@@ -286,7 +286,6 @@ def render_page1():
             "Number of Vendors (N)",
             min_value=1,
             max_value=50,
-            value=st.session_state.num_vendors_input,  # Read from widget key (persists across navigation)
             help="Total number of vendors operating on the platform",
             key="num_vendors_input",
             on_change=lambda: setattr(st.session_state.sim_params, 'num_vendors', st.session_state.num_vendors_input)
@@ -305,7 +304,6 @@ def render_page1():
                     "Product Price ($)",
                     min_value=0.01,
                     max_value=1000.0,
-                    value=st.session_state.single_vendor_price_input,  # Read from widget key
                     step=1.0,
                     help="Price for the single vendor",
                     key="single_vendor_price_input",
@@ -322,7 +320,6 @@ def render_page1():
                     "Products Offered",
                     min_value=1,
                     max_value=10000,
-                    value=st.session_state.single_vendor_products_input,  # Read from widget key
                     help="Number of products offered by the vendor",
                     key="single_vendor_products_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.single_vendor_products_input)
@@ -342,7 +339,6 @@ def render_page1():
             
             single_vendor_carryover = st.checkbox(
                 "Enable Product Carryover to Next Period",
-                value=st.session_state.single_vendor_carryover,  # Read from widget key
                 help="If checked, unsold products carry over to the next period",
                 key="single_vendor_carryover",
                 on_change=update_single_vendor_carryover
@@ -386,7 +382,6 @@ def render_page1():
                         "Min Price per Vendor ($)",
                         min_value=0.01,
                         max_value=1000.0,
-                        value=st.session_state.vendor_price_min_input,  # Read from widget key
                         step=1.0,
                         help="Minimum price any vendor can have",
                         key="vendor_price_min_input",
@@ -410,7 +405,6 @@ def render_page1():
                         "Max Price per Vendor ($)",
                         min_value=min_for_max,
                         max_value=1000.0,
-                        value=current_max,  # Now uses widget key value
                         step=1.0,
                         help="Maximum price any vendor can have",
                         key="vendor_price_max_input",
@@ -440,7 +434,6 @@ def render_page1():
                         "Average Price per Vendor ($)",
                         min_value=min_price_dollars,
                         max_value=max_price_dollars,
-                        value=current_price_dollars,  # Now uses widget key value
                         step=1.0,
                         help="Target average price across all vendors",
                         key="market_price_input",
@@ -464,7 +457,6 @@ def render_page1():
                     "Min Products per Vendor/Period",
                     min_value=1,
                     max_value=10000,
-                    value=st.session_state.vendor_products_min_input,  # Read from widget key
                     help="Minimum products any vendor can offer per period",
                     key="vendor_products_min_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_min', st.session_state.vendor_products_min_input)
@@ -486,7 +478,6 @@ def render_page1():
                     "Max Products per Vendor/Period",
                     min_value=min_for_max_products,
                     max_value=10000,
-                    value=current_max_products,  # Now uses widget key value
                     help="Maximum products any vendor can offer per period",
                     key="vendor_products_max_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_max', st.session_state.vendor_products_max_input)
@@ -514,7 +505,6 @@ def render_page1():
                     "Average Products per Vendor/Period",
                     min_value=min_products,
                     max_value=max_products,
-                    value=current_avg_products,  # Now uses widget key value
                     help="Target average products per vendor",
                     key="vendor_products_avg_input",
                     on_change=lambda: setattr(st.session_state.sim_params, 'vendor_products_avg', st.session_state.vendor_products_avg_input)
@@ -568,7 +558,6 @@ def render_page1():
                         "Carryover Probability (p)",
                         min_value=0.0,
                         max_value=1.0,
-                        value=st.session_state.vendor_carryover_probability_slider,  # Read from widget key
                         step=0.01,
                         help="Probability that any given vendor will have carryover enabled (Bernoulli per vendor)",
                         key="vendor_carryover_probability_slider",
@@ -781,7 +770,6 @@ BUDGET_SHOP,5.25,50,0""")
             "Platform Markup (m)",
             min_value=0.0,
             max_value=0.5,
-            value=st.session_state.platform_markup_slider,  # Read from widget key
             step=0.01,
             help="Platform markup: Customer Price = (1+m) × Vendor Price",
             key="platform_markup_slider",
@@ -792,7 +780,6 @@ BUDGET_SHOP,5.25,50,0""")
             "Price Range (r)",
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 for simulation flexibility
-            value=st.session_state.price_range_slider,  # Read from widget key
             step=0.01,
             help="Price range for Purchase Now and Minimum Bid prices. Extended to 1.0 for simulation flexibility.",
             key="price_range_slider",
@@ -803,7 +790,6 @@ BUDGET_SHOP,5.25,50,0""")
             "Bidding Percentage (bp)",
             min_value=0.0,
             max_value=1.0,  # Extended from 0.5 to 1.0 as requested
-            value=st.session_state.bidding_percentage_slider,  # Read from widget key
             step=0.01,
             help="Proportion of products available for bidding (NA = bp × NV). Now supports up to 100%!",
             key="bidding_percentage_slider",
@@ -825,7 +811,6 @@ BUDGET_SHOP,5.25,50,0""")
             "Price Grid Categories (g)",
             min_value=3,
             max_value=21,
-            value=st.session_state.price_grid_input,  # Read from widget key
             step=2,
             help="Number of price categories (must be odd)",
             key="price_grid_input",
@@ -859,7 +844,6 @@ BUDGET_SHOP,5.25,50,0""")
         income_distribution = st.selectbox(
             "Income Distribution Type",
             ["lognormal", "generalised_gamma", "dagum"],
-            index=["lognormal", "generalised_gamma", "dagum"].index(st.session_state.page1_income_distribution),
             help="Distribution function for generating agent incomes",
             key="page1_income_distribution"
         )
@@ -892,7 +876,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "μ (mu) - Mean of ln(Y)",
                     min_value=0.0,
                     max_value=15.0,
-                    value=st.session_state.lognormal_mu_input,  # Read from widget key
                     step=0.1,
                     help="Mean parameter of the log-transformed values. For income distributions, typically 8-12.",
                     key="lognormal_mu_input",
@@ -904,7 +887,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "σ (sigma) - Std Dev of ln(Y)",
                     min_value=0.1,
                     max_value=3.0,
-                    value=st.session_state.lognormal_sigma_input,  # Read from widget key
                     step=0.1,
                     help="Standard deviation parameter of the log-transformed values",
                     key="lognormal_sigma_input",
@@ -919,7 +901,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "a - Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
-                    value=st.session_state.lognormal_min_input,  # Read from widget key
                     step=100.0,
                     help="Linear shift: all values will be at least this amount",
                     key="lognormal_min_input",
@@ -1003,7 +984,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "k - Shape 1 (tail)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.gg_k_input,  # Read from widget key
                     step=0.1,
                     help="Shape parameter controlling tail thickness (0.3-3.0 typical)",
                     key="gg_k_input",
@@ -1015,7 +995,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "c - Shape 2 (skew)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.gg_c_input,  # Read from widget key
                     step=0.1,
                     help="Shape parameter controlling skewness (0.5-5.0 typical)",
                     key="gg_c_input",
@@ -1027,7 +1006,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "λ - Scale ($)",
                     min_value=100.0,
                     max_value=1000000.0,
-                    value=st.session_state.gg_lambda_input,  # Read from widget key
                     step=1000.0,
                     help="Scale parameter: sets overall income scale",
                     key="gg_lambda_input",
@@ -1042,7 +1020,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "a - Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
-                    value=st.session_state.gg_min_input,  # Read from widget key
                     step=100.0,
                     help="Linear shift: all values will be at least this amount",
                     key="gg_min_input",
@@ -1126,7 +1103,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "a - Shape (tail)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.dagum_a_input,  # Read from widget key
                     step=0.1,
                     help="Tail thickness: smaller values = heavier tail (>1 for finite mean)",
                     key="dagum_a_input",
@@ -1138,7 +1114,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "p - Shape (body)",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.dagum_p_input,  # Read from widget key
                     step=0.1,
                     help="Body shape: controls concentration around median",
                     key="dagum_p_input",
@@ -1150,7 +1125,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "b - Scale ($)",
                     min_value=100.0,
                     max_value=1000000.0,
-                    value=st.session_state.dagum_b_input,  # Read from widget key
                     step=1000.0,
                     help="Scale parameter: sets median income level",
                     key="dagum_b_input",
@@ -1165,7 +1139,6 @@ BUDGET_SHOP,5.25,50,0""")
                     "Minimum Value ($)",
                     min_value=0.0,
                     max_value=100000.0,
-                    value=st.session_state.dagum_min_input,  # Read from widget key
                     step=100.0,
                     help="Linear shift: all values will be at least this amount",
                     key="dagum_min_input",
@@ -1244,7 +1217,6 @@ BUDGET_SHOP,5.25,50,0""")
             "Threshold Income for Discount ($)",
             min_value=income_min,
             max_value=income_max,
-            value=current_threshold,  # Now uses widget key value
             step=100.0,
             help="Income threshold for potential discount eligibility. Agents with income ≤ this value can become discount customers if they also choose to disclose income AND documents.",
             key="discount_threshold_input",
@@ -1275,7 +1247,6 @@ BUDGET_SHOP,5.25,50,0""")
                 "Discount Income Categories (NDIC)",
                 min_value=1,
                 max_value=10,
-                value=st.session_state.num_discount_categories_input,  # Read from widget key
                 help="Number of customer discount income categories (lowest income levels)",
                 key="num_discount_categories_input",
                 on_change=lambda: setattr(st.session_state.sim_params, 'num_discount_categories', st.session_state.num_discount_categories_input)
@@ -1303,7 +1274,6 @@ BUDGET_SHOP,5.25,50,0""")
                 "Fixed Income Categories (NFIC)",
                 min_value=1,
                 max_value=50,
-                value=st.session_state.num_fixed_categories_input,  # Read from widget key
                 help=f"Number of customer fixed income categories (higher income levels). Used for purchasing limits. Default: Price Grid - 1 = {default_nfic}",
                 key="num_fixed_categories_input",
                 on_change=update_nfic
@@ -1399,7 +1369,6 @@ BUDGET_SHOP,5.25,50,0""")
                     limit = st.number_input(
                         label,
                         min_value=0,
-                        value=st.session_state[key],
                         key=key,
                         help=f"Max purchasing for fixed income category {i+1} over entire term ({term_hours}h total). Cat 1 = lowest income (discount customers).",
                         on_change=lambda k=key, c=cat_key: st.session_state.purchasing_limits_temp.update({c: st.session_state[k]})
@@ -1426,7 +1395,6 @@ BUDGET_SHOP,5.25,50,0""")
             artificial_limit = st.number_input(
                 "Max Purchases per Term (All Agents)",
                 min_value=1,
-                value=st.session_state.artificial_limit_input,  # Read from widget key
                 help=f"Maximum number of items any agent can purchase over the entire term ({term_hours}h total). This represents a practical constraint based on customer budget preferences and assumed purchasing patterns.",
                 key="artificial_limit_input",
                 on_change=update_artificial_limit

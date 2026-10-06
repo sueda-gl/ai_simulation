@@ -174,7 +174,6 @@ def render_donation_sigma_controls(mode_suffix: str):
         "Apply σ uniformly or per income level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-        index=0 if strategy_val == 'overall' else 1,
         key=strategy_widget_key,
         on_change=on_strategy_change,
         horizontal=True
@@ -205,7 +204,6 @@ def render_donation_sigma_controls(mode_suffix: str):
             "σ Coefficient (multiplier)",
             min_value=0.0,
             max_value=2.0,
-            value=coeff_val if coeff_val != 0.0 else 1.0,
             step=0.01,
             help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
             key=coeff_widget_key,
@@ -263,7 +261,6 @@ def render_donation_sigma_controls(mode_suffix: str):
                     f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
                     min_value=0.0,
                     max_value=2.0,
-                    value=q_val if q_val != 0.0 else 1.0,
                     step=0.01,
                     key=widget_key,
                     on_change=lambda l=level, wk=widget_key, sk=storage_key: save_to_donation_storage(wk, sk)
@@ -395,7 +392,6 @@ def render_donation_default_tab():
         )
         sigma_in_copula = st.checkbox(
             "Add Normal(anchor, σ) draw to Copula runs",
-            value=copula_val,
             help="When enabled, Copula mode will also use the stochastic component",
             key="tab_sigma_in_copula",
             on_change=lambda: save_to_donation_storage('tab_sigma_in_copula', 'sigma_in_copula')
@@ -412,7 +408,6 @@ def render_donation_default_tab():
         )
         sigma_in_research = st.checkbox(
             "Use Normal(anchor, σ) draw in Research Specification mode",
-            value=res_val,
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="tab_sigma_in_research",
             on_change=lambda: save_to_donation_storage('tab_sigma_in_research', 'sigma_in_research')
@@ -442,7 +437,6 @@ def render_donation_default_tab():
             "Weight for observed vs modeled prosocial behavior",
             min_value=0.0,
             max_value=1.0,
-            value=float(anchor_val),
             step=0.01,
             help="Anchor = w × Observed + (1-w) × Predicted",
             key="tab_anchor_weight",
@@ -958,7 +952,6 @@ def render_intercept_override_section():
                 
                 new_cat_intercept = st.number_input(
                     "Categorical",
-                    value=cat_val,
                     step=0.001,
                     format="%.6f",
                     help="Override value for categorical income specification",
@@ -977,7 +970,6 @@ def render_intercept_override_section():
                 
                 new_cont_intercept = st.number_input(
                     "Continuous", 
-                    value=cont_val,
                     step=0.001,
                     format="%.6f",
                     help="Override value for continuous income specification",
@@ -999,7 +991,6 @@ def render_intercept_override_section():
                 
                 new_cont_intercept = st.number_input(
                     "Continuous",
-                    value=cont_val,
                     step=0.001,
                     format="%.6f", 
                     help="Override value for continuous income specification",
@@ -1021,7 +1012,6 @@ def render_intercept_override_section():
                 
                 new_cat_intercept = st.number_input(
                     "Categorical",
-                    value=cat_val,
                     step=0.001,
                     format="%.6f",
                     help="Override value for categorical income specification", 

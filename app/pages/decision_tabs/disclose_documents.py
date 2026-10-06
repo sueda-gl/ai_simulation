@@ -132,7 +132,6 @@ def render_dd_sigma_controls(mode_suffix: str):
         "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-        index=0 if strategy_val == 'overall' else 1,
         key=strategy_widget_key, on_change=on_strategy_change, horizontal=True
     )
     st.session_state.dd_sigma_strategy = sigma_strategy
@@ -152,7 +151,7 @@ def render_dd_sigma_controls(mode_suffix: str):
         coeff_val = max(0.0, min(float(coeff_val), 2.0)) or 1.0
 
         sigma_coefficient = st.slider(
-            "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, value=coeff_val, step=0.01,
+            "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, step=0.01,
             help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL} × coefficient",
             key=coeff_widget_key,
             on_change=lambda: save_to_dd_storage(coeff_widget_key, coeff_storage_key)
@@ -198,7 +197,7 @@ def render_dd_sigma_controls(mode_suffix: str):
             with col_slider:
                 q_coeff = st.slider(
                     f"{LEVEL_LABELS[level]} (base σ={base_sigma:.4f})",
-                    min_value=0.0, max_value=2.0, value=q_val if q_val != 0.0 else 1.0, step=0.01,
+                    min_value=0.0, max_value=2.0, step=0.01,
                     key=widget_key,
                     on_change=lambda l=level: save_to_dd_storage(
                         f'dd_tab_sigma_q{l}_{mode_suffix}', f'dd_sigma_quintile_{l}_{mode_suffix}')
@@ -271,7 +270,7 @@ def render_disclose_documents_tab():
             'dd_sigma_in_copula', False
         )
         sigma_in_copula = st.checkbox(
-            "Add Normal(score, σ) draw to Copula runs", value=copula_val,
+            "Add Normal(score, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="dd_tab_sigma_in_copula",
             on_change=lambda: save_to_dd_storage('dd_tab_sigma_in_copula', 'dd_sigma_in_copula')
@@ -284,7 +283,7 @@ def render_disclose_documents_tab():
             'sigma_enabled', True
         )
         sigma_enabled = st.checkbox(
-            "Use Normal(score, σ) draw in Research Specification mode", value=res_val,
+            "Use Normal(score, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(score, σ) draws.",
             key="dd_tab_sigma_enabled",
             on_change=lambda: save_to_dd_storage('dd_tab_sigma_enabled', 'sigma_enabled')
