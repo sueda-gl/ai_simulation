@@ -287,7 +287,13 @@ rows Q-01 to Q-07 of [`rulings-and-quirks.md`](rulings-and-quirks.md).
 
 When a run finishes, `app/simulation.py` stores `st.session_state._run_metadata`:
 the population mode and income mode the run actually used, the result keys, the
-custom and default decision lists, the seed and the agent count.
+custom and default decision lists, the seed and the agent count — and, per result
+key, the income mode each income-dependent decision actually ran with
+(`decision_income_modes`). That last one matters because a complete run names its
+result keys after the global income mode while Decision 4 runs with its own tab's
+mode; the page labels each decision with what it really ran
+(`RunContext.decision_income_label`), and `rtd_compare_both_fallback` makes it say
+so when a "Compare both" Decision 4 tab had to run continuous.
 
 The results page builds a `RunContext` from that metadata plus the result frames and
 asks *it* every question about the run's shape — is this a Compare-all grid, which

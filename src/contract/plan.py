@@ -28,7 +28,7 @@ categorical/continuous coefficient blocks).
 
 import copy
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import pandas as pd
@@ -190,6 +190,14 @@ class RunMetadata:
     seed: int
     n_agents: int
     is_comparison: bool
+    # The income mode each modelled decision ACTUALLY ran with, per result key:
+    # {result_key: {decision: 'categorical' | 'continuous'}}. In a complete run the
+    # result keys follow the global income mode, but Decision 4 runs with its own
+    # tab mode, so the page must not infer a decision's mode from the key.
+    decision_income_modes: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    # Complete run while the Decision 4 tab said "Compare both": Decision 4 ran
+    # continuous only (a complete run cannot split it); the page says so.
+    rtd_compare_both_fallback: bool = False
 
 
 @dataclass(frozen=True)

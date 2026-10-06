@@ -23,7 +23,7 @@ property here; the semantics are the ones the page had before R28:
 * ``income_type`` normalises the effective income mode case-insensitively, as
   the comparison grids always did.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
@@ -62,6 +62,10 @@ class RunContext:
     default_decisions: Tuple[str, ...]
     seed: Optional[int]
     n_agents: Optional[int]
+    # {result_key: {decision: 'categorical' | 'continuous'}} - what each income-dependent
+    # decision actually ran with (absent in metadata from before 2026-10-07)
+    decision_income_modes: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    rtd_compare_both_fallback: bool = False
 
     # ------------------------------------------------------------ factory
     @classmethod
@@ -111,6 +115,9 @@ class RunContext:
             default_decisions=tuple(default),
             seed=metadata.get("seed"),
             n_agents=metadata.get("n_agents"),
+            decision_income_modes={str(k): dict(v) for k, v in
+                                   (metadata.get("decision_income_modes") or {}).items()},
+            rtd_compare_both_fallback=bool(metadata.get("rtd_compare_both_fallback", False)),
         )
 
     # ---------------------------------------------------------- run shape
@@ -167,6 +174,17 @@ class RunContext:
     def num_decisions(self) -> int:
         """The '- Decisions: N' line of the parameter summary (ruling R27)."""
         return len(self.custom_decisions) + len(self.default_decisions)
+
+    def decision_income_label(self, decision: str) -> Optional[str]:
+        """The income mode ``decision`` actually ran with, in the tabs' wording
+        ('Categorical only' / 'Continuous only'; 'Compare both' when its result keys
+        ran different modes), or None when the run did not record it."""
+        modes = {m[decision] for m in self.decision_income_modes.values() if decision in m}
+        if not modes:
+            return None
+        if len(modes) > 1:
+            return "Compare both"
+        return f"{next(iter(modes)).capitalize()} only"
 
     # ------------------------------------------------------------- frames
     @property

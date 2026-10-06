@@ -858,6 +858,41 @@ def build_decision_patches(snapshot: Mapping, config_repo: DecisionsConfig, pop_
     }
 
 
+# ------------------------------------------------------ per-decision income
+
+# The modelled decisions that carry their own income mode, and how each engine
+# module reads it (Decision 4 defaults to continuous and tests for 'categorical';
+# the others default to categorical and test for 'continuous').
+INCOME_MODE_DECISIONS: Tuple[str, ...] = (
+    "disclose_income", "disclose_documents", "donation_default", "rejected_transaction_defaults")
+
+
+def decision_income_mode(decision: str, patch: Mapping, config_repo: DecisionsConfig) -> str:
+    """The income mode ``decision`` runs with under ``patch`` (patch over the file),
+    resolved exactly as the engine module resolves it."""
+    if decision == "donation_default":
+        mode = ((patch or {}).get("regression") or {}).get("income_mode")
+        if mode is None:
+            block = config_repo.decision(decision)
+            mode = ((block.get("regression_coefficients") or {}).get("income_mode")
+                    or (block.get("regression") or {}).get("income_mode") or "categorical")
+    else:
+        mode = (patch or {}).get("income_mode")
+        if mode is None:
+            mode = config_repo.decision(decision).get(
+                "income_mode", "continuous" if decision == "rejected_transaction_defaults" else "categorical")
+    if decision == "rejected_transaction_defaults":
+        return "categorical" if "categorical" in str(mode).lower() else "continuous"
+    return normalize_income_mode(mode)
+
+
+def sub_run_decision_income_modes(sub_run: SubRun, config_repo: DecisionsConfig) -> Dict[str, str]:
+    """{decision: mode} for the income-dependent decisions this sub-run executes."""
+    executed = set(sub_run.decisions_to_run) if sub_run.decisions_to_run is not None else set(ALL_DECISIONS)
+    return {d: decision_income_mode(d, sub_run.decision_config_patches.get(d) or {}, config_repo)
+            for d in INCOME_MODE_DECISIONS if d in executed}
+
+
 # ------------------------------------------------------------- expectations
 
 def _saved_config_income_mode(decision_name: str, config: Mapping) -> Optional[str]:
@@ -1111,6 +1146,18 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
     if execution_single_decision is None:
         saved_expectations = build_saved_expectations(saved_configs, sub_runs)
 
+    # What each income-dependent decision actually ran with (the result keys follow the
+    # run's income mode; Decision 4 in a combined run follows its own tab instead).
+    decision_income_modes = {sub_run.result_key: sub_run_decision_income_modes(sub_run, config_repo)
+                             for sub_run in sub_runs}
+    rtd_ran_combined = (
+        execution_single_decision != ["rejected_transaction_defaults"]
+        and any("rejected_transaction_defaults" in modes for modes in decision_income_modes.values()))
+    rtd_compare_both_fallback = bool(
+        rtd_ran_combined
+        and "rejected_transaction_defaults" not in saved_configs
+        and is_compare_income_mode(snap.get("rtd_income_mode", "Continuous only")))
+
     metadata = RunMetadata(
         effective_population_mode=effective_pop_mode,
         effective_income_mode=effective_income_mode,
@@ -1120,6 +1167,8 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
         seed=seed,
         n_agents=n_agents,
         is_comparison=len(sub_runs) > 1,
+        decision_income_modes=decision_income_modes,
+        rtd_compare_both_fallback=rtd_compare_both_fallback,
     )
 
     return RunPlan(
@@ -1145,6 +1194,7 @@ __all__ = [
     "build_saved_expectations",
     "build_simulation_params",
     "collect_decision_settings",
+    "decision_income_mode",
     "describe_decision_settings",
     "explicit_saved_configs",
     "get_pop_type",
@@ -1153,4 +1203,5 @@ __all__ = [
     "normalize_income_mode",
     "resolve_seed_and_n",
     "session_donation_coefficient_set",
+    "sub_run_decision_income_modes",
 ]

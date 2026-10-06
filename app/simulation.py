@@ -381,6 +381,9 @@ def _run_metadata_dict(metadata: RunMetadata) -> dict:
         'default_decisions': list(metadata.default_decisions),
         'seed': metadata.seed,
         'n_agents': metadata.n_agents,
+        # per result key, the income mode each income-dependent decision ran with
+        'decision_income_modes': {key: dict(modes) for key, modes in metadata.decision_income_modes.items()},
+        'rtd_compare_both_fallback': metadata.rtd_compare_both_fallback,
     }
 
 

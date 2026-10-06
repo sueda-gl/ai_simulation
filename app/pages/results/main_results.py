@@ -46,13 +46,16 @@ from app.pages.results.config_selection import (
 )
 
 
-def get_decision_config_display(decision_name):
+def get_decision_config_display(decision_name, ctx=None):
     """Get the selected configuration info for a decision to display in results.
 
     Returns a dict with 'has_config', 'income_mode', 'source', 'is_saved' keys.
 
-    The "Page 2 Settings" fallback is the decision's CURRENT setting (the badge
-    is labelled "Current Settings"), not a run-shape read.
+    Without a saved configuration the income mode is the one the run on screen
+    actually used for this decision (``ctx``, from _run_metadata - e.g. Decision 4
+    runs a complete simulation in its own tab mode, not the run's global mode);
+    the decision's CURRENT tab setting is only the fallback for runs that did not
+    record it.
     """
     result = {
         'has_config': False,
@@ -109,12 +112,30 @@ def get_decision_config_display(decision_name):
             result['income_mode'] = st.session_state.get('rtd_income_mode', 'Continuous only')
             result['source'] = 'Page 2 Settings'
 
+    if result['has_config'] and not result['is_saved'] and ctx is not None:
+        ran_with = ctx.decision_income_label(decision_name)
+        if ran_with:
+            result['income_mode'] = ran_with
+            result['source'] = 'Run metadata'
+
     return result
 
 
-def render_decision_config_badge(decision_name):
+RTD_COMPARE_BOTH_NOTE = (
+    "ℹ️ The Decision 4 tab is set to **Compare both**, which a complete simulation "
+    "cannot split: Decision 4 ran with **continuous** income in this run. Run "
+    "Decision 4 on its own to compare both income specifications.")
+
+
+def render_rtd_compare_both_note(decision_name, ctx):
+    """Complete run with the Decision 4 tab on 'Compare both': say that it ran continuous."""
+    if decision_name == 'rejected_transaction_defaults' and ctx is not None and ctx.rtd_compare_both_fallback:
+        st.info(RTD_COMPARE_BOTH_NOTE)
+
+
+def render_decision_config_badge(decision_name, ctx=None):
     """Render a compact badge showing the selected configuration for a decision."""
-    config_info = get_decision_config_display(decision_name)
+    config_info = get_decision_config_display(decision_name, ctx)
 
     if not config_info['has_config']:
         return
@@ -253,8 +274,9 @@ def render_single_run_results():
                 di_mode = di_saved_config.get('income_mode', di_saved_config.get('params', {}).get('income_mode'))
                 di_population_mode = di_saved_config.get('population_mode')
             if di_mode is None:
-                # No saved DI config: Decision 1 ran with the run's own income mode
-                di_mode = ctx.effective_income_mode
+                # No saved DI config: the mode Decision 1 actually ran with (recorded
+                # per decision since 2026-10-07), else the run's own income mode
+                di_mode = ctx.decision_income_label('disclose_income') or ctx.effective_income_mode
             if di_population_mode is None:
                 di_population_mode = ctx.effective_population_mode
 
@@ -324,7 +346,7 @@ def render_single_run_results():
                 # because the user explicitly selected a specific configuration
                 decision_has_saved_config = False
                 if decision in ['donation_default', 'disclose_income', 'disclose_documents']:
-                    config_info = get_decision_config_display(decision)
+                    config_info = get_decision_config_display(decision, ctx)
                     decision_has_saved_config = config_info.get('is_saved', False)
 
                 # Check if results actually have compare-all keys (only true for individual decision runs in Compare all mode)
@@ -340,7 +362,8 @@ def render_single_run_results():
                 # Show selected config badge for relevant decisions
                 if decision in ['donation_default', 'disclose_income', 'disclose_documents',
                                 'rejected_transaction_defaults']:
-                    render_decision_config_badge(decision)
+                    render_decision_config_badge(decision, ctx)
+                render_rtd_compare_both_note(decision, ctx)
 
                 # Show decision-specific results if available
                 if not df.empty and decision in df.columns:
@@ -373,6 +396,7 @@ def render_single_run_results():
                 default_description = get_dynamic_description(decision)
                 st.info("This decision used default values since it was not selected for customization")
                 st.write(f"**Default Behavior:** {default_description}")
+                render_rtd_compare_both_note(decision, ctx)
 
                 # Show decision-specific results if available
                 if not df.empty and decision in df.columns:
