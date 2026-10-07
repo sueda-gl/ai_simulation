@@ -196,11 +196,12 @@ def render_di_sigma_controls(mode_suffix: str):
         coeff_widget_key = f'di_tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'di_sigma_coefficient_{mode_suffix}'
 
-        # Fallback to 1.0 (the true default coefficient), never 0.0.
-        # di_scale_factor could have been corrupted in older versions; guard against it.
-        scale_fallback = st.session_state.get('di_scale_factor', 1.0)
-        if scale_fallback == 0.0:
-            scale_fallback = 1.0
+        # The slider starts from di_scale_factor, which the tab initialiser seeds
+        # from the config's stochastic.scale_factor (0.1, R-DI01). 0.0 is a legal,
+        # persisted value: tick box on + coefficient 0 -> sigma 0, no noise (R6).
+        # (The 0 -> 1.0 snaps that used to sit here worked around the browser
+        # showing a slider's built-in 0, fixed properly in 5f2cac8.)
+        scale_fallback = st.session_state.di_scale_factor
 
         coeff_val = restore_widget_from_storage(
             coeff_widget_key,
@@ -209,12 +210,8 @@ def render_di_sigma_controls(mode_suffix: str):
             scale_fallback
         )
 
-        # Clamp value to valid range [0, 2]; treat 0.0 as "never intentionally set"
+        # Clamp value to valid range [0, 2]
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
-        if coeff_val == 0.0:
-            coeff_val = 1.0
-            # Also fix the widget key so Streamlit picks up the corrected value
-            st.session_state[coeff_widget_key] = coeff_val
 
         sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)",

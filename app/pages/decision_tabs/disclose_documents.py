@@ -131,13 +131,14 @@ def render_dd_sigma_controls(mode_suffix: str):
         st.markdown(f"Base σ = {BASE_SIGMA_OVERALL} (empirical from 280 participants)")
         coeff_widget_key = f'dd_tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'dd_sigma_coefficient_{mode_suffix}'
-        scale_fallback = st.session_state.get('dd_scale_factor', 1.0) or 1.0
+        # 0.0 is a legal, persisted coefficient: sigma 0, no noise (R6); no 0 -> 1.0 snap.
+        scale_fallback = st.session_state.dd_scale_factor
 
         coeff_val = restore_widget_from_storage(
             coeff_widget_key, st.session_state.disclose_documents_tab_persistence,
             coeff_storage_key, scale_fallback
         )
-        coeff_val = max(0.0, min(float(coeff_val), 2.0)) or 1.0
+        coeff_val = max(0.0, min(float(coeff_val), 2.0))
 
         sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, step=0.01,
