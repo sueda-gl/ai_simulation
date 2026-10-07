@@ -150,7 +150,8 @@ def test_user_values_survive_tab_and_page_switches(offenders):
 
 def test_page1_reset_restores_the_defaults(offenders):
     """Q-39: the September reset raised StreamlitAPIException at its first widget-key
-    write; as an on_click callback it resets everything it lists."""
+    write; as an on_click callback it resets everything, to the values a fresh session
+    shows (tests/test_page1_reset_defaults.py checks every widget)."""
     sim = _start()
     sim.set("n_agents_input", 280)
     sim.set("seed_input", 7)
@@ -163,7 +164,7 @@ def test_page1_reset_restores_the_defaults(offenders):
     _consistent(sim, "after Reset to Default Values")
     assert sim.shown("n_agents_input") == 1000
     assert sim.shown("seed_input") == 42
-    assert sim.shown("platform_markup_slider") == pytest.approx(0.15)
+    assert sim.shown("platform_markup_slider") == pytest.approx(0.1)
     assert sim.shown("page1_population_mode") == "Copula (synthetic)"
     assert sim.shown("page1_income_distribution") == "lognormal"
 
@@ -173,7 +174,7 @@ def test_page1_reset_restores_the_defaults(offenders):
     assert ss["n_agents"] == 1000
     assert ss["seed"] == 42
     assert ss["population_mode"] == "Copula (synthetic)"
-    assert ss["sim_params"].platform_markup == pytest.approx(0.15)
+    assert ss["sim_params"].platform_markup == pytest.approx(0.1)
     assert not offenders, sorted(set(offenders))
 
 

@@ -60,8 +60,9 @@ CATEGORIES = (
 DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key")
 
 #: ``[k for k in st.session_state.keys() if k.startswith(<prefix>)]`` - the
-#: whole-decision resets.  Every key beginning with one of these is deleted.
-PREFIX_DELETE_PREFIXES = ("dd_", "di_", "rtd_")
+#: whole-decision resets, and the per-category purchasing limits Page 1's reset
+#: drops (Q-39).  Every key beginning with one of these is deleted.
+PREFIX_DELETE_PREFIXES = ("dd_", "di_", "rtd_", "purchasing_limit_")
 
 
 @dataclass(frozen=True)
@@ -138,11 +139,11 @@ def _rows(rows, initialised_by, category, **common) -> Tuple[KeySpec, ...]:
     return tuple(out)
 
 
-P1_INIT = "page1_common_params.initialize_widget_keys"
+P1_INIT = "page1_common_params.initialize_widget_keys (from page1_widget_values)"
 P1_INLINE = "page1_common_params.render_page1 (inline, just above the widget)"
 P2_INIT = "page2_decisions.initialize_page2_widget_keys"
 MODELS_INIT = "models.initialize_session_state"
-MODELS_DEFAULTS = "models.initialize_session_state (defaults dict)"
+MODELS_DEFAULTS = "models.initialize_session_state (models.SESSION_DEFAULTS)"
 MODELS_DECISIONS = "models.initialize_default_decision_parameters"
 DON_INIT = "decision_tabs.donation_default.initialize_donation_widget_keys"
 DON_YAML = "models.load_donation_coefficients_from_yaml"
@@ -212,9 +213,6 @@ _PAGE1_WIDGETS = _rows((
     ("num_fixed_categories_input", "<sim_params.num_fixed_categories>"),
     ("artificial_limit_input", "<sim_params.max_purchases_per_term>"),
     ("discount_threshold_input", "<sim_params.discount_income_threshold>"),
-), P1_INIT, "page1-widget", is_widget=True)
-
-_PAGE1_INLINE_WIDGETS = _rows((
     ("page1_simulation_execution_mode", "<'Snapshot' if sim_params.simulation_execution_mode == 'snapshot' else 'Live Simulation'>"),
     ("page1_simulation_mode", "<sim_params.simulation_mode>",
      "Single Run vs Monte Carlo; decides which seed key the seam reads"),
@@ -224,6 +222,9 @@ _PAGE1_INLINE_WIDGETS = _rows((
     ("page1_population_mode", "<population_mode>"),
     ("page1_apply_limits", "<'Yes' if sim_params.apply_purchasing_limits else 'No'>"),
     ("single_vendor_carryover", "<sim_params.global_carryover>"),
+), P1_INIT, "page1-widget", is_widget=True)
+
+_PAGE1_INLINE_WIDGETS = _rows((
     ("show_individual_agents_checkbox", "<show_individual_agents>",
      "on_change mirrors it into show_individual_agents"),
     ("uniform_purchasing_limit_input", "<uniform_purchasing_limit>"),
@@ -233,7 +234,8 @@ _PAGE1_INLINE_WIDGETS = _rows((
     ("gg_max_text_input", WIDGET),
     ("dagum_max_text_input", WIDGET),
     ("reset_page1_defaults", WIDGET,
-     "button; raises StreamlitAPIException on click (documented quirk, left as is)"),
+     "button; on_click puts sim_params, the Page-1 session values and every Page-1 "
+     "widget key back to what a fresh session shows (Q-39)"),
 ), P1_INLINE, "page1-widget", is_widget=True)
 
 _PAGE1_MIRRORS = (
@@ -253,10 +255,10 @@ _PAGE1_MIRRORS = (
          notes="'Copula (synthetic)' | 'Research documentation' | 'Research baseline' "
                "| 'Compare all'; a saved config's population_mode overrides it (R14)."),
     _row("show_individual_agents", False, MODELS_DEFAULTS, "page1-mirror"),
-    _row("nfic_manually_set", False, P1_INLINE, "page1-mirror",
+    _row("nfic_manually_set", False, P1_INIT, "page1-mirror",
          notes="True once the user typed a fixed-category count, so the auto-derived "
                "value stops overwriting it."),
-    _row("uniform_purchasing_limit", 10, P1_INLINE, "page1-mirror"),
+    _row("uniform_purchasing_limit", 10, P1_INIT, "page1-mirror"),
     _row("purchasing_limits_temp", "<dict of the per-category limits>", P1_INLINE,
          "page1-mirror",
          notes="scratch dict the per-category on_change callbacks write into."),

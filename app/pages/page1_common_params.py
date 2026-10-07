@@ -2,16 +2,115 @@
 """
 Page 1: Common Simulation Parameters for the Enhanced AI Agent Simulation.
 """
+import copy
+from dataclasses import MISSING, fields
+
 import streamlit as st
+from app.models import SESSION_DEFAULTS, SimulationParameters
 from app.state.widgets import stateful
 import pandas as pd
 from app.components import show_income_distribution_histogram
 from app.pages.navigation import render_navigation
 
 
+#: Page-1 values kept directly in ``st.session_state`` (not in ``sim_params``).
+#: Their defaults are ``SESSION_DEFAULTS`` in app/models.py.
+PAGE1_SESSION_VALUES = ("n_agents", "seed", "n_runs", "base_seed",
+                        "show_individual_agents", "population_mode")
+
+#: Page-1 helper state with a fixed first-draw value (no sim_params attribute).
+PAGE1_UI_DEFAULTS = {
+    "uniform_purchasing_limit": 10,
+    "nfic_manually_set": False,
+}
+
+#: Widgets that still pass ``value=`` (derived from sim_params / a session value):
+#: their keys are dropped, never written, so they re-initialise from that value
+#: (a Session-State write plus ``value=`` is the Q-41 warning).
+PAGE1_VALUE_WIDGET_KEYS = ("lognormal_max_text_input", "gg_max_text_input",
+                           "dagum_max_text_input", "uniform_purchasing_limit_input",
+                           "show_individual_agents_checkbox")
+
+def _carryover_mode(sim_params):
+    if sim_params.override_carryover:
+        if sim_params.global_carryover:
+            return "All vendors have carryover"
+        return "No vendors have carryover"
+    return "Use probability"
+
+
+def page1_widget_values(sim_params, session):
+    """Widget key -> the value that Page-1 widget starts from.
+
+    The ONE definition of what Page 1 shows (owner ruling Q-39, 2026-10-07): a
+    fresh session seeds every absent key from it (``initialize_widget_keys``) and
+    "Reset to Default Values" writes all of it after putting ``sim_params`` back
+    to the ``SimulationParameters`` dataclass defaults and the Page-1 session
+    values back to ``SESSION_DEFAULTS`` (``reset_all_page1_defaults``). So the
+    defaults themselves live only in app/models.py."""
+    sp = sim_params
+    return {
+        # Simulation settings (session values, not in sim_params)
+        "n_agents_input": session["n_agents"],
+        "seed_input": session["seed"],
+        "n_runs_input": session["n_runs"],
+        "base_seed_input": session["base_seed"],
+        "page1_population_mode": session["population_mode"],
+        # Modes
+        "page1_simulation_execution_mode":
+            "Snapshot" if sp.simulation_execution_mode == "snapshot" else "Live Simulation",
+        "page1_simulation_mode": sp.simulation_mode,
+        # Time
+        "periods_input": sp.periods,
+        "duration_hours_input": int(sp.duration_hours),
+        # Vendors
+        "num_vendors_input": sp.num_vendors,
+        "single_vendor_price_input": sp.market_price,
+        "single_vendor_products_input": sp.vendor_products_avg,
+        "single_vendor_carryover": sp.global_carryover,
+        "page1_vendor_setup_mode":
+            "Generate Randomly" if sp.vendor_config_mode == "random" else "Upload Vendor Config File",
+        "vendor_price_min_input": sp.vendor_price_min,
+        "vendor_price_max_input": sp.vendor_price_max,
+        "market_price_input": sp.market_price,
+        "vendor_products_min_input": sp.vendor_products_min,
+        "vendor_products_max_input": sp.vendor_products_max,
+        "vendor_products_avg_input": sp.vendor_products_avg,
+        "page1_carryover_mode": _carryover_mode(sp),
+        "vendor_carryover_probability_slider": sp.vendor_carryover_probability,
+        # Market
+        "platform_markup_slider": sp.platform_markup,
+        "price_range_slider": sp.price_range,
+        "bidding_percentage_slider": sp.bidding_percentage,
+        "price_grid_input": sp.price_grid,
+        # Income distribution
+        "page1_income_distribution":
+            sp.income_distribution if sp.income_distribution in ("lognormal", "generalised_gamma", "dagum") else "lognormal",
+        "lognormal_mu_input": sp.lognormal_mu,
+        "lognormal_sigma_input": sp.lognormal_sigma,
+        "lognormal_min_input": sp.lognormal_min,
+        "gg_k_input": sp.gg_k,
+        "gg_c_input": sp.gg_c,
+        "gg_lambda_input": sp.gg_lambda,
+        "gg_min_input": sp.gg_min,
+        "dagum_a_input": sp.dagum_a,
+        "dagum_p_input": sp.dagum_p,
+        "dagum_b_input": sp.dagum_b,
+        "dagum_min_input": sp.dagum_min,
+        "discount_threshold_input": sp.discount_income_threshold,
+        # Income categories
+        "num_discount_categories_input": sp.num_discount_categories,
+        "num_fixed_categories_input": sp.num_fixed_categories,
+        # Purchasing limits
+        "page1_apply_limits": "Yes" if sp.apply_purchasing_limits else "No",
+        "artificial_limit_input": sp.max_purchases_per_term,
+    }
+
+
 def initialize_widget_keys():
-    """Initialize all widget keys from sim_params if they don't exist yet.
-    This ensures widget values persist across page navigation.
+    """Seed every absent Page-1 key from ``page1_widget_values`` (sim_params and the
+    Page-1 session values). Only absent keys are seeded - this preserves user
+    changes across page navigation.
 
     The widgets below are driven by these session-state keys ONLY: none of them
     passes `value=` / `index=` (2026-10-07). Passing both a default and a key that
@@ -21,121 +120,12 @@ def initialize_widget_keys():
     (app/state/widgets.py), which pushes the key's value to a browser that has not
     drawn the widget in the previous run - without that, such a browser shows (and
     sends back) the widget's built-in default instead."""
-    
-    # Initialize keys for all number_input and slider widgets
-    # Only initialize if key doesn't exist - this preserves user changes
-    
-    # Simulation Settings (not in sim_params, but in session_state directly)
-    if "n_agents_input" not in st.session_state:
-        st.session_state.n_agents_input = st.session_state.n_agents
-    
-    if "seed_input" not in st.session_state:
-        st.session_state.seed_input = st.session_state.seed
-    
-    if "n_runs_input" not in st.session_state:
-        st.session_state.n_runs_input = st.session_state.n_runs
-    
-    if "base_seed_input" not in st.session_state:
-        st.session_state.base_seed_input = st.session_state.base_seed
-    
-    if "periods_input" not in st.session_state:
-        st.session_state.periods_input = st.session_state.sim_params.periods
-    
-    if "duration_hours_input" not in st.session_state:
-        st.session_state.duration_hours_input = int(st.session_state.sim_params.duration_hours)
-    
-    if "num_vendors_input" not in st.session_state:
-        st.session_state.num_vendors_input = st.session_state.sim_params.num_vendors
-    
-    if "single_vendor_price_input" not in st.session_state:
-        st.session_state.single_vendor_price_input = st.session_state.sim_params.market_price
-    
-    if "single_vendor_products_input" not in st.session_state:
-        st.session_state.single_vendor_products_input = st.session_state.sim_params.vendor_products_avg
-    
-    if "vendor_price_min_input" not in st.session_state:
-        st.session_state.vendor_price_min_input = st.session_state.sim_params.vendor_price_min
-    
-    if "vendor_price_max_input" not in st.session_state:
-        st.session_state.vendor_price_max_input = st.session_state.sim_params.vendor_price_max
-    
-    if "market_price_input" not in st.session_state:
-        st.session_state.market_price_input = st.session_state.sim_params.market_price
-    
-    if "vendor_products_min_input" not in st.session_state:
-        st.session_state.vendor_products_min_input = st.session_state.sim_params.vendor_products_min
-    
-    if "vendor_products_max_input" not in st.session_state:
-        st.session_state.vendor_products_max_input = st.session_state.sim_params.vendor_products_max
-    
-    if "vendor_products_avg_input" not in st.session_state:
-        st.session_state.vendor_products_avg_input = st.session_state.sim_params.vendor_products_avg
-    
-    if "vendor_carryover_probability_slider" not in st.session_state:
-        st.session_state.vendor_carryover_probability_slider = st.session_state.sim_params.vendor_carryover_probability
-    
-    if "platform_markup_slider" not in st.session_state:
-        st.session_state.platform_markup_slider = st.session_state.sim_params.platform_markup
-    
-    if "price_range_slider" not in st.session_state:
-        st.session_state.price_range_slider = st.session_state.sim_params.price_range
-    
-    if "bidding_percentage_slider" not in st.session_state:
-        st.session_state.bidding_percentage_slider = st.session_state.sim_params.bidding_percentage
-    
-    if "price_grid_input" not in st.session_state:
-        st.session_state.price_grid_input = st.session_state.sim_params.price_grid
-    
-    # Lognormal parameters
-    if "lognormal_mu_input" not in st.session_state:
-        st.session_state.lognormal_mu_input = getattr(st.session_state.sim_params, 'lognormal_mu', 10.0)
-    
-    if "lognormal_sigma_input" not in st.session_state:
-        st.session_state.lognormal_sigma_input = getattr(st.session_state.sim_params, 'lognormal_sigma', 0.5)
-    
-    if "lognormal_min_input" not in st.session_state:
-        st.session_state.lognormal_min_input = getattr(st.session_state.sim_params, 'lognormal_min', 0.0)
-    
-    # Generalised Gamma parameters
-    if "gg_k_input" not in st.session_state:
-        st.session_state.gg_k_input = getattr(st.session_state.sim_params, 'gg_k', 1.5)
-    
-    if "gg_c_input" not in st.session_state:
-        st.session_state.gg_c_input = getattr(st.session_state.sim_params, 'gg_c', 2.0)
-    
-    if "gg_lambda_input" not in st.session_state:
-        st.session_state.gg_lambda_input = getattr(st.session_state.sim_params, 'gg_lambda', 20000.0)
-    
-    if "gg_min_input" not in st.session_state:
-        st.session_state.gg_min_input = getattr(st.session_state.sim_params, 'gg_min', 0.0)
-    
-    # Dagum parameters
-    if "dagum_a_input" not in st.session_state:
-        st.session_state.dagum_a_input = getattr(st.session_state.sim_params, 'dagum_a', 2.0)
-    
-    if "dagum_p_input" not in st.session_state:
-        st.session_state.dagum_p_input = getattr(st.session_state.sim_params, 'dagum_p', 1.5)
-    
-    if "dagum_b_input" not in st.session_state:
-        st.session_state.dagum_b_input = getattr(st.session_state.sim_params, 'dagum_b', 25000.0)
-    
-    if "dagum_min_input" not in st.session_state:
-        st.session_state.dagum_min_input = getattr(st.session_state.sim_params, 'dagum_min', 0.0)
-    
-    # Income categories
-    if "num_discount_categories_input" not in st.session_state:
-        st.session_state.num_discount_categories_input = st.session_state.sim_params.num_discount_categories
-    
-    if "num_fixed_categories_input" not in st.session_state:
-        st.session_state.num_fixed_categories_input = st.session_state.sim_params.num_fixed_categories
-    
-    # Artificial limit
-    if "artificial_limit_input" not in st.session_state:
-        st.session_state.artificial_limit_input = st.session_state.sim_params.max_purchases_per_term
-    
-    # Discount threshold
-    if "discount_threshold_input" not in st.session_state:
-        st.session_state.discount_threshold_input = st.session_state.sim_params.discount_income_threshold
+    for key, value in PAGE1_UI_DEFAULTS.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+    for key, value in page1_widget_values(st.session_state.sim_params, st.session_state).items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
 def render_page1():
@@ -152,10 +142,6 @@ def render_page1():
         # Simulation Mode Selection
         st.markdown('<h3 class="section-header">🎯 Simulation Execution Mode</h3>', unsafe_allow_html=True)
         
-        # Initialize the widget key if it doesn't exist
-        if "page1_simulation_execution_mode" not in st.session_state:
-            st.session_state.page1_simulation_execution_mode = "Snapshot" if st.session_state.sim_params.simulation_execution_mode == "snapshot" else "Live Simulation"
-        
         simulation_execution_mode = stateful(st.radio,
             "Execution Mode",
             ["Snapshot", "Live Simulation"],
@@ -169,10 +155,6 @@ def render_page1():
         
         # Simulation Mode (Single vs Monte-Carlo)
         st.markdown('<h3 class="section-header">🎲 Simulation Mode</h3>', unsafe_allow_html=True)
-        
-        # Initialize the widget key if it doesn't exist
-        if "page1_simulation_mode" not in st.session_state:
-            st.session_state.page1_simulation_mode = st.session_state.sim_params.simulation_mode
         
         simulation_mode = stateful(st.radio,
             "Analysis Mode",
@@ -332,11 +314,6 @@ def render_page1():
                 st.session_state.sim_params.vendor_products_min = st.session_state.sim_params.vendor_products_avg
                 st.session_state.sim_params.vendor_products_max = st.session_state.sim_params.vendor_products_avg
             
-            # Single vendor carryover
-            # Initialize key if not exists
-            if "single_vendor_carryover" not in st.session_state:
-                st.session_state.single_vendor_carryover = st.session_state.sim_params.global_carryover
-            
             def update_single_vendor_carryover():
                 st.session_state.sim_params.global_carryover = st.session_state.single_vendor_carryover
                 st.session_state.sim_params.override_carryover = True  # Always override in single vendor mode
@@ -354,11 +331,6 @@ def render_page1():
         else:
             # Multiple Vendors Configuration - Full Interface
             st.info("🏢 **Multiple Vendors Mode**: Full configuration for multiple vendors")
-            
-            # Vendor Setup Mode
-            # Initialize the widget key if it doesn't exist
-            if "page1_vendor_setup_mode" not in st.session_state:
-                st.session_state.page1_vendor_setup_mode = "Generate Randomly" if st.session_state.sim_params.vendor_config_mode == "random" else "Upload Vendor Config File"
             
             vendor_setup_mode = stateful(st.radio,
                 "Vendor Setup Mode",
@@ -522,17 +494,6 @@ def render_page1():
             
                 # Carryover Configuration (full width) - ONLY SHOWN IN RANDOM MODE
                 st.markdown('<h4 class="subsection-header">🔄 Carryover Configuration</h4>', unsafe_allow_html=True)
-                
-                # Initialize the widget key if it doesn't exist
-                if "page1_carryover_mode" not in st.session_state:
-                    # Determine initial mode based on current settings
-                    if st.session_state.sim_params.override_carryover:
-                        if st.session_state.sim_params.global_carryover:
-                            st.session_state.page1_carryover_mode = "All vendors have carryover"
-                        else:
-                            st.session_state.page1_carryover_mode = "No vendors have carryover"
-                    else:
-                        st.session_state.page1_carryover_mode = "Use probability"
                 
                 carryover_mode = stateful(st.radio,
                     "Carryover Mode",
@@ -841,10 +802,6 @@ BUDGET_SHOP,5.25,50,0""")
                    "income from the professor's data file; these distribution settings apply to "
                    "Copula populations.")
 
-        # Initialize the widget key if it doesn't exist
-        if "page1_income_distribution" not in st.session_state:
-            st.session_state.page1_income_distribution = st.session_state.sim_params.income_distribution if st.session_state.sim_params.income_distribution in ["lognormal", "generalised_gamma", "dagum"] else "lognormal"
-        
         income_distribution = stateful(st.selectbox,
             "Income Distribution Type",
             ["lognormal", "generalised_gamma", "dagum"],
@@ -1260,12 +1217,6 @@ BUDGET_SHOP,5.25,50,0""")
             # Set default NFIC to price_grid - 1
             default_nfic = st.session_state.sim_params.price_grid - 1
             
-            # Initialize tracking for manual changes
-            if "nfic_manually_set" not in st.session_state:
-                st.session_state.nfic_manually_set = False
-                # Set initial value to price_grid - 1
-                st.session_state.sim_params.num_fixed_categories = default_nfic
-            
             # Update to follow price_grid if not manually changed
             if not st.session_state.nfic_manually_set:
                 st.session_state.sim_params.num_fixed_categories = default_nfic
@@ -1291,11 +1242,6 @@ BUDGET_SHOP,5.25,50,0""")
         st.markdown('<h3 class="section-header">🛒 Purchasing Limits</h3>', unsafe_allow_html=True)
         st.caption("📊 Limits by **Fixed Income Categories** (Cat 1 = lowest income, applies to discount customers)")
 
-        # Initialize the widget key if it doesn't exist
-        if "page1_apply_limits" not in st.session_state:
-            # Use the existing apply_purchasing_limits value
-            st.session_state.page1_apply_limits = "Yes" if st.session_state.sim_params.apply_purchasing_limits else "No"
-
         apply_limits = stateful(st.radio,
             "Apply Purchasing Limits?",
             ["Yes", "No"],
@@ -1318,10 +1264,6 @@ BUDGET_SHOP,5.25,50,0""")
 
             # Create a simple interface for setting purchasing limits
             total_categories = st.session_state.sim_params.num_fixed_categories
-            
-            # Initialize uniform limit in session state if not exists
-            if "uniform_purchasing_limit" not in st.session_state:
-                st.session_state.uniform_purchasing_limit = 10
             
             # Callback function to update all category limits when uniform limit changes
             def update_uniform_limit():
@@ -1412,11 +1354,6 @@ BUDGET_SHOP,5.25,50,0""")
         st.markdown('<h3 class="section-header">🧬 Population Generation Mode</h3>', unsafe_allow_html=True)
         st.caption("This setting applies to all decisions and determines how agents are generated")
 
-        # Initialize the widget key if it doesn't exist
-        if "page1_population_mode" not in st.session_state:
-            # Use the existing population_mode value or default to "Copula (synthetic)"
-            st.session_state.page1_population_mode = getattr(st.session_state, "population_mode", "Copula (synthetic)")
-
         def on_population_mode_change():
             """Clear selected donation config when population mode changes"""
             st.session_state.population_mode = st.session_state.page1_population_mode
@@ -1463,120 +1400,45 @@ BUDGET_SHOP,5.25,50,0""")
 
 
 def reset_all_page1_defaults():
-    """Reset all Page 1 parameters to system defaults"""
-    
-    # 1. Reset sim_params object attributes
-    # Using hardcoded defaults from SimulationParameters class in models.py
-    st.session_state.sim_params.num_vendors = 1
-    st.session_state.sim_params.periods = 1
-    st.session_state.sim_params.duration_hours = 8.0
-    st.session_state.sim_params.market_price = 100.0
-    st.session_state.sim_params.vendor_price_min = 50.0
-    st.session_state.sim_params.vendor_price_max = 150.0
-    st.session_state.sim_params.vendor_products_min = 50
-    st.session_state.sim_params.vendor_products_max = 150
-    st.session_state.sim_params.vendor_products_avg = 100
-    st.session_state.sim_params.platform_markup = 0.15
-    st.session_state.sim_params.price_range = 0.25
-    st.session_state.sim_params.bidding_percentage = 0.25
-    st.session_state.sim_params.price_grid = 9
-    st.session_state.sim_params.vendor_config_mode = "random"
-    st.session_state.sim_params.override_carryover = False
-    st.session_state.sim_params.vendor_carryover_probability = 0.5
-    
-    # Distribution params
-    st.session_state.sim_params.income_distribution = "lognormal"
-    st.session_state.sim_params.lognormal_mu = 10.0
-    st.session_state.sim_params.lognormal_sigma = 0.5
-    st.session_state.sim_params.lognormal_min = 0.0
-    st.session_state.sim_params.lognormal_max = None
-    st.session_state.sim_params.gg_k = 1.5
-    st.session_state.sim_params.gg_c = 2.0
-    st.session_state.sim_params.gg_lambda = 20000.0
-    st.session_state.sim_params.gg_min = 0.0
-    st.session_state.sim_params.gg_max = None
-    st.session_state.sim_params.dagum_a = 2.0
-    st.session_state.sim_params.dagum_p = 1.5
-    st.session_state.sim_params.dagum_b = 25000.0
-    st.session_state.sim_params.dagum_min = 0.0
-    st.session_state.sim_params.dagum_max = None
-    
-    # Categories & Limits
-    st.session_state.sim_params.discount_income_threshold = 20000.0
-    st.session_state.sim_params.num_discount_categories = 2
-    st.session_state.sim_params.num_fixed_categories = 8  # Default (price_grid - 1)
-    st.session_state.sim_params.apply_purchasing_limits = False
-    st.session_state.sim_params.max_purchases_per_term = 10
-    st.session_state.sim_params.purchasing_limits = {}
-    
-    # 2. Reset Session State Keys (Widget Keys)
-    st.session_state.num_vendors_input = 1
-    st.session_state.periods_input = 1
-    st.session_state.duration_hours_input = 8
-    st.session_state.market_price_input = 100.0
-    st.session_state.single_vendor_price_input = 100.0
-    st.session_state.single_vendor_products_input = 100
-    st.session_state.vendor_price_min_input = 50.0
-    st.session_state.vendor_price_max_input = 150.0
-    st.session_state.vendor_products_min_input = 50
-    st.session_state.vendor_products_max_input = 150
-    st.session_state.vendor_products_avg_input = 100
-    st.session_state.platform_markup_slider = 0.15
-    st.session_state.price_range_slider = 0.25
-    st.session_state.bidding_percentage_slider = 0.25
-    st.session_state.price_grid_input = 9
-    st.session_state.page1_vendor_setup_mode = "Generate Randomly"
-    st.session_state.page1_carryover_mode = "Use probability"
-    st.session_state.vendor_carryover_probability_slider = 0.5
-    st.session_state.single_vendor_carryover = False
-    
-    st.session_state.page1_income_distribution = "lognormal"
-    st.session_state.lognormal_mu_input = 10.0
-    st.session_state.lognormal_sigma_input = 0.5
-    st.session_state.lognormal_min_input = 0.0
-    st.session_state.gg_k_input = 1.5
-    st.session_state.gg_c_input = 2.0
-    st.session_state.gg_lambda_input = 20000.0
-    st.session_state.gg_min_input = 0.0
-    st.session_state.dagum_a_input = 2.0
-    st.session_state.dagum_p_input = 1.5
-    st.session_state.dagum_b_input = 25000.0
-    st.session_state.dagum_min_input = 0.0
-    
-    st.session_state.discount_threshold_input = 20000.0
-    st.session_state.num_discount_categories_input = 2
-    st.session_state.num_fixed_categories_input = 8
-    st.session_state.nfic_manually_set = False
-    
-    st.session_state.page1_apply_limits = "No"
-    st.session_state.artificial_limit_input = 10
-    
-    # Simulation Settings
-    st.session_state.n_agents = 1000
-    st.session_state.n_agents_input = 1000
-    st.session_state.seed = 42
-    st.session_state.seed_input = 42
-    st.session_state.base_seed = 42
-    st.session_state.base_seed_input = 42
-    st.session_state.n_runs = 10
-    st.session_state.n_runs_input = 10
-    st.session_state.show_individual_agents = False
-    st.session_state.page1_simulation_execution_mode = "Live Simulation"
-    st.session_state.page1_simulation_mode = "Single Run"
-    st.session_state.page1_population_mode = "Copula (synthetic)"
-    # The radio's on_change (on_population_mode_change) does not fire for a write
-    # through the Session State API: mirror it here.
-    if st.session_state.get("population_mode") != "Copula (synthetic)":
-        st.session_state.population_mode = "Copula (synthetic)"
+    """Reset every Page-1 setting to exactly what a FRESH session shows (owner
+    ruling Q-39, 2026-10-07).
+
+    Runs as the button's ``on_click`` callback, i.e. before the script draws any
+    widget, so every widget key may be written. The values come from the same
+    place as a fresh session's: every ``SimulationParameters`` field (the hidden
+    ones too) goes back to its dataclass default, the Page-1 session values to
+    ``SESSION_DEFAULTS`` (app/models.py), and every widget key to
+    ``page1_widget_values`` of those - the mapping ``initialize_widget_keys``
+    seeds a fresh session from. No default value is written here."""
+    sim_params = st.session_state.sim_params
+
+    # 1. sim_params: every field to its dataclass default (in place - the object is
+    #    the canonical Page-1 state other code holds on to)
+    for f in fields(SimulationParameters):
+        default = f.default if f.default is not MISSING else f.default_factory()
+        setattr(sim_params, f.name, copy.deepcopy(default))
+
+    # 2. the Page-1 values kept in session state itself
+    previous_population_mode = st.session_state.get("population_mode")
+    for key in PAGE1_SESSION_VALUES:
+        st.session_state[key] = copy.deepcopy(SESSION_DEFAULTS[key])
+    # The population radio's on_change (on_population_mode_change) does not fire for
+    # a write through the Session State API: mirror it here.
+    if previous_population_mode != st.session_state.population_mode:
         from app.pages.decision_execution import clear_decision_config
         clear_decision_config('donation_default')
 
-    # Widgets that still pass value= (derived from sim_params / a canonical key):
-    # drop their keys so they re-initialise from that value instead of being
-    # written here (a write plus value= is the Q-41 warning).
-    st.session_state.uniform_purchasing_limit = 10
-    st.session_state.pop("lognormal_max_text_input", None)
-    st.session_state.pop("gg_max_text_input", None)
-    st.session_state.pop("dagum_max_text_input", None)
-    st.session_state.pop("uniform_purchasing_limit_input", None)
-    st.session_state.pop("show_individual_agents_checkbox", None)
+    # 3. helper state and every widget key
+    for key, value in PAGE1_UI_DEFAULTS.items():
+        st.session_state[key] = value
+    for key, value in page1_widget_values(sim_params, st.session_state).items():
+        st.session_state[key] = value
+
+    # 4. state a fresh session does not have yet is dropped, so it initialises
+    #    exactly as on a first draw: the value= widgets, the per-category
+    #    purchasing limits and their scratch dict
+    for key in PAGE1_VALUE_WIDGET_KEYS:
+        st.session_state.pop(key, None)
+    st.session_state.pop("purchasing_limits_temp", None)
+    for key in [k for k in st.session_state.keys() if k.startswith("purchasing_limit_")]:
+        st.session_state.pop(key, None)

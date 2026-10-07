@@ -245,7 +245,7 @@ owner can decide.
 
 | Key | Written by | Why it looks dead |
 |---|---|---|
-| `save_results` | `models.initialize_session_state` defaults dict | the "save results to disk" feature was disabled in the UI; the flag was kept for backward compatibility and nothing consults it |
+| `save_results` | `models.SESSION_DEFAULTS` (seeded by `initialize_session_state`) | the "save results to disk" feature was disabled in the UI; the flag was kept for backward compatibility and nothing consults it |
 | `simulation_running` | same | a spinner flag from an older version of the run button |
 | `individual_results` | same | seeded to `{}`; the per-decision results now live in `simulation_results` |
 | `_default_params_initialized` | `models.initialize_default_decision_parameters` | a debug marker; the comment above it already says the logic no longer branches on it |
@@ -283,13 +283,14 @@ feature that no screen offers any more. The priority chains still have a slot fo
 
 ## 7. Bulk operations
 
-Three places delete keys wholesale. They matter because they are the only way a key
+Four places delete keys wholesale. They matter because they are the only way a key
 disappears, and the registry's initialisers are what put it back.
 
 | Operation | What it deletes | Then |
 |---|---|---|
 | A decision tab's **Reset to research defaults** | every key starting with `di_`, `dd_` or `rtd_` (whichever tab), plus that tab's persistence dict. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists (September 2026) | calls the tab's `initialize_*_session_state()` (DI/DD: re-seeds the widget keys from the defaults) |
 | Decision 4's per-element reset | only `rtd_intercept_{mech}` and its widget key (for Flexibility also `rtd_flex_observed_weight` and its slider key), plus those entries in the persistence dict | same; σ is decision-wide and deliberately untouched |
+| Page 1's **Reset to Default Values** (Q-39, 2026-10-07) | every `purchasing_limit_{i}`, `purchasing_limits_temp` and the five widget keys that pass `value=` (the three "Maximum Value" text inputs, `uniform_purchasing_limit_input`, `show_individual_agents_checkbox`); every other Page-1 widget key is *written* | `sim_params` fields go back to the `SimulationParameters` dataclass defaults and the Page-1 session values to `models.SESSION_DEFAULTS`; the widget keys are written from `page1_widget_values`, the same mapping `initialize_widget_keys` seeds a fresh session from |
 | **Clear Results** on the results page | *every* key in `st.session_state` | calls `models.initialize_session_state()` and stays on the results page |
 
 The prefix list lives in the registry as `PREFIX_DELETE_PREFIXES` and the test

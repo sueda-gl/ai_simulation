@@ -2,6 +2,8 @@
 """
 Data models and session state management for the Enhanced AI Agent Simulation.
 """
+import copy
+
 import streamlit as st
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -141,6 +143,29 @@ class SimulationParameters:
         )
 
 
+#: Session-state values seeded once per session by initialize_session_state (the
+#: ones not held in SimulationParameters). Page 1's "Reset to Default Values"
+#: puts its Page-1 entries (n_agents, seed, n_runs, base_seed,
+#: show_individual_agents, population_mode) back to these same values (Q-39).
+SESSION_DEFAULTS = {
+    'population_mode': 'Copula (synthetic)',
+    'income_spec_mode': 'categorical only',
+    'sigma_in_copula': False,
+    'sigma_in_research': True,  # Enable sigma in Research mode by default
+    'sigma_value_ui': DONATION_SIGMA_OVERALL,  # Static empirical SD value
+    'sigma_coefficient': 1.0,  # Coefficient to multiply the static SD (0-2)
+    'anchor_observed_weight': 0.75,
+    'n_agents': 1000,
+    'seed': 42,
+    'n_runs': 10,
+    'base_seed': 42,
+    'show_individual_agents': False,
+    'save_results': True,  # NOTE: Feature disabled in UI but kept for backward compatibility
+    'simulation_running': False,
+    'individual_results': {}  # New: store individual decision results
+}
+
+
 @dataclass
 class DecisionParameters:
     """Decision-specific parameters (Page 2)"""
@@ -216,27 +241,9 @@ def initialize_session_state():
         st.session_state.mc_results = None
     
     # Add missing defaults used across the UI and simulation
-    defaults = {
-        'population_mode': 'Copula (synthetic)',
-        'income_spec_mode': 'categorical only',
-        'sigma_in_copula': False,
-        'sigma_in_research': True,  # Enable sigma in Research mode by default
-        'sigma_value_ui': DONATION_SIGMA_OVERALL,  # Static empirical SD value
-        'sigma_coefficient': 1.0,  # Coefficient to multiply the static SD (0-2)
-        'anchor_observed_weight': 0.75,
-        'n_agents': 1000,
-        'seed': 42,
-        'n_runs': 10,
-        'base_seed': 42,
-        'show_individual_agents': False,
-        'save_results': True,  # NOTE: Feature disabled in UI but kept for backward compatibility
-        'simulation_running': False,
-        'individual_results': {}  # New: store individual decision results
-    }
-    
-    for key, default_value in defaults.items():
+    for key, default_value in SESSION_DEFAULTS.items():
         if key not in st.session_state:
-            st.session_state[key] = default_value
+            st.session_state[key] = copy.deepcopy(default_value)
     
     # Initialize all default decision parameters (CRITICAL: prevents state loss)
     initialize_default_decision_parameters()
