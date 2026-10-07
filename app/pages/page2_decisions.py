@@ -4,6 +4,7 @@ Page 2: Decision-Specific Parameters for the Enhanced AI Agent Simulation.
 """
 import streamlit as st
 from app.state.widgets import stateful
+from app.seam.config_repo import get_config_repo
 from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
 from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
@@ -813,7 +814,7 @@ def render_selected_rejected_transaction_config_display():
                 st.caption(f"Research Specification draws: {'on' if stochastic.get('sigma_enabled', True) else 'off'} · "
                            f"Copula draws: {'on' if stochastic.get('sigma_in_copula', False) else 'off'}")
                 st.caption(f"σ mode: {stochastic.get('sigma_strategy', 'overall')} · "
-                           f"σ coefficient: {float(stochastic.get('scale_factor', 1.0)):.2f}")
+                           f"σ coefficient: {float(stochastic.get('scale_factor', get_config_repo().rtd_sigma_coefficient_defaults()[0])):.2f}")
             with det_col2:
                 st.markdown("**🔗 Rank Aggregation:**")
                 agg = params.get('aggregation', {}) or {}

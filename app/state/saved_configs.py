@@ -17,6 +17,8 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 
+from app.seam.config_repo import get_config_repo
+
 
 def extract_disclose_income_configuration_details(result_key):
     """Extract income mode from result key for disclose income"""
@@ -206,7 +208,9 @@ def get_current_rejected_transaction_params():
             # R18: the Decision 4 tab's own default is ON.
             'sigma_enabled': st.session_state.get('rtd_sigma_enabled', True),
             'sigma_in_copula': st.session_state.get('rtd_sigma_in_copula', False),
-            'scale_factor': st.session_state.get('rtd_scale_factor', 1.0),
+            # σ coefficient defaults from config/decisions.yaml (0.5, owner ruling 2026-10-07)
+            'scale_factor': st.session_state.get(
+                'rtd_scale_factor', get_config_repo().rtd_sigma_coefficient_defaults()[0]),
             'sigma_strategy': st.session_state.get('rtd_sigma_strategy', 'overall'),
             'quintile_scale_factors': st.session_state.get('rtd_quintile_scale_factors', {}),
         },

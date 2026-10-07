@@ -32,6 +32,7 @@ read keys + rtd_tab_* widget keys + a tab-persistence dict.
 """
 import streamlit as st
 from app.state.widgets import stateful
+from app.seam.config_repo import rtd_sigma_coefficient_defaults
 import yaml
 import pandas as pd
 from pathlib import Path
@@ -103,15 +104,17 @@ def initialize_rtd_session_state():
     if 'rejected_transaction_tab_persistence' not in st.session_state:
         st.session_state.rejected_transaction_tab_persistence = {}
 
-    # Sigma is a DECISION-WIDE setting (one strategy + coefficient applied to all four
+    # Sigma is a DECISION-WIDE setting (one strategy + coefficient applied to all five
     # elements; each element keeps its own base sigma from config). Anchors and
-    # intercepts remain per element.
+    # intercepts remain per element. The coefficient defaults come from the file
+    # (owner ruling 2026-10-07: 0.5 overall and per budget level; was 1.0).
+    default_scale, default_quintile_scales = rtd_sigma_coefficient_defaults(config)
     defaults = {
         'rtd_income_mode': 'Continuous only',
         'rtd_sigma_enabled': True,
         'rtd_sigma_in_copula': False,
         'rtd_sigma_strategy': 'overall',
-        'rtd_scale_factor': 1.0,
+        'rtd_scale_factor': default_scale,
         # Element selected via a per-element Run button (None = whole decision).
         # Controls display + export only; the model always computes all four elements.
         'rtd_run_element': None,
@@ -132,9 +135,7 @@ def initialize_rtd_session_state():
             st.session_state[key] = default
 
     if 'rtd_quintile_scale_factors' not in st.session_state:
-        st.session_state.rtd_quintile_scale_factors = {
-            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0,
-        }
+        st.session_state.rtd_quintile_scale_factors = dict(default_quintile_scales)
 
 
 def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
@@ -498,7 +499,8 @@ def render_decision_sigma_controls(config):
     if sigma_strategy == 'overall':
         coeff_widget_key = 'rtd_tab_sigma_coefficient'
         coeff_storage_key = 'rtd_sigma_coefficient'
-        scale_fallback = st.session_state.get('rtd_scale_factor', 1.0)
+        scale_fallback = st.session_state.get('rtd_scale_factor',
+                                              rtd_sigma_coefficient_defaults(config)[0])
 
         coeff_val = restore_widget_from_storage(
             coeff_widget_key, st.session_state.rejected_transaction_tab_persistence,
@@ -524,7 +526,8 @@ def render_decision_sigma_controls(config):
         st.markdown("Each level has its own base σ from empirical data:")
 
         quintile_coefficients = {}
-        default_scale = st.session_state.get('rtd_scale_factor', 1.0)
+        default_scale = st.session_state.get('rtd_scale_factor',
+                                             rtd_sigma_coefficient_defaults(config)[0])
         current_scales = st.session_state.get('rtd_quintile_scale_factors', {
             '1': default_scale, '2': default_scale, '3': default_scale,
             '4': default_scale, '5': default_scale})
@@ -814,6 +817,15 @@ def render_selected_config_notice():
             st.rerun()
 
 
+def _sigma_coefficient_summary():
+    """The decision-wide σ coefficient(s) in effect, for the Copula-only caption."""
+    if st.session_state.get('rtd_sigma_strategy', 'overall') == 'quintile':
+        q = st.session_state.get('rtd_quintile_scale_factors') or {}
+        return "per budget level " + " / ".join(
+            f"{float(q.get(level, 0.0)):.2f}" for level in ['1', '2', '3', '4', '5'])
+    return f"{float(st.session_state.get('rtd_scale_factor', 0.0)):.2f}"
+
+
 def reset_rtd_to_defaults():
     """Reset all Decision 4 tab settings to research defaults (session state only -
     the coefficients and sigma constants live in config/decisions.yaml and are not
@@ -935,7 +947,11 @@ def render_rejected_transaction_defaults_tab():
         if sigma_enabled:
             quintile_sigma_table = render_decision_sigma_controls(config)
         elif sigma_in_copula:
-            st.caption("Copula draws use each element's base σ (coefficient 1.0). "
+            # Copula draws use the SAME decision-wide σ settings as Research
+            # Specification (the seam passes rtd_scale_factor / rtd_quintile_scale_factors
+            # for both); the controls are only drawn under the Research box.
+            st.caption(f"Copula draws use each element's base σ × the decision's σ "
+                       f"coefficient ({_sigma_coefficient_summary()}). "
                        "Check the Research Specification box to configure σ settings.")
         else:
             st.info("Stochastic component disabled - deterministic scores are used.")

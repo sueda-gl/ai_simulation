@@ -422,6 +422,9 @@ rejected_transaction_defaults:
   # five per-allowance entries are the previous revision's column (factor 0.357334167)
   # multiplied once more by 1.0228235, implying 0.365489783. TTP / WTP / Flexibility are
   # internally consistent throughout. See docs/d4_alignment_050926_2026-09-16.md.
+  # sigma coefficient defaults (scale_factor / quintile_scale_factors): 0.5 for every element and
+  # every budget level - owner ruling 2026-10-07 (updated user manual; was 1.0). The tab applies
+  # ONE decision-wide coefficient set, so the five elements must carry the same values.
   stochastic:
     sigma_value: 0             # >0 enables draws in Research Specification mode
     in_copula: false           # enables draws in Copula mode
@@ -435,13 +438,13 @@ rejected_transaction_defaults:
           '3': 0.4368824333
           '4': 0.4085647667
           '5': 0.4181633667
-        scale_factor: 1.0
+        scale_factor: 0.5
         quintile_scale_factors:
-          '1': 1.0
-          '2': 1.0
-          '3': 1.0
-          '4': 1.0
-          '5': 1.0
+          '1': 0.5
+          '2': 0.5
+          '3': 0.5
+          '4': 0.5
+          '5': 0.5
         anchor: continuous     # weighted_ttp06 (doc line 191)
       loyalty:
         sigma_strategy: overall
@@ -452,13 +455,13 @@ rejected_transaction_defaults:
           '3': 0.4790281978
           '4': 0.4479787442
           '5': 0.4585033149
-        scale_factor: 1.0
+        scale_factor: 0.5
         quintile_scale_factors:
-          '1': 1.0
-          '2': 1.0
-          '3': 1.0
-          '4': 1.0
-          '5': 1.0
+          '1': 0.5
+          '2': 0.5
+          '3': 0.5
+          '4': 0.5
+          '5': 0.5
         anchor: continuous     # population z = std(bs_weighted_loyalty) ('binned' = doc-literal)
       wtp:
         sigma_strategy: overall
@@ -469,13 +472,13 @@ rejected_transaction_defaults:
           '3': 0.5000888363
           '4': 0.4676742829
           '5': 0.4786615699
-        scale_factor: 1.0
+        scale_factor: 0.5
         quintile_scale_factors:
-          '1': 1.0
-          '2': 1.0
-          '3': 1.0
-          '4': 1.0
-          '5': 1.0
+          '1': 0.5
+          '2': 0.5
+          '3': 0.5
+          '4': 0.5
+          '5': 0.5
         anchor: continuous     # raw WTP_calculated (.dta-verified: NOT the binned score)
       risk_taking:
         sigma_strategy: overall
@@ -486,13 +489,13 @@ rejected_transaction_defaults:
           '3': 0.43540774
           '4': 0.40718566
           '5': 0.41675186
-        scale_factor: 1.0
+        scale_factor: 0.5
         quintile_scale_factors:
-          '1': 1.0
-          '2': 1.0
-          '3': 1.0
-          '4': 1.0
-          '5': 1.0
+          '1': 0.5
+          '2': 0.5
+          '3': 0.5
+          '4': 0.5
+          '5': 0.5
         anchor: continuous     # population z of RT_calculated ('binned' = doc-literal)
       flexibility:
         sigma_strategy: overall
@@ -503,13 +506,13 @@ rejected_transaction_defaults:
           '3': 0.4801645799
           '4': 0.4490414678
           '5': 0.4595910065
-        scale_factor: 1.0
+        scale_factor: 0.5
         quintile_scale_factors:
-          '1': 1.0
-          '2': 1.0
-          '3': 1.0
-          '4': 1.0
-          '5': 1.0
+          '1': 0.5
+          '2': 0.5
+          '3': 0.5
+          '4': 0.5
+          '5': 0.5
         anchor: continuous     # z_anchored_flexibility ('binned' = doc-literal Flexibility_combined15)
 vendor_choice_weights:
   uses_global_parameters: []

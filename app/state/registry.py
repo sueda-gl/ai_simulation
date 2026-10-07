@@ -359,8 +359,9 @@ _DD_MIRRORS = _rows((
 _RTD_MIRRORS = _rows((
     ("rtd_income_mode", "Continuous only"),
     ("rtd_sigma_strategy", "overall", "decision-wide: one strategy for all five mechanisms"),
-    ("rtd_scale_factor", 1.0, "decision-wide"),
-    ("rtd_quintile_scale_factors", {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0}),
+    ("rtd_scale_factor", "<config stochastic.mechanisms.*.scale_factor (0.5), else 1.0>",
+     "decision-wide; owner ruling 2026-10-07 (was 1.0)"),
+    ("rtd_quintile_scale_factors", "<config stochastic.mechanisms.*.quintile_scale_factors (all 0.5)>"),
     ("rtd_intercept_{mech}", "<config intercepts[mech], else 0.0>",
      "mech in ttp / loyalty / wtp / risk_taking / flexibility"),
     ("rtd_flex_observed_weight", "<config flexibility_anchor.observed_weight, else 0.25>",

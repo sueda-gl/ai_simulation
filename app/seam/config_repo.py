@@ -14,7 +14,7 @@ engine to patch.
 
 import copy
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Mapping, Optional, Tuple
 
 import yaml
 
@@ -103,6 +103,45 @@ class DecisionsConfig:
         adjustment = self.decision("donation_default").get("adjustment") or {}
         return float(adjustment.get("shift_value", 0.0))
 
+    # ---------------------------------------------------- Decision 4 defaults
+
+    def rtd_sigma_coefficient_defaults(self) -> Tuple[float, Dict[str, float]]:
+        """Decision 4's research-default σ coefficients (see the module function)."""
+        return rtd_sigma_coefficient_defaults(self.decision("rejected_transaction_defaults"))
+
+
+RTD_LEVELS = ("1", "2", "3", "4", "5")
+
+
+def rtd_sigma_coefficient_defaults(rtd_block: Mapping) -> Tuple[float, Dict[str, float]]:
+    """
+    Decision 4's research-default σ coefficients: ``(overall, {level: coefficient})``,
+    read from ``rejected_transaction_defaults.stochastic.mechanisms.*.scale_factor`` /
+    ``quintile_scale_factors`` (owner ruling 2026-10-07: 0.5 everywhere; was 1.0).
+
+    The file carries the coefficients per element, but the tab applies ONE
+    decision-wide set to all five elements, so the five must agree - a file in
+    which they differ is rejected instead of silently picking one. An element
+    without the keys falls back as the engine does (``scale_factor`` 1.0,
+    quintile factors = ``scale_factor``).
+    """
+    mechanisms = ((rtd_block or {}).get("stochastic") or {}).get("mechanisms") or {}
+    sets = {}
+    for name, mech in mechanisms.items():
+        mech = mech or {}
+        scale = float(mech.get("scale_factor", 1.0))
+        quintiles = mech.get("quintile_scale_factors") or {}
+        sets[name] = (scale, {lvl: float(quintiles.get(lvl, quintiles.get(int(lvl), scale)))
+                              for lvl in RTD_LEVELS})
+    if not sets:
+        return 1.0, {lvl: 1.0 for lvl in RTD_LEVELS}
+    distinct = {repr(v) for v in sets.values()}
+    if len(distinct) > 1:
+        raise ValueError("rejected_transaction_defaults: the five elements' scale_factor / "
+                         f"quintile_scale_factors must agree (decision-wide σ): {sets}")
+    scale, quintiles = next(iter(sets.values()))
+    return scale, dict(quintiles)
+
 
 _DEFAULT_REPO: Optional[DecisionsConfig] = None
 
@@ -127,4 +166,5 @@ __all__ = [
     "DecisionsConfig",
     "get_config_repo",
     "reset_config_repo",
+    "rtd_sigma_coefficient_defaults",
 ]
