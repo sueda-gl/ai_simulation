@@ -1,13 +1,19 @@
 """
 Validation tests for Decision 1: Disclose Income against the professor's CORRECTED Stata run.
 
-Reference: "Decision 1 - Disclosure of Income 110226_Final.docx" and its data file
+Reference data: "Decision 1 - Disclosure of Income 110226_Final.docx" and its data file
 "Stata_File_Decision 1_Updated.dta" (280 participants). The corrected columns are
 disclose_categorical (167 Y), disclose_cont (169 Y) and fs_deterministic_*; the old error
 model kept in the *_err columns is NOT the reference.
 
-Owner ruling (R-D1): the app keeps its own research default beta0 = 0.75, but with beta0 set
-to the Stata value (0.1) the model must reproduce Stata participant-by-participant.
+Owner ruling (R-D1, superseded 2026-10-07): the model uses exactly the owner's September values,
+i.e. Andrei's constants from "Decision 1 - Disclosure of Income 110226_Final_Andrei_Fix_Issue.docx"
+(Extraversion 0.00680238, level intercepts 0.0089007 ... -0.0145324, composite SDs 0.025040462 /
+0.7984211971). Andrei applied the Extraversion weight typo fix 641.15 -> 645.15; the professor's
+.dta does not, so the two runs differ slightly. These tests DOCUMENT that known, accepted
+difference: with beta0 = 0.1, continuous matches 280/280, categorical matches 279/280 with the
+single mismatch participant 848 (a near-threshold case), and the fs scores agree within
+FS_TOL_ANDREI. The app default beta0 stays 0.75.
 
 The corrected Stata columns are frozen in data/stata_d1_verification.csv so the test runs
 without the professor's file; if the .dta is present locally we also check the frozen CSV
@@ -32,7 +38,12 @@ PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 1_Updated.dta"
 
 STATA_BETA0 = 0.1        # `gen beta0 = 0.1` in the professor's corrected Stata code
 APP_DEFAULT_BETA0 = 0.75  # the app's research default (unchanged by ruling R-D1)
-FS_TOL = 1e-5
+# Measured max |fs_model - fs_stata| with the September/Andrei constants: 0.003414 (categorical)
+# and 0.003373 (continuous), both at participant 838. The bound sits just above that.
+FS_TOL_ANDREI = 3.5e-3
+KNOWN_CATEGORICAL_MISMATCHES = [848]  # model Y (fs +0.00046) vs Stata N (fs -0.00022)
+SEPTEMBER_SD_CATEGORICAL = 0.025040462
+SEPTEMBER_SD_ANCHORED_PB = 0.7984211971
 
 FROZEN_COLS = [
     "participantid", "assignedallowancelevel", "income", "income_high", "income_high_cat",
@@ -108,14 +119,17 @@ def _run(merged, di_params, income_mode):
     return np.array(decision), np.array(fs), np.array(high)
 
 
-def test_categorical_matches_stata_280_of_280(merged, di_params):
+def test_categorical_matches_stata_except_known_848(merged, di_params):
+    """Known, accepted difference (R-D1 superseded): 279/280, the one mismatch is participant 848."""
     decision, fs, high = _run(merged, di_params, "Categorical only")
     ref = merged["disclose_categorical"].astype(int).values
     mismatched = merged["Participant ID"].values[decision != ref].tolist()
-    assert mismatched == [], f"categorical mismatches (participant ids): {mismatched}"
-    assert int(decision.sum()) == 167
+    assert mismatched == KNOWN_CATEGORICAL_MISMATCHES, f"categorical mismatches (participant ids): {mismatched}"
+    assert int((decision == ref).sum()) == 279
+    assert int(decision.sum()) == 168  # Stata 167 + participant 848
     assert (high == merged["income_high_cat"].astype(int).values).all()
-    np.testing.assert_allclose(fs, merged["fs_deterministic_categorical"].astype(float).values, rtol=0, atol=FS_TOL)
+    np.testing.assert_allclose(fs, merged["fs_deterministic_categorical"].astype(float).values,
+                               rtol=0, atol=FS_TOL_ANDREI)
 
 
 def test_continuous_matches_stata_280_of_280(merged, di_params):
@@ -125,16 +139,28 @@ def test_continuous_matches_stata_280_of_280(merged, di_params):
     assert mismatched == [], f"continuous mismatches (participant ids): {mismatched}"
     assert int(decision.sum()) == 169
     assert (high == merged["income_high"].astype(int).values).all()
-    np.testing.assert_allclose(fs, merged["fs_deterministic_cont"].astype(float).values, rtol=0, atol=FS_TOL)
+    np.testing.assert_allclose(fs, merged["fs_deterministic_cont"].astype(float).values,
+                               rtol=0, atol=FS_TOL_ANDREI)
 
 
-def test_composite_sds_equal_stata_egen_std(stata, di_params):
-    """The fixed composite SDs in the config are Stata's `egen std()` (N-1) of the .dta columns."""
+def test_composite_sds_are_september_values(stata, di_params):
+    """The fixed composite SDs are the owner's September (Andrei) values, not Stata's `egen std()`
+    of the professor's .dta (0.0250386349 / 0.7971466830) -- the documented R-D1 difference."""
     cz = di_params["composite_z_scoring"]
+    assert cz["weighted_disclosure_categorical"]["sd"] == SEPTEMBER_SD_CATEGORICAL
+    assert cz["anchored_pb"]["sd"] == SEPTEMBER_SD_ANCHORED_PB
+    # the difference from the .dta is small (< 0.2%) and is the accepted one
     assert cz["weighted_disclosure_categorical"]["sd"] == pytest.approx(
-        stata["weighted_disclosure_categorical"].astype(float).std(ddof=1), rel=1e-8)
+        stata["weighted_disclosure_categorical"].astype(float).std(ddof=1), rel=2e-3)
     assert cz["anchored_pb"]["sd"] == pytest.approx(
-        stata["anchored_prosocial_behavior"].astype(float).std(ddof=1), rel=1e-8)
+        stata["anchored_prosocial_behavior"].astype(float).std(ddof=1), rel=2e-3)
+
+
+def test_september_constants(di_params):
+    """Owner ruling: Decision 1 uses exactly the September (Andrei) constants."""
+    assert di_params["equation2_coefficients"]["extraversion"] == 0.00680238
+    assert [di_params["categorical_intercepts"][f"level_{k}"] for k in range(1, 6)] == [
+        0.0089007, 0.0055352, 0.0023109, -0.0032216, -0.0145324]
 
 
 def test_shipped_default_intercept_unchanged(di_params):

@@ -145,7 +145,7 @@ disclose_income:
     honesty_humility: 0.0295482
     religious: 0.0677157
   equation2_coefficients:
-    extraversion: 0.00674934        # CORRECTED to professor 110226 .dta (was 0.00680238)
+    extraversion: 0.00680238        # owner ruling 2026-10-07: September/Andrei values (Andrei_Fix_Issue doc)
     neuroticism: 0.0173732
     honesty_humility: 0.0163905
     income: -0.008988
@@ -184,10 +184,10 @@ disclose_income:
       sd: 0.08608372
     weighted_disclosure_categorical:
       mean: 0.0
-      sd: 0.0250386349   # Stata egen std (N-1) of weighted_disclosure_categorical, 110226 .dta (was 0.025040462)
+      sd: 0.025040462
     anchored_pb:
       mean: 0.0
-      sd: 0.7971466830   # Stata egen std (N-1) of anchored_prosocial_behavior, 110226 .dta (was 0.7984211971)
+      sd: 0.7984211971
   stochastic:
     sigma_strategy: overall
     sigma_overall: 9.899547
@@ -208,11 +208,11 @@ disclose_income:
     in_copula: false
   income_mode: Categorical only
   categorical_intercepts:
-    level_1: 0.0089009    # _cons, corrected regression (110226 doc)
-    level_2: 0.0055353    # .0089009 - .0033656
-    level_3: 0.0023108    # .0089009 - .0065901
-    level_4: -0.0032214   # .0089009 - .0121223
-    level_5: -0.0145326   # .0089009 - .0234335
+    level_1: 0.0089007
+    level_2: 0.0055352
+    level_3: 0.0023109
+    level_4: -0.0032216
+    level_5: -0.0145324
 disclose_documents:
   uses_global_parameters: []
   placeholder: false

@@ -3,9 +3,9 @@
 The migration split the logic from the screens. It did **not** re-derive the model.
 Along the way seven things turned up that look like modelling decisions rather than
 programming decisions, so they were left exactly as they were and written down here.
-Two are still open (items 1 and 3). Item 2 and items 4–7 have since been resolved or
-ruled on by the owner and applied, and are kept below as records; the one thing left
-from item 7 is a data-file note, at the end.
+Three are open (items 1–3; item 2 was reopened on 2026-10-07 in a narrower form).
+Items 4–7 have since been ruled on by the owner and applied, and are kept below as
+records; the one thing left from item 7 is a data-file note, at the end.
 
 Each open item says three things: **what the code does today**, **why it looks
 suspicious**, and **what would change if it were altered**. None of them is a bug the
@@ -57,17 +57,40 @@ authoritative vendor score?
 
 ---
 
-## 2. Three frozen Decision 1 reference files that disagree — RESOLVED 2026-10-06 (R-D1)
+## 2. Decision 1: Andrei's constants vs the professor's corrected Stata run — OPEN (reopened 2026-10-07)
 
-**Resolved; no longer open.** The reference for Decision 1 is the professor's corrected
-run: `Stata_File_Decision 1_Updated.dta`, documented in "Decision 1 - Disclosure of
-Income 110226_Final.docx" (`disclose_categorical` = 167 / 280, `disclose_cont` =
-169 / 280; the old error model is kept in that file's `*_err` columns and is not the
-reference). Its corrected columns are frozen in `data/stata_d1_verification.csv`, and
-`tests/test_disclose_income_stata.py` asserts the model reproduces both columns
-280 / 280 (and `fs_deterministic_*` to 1e-5) with β0 = 0.1, the Stata value. The app's
-own research default stays β0 = 0.75 (owner ruling R-D1; see Q-61 in
-`rulings-and-quirks.md`).
+**What the code does today.** Owner ruling (2026-10-07, superseding R-D1 of 2026-10-06):
+Decision 1 uses exactly the owner's September values — Andrei's, from "Decision 1 -
+Disclosure of Income 110226_Final_Andrei_Fix_Issue.docx": Extraversion `0.00680238`;
+categorical level intercepts `0.0089007, 0.0055352, 0.0023109, −0.0032216, −0.0145324`;
+composite SDs `0.025040462` (weighted disclosure, categorical) and `0.7984211971`
+(anchored prosocial). The app default β0 = 0.75 is unchanged.
+
+**Why it differs from the reference data.** The professor's corrected run,
+`Stata_File_Decision 1_Updated.dta` ("Decision 1 - Disclosure of Income 110226_Final.docx";
+`disclose_categorical` = 167 / 280, `disclose_cont` = 169 / 280), uses Extraversion
+`0.00674934`, intercepts `0.0089009 … −0.0145326` and composite SDs `0.0250386349` /
+`0.7971466830` (Stata `egen std()`). The difference is the Extraversion weight typo fix
+641.15 → 645.15 that Andrei applied and the professor's file does not. With β0 = 0.1
+(the Stata value) the model reproduces `disclose_cont` 280 / 280 and `disclose_categorical`
+279 / 280 — the one mismatch is participant 848, a near-threshold case (model fs
++0.00046 → Y, Stata −0.00022 → N) — and `fs_deterministic_*` agree within 0.0035
+(max |diff| 0.00341 categorical, 0.00337 continuous, both participant 838).
+`tests/test_disclose_income_stata.py` (on the frozen extract
+`data/stata_d1_verification.csv`) asserts exactly this, as a known, accepted difference.
+
+**The question.** Is the 641.15 → 645.15 Extraversion weight correction right, i.e.
+should the professor's Stata run be updated to Andrei's constants (which would make
+participant 848 a Y and the categorical count 168), or should the model go back to
+the professor's `.dta` values?
+
+**What would change if it were altered.** Switching to the professor's values changes
+four numbers in `config/decisions.yaml` (`disclose_income`), the fallbacks in
+`src/decisions/disclose_income_stochastic.py` and the formula text on the Disclose
+Income tab; the test would then expect 280 / 280 and an fs tolerance of 1e-5.
+
+**The earlier question (three disagreeing reference files) is settled:** the reference
+data is the corrected `.dta`.
 
 The three files below — `data/stata_step5_results.csv`, `data/stata_results.csv`,
 `data/python_verification.csv` — and `stata/step5_full_pipeline.do` describe the
