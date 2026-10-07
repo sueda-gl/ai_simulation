@@ -350,45 +350,52 @@ def rtd_element_subset(sheets, active_element):
 # ---------------------------------------------------------------------------
 
 # Upper bound on the histogram bin count (professor 2026-09-17: at the default 1,000
-# agents Stata's rule gives 30 bins, too fine to compare with the document's figures).
-# 17 is exactly what Stata's default rule gives for the 280 participants, so the
+# agents Stata's rule gives 29 bins, too fine to compare with the document's figures).
+# 16 is exactly what Stata's default rule gives for the 280 participants, so the
 # document's histograms and the app's charts share the same bins at every N >= 280.
-RTD_MAX_BINS = 17
+RTD_MAX_BINS = 16
 
 
 def rtd_stata_bin_count(n):
     """Stata's DEFAULT number of histogram bins for n non-missing observations:
 
-        k = round( min( sqrt(n), 10 * log10(n) ) )
+        k = int( min( sqrt(n), 10 * ln(n) / ln(10) ) )
 
-    (`help histogram`: "bins = min(sqrt(N), 10*ln(N)/ln(10))", rounded). Stata rounds
-    half AWAY FROM ZERO, so this uses floor(x + 0.5) rather than Python's round(),
-    which rounds half to even. n = 280 -> min(16.733, 24.472) = 16.733 -> 17 bins,
-    which is what the Decision 4 figures in the design document use; n = 1000 -> 30.
-    Never fewer than one bin."""
+    (`help histogram`: "bins = min(sqrt(N), 10*ln(N)/ln(10))"). Stata TRUNCATES the
+    value to an integer - it does not round: n = 280 -> min(16.733, 24.472) = 16.733
+    -> 16 bins, which is what the Decision 4 figures in the design document use (the
+    document's weighted_loyalty figure is bar-for-bar np.histogram(.dta, bins=16));
+    `sysuse auto` / `histogram mpg` (n = 74, 8.60) reports bin=8; n = 50 -> 7,
+    n = 100 -> 10.
+
+    The expression is evaluated exactly as Stata writes it, 10*ln(n)/ln(10) in double
+    precision, not via log10: at n = 1000 that is 29.999999999999996, so the rule gives
+    29 bins (sqrt(1000) = 31.6 is the larger term). Never fewer than one bin."""
     n = int(n)
     if n < 1:
         return 1
-    raw = min(math.sqrt(n), 10.0 * math.log10(n))
-    return max(1, int(math.floor(raw + 0.5)))
+    raw = min(math.sqrt(n), 10.0 * math.log(n) / math.log(10.0))
+    return max(1, int(raw))
 
 
 def rtd_bin_count(n):
     """Number of bins the Decision 4 score histograms draw for n observations: Stata's
-    default rule (rtd_stata_bin_count) capped at RTD_MAX_BINS = 17 (the rule's own
+    default rule (rtd_stata_bin_count) capped at RTD_MAX_BINS = 16 (the rule's own
     value for the 280 participants), so charts at the app's default 1,000 agents
-    (rule: 30 bins) use the document's 17 bins."""
+    (rule: 29 bins) use the document's 16 bins."""
     return min(rtd_stata_bin_count(n), RTD_MAX_BINS)
 
 
 def rtd_stata_bins(series):
     """(edges, counts) for a score histogram: k equal-width bins spanning min..max,
-    k = rtd_bin_count(number of non-missing values) - Stata's default rule capped at 17.
+    k = rtd_bin_count(number of non-missing values) - Stata's default rule capped at 16.
 
-    The maximum is included in the LAST bin (every other bin is half-open), so the
-    counts always sum to N and the plotted proportions sum to 1. Bins that no agent
-    falls into simply have a count of 0 - Stata does not draw them at all, which is why
-    a 17-bin figure in the document can show only 14 or 16 bars."""
+    Same bins as Stata's `histogram` (start = min, width = (max - min) / k) and as
+    np.histogram(x, bins=k): every bin is closed on the left and open on the right
+    except the LAST, which also includes the maximum, so the counts always sum to N and
+    the plotted proportions sum to 1. Bins that no agent falls into simply have a count
+    of 0 - Stata does not draw them at all, which is why a 16-bin figure in the
+    document can show only 14 or 15 bars."""
     s = pd.Series(series).dropna().astype(float)
     n = len(s)
     k = rtd_bin_count(n)

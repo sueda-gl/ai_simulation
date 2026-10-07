@@ -3,9 +3,9 @@ UI / plumbing tests for the Decision 4 results display and exports.
 
 Covers the professor's 2026-09 display specification:
 
-- score histograms use Stata's DEFAULT bin rule, k = round(min(sqrt(N), 10*log10(N)))
-  equal-width bins spanning min..max, with histnorm='probability' (bar heights sum
-  to 1); the caption under a score chart shows Min and Max only;
+- score histograms use Stata's DEFAULT bin rule, k = int(min(sqrt(N), 10*ln(N)/ln(10)))
+  (truncated, capped at 16) equal-width bins spanning min..max, bar heights are
+  proportions (sum to 1); the caption under a score chart shows Min and Max only;
 - allocation charts order the categories by the element's priority sequence REVERSED
   and read each agent's first choice from the element's RANKING column (never from the
   segment, so the charts are agnostic to the segment -> sequence mapping direction);
@@ -73,13 +73,12 @@ def rtd_frame_cat():
 # A.1 / A.2 - histogram bins, density normalisation, Min/Max caption
 # ---------------------------------------------------------------------------
 def test_density_hist_uses_stata_default_bins_and_probability_normalisation(monkeypatch):
-    """Stata's default rule - k = round(min(sqrt(N), 10*log10(N))) equal-width bins
-    spanning min..max - CAPPED at 17, the rule's value for the 280 participants
+    """Stata's default rule - k = int(min(sqrt(N), 10*ln(N)/ln(10))) equal-width bins
+    spanning min..max - CAPPED at 16, the rule's value for the 280 participants
     (professor 2026-09-17: 30 bins at 1,000 agents were too fine to compare with the
-    document's figures), so N = 500 (rule: 22) and N = 1000 (rule: 30) draw 17 bins;
-    N = 280 -> 17 either way. histnorm='probability', so
-    the bar heights are proportions that sum to 1 (professor: "Did you standardize the
-    density values so that the values sum up to 1?").
+    document's figures), so N = 500 (rule: 22) and N = 1000 (rule: 29) draw 16 bins;
+    N = 280 -> 16 either way. Bar heights are proportions that sum to 1 (professor:
+    "Did you standardize the density values so that the values sum up to 1?").
 
     Stata-parity of the bin counts themselves lives in
     tests/test_rtd_histogram_stata_parity.py."""
@@ -89,38 +88,43 @@ def test_density_hist_uses_stata_default_bins_and_probability_normalisation(monk
     s = pd.Series(np.random.default_rng(7).normal(size=500))
     assert viz._rtd_stata_bin_count(len(s)) == 22           # the uncapped rule
     expected_k = viz._rtd_bin_count(len(s))
-    assert expected_k == 17                                 # capped
-    assert viz._rtd_bin_count(1000) == 17 and viz._rtd_bin_count(280) == 17
+    assert expected_k == 16                                 # capped
+    assert viz._rtd_bin_count(1000) == 16 and viz._rtd_bin_count(280) == 16
     assert viz._rtd_bin_count(100) == 10                    # below the cap: the rule
 
     viz._rtd_density_hist(s, "title", "x", "k")
 
     trace = captured['fig'].data[0]
-    assert trace.histnorm == 'probability'
-    start, size = float(trace.xbins.start), float(trace.xbins.size)
-    assert start == pytest.approx(float(s.min()))
-    assert size == pytest.approx((float(s.max()) - float(s.min())) / expected_k)
-    assert round((float(trace.xbins.end) - start) / size) == expected_k
+    assert trace.type == 'bar'
+    xs, ys = np.asarray(trace.x, dtype=float), np.asarray(trace.y, dtype=float)
+    assert len(ys) == expected_k
+    size = (float(s.max()) - float(s.min())) / expected_k
+    assert xs[0] == pytest.approx(float(s.min()) + size / 2)
+    assert np.diff(xs) == pytest.approx(np.full(expected_k - 1, size))
 
-    # every observation falls inside the k bins -> the plotted proportions sum to 1
+    # every observation - the maximum included - is drawn, so the proportions sum to 1
     edges, counts = viz._rtd_stata_bins(s)
     assert len(counts) == expected_k
-    assert edges[0] == pytest.approx(start)
+    assert edges[0] == pytest.approx(float(s.min()))
     assert counts.sum() == len(s)
-    assert (counts / len(s)).sum() == pytest.approx(1.0)
+    assert ys == pytest.approx(counts / len(s))
+    assert ys.sum() == pytest.approx(1.0)
 
 
-def test_density_hist_bins_a_280_agent_score_into_17_bins(monkeypatch):
-    """The document's sample size: 280 participants -> 17 bins, empty bins kept at zero
-    height (Stata just does not draw them)."""
+def test_density_hist_bins_a_280_agent_score_into_16_bins(monkeypatch):
+    """The document's sample size: 280 participants -> 16 bins (Stata truncates
+    16.73), empty bins kept at zero height (Stata just does not draw them), and the
+    maximum is drawn in the last bar rather than dropped."""
     captured = {}
     monkeypatch.setattr(viz.st, 'plotly_chart',
                         lambda fig, **kw: captured.__setitem__('fig', fig))
     s = pd.Series(np.random.default_rng(3).normal(size=280))
     viz._rtd_density_hist(s, "title", "x", "k280")
     trace = captured['fig'].data[0]
-    start, size = float(trace.xbins.start), float(trace.xbins.size)
-    assert round((float(trace.xbins.end) - start) / size) == 17
+    ys = np.asarray(trace.y, dtype=float)
+    assert len(ys) == 16
+    assert ys.sum() == pytest.approx(1.0)
+    assert ys[-1] >= 1 / 280
 
 
 def test_score_caption_shows_min_and_max_only(monkeypatch):

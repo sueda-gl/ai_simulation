@@ -13,8 +13,9 @@ extract data/stata_d4_verification.csv).
 Re-verified coefficient-by-coefficient against rev 040926-2 / the 050926 file on
 2026-09-16 (docs/d4_alignment_050926_2026-09-16.md): every score, z-score and
 population statistic reproduces the .dta to <= 8.1e-6 (float32 storage), all five
-segment/bin columns are 280/280, the 17-bin histograms (Stata's default bin rule,
-k = round(min(sqrt(N), 10*log10(N))) = 17 at N = 280) of weighted_ttp /
+segment/bin columns are 280/280, the 16-bin histograms (Stata's default bin rule,
+k = int(min(sqrt(N), 10*ln(N)/ln(10))) = 16 at N = 280 - Stata truncates; an earlier
+round() gave 17) of weighted_ttp /
 weighted_loyalty / z_WTP_calculated / z_RT_calculated_hs /
 z_Flexibility_calculated_ivw / z_anchored_flexibility / z_stdactionsP are
 bin-for-bin identical to the file, and the choice1..5 lists now match the stored

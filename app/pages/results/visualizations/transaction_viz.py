@@ -497,28 +497,35 @@ def _rtd_option_lines():
 
 def _rtd_density_hist(series, title, x_title, chart_key):
     """Histogram of a continuous score over k equal-width bins spanning min..max with
-    k = min(round(min(sqrt(N), 10*log10(N))), 17), see app.reports.rtd.rtd_bin_count -
-    Stata's default rule, capped at the 17 bins it yields for the 280 participants - so
-    the chart reproduces the Stata figures in the design document exactly (N = 280 -> 17
-    bins; empty bins are drawn at zero height, which is where the document's 14- and
-    16-bar figures come from) and keeps the same 17 bins at the app's default 1,000
-    agents.
+    k = min(int(min(sqrt(N), 10*ln(N)/ln(10))), 16), see app.reports.rtd.rtd_bin_count -
+    Stata's default rule (TRUNCATED to an integer, as Stata does), capped at the 16 bins
+    it yields for the 280 participants - so the chart reproduces the Stata figures in the
+    design document exactly (N = 280 -> 16 bins; empty bins are drawn at zero height,
+    which is why a document figure can show fewer than 16 bars) and keeps the same 16
+    bins at the app's default 1,000 agents.
 
-    Normalised with histnorm='probability' so each bar is the PROPORTION of agents in
-    that bin and the bar heights SUM TO 1 (professor 2026-09). The series mean is marked
-    with a vertical red line."""
+    The bars are drawn straight from rtd_stata_bins' edges and counts (go.Bar), not
+    re-binned by plotly: plotly's own binning (findBin = floor((x - start)/size)) puts
+    the maximum in an (absent) bin k and silently DROPS it, whereas Stata - and
+    rtd_stata_bins / np.histogram - close the last bin on the right.
+
+    Each bar is the PROPORTION of agents in that bin, so the bar heights SUM TO 1
+    (professor 2026-09). The series mean is marked with a vertical red line."""
     import plotly.graph_objects as go
     s = pd.Series(series).dropna().astype(float)
-    edges, _counts = _rtd_stata_bins(s)
-    start, end = float(edges[0]), float(edges[-1])
+    edges, counts = _rtd_stata_bins(s)
+    edges = np.asarray(edges, dtype=float)
     size = float(edges[1] - edges[0])
-    fig = go.Figure(go.Histogram(
-        x=s, histnorm='probability',
-        xbins=dict(start=start, end=end + size * 1e-9, size=size),
+    props = np.asarray(counts, dtype=float) / max(len(s), 1)
+    fig = go.Figure(go.Bar(
+        x=(edges[:-1] + edges[1:]) / 2.0, y=props, width=size * 0.95,
+        customdata=np.column_stack([edges[:-1], edges[1:], counts]),
+        hovertemplate="[%{customdata[0]:.4f}, %{customdata[1]:.4f}): "
+                      "%{y:.3f} (%{customdata[2]} agents)<extra></extra>",
         marker_color='steelblue'))
     fig.add_vline(x=float(s.mean()), line_color='red', line_width=2)
     fig.update_layout(title=title, xaxis_title=x_title, yaxis_title='Proportion', height=320,
-                      margin=dict(t=40, b=10), showlegend=False, bargap=0.05)
+                      margin=dict(t=40, b=10), showlegend=False)
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
 

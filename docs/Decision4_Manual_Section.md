@@ -426,7 +426,7 @@ If the user has produced more than one Decision 4 configuration for comparison, 
 
 ### Presentation of the Results
 
-Each element's score distribution is presented as a histogram using Stata's default binning rule — k = round(min(√N, 10 × log₁₀N)) equal-width bins spanning the observed range, which gives 17 bins for the 280 original participants — so that the histograms are directly comparable with the graphs in the research specification. The bar heights are proportions of the agent population and therefore sum to 1, and the agent population's mean is marked with a vertical line. The minimum and maximum of the score are reported beneath each histogram.
+Each element's score distribution is presented as a histogram using Stata's default binning rule — k = min(√N, 10 × ln N / ln 10) truncated to a whole number of equal-width bins spanning the observed range, which gives 16 bins for the 280 original participants (larger populations are also drawn with 16 bins) — so that the histograms are directly comparable with the graphs in the research specification. The bar heights are proportions of the agent population and therefore sum to 1, and the agent population's mean is marked with a vertical line. The minimum and maximum of the score are reported beneath each histogram.
 
 Each element's allocation chart presents the percentage of agents whose first-ranked option is each of the five options, ordered along the horizontal axis by the element's priority sequence in reverse, with the least likely option on the left and the most likely on the right. A companion table reports the same percentages for Options 1 to 5 in their natural order, and the five option descriptions are listed beneath the chart.
 
