@@ -12,6 +12,12 @@ import pandas as pd
 from app.components import show_income_distribution_histogram
 from app.pages.navigation import render_navigation
 
+# Ruling R-CYC (2026-10-07): the research modes never resample or permute.
+RESEARCH_CYCLE_NOTE = ("Agents are the participants in their original order: with 280 agents "
+                       "exactly the 280; with more, the agents cycle through the 280 in their "
+                       "original order (1000 agents = three full cycles + the first 160); with "
+                       "fewer, the first N.")
+
 
 #: Page-1 values kept directly in ``st.session_state`` (not in ``sim_params``).
 #: Their defaults are ``SESSION_DEFAULTS`` in app/models.py.
@@ -1365,7 +1371,7 @@ BUDGET_SHOP,5.25,50,0""")
             "Population Mode",
             ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
             horizontal=True,
-            help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\nCompare all: Show all three modes side-by-side",
+            help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\n(Research modes: when the number of agents is not 280, agents cycle through the 280 participants in their original order)\nCompare all: Show all three modes side-by-side",
             key="page1_population_mode",
             on_change=on_population_mode_change
         )
@@ -1374,9 +1380,11 @@ BUDGET_SHOP,5.25,50,0""")
         if st.session_state.population_mode == "Copula (synthetic)":
             st.info("🧬 **Copula Mode**: Generates unlimited synthetic agents using fitted copula from 280 original participants. Preserves correlation structure.")
         elif st.session_state.population_mode == "Research Specification":
-            st.info("📄 **Research Specification**: Uses original 280 participants with stochastic component (Normal draws). Follows research documentation methodology.")
+            st.info("📄 **Research Specification**: Uses original 280 participants with stochastic component (Normal draws). Follows research documentation methodology. "
+                    + RESEARCH_CYCLE_NOTE)
         elif st.session_state.population_mode == "Research Baseline":
-            st.info("⚖️ **Research Baseline**: Uses original 280 participants with NO stochastic component. Returns pure anchor values (deterministic).")
+            st.info("⚖️ **Research Baseline**: Uses original 280 participants with NO stochastic component. Returns pure anchor values (deterministic). "
+                    + RESEARCH_CYCLE_NOTE)
         else:  # Compare all
             st.info("🔬 **Compare All**: Runs all three population modes side-by-side for comprehensive comparison.")
     

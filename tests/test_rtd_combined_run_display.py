@@ -36,7 +36,7 @@ def _combined_run_script():
         from src.engine.sampling import load_original_participants
         orch = OrchestratorBaseline()
         _apply_rejected_transaction_config(orch, "baseline", "categorical")
-        agents = load_original_participants(30, 1, random_sample=False)
+        agents = load_original_participants(30)
         df = orch.run_simulation(30, 1, None, agents_df=agents)     # every decision
         st.session_state.simulation_results = {'categorical': df}
         st.session_state.custom_decisions = ['rejected_transaction_defaults']

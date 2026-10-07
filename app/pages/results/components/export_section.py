@@ -209,8 +209,8 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     st.info("""
                     **Sheet Structure:**
                     - **Copula**: Synthetic agents generated from copula
-                    - **ResSpec**: Original 280 participants (random sample)
-                    - **ResBase**: Original 280 participants (sequential order)
+                    - **ResSpec**: Original 280 participants (original order; cycling when agents ≠ 280)
+                    - **ResBase**: Original 280 participants (original order; cycling when agents ≠ 280)
                     
                     Each sheet contains Agent ID, traits, and donation rates for both Categorical and Continuous income modes.
                     """)
