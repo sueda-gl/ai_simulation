@@ -36,6 +36,32 @@ RTD_ALL_ELEMENTS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
 # the continuous income specification, so a comparison layout renders them only once.
 RTD_INCOME_FREE_ELEMENTS = ('ttp', 'loyalty', 'flexibility')
 
+# Results-page subtitle of a single-element Decision 4 run (Lavie 2026-10: "below the
+# '4. Rejected Transaction Defaults' title, add a subtitle for the decision element to
+# which the results correspond, e.g. '4.1 Options List Length (Tendency to Plan)'").
+# Numbers and names are the Decision 4 tab's sub-tabs (MECH_TITLES / AGGREGATION_TITLE
+# in app/pages/decision_tabs/rejected_transaction.py), i.e. the document's order.
+RTD_ELEMENT_SUBTITLES = {
+    'ttp': (1, 'Options List Length (Tendency to Plan)'),
+    'loyalty': (2, 'Loyalty Ranking'),
+    'wtp': (3, 'Willingness-to-Pay Ranking'),
+    'risk_taking': (4, 'Risk-Taking Ranking'),
+    'flexibility': (5, 'Flexibility Ranking'),
+    RTD_AGGREGATION_ELEMENT: (6, 'Integrated Default List (Rank Aggregation)'),
+}
+
+
+def rtd_element_subtitle(decision_number, element):
+    """'4.1 Options List Length (Tendency to Plan)' for a single-element run of
+    Decision `decision_number`; None for a whole-decision / complete run (element
+    None) or an unknown element."""
+    if element not in RTD_ELEMENT_SUBTITLES:
+        return None
+    index, name = RTD_ELEMENT_SUBTITLES[element]
+    prefix = f"{decision_number}.{index}" if decision_number is not None else f"{index}."
+    return f"{prefix} {name}"
+
+
 # The two list-length averages a saved Decision 4 configuration summarises.
 RTD_SUMMARY_METRICS = ('mean_choice_length', 'mean_default_list_length')
 

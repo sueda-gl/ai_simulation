@@ -133,6 +133,21 @@ def render_rtd_compare_both_note(decision_name, ctx):
         st.info(RTD_COMPARE_BOTH_NOTE)
 
 
+def render_rtd_element_subtitle(decision_name, decision_number):
+    """Subtitle under the Decision 4 title when only ONE element was run (Lavie
+    2026-10), e.g. '4.1 Options List Length (Tendency to Plan)' - the element's
+    sub-tab number and name. Same heading class as the decision title (no extra
+    weight or size); nothing for whole-decision or complete runs."""
+    if decision_name != 'rejected_transaction_defaults':
+        return
+    from app.components import rtd_page_element
+    from app.reports.rtd import rtd_element_subtitle
+    subtitle = rtd_element_subtitle(decision_number, rtd_page_element())
+    if subtitle:
+        st.markdown(f'<h5 class="subsection-header" style="margin-top:0">{subtitle}</h5>',
+                    unsafe_allow_html=True)
+
+
 def render_decision_config_badge(decision_name, ctx=None):
     """Render a compact badge showing the selected configuration for a decision."""
     config_info = get_decision_config_display(decision_name, ctx)
@@ -358,6 +373,7 @@ def render_single_run_results():
 
                 # Single decision - show content directly (better UX)
                 st.markdown(f'<h4 class="subsection-header">✅ {decision_title} (Custom Parameters)</h4>', unsafe_allow_html=True)
+                render_rtd_element_subtitle(decision, decision_number)
                 st.success("This decision was configured with custom parameters")
                 # Show selected config badge for relevant decisions
                 if decision in ['donation_default', 'disclose_income', 'disclose_documents',
