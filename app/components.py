@@ -19,6 +19,21 @@ from app.reports import mc as mc_report
 _RTD_NO_HEADLINE_ELEMENTS = ('loyalty', 'wtp', 'risk_taking', 'flexibility')
 
 
+def rtd_page_element():
+    """The Decision 4 element the results page shows: the rtd_run_element flag of an
+    individual Decision 4 run ('ttp' ... 'flexibility', or 'aggregation' for "Run
+    Integrated Default List Only"); None for whole-decision and combined runs."""
+    from app.pages.results.run_context import RunContext
+    from app.reports.rtd import RTD_AGGREGATION_ELEMENT, RTD_ALL_ELEMENTS
+
+    if not RunContext.from_session().is_individual_run('rejected_transaction_defaults'):
+        return None
+    element = st.session_state.get('rtd_run_element')
+    if element in RTD_ALL_ELEMENTS or element == RTD_AGGREGATION_ELEMENT:
+        return element
+    return None
+
+
 def rtd_overview_metric(df):
     """Headline metric for a Decision 4 model run, run-shape aware.
 
@@ -702,7 +717,10 @@ def render_rejected_transaction_selection_button(result_key, result_df):
                 metrics = calculate_rejected_transaction_metrics(result_df)
                 details = extract_rejected_transaction_configuration_details(result_key)
                 extra_data = {'income_mode': details['income_mode'],
-                              'population_mode': details['population_mode']}
+                              'population_mode': details['population_mode'],
+                              # the element this run showed (None = whole decision), so
+                              # its summary lists only that element's metric (Lavie #8)
+                              'run_element': rtd_page_element()}
                 success, config, error_info = save_decision_config(
                     'rejected_transaction_defaults', result_key, result_df, params, metrics, extra_data
                 )

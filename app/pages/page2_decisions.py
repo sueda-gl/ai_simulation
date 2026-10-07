@@ -767,6 +767,8 @@ def render_selected_rejected_transaction_config_display():
     income_mode = config.get('income_mode', params.get('income_mode', 'Unknown'))
     population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
     metrics = config.get('metrics', {}) or {}
+    from app.reports.rtd import rtd_summary_metric_keys
+    shown = rtd_summary_metric_keys(config.get('run_element'))
 
     with st.container():
         st.success(f"✅ **Rejected Transaction Defaults Configuration**: {population_mode} + {income_mode}")
@@ -777,8 +779,14 @@ def render_selected_rejected_transaction_config_display():
         with col2:
             st.metric("Income Mode", income_mode)
         with col3:
-            mean_len = metrics.get('mean_choice_length')
-            st.metric("Avg. Options List Length", f"{mean_len:.2f}" if mean_len is not None else "n/a")
+            # Lavie #8: only the average that belongs to the element the configuration
+            # was selected from (both for a whole-decision run, none for Loyalty / WTP /
+            # Risk-Taking / Flexibility)
+            if 'mean_choice_length' in shown:
+                mean_len = metrics.get('mean_choice_length')
+                st.metric("Avg. Options List Length", f"{mean_len:.2f}" if mean_len is not None else "n/a")
+            elif 'mean_default_list_length' in shown and 'mean_default_list_length' in metrics:
+                st.metric("Avg. Integrated Default List Length", f"{metrics['mean_default_list_length']:.2f}")
         with col4:
             st.metric("Agents", f"{config.get('total_agents', 0):,}")
 
@@ -815,7 +823,7 @@ def render_selected_rejected_transaction_config_display():
                 if shares:
                     st.caption("First integrated option: " + ", ".join(
                         f"Option {o}: {float(v) * 100:.1f}%" for o, v in sorted(shares.items(), key=lambda kv: int(kv[0]))))
-                if 'mean_default_list_length' in metrics:
+                if 'mean_default_list_length' in metrics and 'mean_default_list_length' in shown:
                     st.caption(f"Avg. integrated default list length: {metrics['mean_default_list_length']:.2f}")
 
             st.markdown("**ℹ️ Configuration Info:**")
