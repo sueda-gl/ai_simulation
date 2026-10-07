@@ -433,6 +433,59 @@ def rtd_stata_bins(series):
     return edges, counts
 
 
+# Score each element's distribution chart plots, per element:
+#   (deterministic score column, chart title,
+#    stochastic draw column, the draw's anchor column, x-axis title of the draw)
+# Deterministic charts plot the STANDARDIZED score of the ranking elements (professor
+# 2026-08: "present the standardized loyalty graph rather than the one before
+# standardization") and weighted_ttp for the Options List Length (the document
+# defines no standardized TTP) - exactly the Stata figures (Research Baseline).
+# With the Normal(anchor, sigma) draw on (Research Specification / Copula), the
+# allocation charts and statistics describe the DRAWN scores - the document's
+# draw_k ~ Normal(anchor, sigma), re-rescaled over the population and re-binned
+# (choice_length_stochastic, sweighted_loyalty15, sWTP_calculated15,
+# sRT_calculated15, sFlexibility_combined15) - so the chart plots the draw too.
+RTD_SCORE_CHARTS = {
+    'ttp': ('rtd_weighted_ttp', "Tendency to Plan score",
+            'rtd_ttp_draw', 'rtd_weighted_ttp06',
+            "Drawn score ~ Normal(0-6 rescaled Tendency to Plan score, σ)"),
+    'loyalty': ('rtd_loyalty_z', "Loyalty score",
+                'rtd_loyalty_draw', 'rtd_loyalty_z',
+                "Drawn score ~ Normal(standardized Loyalty score, σ)"),
+    'wtp': ('rtd_wtp_z', "Willingness-to-Pay score",
+            'rtd_wtp_draw', 'rtd_wtp_score',
+            "Drawn score ~ Normal(Willingness-to-Pay score, σ)"),
+    'risk_taking': ('rtd_rt_z', "Risk-Taking score",
+                    'rtd_rt_draw', 'rtd_rt_z',
+                    "Drawn score ~ Normal(standardized Risk-Taking score, σ)"),
+    'flexibility': ('rtd_flex_z', "Flexibility score",
+                    'rtd_flex_draw', 'rtd_flex_z',
+                    "Drawn score ~ Normal(standardized anchored Flexibility score, σ)"),
+}
+
+
+def rtd_score_chart_data(df, mech):
+    """(series, title, x-axis title, drawn) for an element's score distribution chart.
+
+    Without a stochastic draw (Research Baseline, or the draw switched off, or this
+    element's σ coefficient 0) the chart shows the deterministic score, as before.
+    When the element's scores were drawn, it shows each agent's DRAWN score - the
+    value whose population min..max is re-cut into the segments (0-6 lengths) that the
+    allocation chart, its table and the overview statistics count - so graph and
+    statistics describe the same values (Lavie 2026-10: the Research Specification
+    graphs were identical to the Research Baseline ones while the statistics were
+    not). An agent left undrawn inside a drawn run (Quintiles mode with a budget
+    level's coefficient at 0) is plotted at its anchor, the value the population's
+    draw range was computed with for it."""
+    det_col, title, draw_col, anchor_col, draw_x_title = RTD_SCORE_CHARTS[mech]
+    if draw_col in df.columns and df[draw_col].notna().any():
+        series = pd.to_numeric(df[draw_col], errors='coerce')
+        if anchor_col in df.columns:
+            series = series.fillna(pd.to_numeric(df[anchor_col], errors='coerce'))
+        return series, f"{title} (stochastic draw)", draw_x_title, True
+    return df[det_col], title, title, False
+
+
 def rtd_score_stats_caption(series):
     """Range line under each score chart - Min and Max only (professor 2026-09: mean,
     SD and N dropped from the caption)."""

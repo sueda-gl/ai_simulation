@@ -37,6 +37,7 @@ from app.reports.rtd import (
     rtd_kemeny_status_frame,
     rtd_model_xlsx_bytes,
     rtd_reversed_sequence,
+    rtd_score_chart_data,
     rtd_score_stats_caption,
     rtd_settled_by_frame,
     rtd_stata_bin_count,
@@ -545,20 +546,20 @@ def _rtd_fraction_bar(x_labels, fractions, title, x_title, chart_key):
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 
 
+def _rtd_drawn_caption(drawn, binned_into):
+    """One line under a score chart that plots DRAWN scores (stochastic draw on)."""
+    if drawn:
+        st.caption(f"Stochastic draw on: each agent's score drawn from Normal(anchor, σ); "
+                   f"the {binned_into} shown alongside are re-binned from these values.")
+
+
 def _rtd_score_stats_caption(series):
     """Range line under each score chart (Min and Max only - professor 2026-09)."""
     st.caption(rtd_score_stats_caption(series))
 
 
-# Score plotted by each ranking element's distribution chart: the STANDARDIZED score
-# (professor 2026-08: "present the standardized loyalty graph rather than the one before
-# standardization"). TTP plots weighted_ttp - the document defines no standardized TTP.
-_RTD_SCORE_SPECS = {
-    'loyalty': ('rtd_loyalty_z', "Loyalty score"),
-    'wtp': ('rtd_wtp_z', "Willingness-to-Pay score"),
-    'risk_taking': ('rtd_rt_z', "Risk-Taking score"),
-    'flexibility': ('rtd_flex_z', "Flexibility score"),
-}
+# Score plotted by each element's distribution chart: app.reports.rtd.rtd_score_chart_data
+# (deterministic score, or the drawn score when the stochastic draw was on).
 # mech -> (section number, column key, label, priority sequence)
 _RTD_MECH_BY_KEY = {m[0]: (i, m[1], m[2], m[3]) for i, m in enumerate(_RTD_MECHS, start=2)}
 
@@ -920,12 +921,13 @@ def _render_rtd_ttp_section(df, decision_name, chart_suffix, element_section, do
     st.markdown("---")
     st.markdown("**1️⃣ Options List Length (Tendency to Plan)**")
     st.markdown("presents how many default options each agent pre-selects (0-5)")
-    _rtd_score_stats_caption(df['rtd_weighted_ttp'])
+    score, score_title, x_title, drawn = rtd_score_chart_data(df, 'ttp')
+    _rtd_score_stats_caption(score)
 
     def _score_chart():
-        _rtd_density_hist(df['rtd_weighted_ttp'], "Tendency to Plan score",
-                          "Tendency to Plan score",
+        _rtd_density_hist(score, score_title, x_title,
                           f"{decision_name}_rtd_ttp_score{chart_suffix}")
+        _rtd_drawn_caption(drawn, "options list lengths")
 
     def _alloc_chart():
         counts = df['rtd_choice_length'].astype(int).value_counts()
@@ -959,12 +961,13 @@ def _render_rtd_ranking_section(df, decision_name, chart_suffix, element_section
     st.markdown(f"**{idx}️⃣ {label} Ranking**")
     st.markdown("Priority sequence " + " > ".join(f"Option {o}" for o in seq))
 
-    score_col, score_title = _RTD_SCORE_SPECS[mech]
-    _rtd_score_stats_caption(df[score_col])
+    score, score_title, x_title, drawn = rtd_score_chart_data(df, mech)
+    _rtd_score_stats_caption(score)
 
     def _score_chart():
-        _rtd_density_hist(df[score_col], score_title, score_title,
+        _rtd_density_hist(score, score_title, x_title,
                           f"{decision_name}_rtd_{col_key}_score{chart_suffix}")
+        _rtd_drawn_caption(drawn, "segments")
 
     def _alloc_chart():
         # First choice read from the element's RANKING column, never derived from the
