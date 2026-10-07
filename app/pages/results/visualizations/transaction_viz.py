@@ -509,22 +509,27 @@ def _rtd_density_hist(series, title, x_title, chart_key):
     the maximum in an (absent) bin k and silently DROPS it, whereas Stata - and
     rtd_stata_bins / np.histogram - close the last bin on the right.
 
-    Each bar is the PROPORTION of agents in that bin, so the bar heights SUM TO 1
-    (professor 2026-09). The series mean is marked with a vertical red line."""
+    The y-axis is DENSITY, Stata's `histogram` default (owner ruling 2026-10): bar
+    height = proportion of agents in the bin / bin width, so the bar AREAS sum to 1 and
+    the chart looks identical to the Stata graph. The hover shows both the density and
+    the % of agents in the bin. The series mean is marked with a vertical red line."""
     import plotly.graph_objects as go
     s = pd.Series(series).dropna().astype(float)
     edges, counts = _rtd_stata_bins(s)
     edges = np.asarray(edges, dtype=float)
     size = float(edges[1] - edges[0])
     props = np.asarray(counts, dtype=float) / max(len(s), 1)
+    density = props / size
     fig = go.Figure(go.Bar(
-        x=(edges[:-1] + edges[1:]) / 2.0, y=props, width=size * 0.95,
-        customdata=np.column_stack([edges[:-1], edges[1:], counts]),
-        hovertemplate="[%{customdata[0]:.4f}, %{customdata[1]:.4f}): "
-                      "%{y:.3f} (%{customdata[2]} agents)<extra></extra>",
+        x=(edges[:-1] + edges[1:]) / 2.0, y=density, width=size * 0.95,
+        customdata=np.column_stack([edges[:-1], edges[1:], props * 100.0, counts]),
+        hovertemplate="[%{customdata[0]:.4f}, %{customdata[1]:.4f})<br>"
+                      "Density %{y:.3f}<br>"
+                      "%{customdata[2]:.1f}% of agents (%{customdata[3]:.0f})"
+                      "<extra></extra>",
         marker_color='steelblue'))
     fig.add_vline(x=float(s.mean()), line_color='red', line_width=2)
-    fig.update_layout(title=title, xaxis_title=x_title, yaxis_title='Proportion', height=320,
+    fig.update_layout(title=title, xaxis_title=x_title, yaxis_title='Density', height=320,
                       margin=dict(t=40, b=10), showlegend=False)
     st.plotly_chart(fig, use_container_width=True, key=chart_key)
 

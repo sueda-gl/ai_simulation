@@ -119,17 +119,27 @@ def test_left_closed_bins_and_max_in_last_bin():
 
 
 def test_app_chart_draws_the_document_figure(d4, monkeypatch):
-    """The Decision 4 score chart draws exactly these 16 bars (as proportions), the
-    maximum included."""
+    """The Decision 4 score chart draws exactly the document's 16 bars on a DENSITY
+    axis like Stata's default (owner ruling 2026-10): y = count / (N * width), the bar
+    areas sum to 1, axis title "Density", the maximum included; the hover shows the
+    density and the % of agents; the red mean line stays."""
     import app.pages.results.visualizations.transaction_viz as viz
     captured = {}
     monkeypatch.setattr(viz.st, 'plotly_chart',
                         lambda fig, **kw: captured.__setitem__('fig', fig))
     s = d4["weighted_loyalty"].astype(float)
     viz._rtd_density_hist(s, "t", "x", "k")
-    ys = np.asarray(captured['fig'].data[0].y, dtype=float)
+    fig = captured['fig']
+    trace = fig.data[0]
+    ys = np.asarray(trace.y, dtype=float)
     edges, counts = rtd_stata_bins(s)
     width = edges[1] - edges[0]
     assert len(ys) == 16
-    assert ys.sum() == pytest.approx(1.0)
-    assert np.round(ys / width, 3).tolist() == DOC_LOYALTY_DENSITIES
+    assert ys == pytest.approx(counts / (len(s) * width))
+    assert np.round(ys, 3).tolist() == DOC_LOYALTY_DENSITIES
+    assert (ys * width).sum() == pytest.approx(1.0)
+    assert fig.layout.yaxis.title.text == "Density"
+    assert "Density" in trace.hovertemplate and "% of agents" in trace.hovertemplate
+    pct = np.asarray(trace.customdata, dtype=float)[:, 2]
+    assert pct == pytest.approx(100 * counts / len(s))
+    assert any(sh.type == "line" and sh.line.color == "red" for sh in fig.layout.shapes)

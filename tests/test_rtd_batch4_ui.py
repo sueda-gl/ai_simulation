@@ -4,8 +4,8 @@ UI / plumbing tests for the Decision 4 results display and exports.
 Covers the professor's 2026-09 display specification:
 
 - score histograms use Stata's DEFAULT bin rule, k = int(min(sqrt(N), 10*ln(N)/ln(10)))
-  (truncated, capped at 16) equal-width bins spanning min..max, bar heights are
-  proportions (sum to 1); the caption under a score chart shows Min and Max only;
+  (truncated, capped at 16) equal-width bins spanning min..max, y-axis DENSITY like
+  Stata's default (count / (N * width), bar areas sum to 1); the caption under a score chart shows Min and Max only;
 - allocation charts order the categories by the element's priority sequence REVERSED
   and read each agent's first choice from the element's RANKING column (never from the
   segment, so the charts are agnostic to the segment -> sequence mapping direction);
@@ -77,8 +77,8 @@ def test_density_hist_uses_stata_default_bins_and_probability_normalisation(monk
     spanning min..max - CAPPED at 16, the rule's value for the 280 participants
     (professor 2026-09-17: 30 bins at 1,000 agents were too fine to compare with the
     document's figures), so N = 500 (rule: 22) and N = 1000 (rule: 29) draw 16 bins;
-    N = 280 -> 16 either way. Bar heights are proportions that sum to 1 (professor:
-    "Did you standardize the density values so that the values sum up to 1?").
+    N = 280 -> 16 either way. The y-axis is DENSITY, Stata's histogram default (owner
+    ruling 2026-10): height = count / (N * width), so the bar AREAS sum to 1.
 
     Stata-parity of the bin counts themselves lives in
     tests/test_rtd_histogram_stata_parity.py."""
@@ -102,13 +102,15 @@ def test_density_hist_uses_stata_default_bins_and_probability_normalisation(monk
     assert xs[0] == pytest.approx(float(s.min()) + size / 2)
     assert np.diff(xs) == pytest.approx(np.full(expected_k - 1, size))
 
-    # every observation - the maximum included - is drawn, so the proportions sum to 1
+    # every observation - the maximum included - is drawn, so the areas sum to 1
     edges, counts = viz._rtd_stata_bins(s)
     assert len(counts) == expected_k
     assert edges[0] == pytest.approx(float(s.min()))
     assert counts.sum() == len(s)
-    assert ys == pytest.approx(counts / len(s))
-    assert ys.sum() == pytest.approx(1.0)
+    width = float(edges[1] - edges[0])
+    assert ys == pytest.approx(counts / (len(s) * width))
+    assert (ys * width).sum() == pytest.approx(1.0)
+    assert captured['fig'].layout.yaxis.title.text == 'Density'
 
 
 def test_density_hist_bins_a_280_agent_score_into_16_bins(monkeypatch):
@@ -122,9 +124,10 @@ def test_density_hist_bins_a_280_agent_score_into_16_bins(monkeypatch):
     viz._rtd_density_hist(s, "title", "x", "k280")
     trace = captured['fig'].data[0]
     ys = np.asarray(trace.y, dtype=float)
+    width = (float(s.max()) - float(s.min())) / 16
     assert len(ys) == 16
-    assert ys.sum() == pytest.approx(1.0)
-    assert ys[-1] >= 1 / 280
+    assert (ys * width).sum() == pytest.approx(1.0)
+    assert ys[-1] * width >= 1 / 280
 
 
 def test_score_caption_shows_min_and_max_only(monkeypatch):
