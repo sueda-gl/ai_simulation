@@ -23,7 +23,11 @@ single run honours it (owner ruling, 2026-10-07): the plan already carries the
 pinned agent count and - for a complete run - the pinned population mode
 (``build_plan.resolve_seed_and_n``, R14), and the app passes the sub-run's own
 ``n_agents`` to the subprocess instead of Page 1's.  Only the seed differs:
-Monte Carlo deliberately varies it (``base_seed + i``).
+Monte Carlo deliberately varies it (``base_seed + i``).  In Research
+Specification the seed also draws the participants (a random subset below 280,
+a bootstrap above; ruling R-CYC as clarified 2026-10-07), so each repetition
+samples its own participants - the ones a single run with that seed takes - while
+Research Baseline (file order, cycling) and N = 280 keep the same agents.
 
 The file is a pickle: the patches carry ``Replace`` markers and Python tuples
 that JSON would not round-trip exactly.  It is written by the app into

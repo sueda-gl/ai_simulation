@@ -1138,8 +1138,8 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
         if pop_type == "copula":
             info("🎲 Using synthetic agents from copula")
         elif pop_type in ("documentation", "baseline"):
-            # Ruling R-CYC: the 280 in file order, cycling when n_agents != 280
-            info(research_population_text(n_agents))
+            # Ruling R-CYC: Specification random (seeded), Baseline file order cycling
+            info(research_population_text(n_agents, random_sample=(pop_type == "documentation")))
         for inc_mode in income_modes_for(effective_income_mode):
             sub_runs.append(make_sub_run(inc_mode, pop_type, inc_mode))
 

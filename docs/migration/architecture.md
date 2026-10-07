@@ -43,9 +43,11 @@ Everything needed to produce numbers, and nothing else.
 
 * **`src/engine/profile.py`** — `ModeProfile` and `PROFILES`: the only genuine
   differences between the three population modes (§4).
-* **`src/engine/sampling.py`** — which participants a Research-mode run uses: the
-  280 in their file order, cycling (agent k = participant k mod 280; ruling R-CYC,
-  no random numbers involved).
+* **`src/engine/sampling.py`** — which participants a Research-mode run uses:
+  Research Specification samples them randomly from `default_rng(seed)` (a subset
+  without replacement below 280, all 280 at 280, a bootstrap above); Research
+  Baseline takes the 280 in their file order, cycling (agent k = participant k mod
+  280). Ruling R-CYC as clarified by the owner on 2026-10-07.
 * **`src/engine/vendors.py`** — vendor prices, quality, sustainability and per-period
   quantities, drawn once per run.
 * **`src/engine/postprocess.py`** — assigns the global transaction IDs after a run,
@@ -210,8 +212,9 @@ settings → same numbers", so it is reproduced here verbatim from
 
 ```
 rng_setup    = default_rng(seed)                    -> vendor attributes (Research
-                                                       participants are taken in file
-                                                       order, cycling - no draw, R-CYC)
+                                                       Specification participants come
+                                                       from a default_rng(seed) of their
+                                                       own; Baseline: file order, cycling)
 rng_pass1    = default_rng(seed + 1_000_000)        -> one integers(1e9) per agent
                                                        = that agent's BASE SEED
 income_rng   = default_rng(base_seed + 999_999)     -> the agent's income
@@ -253,25 +256,30 @@ and changes every later result. See [`how-to-add-a-decision.md`](how-to-add-a-de
 
 There are three population modes. After the owner rulings they differ in exactly
 four fields, all listed in `src/engine/profile.py` — three that affect the run
-(`pop_context`, `agent_source`, `force_donation_sigma_zero`) and the console log
+(`pop_context`, `agent_source`, `random_sample`, `force_donation_sigma_zero`) and the console log
 prefix:
 
 | field | Copula | Research Specification | Research Baseline |
 |---|---|---|---|
 | `pop_context` | `"copula"` | `"documentation"` | `"baseline"` |
 | `agent_source` | `"copula"` — `TraitEngine.sample(n, seed)` | `"research"` — the 280 participants | `"research"` — the 280 participants |
+| `random_sample` | `False` | `True` — random, seeded | `False` — file order, cycling |
 | `force_donation_sigma_zero` | `False` | `False` | `True` |
 | `log_prefix` | `[Copula]` | `[DocMode]` | `[Baseline]` |
 
-Both research modes take the agents the same way (ruling R-CYC, 2026-10-07): the
-280 participants in their real file order, cycling — agent k (0-based) is
-participant k mod 280. N = 280 is exactly the 280; N = 1000 is three full cycles and
-then the first 160; N < 280 is the first N. Nothing is bootstrapped, resampled or
-permuted, so the research population does not depend on the seed. Every repeated
-agent is still its own agent for the random numbers (its base seed comes from
-`rng_pass1` by agent index), so Research Specification noise differs between the
-copies of one participant. A Research Specification run with every σ off therefore
-equals the Research Baseline run row for row at any N (`tests/test_research_cyclic_population.py`).
+The research modes take their agents differently (ruling R-CYC, 2026-10-07, as
+clarified by the owner the same day; `random_sample` in the profile). Research
+Baseline takes the 280 participants in their real file order, cycling — agent k
+(0-based) is participant k mod 280: N = 280 is exactly the 280; N = 1000 is three
+full cycles and then the first 160; N < 280 is the first N; no random numbers.
+Research Specification samples randomly, seeded by the run seed (`default_rng(seed)`,
+a stream of its own): N < 280 is a random subset of distinct participants (without
+replacement), N > 280 a bootstrap sample with replacement, and N = 280 all 280 in
+file order. The app (`sample_agents`) and the engine's CLI fallback use the same rule
+and stream. Every agent is its own agent for the random numbers (its base seed comes
+from `rng_pass1` by agent index), so Research Specification noise differs between the
+copies of one participant. At N = 280 a Research Specification run with every σ off
+equals the Research Baseline run row for row (`tests/test_research_cyclic_population.py`).
 
 `pop_context` is the important one: it is handed to the four modelled decisions and
 is what decides whether noise is added. The single rule lives in

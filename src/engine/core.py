@@ -7,8 +7,9 @@ population mode; the per-mode differences that survived the owner rulings live i
 :class:`src.engine.profile.ModeProfile`.
 
 RNG scheme (unchanged, parity-critical):
-    rng_setup    = default_rng(seed)                       -> vendors (research participants
-                                                              are cyclic, no RNG: ruling R-CYC)
+    rng_setup    = default_rng(seed)                       -> vendors (research participants:
+                                                              Specification default_rng(seed)
+                                                              of their own, Baseline cyclic)
     rng_pass1    = default_rng(seed + 1000000)             -> one integers(1e9) per agent = base seed
     income_rng   = default_rng(base + 999999)              -> drawn in Pass 1 and again in Pass 2
     decision_rng = default_rng(base + decision_index * 1000)
@@ -144,8 +145,10 @@ class Engine:
             return agents_df
 
         if agents_df is None:
-            # Research modes: the 280 in file order, cycling (ruling R-CYC; no RNG)
-            return sample_participants_internal(self.original_data, n_agents)
+            # Research modes (ruling R-CYC, owner clarification 2026-10-07): Specification
+            # random from default_rng(seed), Baseline file order cycling - the app's rule
+            return sample_participants_internal(self.original_data, n_agents, seed,
+                                                self.profile.random_sample)
         return agents_df
 
     # --------------------------------------------------------------- decisions

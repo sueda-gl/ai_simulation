@@ -196,3 +196,20 @@ def test_app_monte_carlo_passes_the_single_run_plan(monkeypatch):
     assert patch["intercepts"]["loyalty"] == pytest.approx(0.3)
     assert patch["income_mode"] == "continuous"
     assert custom == ("rejected_transaction_defaults",)
+
+
+def test_mc_repetitions_resample_research_specification(single_run):
+    """Owner clarification of R-CYC (2026-10-07): Research Specification samples the
+    participants randomly from the run seed. Repetition i of a study (seed base_seed + i)
+    therefore draws its own random subset - the one a single run with that seed draws -
+    while repetition base_seed reproduces the single run's agents (test above)."""
+    from app.seam.execute import sample_agents
+    plan, df = single_run
+    sub = select_mc_sub_run(plan, "documentation", "categorical")
+    rep = _quiet(run_mc_repetition, sub, SEED + 1, N_AGENTS,
+                 custom_decisions=plan.metadata.custom_decisions)
+    own = sample_agents("documentation", N_AGENTS, SEED + 1)["ExtraversionBig5"].tolist()
+    assert rep["ExtraversionBig5"].tolist() == own
+    assert own != sample_agents("documentation", N_AGENTS, SEED)["ExtraversionBig5"].tolist()
+    assert df["ExtraversionBig5"].tolist() == \
+        sample_agents("documentation", N_AGENTS, SEED)["ExtraversionBig5"].tolist()

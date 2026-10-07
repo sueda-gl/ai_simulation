@@ -12,7 +12,12 @@ import pandas as pd
 from app.components import show_income_distribution_histogram
 from app.pages.navigation import render_navigation
 
-# Ruling R-CYC (2026-10-07): the research modes never resample or permute.
+# Ruling R-CYC (2026-10-07, owner clarification the same day): Research Specification
+# samples the participants randomly (seeded), Research Baseline takes them in order.
+RESEARCH_SPEC_SAMPLING_NOTE = ("With 280 agents all 280 participants are used; with fewer, "
+                               "the simulation randomly selects a unique subset of the real "
+                               "participants; with more, it uses bootstrap sampling with "
+                               "replacement (seeded by the run seed).")
 RESEARCH_CYCLE_NOTE = ("Agents are the participants in their original order: with 280 agents "
                        "exactly the 280; with more, the agents cycle through the 280 in their "
                        "original order (1000 agents = three full cycles + the first 160); with "
@@ -1371,7 +1376,7 @@ BUDGET_SHOP,5.25,50,0""")
             "Population Mode",
             ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
             horizontal=True,
-            help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\n(Research modes: when the number of agents is not 280, agents cycle through the 280 participants in their original order)\nCompare all: Show all three modes side-by-side",
+            help="Copula: Generate synthetic agents via fitted copula\nResearch Specification: Use original participants with stochastic draws\nResearch Baseline: Use original participants with NO stochastic component (anchor values only)\n(Research Specification: a random subset of the 280 participants when the number of agents is below 280, a bootstrap sample with replacement above 280; Research Baseline: the participants in their original order, cycling when the number of agents is above 280)\nCompare all: Show all three modes side-by-side",
             key="page1_population_mode",
             on_change=on_population_mode_change
         )
@@ -1381,7 +1386,7 @@ BUDGET_SHOP,5.25,50,0""")
             st.info("🧬 **Copula Mode**: Generates unlimited synthetic agents using fitted copula from 280 original participants. Preserves correlation structure.")
         elif st.session_state.population_mode == "Research Specification":
             st.info("📄 **Research Specification**: Uses original 280 participants with stochastic component (Normal draws). Follows research documentation methodology. "
-                    + RESEARCH_CYCLE_NOTE)
+                    + RESEARCH_SPEC_SAMPLING_NOTE)
         elif st.session_state.population_mode == "Research Baseline":
             st.info("⚖️ **Research Baseline**: Uses original 280 participants with NO stochastic component. Returns pure anchor values (deterministic). "
                     + RESEARCH_CYCLE_NOTE)
