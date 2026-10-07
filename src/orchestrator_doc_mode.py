@@ -10,8 +10,8 @@ class OrchestratorDocMode(Engine):
     Research Specification mode: the 280 original participants with the modelled
     decisions' stochastic component gated by ``pop_context='documentation'``.
 
-    When no ``agents_df`` is supplied, participants are sampled randomly from the
-    setup RNG (after the vendor draws), with replacement iff n_agents > 280.
+    When no ``agents_df`` is supplied, the agents are the 280 participants in file
+    order, cycling (agent k = participant k mod 280; ruling R-CYC).
     """
 
     def __init__(self):

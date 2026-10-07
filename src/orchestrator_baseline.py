@@ -10,8 +10,8 @@ class OrchestratorBaseline(Engine):
     Research Baseline mode: the 280 original participants with NO stochastic
     component (``pop_context='baseline'``; donation_default sigma forced to 0).
 
-    When no ``agents_df`` is supplied, the first n_agents participants are used
-    (bootstrap from the setup RNG only when n_agents > 280).
+    When no ``agents_df`` is supplied, the agents are the 280 participants in file
+    order, cycling (agent k = participant k mod 280; ruling R-CYC).
     """
 
     def __init__(self):

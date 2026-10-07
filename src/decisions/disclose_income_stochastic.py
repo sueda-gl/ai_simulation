@@ -7,11 +7,11 @@ Implements the two-stage mediation model for income disclosure intention.
 STANDARDIZATION APPROACH (per documentation):
 - Individual traits are z-scored using the ORIGINAL 280 participants' mean/SD (from config)
 - Composite variables are z-scored using FIXED statistics from original 280 (from config)
-- Statistics are NOT recomputed for each bootstrap sample
-- Natural variation in bootstrap samples is preserved as legitimate
+- Statistics are NOT recomputed for each simulated population
+- Natural variation in simulated populations is preserved as legitimate
 
 This approach follows Stata's `egen z_var = std(var)` which standardizes ONCE on the
-original data. When bootstrapping, we use the SAME statistics (not recomputed).
+original data. For any simulated population we use the SAME statistics (not recomputed).
 
 Equation 1: Prosocial Behavior (PB_i) - Mediating Variable
     weighted_prosocial = 0.023776*z_A + 0.016537*z_O + 0.0295482*z_HH + 0.0677157*z_R
@@ -333,8 +333,8 @@ def disclose_income_stochastic(
     
     STANDARDIZATION APPROACH:
     - Individual traits are z-scored using original 280 participants' stats (from config)
-    - Composite variables are NOT re-standardized for each bootstrap sample
-    - Natural variation in bootstrap samples is preserved as legitimate
+    - Composite variables are NOT re-standardized for each simulated population
+    - Natural variation in simulated populations is preserved as legitimate
     
     STOCHASTIC COMPONENT (per documentation):
     - Stochastic draw is applied to anchored_pb: Normal(anchored_pb, σ)
@@ -460,7 +460,7 @@ def disclose_income_stochastic(
         stochastic_anchored_pb = anchored_pb
     
     # ========================================================================
-    # Z-SCORE COMPOSITES USING ORIGINAL 280's STATISTICS (not recomputed per bootstrap)
+    # Z-SCORE COMPOSITES USING ORIGINAL 280's STATISTICS (not recomputed per population)
     # ========================================================================
     
     composite_z = params.get('composite_z_scoring', {})

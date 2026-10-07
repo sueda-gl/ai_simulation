@@ -36,6 +36,27 @@ RTD_ALL_ELEMENTS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
 # the continuous income specification, so a comparison layout renders them only once.
 RTD_INCOME_FREE_ELEMENTS = ('ttp', 'loyalty', 'flexibility')
 
+# The two list-length averages a saved Decision 4 configuration summarises.
+RTD_SUMMARY_METRICS = ('mean_choice_length', 'mean_default_list_length')
+
+
+def rtd_summary_metric_keys(element=None):
+    """Which list-length averages belong on a Decision 4 configuration summary shown for
+    `element` (Lavie #8, professor 2026-10: drop the summary line unrelated to the page).
+
+    None (the whole decision was run)       -> both averages;
+    'ttp' (Options List Length element)     -> the options list length only;
+    'aggregation' (integrated default list) -> the integrated default list length only;
+    'loyalty' / 'wtp' / 'risk_taking' / 'flexibility' -> neither.
+    """
+    if element is None:
+        return RTD_SUMMARY_METRICS
+    if element == 'ttp':
+        return ('mean_choice_length',)
+    if element == RTD_AGGREGATION_ELEMENT:
+        return ('mean_default_list_length',)
+    return ()
+
 RTD_STAGE_LABELS = {
     'kemeny': 'Kemeny alone (unique full ranking)',
     'schulze': 'Schulze',

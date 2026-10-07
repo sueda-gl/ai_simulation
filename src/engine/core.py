@@ -7,8 +7,8 @@ population mode; the per-mode differences that survived the owner rulings live i
 :class:`src.engine.profile.ModeProfile`.
 
 RNG scheme (unchanged, parity-critical):
-    rng_setup    = default_rng(seed)                       -> vendors, then (research modes,
-                                                              internal sampling only) participants
+    rng_setup    = default_rng(seed)                       -> vendors (research participants
+                                                              are cyclic, no RNG: ruling R-CYC)
     rng_pass1    = default_rng(seed + 1000000)             -> one integers(1e9) per agent = base seed
     income_rng   = default_rng(base + 999999)              -> drawn in Pass 1 and again in Pass 2
     decision_rng = default_rng(base + decision_index * 1000)
@@ -144,9 +144,8 @@ class Engine:
             return agents_df
 
         if agents_df is None:
-            # Research modes: drawn from rng_setup AFTER the vendor draws
-            return sample_participants_internal(self.original_data, n_agents, rng_setup,
-                                                self.profile.random_sample)
+            # Research modes: the 280 in file order, cycling (ruling R-CYC; no RNG)
+            return sample_participants_internal(self.original_data, n_agents)
         return agents_df
 
     # --------------------------------------------------------------- decisions
@@ -279,7 +278,7 @@ class Engine:
         # same RNG regardless of which other decisions run
         decision_index = {name: i for i, name in enumerate(self.decision_order)}
 
-        # Setup RNG (vendors, then research-mode participant sampling)
+        # Setup RNG (vendors)
         rng_setup = np.random.default_rng(seed)
 
         # Store seed in simulation_config for access by decision modules

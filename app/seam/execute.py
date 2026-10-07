@@ -4,7 +4,7 @@ Run a RunPlan against the engine.  No Streamlit anywhere in here.
 
 Per sub-run (exactly what the former mode runners did, in the same order):
   1. sample the agents - copula: TraitEngine().sample(n, seed);
-     research: load_original_participants(n, seed, random_sample=(population == 'documentation'))
+     research: load_original_participants(n) - the 280 in file order, cycling (R-CYC)
   2. build Engine(PROFILES[population]) (a fresh yaml load, as each Orchestrator() was)
   3. replace its decisions dict with a deep copy of the loaded file + the plan's patches
   4. simulation_config['simulation'] <- simulation_params; random_decisions /
@@ -35,7 +35,8 @@ def sample_agents(population: str, n_agents: int, seed: int) -> pd.DataFrame:
     if population == "copula":
         return TraitEngine().sample(n_agents, seed)
     if population in ("documentation", "baseline"):
-        return load_original_participants(n_agents, seed, random_sample=(population == "documentation"))
+        # Ruling R-CYC: agent k = participant k mod 280, file order, both research modes
+        return load_original_participants(n_agents)
     raise ValueError(f"Unknown population {population!r}")
 
 

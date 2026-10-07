@@ -18,6 +18,8 @@ from app.pages.decision_execution import (
 )
 from app.models import ALL_DECISIONS
 from app.pages.results.run_context import RunContext
+from app.components import rtd_page_element
+from app.reports.rtd import rtd_summary_metric_keys
 
 
 def render_configuration_selection_ui(results_dict, ctx=None):
@@ -265,11 +267,13 @@ def render_rejected_transaction_config_selection_ui(results_dict, ctx=None):
             st.success(f"✅ **Selected Rejected Transaction Defaults Configuration**: "
                        f"{population_mode} + {income_mode}")
             metrics = config.get('metrics', {}) or {}
+            # Lavie #8: only the average that belongs to the element on this page
+            shown = rtd_summary_metric_keys(rtd_page_element())
             col1, col2, col3 = st.columns([2, 2, 1])
             with col1:
-                if 'mean_choice_length' in metrics:
+                if 'mean_choice_length' in metrics and 'mean_choice_length' in shown:
                     st.caption(f"Avg options list length: {metrics['mean_choice_length']:.2f}")
-                if 'mean_default_list_length' in metrics:
+                if 'mean_default_list_length' in metrics and 'mean_default_list_length' in shown:
                     st.caption(f"Avg integrated default list length: {metrics['mean_default_list_length']:.2f}")
             with col2:
                 timestamp = config.get('selected_timestamp')
@@ -464,8 +468,17 @@ def render_complete_simulation_section():
                 elif decision_name == 'rejected_transaction_defaults':
                     income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
                     population_mode = config.get('population_mode', 'Unknown')
-                    mean_len = config.get('metrics', {}).get('mean_choice_length')
-                    extra = f" (avg options list length: {mean_len:.2f})" if mean_len is not None else ""
+                    rtd_metrics = config.get('metrics', {}) or {}
+                    shown = rtd_summary_metric_keys(rtd_page_element())   # Lavie #8
+                    mean_len = rtd_metrics.get('mean_choice_length')
+                    mean_default = rtd_metrics.get('mean_default_list_length')
+                    if mean_len is not None and 'mean_choice_length' in shown:
+                        extra = f" (avg options list length: {mean_len:.2f})"
+                    elif (mean_default is not None and 'mean_default_list_length' in shown
+                          and 'mean_choice_length' not in shown):
+                        extra = f" (avg integrated default list length: {mean_default:.2f})"
+                    else:
+                        extra = ""
                     st.caption(f"  ✅ {decision_title}: {population_mode} + {income_mode}{extra}")
                 else:
                     st.caption(f"  ✅ {decision_title}")

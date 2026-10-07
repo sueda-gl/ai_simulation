@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
+from src.decisions.rejected_transaction_defaults import rename_consensus_columns
 from app.models import initialize_session_state
 from app.utils.timestamp_utils import (
     get_duration_hours,
@@ -209,8 +210,8 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     st.info("""
                     **Sheet Structure:**
                     - **Copula**: Synthetic agents generated from copula
-                    - **ResSpec**: Original 280 participants (random sample)
-                    - **ResBase**: Original 280 participants (sequential order)
+                    - **ResSpec**: Original 280 participants (original order; cycling when agents ≠ 280)
+                    - **ResBase**: Original 280 participants (original order; cycling when agents ≠ 280)
                     
                     Each sheet contains Agent ID, traits, and donation rates for both Categorical and Continuous income modes.
                     """)
@@ -268,7 +269,8 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             
             else:
                 # SINGLE CONFIG: Simple export with just one configuration
-                df_export = df.copy()
+                # (Decision 4 columns say "integrated", not "consensus" - Lavie #14)
+                df_export = rename_consensus_columns(df.copy())
                 
                 # Rename agent_id to 'Agent ID' for clarity
                 if 'agent_id' in df_export.columns:
@@ -729,7 +731,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             
             # Fallback: show raw data
             with st.expander("🔍 View Raw Data (for debugging)"):
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(rename_consensus_columns(df), use_container_width=True)
 
     if st.button("🔄 Clear Results"):
         # Clear all session state to reset the entire application

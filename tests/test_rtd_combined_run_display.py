@@ -36,7 +36,7 @@ def _combined_run_script():
         from src.engine.sampling import load_original_participants
         orch = OrchestratorBaseline()
         _apply_rejected_transaction_config(orch, "baseline", "categorical")
-        agents = load_original_participants(30, 1, random_sample=False)
+        agents = load_original_participants(30)
         df = orch.run_simulation(30, 1, None, agents_df=agents)     # every decision
         st.session_state.simulation_results = {'categorical': df}
         st.session_state.custom_decisions = ['rejected_transaction_defaults']
@@ -137,9 +137,10 @@ def test_combined_agent_level_export_carries_every_decision4_variable():
         for suffix in ('_score', '_z', '_segment_deterministic', '_segment', '_ranking'):
             assert f'{element}{suffix}' in columns, f'{element}{suffix}'
     # integration fields
-    for col in ('rtd_default_list', 'rtd_integrated_ranking', 'rtd_consensus_kemeny_status',
-                'rtd_consensus_n_kemeny_optimal', 'rtd_consensus_is_kemeny_optimal',
-                'rtd_consensus_settled_by', 'rtd_consensus_truncated_by',
+    for col in ('rtd_default_list', 'rtd_integrated_ranking', 'rtd_integrated_kemeny_status',
+                'rtd_integrated_n_kemeny_optimal', 'rtd_integrated_is_kemeny_optimal',
+                'rtd_integrated_settled_by', 'rtd_integrated_truncated_by',
                 'rtd_default_list_length'):
         assert col in columns, col
-    assert 'rtd_consensus_ranking' not in columns     # renamed (professor 2026-09-17)
+    # "integrated", never "consensus" (professor 2026-09-17; Lavie #14)
+    assert not any('consensus' in c.lower() for c in columns)

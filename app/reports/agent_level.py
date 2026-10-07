@@ -225,8 +225,9 @@ def build_agent_level_dataframe(
                     ' > '.join(str(o) for o in ranking) if isinstance(ranking, list) else 'N/A'
                 )
             # -- 6. Section-6 rank aggregation: the integrated default list (option
-            # numbers, after the list-length and Option-5 truncation), the consensus
-            # ranking it was cut from, and the tie-break diagnostics.
+            # numbers, after the list-length and Option-5 truncation), the integrated
+            # ranking it was cut from, and the tie-break diagnostics. Headers say
+            # "integrated", never "consensus" (professor 2026-09-17; Lavie #14).
             if 'rtd_default_list' in row:
                 default_list = row.get('rtd_default_list', None)
                 agent_record['rtd_default_list'] = (
@@ -234,15 +235,15 @@ def build_agent_level_dataframe(
                 )
                 consensus = row.get('rtd_consensus_ranking', None)
                 # Exported as rtd_integrated_ranking (professor 2026-09-17: "integrated",
-                # not "consensus", in the Excel outputs); the model column keeps its name.
+                # not "consensus", in the Excel outputs); the model columns keep their names.
                 agent_record['rtd_integrated_ranking'] = (
                     ' > '.join(str(o) for o in consensus) if isinstance(consensus, list) else 'N/A'
                 )
-                agent_record['rtd_consensus_kemeny_status'] = row.get('rtd_consensus_kemeny_status', 'N/A')
-                agent_record['rtd_consensus_n_kemeny_optimal'] = row.get('rtd_consensus_n_kemeny_optimal', np.nan)
-                agent_record['rtd_consensus_is_kemeny_optimal'] = row.get('rtd_consensus_is_kemeny_optimal', 'N/A')
-                agent_record['rtd_consensus_settled_by'] = row.get('rtd_consensus_settled_by', 'N/A')
-                agent_record['rtd_consensus_truncated_by'] = row.get('rtd_consensus_truncated_by', 'N/A')
+                agent_record['rtd_integrated_kemeny_status'] = row.get('rtd_consensus_kemeny_status', 'N/A')
+                agent_record['rtd_integrated_n_kemeny_optimal'] = row.get('rtd_consensus_n_kemeny_optimal', np.nan)
+                agent_record['rtd_integrated_is_kemeny_optimal'] = row.get('rtd_consensus_is_kemeny_optimal', 'N/A')
+                agent_record['rtd_integrated_settled_by'] = row.get('rtd_consensus_settled_by', 'N/A')
+                agent_record['rtd_integrated_truncated_by'] = row.get('rtd_consensus_truncated_by', 'N/A')
                 agent_record['rtd_default_list_length'] = row.get('rtd_default_list_length', np.nan)
 
 

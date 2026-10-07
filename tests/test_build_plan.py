@@ -403,7 +403,9 @@ def test_compare_all_single_income_and_research_messages(repo, default_values):
     plan = plan_for(repo, default_values, base_state(repo, population_mode="Research Specification",
                                                      income_spec_mode="Compare both"))
     assert plan.result_keys == ("categorical", "continuous")
-    assert texts(plan)[-1] == ("info", "📊 Using original 280 participants")
+    # Ruling R-CYC: 1000 agents cycle through the 280 in their original order
+    assert texts(plan)[-1] == ("info", "📊 Using original 280 participants: the 1000 agents cycle "
+                                       "through them in their original order (agent k = participant k mod 280)")
     assert all(s.population == "documentation" for s in plan.sub_runs)
     plan = plan_for(repo, default_values, base_state(repo, population_mode="Research Baseline"))
     assert plan.sub_runs[0].population == "baseline"
@@ -508,7 +510,7 @@ def test_combined_with_saved_configs_pins_seed_population_income_and_expectation
         defaults_message(plan).kind and ("success", defaults_message(plan).text),
         ("caption", "📋 Using saved Disclose Income mode: Continuous only"),
         ("caption", "🔄 Running with saved population mode: Research Specification"),
-        ("info", "📊 Using original 280 participants"),
+        ("info", "📊 Using the first 60 of the original 280 participants, in their original order"),
     ]
     assert plan.saved_expectations == (
         SavedExpectation("disclose_income", "continuous", ("disclose_income", "disclose_income_raw"), "abc"),
