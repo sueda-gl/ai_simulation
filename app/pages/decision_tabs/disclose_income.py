@@ -44,31 +44,22 @@ BASE_SIGMA_OVERALL = _load_base_sigma_overall()
 DISPLAY_SIGMA_OVERALL = round(BASE_SIGMA_OVERALL, 4)
 
 
-def apply_updates_to_config(config: dict, updates: dict):
-    """Apply dotted-key updates to a loaded config block in memory.
+def research_default_config():
+    """The tab's research defaults: the ``disclose_income`` block of
+    config/decisions.yaml, read fresh (the file is read-only).
 
-    The configuration file is read-only; resets build the default config here
-    and push it into session state instead of writing it back to disk.
+    The single source of truth for both the first draw
+    (``initialize_disclose_income_session_state``) and "Reset Config to Defaults"
+    - e.g. the σ coefficient ``stochastic.scale_factor: 0.1`` (R-DI01, Q-59).
+    The reset used to apply a hard-coded dict on top of the file, which set the σ
+    coefficient to 1.0 while the first draw showed 0.1.
     """
-    for key, value in updates.items():
-        if '.' in key:
-            # Handle nested keys like 'anchor_weights.observed_prosocial'
-            parts = key.split('.')
-            target = config
-            for part in parts[:-1]:
-                if part not in target:
-                    target[part] = {}
-                target = target[part]
-            target[parts[-1]] = value
-        else:
-            config[key] = value
-
-    return config
+    return load_disclose_income_config()
 
 
 def initialize_disclose_income_session_state():
     """Initialize session state for disclose_income tab."""
-    config = load_disclose_income_config()
+    config = research_default_config()
 
     # Initialize storage for persistence
     if 'disclose_income_tab_persistence' not in st.session_state:
@@ -688,9 +679,9 @@ def render_intercept_override_section(config):
 
     # Show current configuration values for reference
     try:
-        # Fixed research default — Impact Preview always compares against this,
-        # regardless of what auto-save wrote to the YAML.
-        research_default = 0.75
+        # Research default — Impact Preview always compares against this. The
+        # configuration file is read-only, so it is the file's intercept.
+        research_default = float(research_default_config().get('intercept', 0.75))
 
         # Current YAML value is used as the widget's initial value
         # so it reflects what's actually saved in the config.
@@ -802,20 +793,6 @@ def _apply_config_to_widget_keys(config):
 
 DI_RESET_PENDING_KEY = '_di_reset_to_defaults_pending'
 
-_DI_RESET_DEFAULTS = {
-    'intercept': 0.75,
-    'income_mode': 'Categorical only',
-    'anchor_weights.observed_prosocial': 0.25,
-    'anchor_weights.prosocial_weight': 0.50,
-    'stochastic.scale_factor': 1.0,
-    'stochastic.sigma_strategy': 'overall',
-    'stochastic.quintile_scale_factors.1': 1.0,
-    'stochastic.quintile_scale_factors.2': 1.0,
-    'stochastic.quintile_scale_factors.3': 1.0,
-    'stochastic.quintile_scale_factors.4': 1.0,
-    'stochastic.quintile_scale_factors.5': 1.0,
-}
-
 
 def reset_to_defaults():
     """Build the default configuration and schedule the session-state reset.
@@ -827,9 +804,9 @@ def reset_to_defaults():
     session-state entry (professor 2026-09-17: values jumped back after a reset).
     """
     try:
-        # The configuration file is read-only: the reset configuration is built
-        # in memory from a read-only load instead of writing the defaults to disk.
-        apply_updates_to_config(load_disclose_income_config(), _DI_RESET_DEFAULTS)
+        # The configuration file is read-only: the defaults are read from it (the
+        # values the first draw seeded), never written to it.
+        research_default_config()
     except Exception as e:
         st.error(f"Error saving configuration: {e}")
         return False
@@ -848,7 +825,7 @@ def apply_pending_reset():
 
 def _reset_session_to_defaults():
     """Clear every di_ key and the persistence dict, then seed the defaults."""
-    reset_config = apply_updates_to_config(load_disclose_income_config(), _DI_RESET_DEFAULTS)
+    reset_config = research_default_config()
 
     # 1. Clear all di_ keys and persistence storage
     keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]

@@ -38,7 +38,7 @@ import math
 
 from streamlit.proto.WidgetStates_pb2 import WidgetState, WidgetStates
 from streamlit.testing.v1.element_tree import (
-    Checkbox, InitialValue, NumberInput, Radio, Selectbox, Slider,
+    Checkbox, InitialValue, NumberInput, Radio, Selectbox, Slider, get_widget_state,
 )
 
 _SIMULATED = (Slider, Checkbox, NumberInput, Radio, Selectbox)
@@ -127,10 +127,42 @@ class BrowserSim:
         self.browser = {}          # element id -> raw value the browser holds
 
     def _widgets(self):
-        return [n for n in self.at._tree if isinstance(n, _SIMULATED) and n.id]
+        # When a script run ends in st.rerun(), AppTest's tree still holds the
+        # interrupted run's elements at the delta paths the rerun did not reach (e.g.
+        # a reset that turns five quintile sliders back into one slider leaves the
+        # old tail of that column behind). The browser drops such stale elements when
+        # the run finishes; here they would shadow the live element of the same id.
+        # A stale element always sits after the live one in its container, so the
+        # first element of an id is the live one; a stale element whose widget was
+        # not drawn again at all has no widget state left (Streamlit culls it).
+        seen, live = set(), []
+        for n in self.at._tree:
+            if isinstance(n, _SIMULATED) and n.id and n.id not in seen:
+                seen.add(n.id)
+                try:
+                    n.value
+                except KeyError:
+                    continue
+                live.append(n)
+        return live
+
+    def _live_widget_states(self):
+        """AppTest's ``get_widget_states()`` without the stale elements described in
+        ``_widgets`` (reading a stale element's value raises KeyError there); for an
+        id seen twice the first, live element's state is sent."""
+        out, seen = WidgetStates(), set()
+        for node in self.at._tree:
+            try:
+                ws = get_widget_state(node)
+            except KeyError:
+                continue
+            if ws is not None and ws.id not in seen:
+                seen.add(ws.id)
+                out.widgets.append(ws)
+        return out
 
     def run(self, timeout=300):
-        states = self.at._tree.get_widget_states()
+        states = self._live_widget_states()
         by_id = {el.id: el for el in self._widgets()}
         out = WidgetStates()
         for ws in states.widgets:

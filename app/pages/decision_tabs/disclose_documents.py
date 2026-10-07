@@ -40,29 +40,17 @@ def load_disclose_documents_config():
     return config.get('disclose_documents', {})
 
 
-def apply_updates_to_config(config: dict, updates: dict):
-    """Apply dotted-key updates to a loaded config block in memory.
-
-    The configuration file is read-only; resets build the default config here
-    and push it into session state instead of writing it back to disk.
-    """
-    for key, value in updates.items():
-        if '.' in key:
-            parts = key.split('.')
-            target = config
-            for part in parts[:-1]:
-                if part not in target:
-                    target[part] = {}
-                target = target[part]
-            target[parts[-1]] = value
-        else:
-            config[key] = value
-    return config
+def research_default_config():
+    """The tab's research defaults: the ``disclose_documents`` block of
+    config/decisions.yaml, read fresh (the file is read-only) - the single source
+    of truth for both the first draw (``initialize_disclose_documents_session_state``)
+    and "Reset Config to Defaults" (which used to apply its own hard-coded dict)."""
+    return load_disclose_documents_config()
 
 
 def initialize_disclose_documents_session_state():
     """Initialize session state for disclose_documents tab."""
-    config = load_disclose_documents_config()
+    config = research_default_config()
     stochastic = config.get('stochastic', {})
 
     if 'disclose_documents_tab_persistence' not in st.session_state:
@@ -448,7 +436,7 @@ def render_intercept_override_section(config):
         st.session_state.dd_intercept_override_values = {}
 
     try:
-        research_default = RESEARCH_DEFAULT_INTERCEPT
+        research_default = float(research_default_config().get('intercept', RESEARCH_DEFAULT_INTERCEPT))
         current_config_value = get_current_yaml_intercept()
 
         col1, col2, col3 = st.columns(3)
@@ -521,18 +509,6 @@ def _apply_config_to_widget_keys(config):
 
 DD_RESET_PENDING_KEY = '_dd_reset_to_defaults_pending'
 
-_DD_RESET_DEFAULTS = {
-    'intercept': RESEARCH_DEFAULT_INTERCEPT,
-    'income_mode': 'Categorical only',
-    'stochastic.scale_factor': 1.0,
-    'stochastic.sigma_strategy': 'overall',
-    'stochastic.quintile_scale_factors.1': 1.0,
-    'stochastic.quintile_scale_factors.2': 1.0,
-    'stochastic.quintile_scale_factors.3': 1.0,
-    'stochastic.quintile_scale_factors.4': 1.0,
-    'stochastic.quintile_scale_factors.5': 1.0,
-}
-
 
 def reset_to_defaults():
     """Build the research-default configuration and schedule the session-state reset.
@@ -545,9 +521,9 @@ def reset_to_defaults():
     or missing values.
     """
     try:
-        # The configuration file is read-only: the reset configuration is built in
-        # memory from a read-only load instead of writing the defaults to disk.
-        apply_updates_to_config(load_disclose_documents_config(), _DD_RESET_DEFAULTS)
+        # The configuration file is read-only: the defaults are read from it (the
+        # values the first draw seeded), never written to it.
+        research_default_config()
     except Exception as e:
         st.error(f"Error saving configuration: {e}")
         return False
@@ -560,7 +536,7 @@ def apply_pending_reset():
     if not st.session_state.get(DD_RESET_PENDING_KEY, False):
         return
     del st.session_state[DD_RESET_PENDING_KEY]
-    reset_config = apply_updates_to_config(load_disclose_documents_config(), _DD_RESET_DEFAULTS)
+    reset_config = research_default_config()
     for key in [k for k in st.session_state.keys() if k.startswith('dd_')]:
         del st.session_state[key]
     if 'disclose_documents_tab_persistence' in st.session_state:

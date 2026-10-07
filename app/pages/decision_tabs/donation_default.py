@@ -31,6 +31,30 @@ def _load_base_sigma_overall():
 BASE_SIGMA_OVERALL = _load_base_sigma_overall()
 
 
+def research_defaults():
+    """The tab's research defaults, read from the ``donation_default`` block of
+    config/decisions.yaml (read-only): the single source of truth for "Reset Config
+    to Defaults" - it used to write its own hard-coded copies of these numbers.
+
+    Not reset by it (deliberately, Q-44): the σ coefficient and tick boxes."""
+    with open(CONFIG_PATH, 'r') as f:
+        block = yaml.safe_load(f)['donation_default']
+    stochastic = block.get('stochastic', {})
+    default_scale = float(stochastic.get('scale_factor', 1.0))
+    quintiles = stochastic.get('quintile_scale_factors') or {}
+    return {
+        'intercepts': {
+            'categorical': float(block['regression_coefficients']['categorical']['intercept']),
+            'continuous': float(block['regression_coefficients']['continuous']['intercept']),
+        },
+        'shift_value': float((block.get('adjustment') or {}).get('shift_value', 0.0)),
+        'anchor_observed_weight': float((block.get('anchor_weights') or {}).get('observed', 0.75)),
+        'sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
+        'quintile_scale_factors': {str(level): float(quintiles.get(level, quintiles.get(int(level), default_scale)))
+                                   for level in ('1', '2', '3', '4', '5')},
+    }
+
+
 def ensure_coefficients_loaded():
     """Ensure donation coefficients are loaded from configuration file before any access"""
     if 'donation_coeff_intercept' not in st.session_state:
@@ -104,9 +128,8 @@ def initialize_donation_widget_keys():
 
     # Initialize quintile scale factors
     if "donation_quintile_scale_factors" not in st.session_state:
-        st.session_state.donation_quintile_scale_factors = {
-            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0
-        }
+        st.session_state.donation_quintile_scale_factors = dict(
+            research_defaults()['quintile_scale_factors'])
 
 
 def save_to_donation_storage(widget_key, storage_key):
@@ -295,29 +318,31 @@ def render_donation_default_tab():
         # Clear persistence storage
         st.session_state.donation_tab_persistence = {}
         
+        # Research defaults from config/decisions.yaml (read-only) - the same values
+        # the first draw shows; nothing below is a hard-coded number.
+        defaults = research_defaults()
+
         # Reset intercept widget keys
-        st.session_state.override_categorical_intercept = 1.519818
-        st.session_state.override_continuous_intercept = -0.139596
+        st.session_state.override_categorical_intercept = defaults['intercepts']['categorical']
+        st.session_state.override_continuous_intercept = defaults['intercepts']['continuous']
         st.session_state.intercept_override_values = {}
         
         # Reset adjustment widget key
-        st.session_state.override_adjustment_shift = -4.0
+        st.session_state.override_adjustment_shift = defaults['shift_value']
         st.session_state.adjustment_override_values = {}
         
-        # Reset income mode
+        # Reset income mode (the app's default, a Page-2 setting the file does not carry)
         st.session_state.page2_tab_income_spec_mode = "categorical only"
         st.session_state.income_spec_mode = "categorical only"
         
         # Reset sigma strategy (main state variable)
-        st.session_state.donation_sigma_strategy = "overall"
+        st.session_state.donation_sigma_strategy = defaults['sigma_strategy']
         
         # Reset quintile scale factors
-        st.session_state.donation_quintile_scale_factors = {
-            '1': 1.0, '2': 1.0, '3': 1.0, '4': 1.0, '5': 1.0
-        }
+        st.session_state.donation_quintile_scale_factors = dict(defaults['quintile_scale_factors'])
         
         # Reset anchor weight
-        st.session_state.tab_anchor_weight = 0.75
+        st.session_state.tab_anchor_weight = defaults['anchor_observed_weight']
         
         # Reset sigma checkboxes
         st.session_state.tab_sigma_in_copula = False
@@ -903,9 +928,10 @@ def render_continuous_formula_specific():
 def render_intercept_override_section():
     """Render the intercept override section with ability to modify default coefficient values"""
     
-    # Research default values
-    CATEGORICAL_DEFAULT = 1.519818
-    CONTINUOUS_DEFAULT = -0.139596
+    # Research default values (config/decisions.yaml, read-only)
+    research_intercepts = research_defaults()['intercepts']
+    CATEGORICAL_DEFAULT = research_intercepts['categorical']
+    CONTINUOUS_DEFAULT = research_intercepts['continuous']
     
     # Handle reset flag BEFORE widgets render
     if st.session_state.get('_reset_intercept_flag', False):
@@ -1145,8 +1171,8 @@ def auto_save_intercept(intercept_type, new_value):
 def render_adjustment_override_section():
     """Render the distribution adjustment override section"""
     
-    # Fixed research default - this never changes
-    research_default = -4.0
+    # Research default (config/decisions.yaml, read-only)
+    research_default = research_defaults()['shift_value']
     
     # Handle reset flag BEFORE widget renders
     if st.session_state.get('_reset_adjustment_flag', False):
