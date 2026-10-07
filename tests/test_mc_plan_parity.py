@@ -109,7 +109,8 @@ def test_mc_settings_are_not_the_defaults(repo, default_values, single_run):
 
 def _parquet_roundtrip(df: pd.DataFrame, path: Path) -> pd.DataFrame:
     """The exact transformation scripts/run_simulation.py applies before writing."""
-    out = df.copy()
+    from src.decisions.rejected_transaction_defaults import rename_consensus_columns
+    out = rename_consensus_columns(df.copy())
     out["purchase_requests"] = out["purchase_requests"].apply(
         lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x))
     out.to_parquet(path, index=False)

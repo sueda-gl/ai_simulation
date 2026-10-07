@@ -137,9 +137,10 @@ def test_combined_agent_level_export_carries_every_decision4_variable():
         for suffix in ('_score', '_z', '_segment_deterministic', '_segment', '_ranking'):
             assert f'{element}{suffix}' in columns, f'{element}{suffix}'
     # integration fields
-    for col in ('rtd_default_list', 'rtd_integrated_ranking', 'rtd_consensus_kemeny_status',
-                'rtd_consensus_n_kemeny_optimal', 'rtd_consensus_is_kemeny_optimal',
-                'rtd_consensus_settled_by', 'rtd_consensus_truncated_by',
+    for col in ('rtd_default_list', 'rtd_integrated_ranking', 'rtd_integrated_kemeny_status',
+                'rtd_integrated_n_kemeny_optimal', 'rtd_integrated_is_kemeny_optimal',
+                'rtd_integrated_settled_by', 'rtd_integrated_truncated_by',
                 'rtd_default_list_length'):
         assert col in columns, col
-    assert 'rtd_consensus_ranking' not in columns     # renamed (professor 2026-09-17)
+    # "integrated", never "consensus" (professor 2026-09-17; Lavie #14)
+    assert not any('consensus' in c.lower() for c in columns)

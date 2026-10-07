@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 
+from src.decisions.rejected_transaction_defaults import integrated_column_name
+
 
 def render_individual_agent_details(df):
     """Render individual agent details section"""
@@ -36,7 +38,8 @@ def render_individual_agent_details(df):
         for col in df.columns:
             if col not in ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
                           'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
-                decision_data[col] = agent_data[col]
+                # Lavie #14: Decision 4 columns are shown as rtd_integrated_*
+                decision_data[integrated_column_name(col)] = agent_data[col]
 
         decision_df = pd.DataFrame(list(decision_data.items()), columns=['Decision', 'Value'])
         if 'donation_default' in decision_data:
