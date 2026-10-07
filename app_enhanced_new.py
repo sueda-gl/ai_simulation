@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 from app.models import initialize_session_state
 from app.components import get_css_styles
 from app.pages import render_page1, render_page2, render_results_page
-from app.state.widgets import begin_script_run
+from app.state.widgets import begin_script_run, end_script_run
 
 # Page configuration
 st.set_page_config(
@@ -37,12 +37,18 @@ begin_script_run()
 st.markdown('<h1 class="main-header">COOPECON AI Agent Simulation</h1>', unsafe_allow_html=True)
 
 # Page routing
-if st.session_state.page == 'page1':
-    render_page1()
-elif st.session_state.page == 'page2':
-    render_page2()
-elif st.session_state.page == 'results':
-    render_results_page()
+try:
+    if st.session_state.page == 'page1':
+        render_page1()
+    elif st.session_state.page == 'page2':
+        render_page2()
+    elif st.session_state.page == 'results':
+        render_results_page()
+except Exception:
+    # An error ends the run like a completed one (the browser drops what was not
+    # redrawn); a rerun / stop request is a BaseException and leaves the run open.
+    end_script_run()
+    raise
 
 # Footer
 st.markdown("---")
@@ -51,3 +57,7 @@ st.markdown("""
     Enhanced AI Agent Simulation Framework | Two-Page Interface
 </div>
 """, unsafe_allow_html=True)
+
+# The run completed (a run stopped early by a newer interaction never gets here):
+# the next run may take this run's widget render log as what the browser holds.
+end_script_run()

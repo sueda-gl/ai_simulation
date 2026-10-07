@@ -48,6 +48,22 @@ the +/- buttons of number inputs jump back a step under fast clicks (professor,
 
 ``begin_script_run()`` must be called once at the top of every script run (the
 entry point does it); it rotates the per-run render log the rule above reads.
+``end_script_run()`` must be called as the run's LAST statement.
+
+Interrupted runs (Lavie 2026-10: rapid +/- clicks on a Decision 4 Override value
+made the value jump)
+---------------------------------------------------------------------------------
+A click while a run is still going makes Streamlit stop that run early and start
+a new one. The browser then keeps every element of the last COMPLETED run (shown
+faded) plus the ones the stopped run had already re-sent - it clears elements only
+when a run completes. The render log of a stopped run is therefore partial: taken
+alone as "the previous run", it would make the next run re-push every widget drawn
+after the stopping point (the Decision 4 tab is near the end of Page 2), and that
+push carries the value of the click the run started from, overwriting the clicks
+the user made since - the number jumped back (or forward, after later +/-). So
+``begin_script_run`` only REPLACES the previous log when the last run completed
+(``end_script_run`` was reached); after a stopped run it MERGES the stopped run's
+log into the previous one, which is exactly what the browser still holds.
 """
 import streamlit as st
 
@@ -55,6 +71,8 @@ import streamlit as st
 RENDER_LOG_KEY = "_widget_render_log"
 #: the same for the PREVIOUS run (what the browser currently shows)
 PREVIOUS_RENDER_LOG_KEY = "_widget_render_log_previous"
+#: True once the run that wrote RENDER_LOG_KEY reached end_script_run()
+RUN_COMPLETE_KEY = "_widget_render_log_complete"
 
 _MISSING = object()
 
@@ -64,9 +82,24 @@ _NOT_IDENTITY = {"on_change", "on_click", "args", "kwargs", "format_func"}
 
 
 def begin_script_run():
-    """Rotate the render log. Call once per script run, before any widget."""
-    st.session_state[PREVIOUS_RENDER_LOG_KEY] = st.session_state.get(RENDER_LOG_KEY) or {}
+    """Rotate the render log. Call once per script run, before any widget.
+
+    After a completed run the previous log is that run's log; after a run that was
+    stopped early (a newer interaction arrived) it is the previous log updated with
+    whatever the stopped run drew - see "Interrupted runs" above."""
+    log = st.session_state.get(RENDER_LOG_KEY) or {}
+    if st.session_state.get(RUN_COMPLETE_KEY, True):
+        previous = dict(log)
+    else:
+        previous = {**(st.session_state.get(PREVIOUS_RENDER_LOG_KEY) or {}), **log}
+    st.session_state[PREVIOUS_RENDER_LOG_KEY] = previous
     st.session_state[RENDER_LOG_KEY] = {}
+    st.session_state[RUN_COMPLETE_KEY] = False
+
+
+def end_script_run():
+    """Mark the current run as completed. Call as the LAST statement of the run."""
+    st.session_state[RUN_COMPLETE_KEY] = True
 
 
 def _freeze(value):
@@ -106,17 +139,22 @@ def sync_widget_key(key, initial=_MISSING, signature=None):
     (unchanged) when the widget was not drawn in the previous run with the same
     signature. Returns the value the widget will show (or None when the key stays
     absent because no initial value was given)."""
+    log = st.session_state.get(RENDER_LOG_KEY)
+    if log is None:
+        log = {}
+        st.session_state[RENDER_LOG_KEY] = log
     if key not in st.session_state:
         if initial is not _MISSING:
             st.session_state[key] = initial
     else:
         previous = st.session_state.get(PREVIOUS_RENDER_LOG_KEY) or {}
-        if key not in previous or previous[key] != signature:
+        # The CURRENT log can already hold the key only in a fragment rerun
+        # (st.fragment: begin_script_run does not run, the log is the last full
+        # run's): the browser then holds the widget drawn by that run.
+        held = ((key in previous and previous[key] == signature)
+                or (key in log and log[key] == signature))
+        if not held:
             st.session_state[key] = st.session_state[key]
-    log = st.session_state.get(RENDER_LOG_KEY)
-    if log is None:
-        log = {}
-        st.session_state[RENDER_LOG_KEY] = log
     log[key] = signature
     return st.session_state[key] if key in st.session_state else None
 

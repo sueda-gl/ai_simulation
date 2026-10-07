@@ -6,7 +6,7 @@ Donation Default decision tab configuration.
 import streamlit as st
 from app.state.widgets import stateful
 import pandas as pd
-import yaml
+from app.seam.config_repo import read_yaml_file
 from pathlib import Path
 from app.pages.decision_execution import run_individual_decision
 from app.models import load_donation_coefficients_from_yaml
@@ -20,8 +20,7 @@ def _load_base_sigma_overall():
     try:
         from app.seam.sentinels import donation_sigma_overall
     except ImportError:
-        with open(CONFIG_PATH, 'r') as f:
-            config = yaml.safe_load(f)
+        config = read_yaml_file(CONFIG_PATH)
         return float(config['donation_default']['stochastic']['sigma_overall'])
     return float(donation_sigma_overall())
 
@@ -37,8 +36,7 @@ def research_defaults():
     to Defaults" - it used to write its own hard-coded copies of these numbers.
 
     Not reset by it (deliberately, Q-44): the σ coefficient and tick boxes."""
-    with open(CONFIG_PATH, 'r') as f:
-        block = yaml.safe_load(f)['donation_default']
+    block = read_yaml_file(CONFIG_PATH)['donation_default']
     stochastic = block.get('stochastic', {})
     default_scale = float(stochastic.get('scale_factor', 1.0))
     quintiles = stochastic.get('quintile_scale_factors') or {}
@@ -1079,8 +1077,7 @@ def get_current_yaml_intercepts():
     
     config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
     
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_file(config_path)
     
     regression_coeffs = config['donation_default']['regression_coefficients']
     
@@ -1288,8 +1285,7 @@ def get_current_yaml_adjustment():
     
     config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
     
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_file(config_path)
     
     adjustment_params = config['donation_default'].get('adjustment', {})
     

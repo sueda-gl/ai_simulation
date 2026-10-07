@@ -8,7 +8,7 @@ import streamlit as st
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
-import yaml
+from app.seam.config_repo import read_yaml_file
 import numpy as np
 from app.seam.sentinels import donation_sigma_overall
 from app.reports import preview
@@ -256,8 +256,7 @@ def load_donation_coefficients_from_yaml():
     If coefficients are missing from YAML, an error will be raised.
     """
     config_path = Path(__file__).parent.parent / "config" / "decisions.yaml"
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_file(config_path)
     
     # Get donation config - MUST exist
     donation_config = config['donation_default']
@@ -359,8 +358,7 @@ def get_decision_global_parameters(selected_decisions: List[str]) -> set:
     """Get all global parameters used by selected decisions from decisions.yaml"""
     try:
         decisions_path = Path(__file__).resolve().parents[1] / "config" / "decisions.yaml"
-        with open(decisions_path, 'r') as f:
-            decisions_config = yaml.safe_load(f)
+        decisions_config = read_yaml_file(decisions_path)
         
         all_global_params = set()
         for decision in selected_decisions:
@@ -378,8 +376,7 @@ def get_all_global_parameters() -> set:
     """Get all possible global parameters from simulation.yaml"""
     try:
         simulation_path = Path(__file__).resolve().parents[1] / "config" / "simulation.yaml"
-        with open(simulation_path, 'r') as f:
-            simulation_config = yaml.safe_load(f)
+        simulation_config = read_yaml_file(simulation_path)
         
         return set(simulation_config.get('simulation', {}).keys())
     except Exception as e:

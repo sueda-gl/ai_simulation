@@ -13,6 +13,7 @@ engine to patch.
 """
 
 import copy
+import functools
 from pathlib import Path
 from typing import Dict, Mapping, Optional, Tuple
 
@@ -143,6 +144,28 @@ def rtd_sigma_coefficient_defaults(rtd_block: Mapping) -> Tuple[float, Dict[str,
     return scale, dict(quintiles)
 
 
+@functools.lru_cache(maxsize=16)
+def _parse_yaml_file(path: str, mtime_ns: int, size: int):
+    """The parsed file, cached per (path, modification time, size)."""
+    with open(path, "r") as f:
+        return yaml.safe_load(f)
+
+
+def read_yaml_file(path) -> dict:
+    """``yaml.safe_load(open(path))`` without re-parsing an unchanged file.
+
+    The Page-2 tabs read config/decisions.yaml (a ~60 ms parse) on every script
+    run - fourteen times per rerun with Decisions 1-4 selected, ~80 % of a rerun
+    (Lavie 2026-10: rapid +/- clicks on a Decision 4 Override value froze the
+    page). The parse is cached per (path, mtime, size), so an edited file is
+    re-read, and every call returns a DEEP COPY, so callers see exactly what a
+    fresh load returned and may mutate it freely.
+    """
+    resolved = Path(path).resolve()
+    stat = resolved.stat()
+    return copy.deepcopy(_parse_yaml_file(str(resolved), stat.st_mtime_ns, stat.st_size))
+
+
 _DEFAULT_REPO: Optional[DecisionsConfig] = None
 
 
@@ -165,6 +188,7 @@ __all__ = [
     "DEFAULT_SIMULATION_PATH",
     "DecisionsConfig",
     "get_config_repo",
+    "read_yaml_file",
     "reset_config_repo",
     "rtd_sigma_coefficient_defaults",
 ]

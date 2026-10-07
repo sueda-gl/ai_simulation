@@ -33,7 +33,7 @@ read keys + rtd_tab_* widget keys + a tab-persistence dict.
 import streamlit as st
 from app.state.widgets import stateful
 from app.seam.config_repo import rtd_sigma_coefficient_defaults
-import yaml
+from app.seam.config_repo import read_yaml_file
 import pandas as pd
 from pathlib import Path
 
@@ -88,8 +88,7 @@ def load_rtd_config():
     a concurrent non-atomic rewrite of decisions.yaml by the other tabs' reset
     buttons. Here the app never writes the file (ruling R11), so there is no
     half-written document to tolerate and a plain read is kept."""
-    with open(CONFIG_PATH, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_file(CONFIG_PATH)
     return config.get('rejected_transaction_defaults', {})
 
 
@@ -629,6 +628,15 @@ def render_intercept_control(config, mech):
         st.metric("Change", "No change")
 
 
+# The Override value as a FRAGMENT (Lavie 2026-10: a few quick +/- clicks froze /
+# faded the whole simulation page for seconds): a click reruns only this control -
+# the input, its on_change (which writes rtd_intercept_<mech>) and the Change metric
+# - instead of the whole of Page 2 with every selected decision tab. Nothing else on
+# the page shows the intercept; the Run buttons read rtd_intercept_<mech> from
+# session state when clicked (a full run), so results are unchanged.
+render_intercept_control_fragment = st.fragment(render_intercept_control)
+
+
 def render_stochastic_explanation(mech):
     """Short stochastic-component explanation, phrased consistently with the other
     decisions' Final Decision text (same structure for all four elements)."""
@@ -697,7 +705,7 @@ def render_mechanism_subtab(config, mech):
     # side by side in two narrow columns (professor 2026-09-17).
     left_col, right_col = st.columns(2)
     with left_col:
-        render_intercept_control(config, mech)
+        render_intercept_control_fragment(config, mech)
     if mech == 'flexibility':
         with right_col:
             render_flex_anchor_mix(config)

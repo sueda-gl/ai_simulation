@@ -166,6 +166,11 @@ _NAVIGATION = (
          "navigation",
          notes="the previous run's render log; stateful() re-pushes a key's value "
                "to the browser when its widget is not in it (2026-10-07)."),
+    _row("_widget_render_log_complete", False, "state.widgets.begin_script_run",
+         "navigation",
+         notes="True once the current run reached end_script_run(); after a run that "
+               "a newer interaction stopped early, the next run MERGES its render log "
+               "into the previous one instead of replacing it (Lavie 2026-10)."),
 )
 
 

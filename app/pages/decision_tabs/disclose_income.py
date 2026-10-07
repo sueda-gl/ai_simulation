@@ -7,7 +7,7 @@ Uses a two-stage mediation model when specified (research spec mode).
 """
 import streamlit as st
 from app.state.widgets import stateful
-import yaml
+from app.seam.config_repo import read_yaml_file
 import pandas as pd
 from pathlib import Path
 
@@ -17,8 +17,7 @@ CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions
 
 def load_disclose_income_config():
     """Load disclose_income configuration from YAML."""
-    with open(CONFIG_PATH, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_file(CONFIG_PATH)
     return config.get('disclose_income', {})
 
 
@@ -27,8 +26,7 @@ def _load_base_sigma_overall():
     try:
         from app.seam.config_repo import get_config_repo
     except ImportError:
-        with open(CONFIG_PATH, 'r') as f:
-            config = yaml.safe_load(f)
+        config = read_yaml_file(CONFIG_PATH)
         return float(config['disclose_income']['stochastic']['sigma_overall'])
     return float(get_config_repo().disclose_income_sigma_overall())
 

@@ -10,7 +10,7 @@ stochastic settings. UI mirrors the Disclose Income tab for consistency.
 """
 import streamlit as st
 from app.state.widgets import stateful
-import yaml
+from app.seam.config_repo import read_yaml_file
 import pandas as pd
 from pathlib import Path
 
@@ -35,8 +35,7 @@ RESEARCH_DEFAULT_INTERCEPT = -0.75
 
 def load_disclose_documents_config():
     """Load disclose_documents configuration from YAML."""
-    with open(CONFIG_PATH, 'r') as f:
-        config = yaml.safe_load(f)
+    config = read_yaml_file(CONFIG_PATH)
     return config.get('disclose_documents', {})
 
 
