@@ -36,6 +36,9 @@ Output: "Y" if final draw > 0, "N" otherwise
 import numpy as np
 from typing import Dict, Any, Optional, List
 
+from src.decisions._shared import z_score_trait, categorical_intercept, normalise_income_mode
+from src.utils.stochastic import should_use_stochastic
+
 
 # Level-specific intercepts for categorical mode (from regression in documentation)
 # These replace the income coefficient in categorical mode
@@ -50,12 +53,7 @@ CATEGORICAL_INTERCEPTS = {
 
 def _z_score_trait(value: float, trait_name: str, z_params: Dict) -> float:
     """Z-score a raw trait value using population parameters from config."""
-    trait_params = z_params.get(trait_name, {})
-    mean = trait_params.get('mean', 0)
-    sd = trait_params.get('sd', 1)
-    if sd == 0:
-        return 0.0
-    return (value - mean) / sd
+    return z_score_trait(value, trait_name, z_params)
 
 
 def _compute_religiosity_composite_raw(agent_state: Dict, params: Dict) -> float:
@@ -187,13 +185,7 @@ def compute_pass1_values(
     # INCOME MODE AND INCOME_HIGH INDICATOR
     # ========================================================================
     
-    income_mode = params.get('income_mode', 'categorical')
-    
-    # Normalize income mode string
-    if 'continuous' in str(income_mode).lower():
-        normalized_mode = 'continuous'
-    else:
-        normalized_mode = 'categorical'
+    normalized_mode = normalise_income_mode(params.get('income_mode', 'categorical'))
     
     if normalized_mode == 'categorical':
         level = agent_state.get('Assigned Allowance Level', 3)
@@ -214,17 +206,7 @@ def compute_pass1_values(
     if normalized_mode == 'categorical':
         # CATEGORICAL MODE: Use level-specific intercepts, NO income coefficient
         level = int(agent_state.get('Assigned Allowance Level', 3))
-        cat_intercepts = params.get('categorical_intercepts', CATEGORICAL_INTERCEPTS)
-        
-        # Get intercept for this level (use default mapping if not in config)
-        if isinstance(cat_intercepts, dict):
-            # Config might have string keys like 'level_1'
-            intercept = cat_intercepts.get(f'level_{level}', 
-                        cat_intercepts.get(str(level),
-                        cat_intercepts.get(level, 
-                        CATEGORICAL_INTERCEPTS.get(level, 0.0089007))))
-        else:
-            intercept = CATEGORICAL_INTERCEPTS.get(level, 0.0089007)
+        intercept = categorical_intercept(params, level, CATEGORICAL_INTERCEPTS, 0.0089007)
         
         direct_effect = (
             intercept +
@@ -306,21 +288,6 @@ def compute_anchored_pb(
     return anchored_pb
 
 
-# Keep old function name for backward compatibility during transition
-def compute_pass2_anchored_pb(
-    pass1_values: Dict[str, float],
-    weighted_prosocial_stats: Dict[str, float],
-    params: Dict[str, Any]
-) -> float:
-    """
-    DEPRECATED: Use compute_anchored_pb() instead.
-    
-    This wrapper ignores weighted_prosocial_stats and calls compute_anchored_pb().
-    Kept for backward compatibility with orchestrators during transition.
-    """
-    return compute_anchored_pb(pass1_values, params)
-
-
 def disclose_income_stochastic(
     agent_state: Dict[str, Any],
     params: Dict[str, Any],
@@ -382,31 +349,14 @@ def disclose_income_stochastic(
     # COMPUTE VALUES (single-pass, no re-standardization)
     # ========================================================================
     
-    # Check for cached values (for backward compatibility with orchestrators)
-    cache = simulation_config.get('disclose_income_cache', {}) if simulation_config else {}
-    cache_index = agent_state.get('_cache_index')
-    cached_values = cache.get(cache_index) if cache_index is not None else None
+    pass1_values = compute_pass1_values(agent_state, params, simulation_config)
+    weighted_prosocial = pass1_values['weighted_prosocial']
+    direct_effect = pass1_values['direct_effect']
+    income_high = pass1_values['income_high']
+    z_obs_PB = pass1_values['z_obs_PB']
     
-    if cached_values:
-        # Use cached values if available
-        weighted_prosocial = cached_values['weighted_prosocial']
-        direct_effect = cached_values['direct_effect']
-        income_high = cached_values['income_high']
-        z_obs_PB = cached_values['z_obs_PB']
-        # Compute anchored_pb (may or may not be in cache depending on orchestrator version)
-        anchored_pb = cached_values.get('anchored_pb')
-        if anchored_pb is None:
-            anchored_pb = compute_anchored_pb(cached_values, params)
-    else:
-        # Compute all values fresh
-        pass1_values = compute_pass1_values(agent_state, params, simulation_config)
-        weighted_prosocial = pass1_values['weighted_prosocial']
-        direct_effect = pass1_values['direct_effect']
-        income_high = pass1_values['income_high']
-        z_obs_PB = pass1_values['z_obs_PB']
-        
-        # Compute anchored_pb WITHOUT re-standardization
-        anchored_pb = compute_anchored_pb(pass1_values, params)
+    # Compute anchored_pb WITHOUT re-standardization
+    anchored_pb = compute_anchored_pb(pass1_values, params)
     
     # Store deterministic anchored_pb for export
     anchored_pb_deterministic = anchored_pb
@@ -417,17 +367,10 @@ def disclose_income_stochastic(
     # ========================================================================
     
     stochastic_params = params.get('stochastic', {})
-    sigma_value = stochastic_params.get('sigma_value', 0)
     
-    # Determine whether to use stochastic component based on population context
-    # Three-way logic (same pattern as donation_default):
-    # 1. Copula mode with in_copula=True → stochastic ON
-    # 2. Documentation mode with sigma > 0 → stochastic ON
-    # 3. Otherwise (baseline, or copula with in_copula=False) → stochastic OFF
-    use_stochastic = (
-        (stochastic_params.get('in_copula', False) and pop_context == 'copula') or
-        (pop_context == 'documentation' and sigma_value > 0)
-    )
+    # ONE gate for every mode (src.utils.stochastic.should_use_stochastic):
+    # copula -> in_copula flag; documentation -> sigma_value > 0; baseline -> never.
+    use_stochastic = should_use_stochastic(stochastic_params, pop_context)
     
     if use_stochastic:
         # Apply stochastic to anchored_pb (NOT to DI_i)
@@ -436,8 +379,7 @@ def disclose_income_stochastic(
         # Determine income mode: quintile sigma only applies to categorical mode.
         # Continuous mode uses a single income coefficient, so level-specific
         # sigmas are not meaningful — always fall back to overall sigma.
-        income_mode = params.get('income_mode', 'categorical')
-        is_continuous = 'continuous' in str(income_mode).lower()
+        is_continuous = normalise_income_mode(params.get('income_mode', 'categorical')) == 'continuous'
         
         if sigma_strategy == 'quintile' and not is_continuous:
             # Quintile mode (categorical only): Use level-specific base sigma and scale factor
@@ -468,8 +410,7 @@ def disclose_income_stochastic(
     # z_direct_effect: use mode-appropriate stats
     # - Categorical: fixed YAML stats from original 280 participants
     # - Continuous: runtime-computed stats (because income is stochastic)
-    income_mode = params.get('income_mode', 'categorical')
-    is_continuous = 'continuous' in str(income_mode).lower()
+    is_continuous = normalise_income_mode(params.get('income_mode', 'categorical')) == 'continuous'
     
     if is_continuous and simulation_config and 'di_cont_de_stats' in simulation_config:
         de_stats = simulation_config['di_cont_de_stats']
@@ -543,27 +484,6 @@ def disclose_income_stochastic(
 # =============================================================================
 # BACKWARD COMPATIBILITY ALIAS
 # =============================================================================
-
-def compute_disclose_income_raw_values(
-    agent_state: Dict[str, Any],
-    params: Dict[str, Any],
-    simulation_config: Optional[Dict[str, Any]] = None
-) -> Dict[str, float]:
-    """
-    Compute all raw values for disclose_income decision.
-    
-    Returns pass1_values plus anchored_pb computed without re-standardization.
-    """
-    pass1_values = compute_pass1_values(agent_state, params, simulation_config)
-    
-    # Compute anchored_pb (no re-standardization)
-    anchored_pb = compute_anchored_pb(pass1_values, params)
-    
-    return {
-        **pass1_values,
-        'anchored_pb': anchored_pb,
-    }
-
 
 def compute_continuous_de_stats(agents_df, all_incomes: List[float], di_params: Dict, simulation_config: Dict) -> Dict[str, float]:
     """

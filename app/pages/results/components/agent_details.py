@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 
-from src.decisions.rejected_transaction_defaults import integrated_column_name
+from src.contract.columns import integrated_column_name
 
 
 def render_individual_agent_details(df):

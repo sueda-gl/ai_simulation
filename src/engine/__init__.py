@@ -7,6 +7,9 @@ The single simulation engine shared by every population mode.
 * :mod:`src.engine.vendors`     - vendor attribute generation (setup RNG)
 * :mod:`src.engine.sampling`    - Research-mode participant sampling
 * :mod:`src.engine.postprocess` - result post-processing (global transaction ids)
+* :mod:`src.engine.income`      - Category-First income generation (level -> percentile bucket)
+* :mod:`src.engine.config_access` - get_simulation_param: the Page-1 parameters
+* :mod:`src.engine.customer_type` - discount / fixed / regular from the disclosure decisions
 * :mod:`src.engine.log`         - prefixed console logging
 
 ``src.orchestrator``, ``src.orchestrator_doc_mode`` and ``src.orchestrator_baseline``

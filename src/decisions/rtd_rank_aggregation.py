@@ -533,36 +533,3 @@ def integrate_default_list(rankings: Sequence[Sequence[int]], choice_length: int
 # ---------------------------------------------------------------------------
 # Evaluation helper (reproduces the document's 100,000-case experiment design)
 # ---------------------------------------------------------------------------
-def simulate_stage_shares(n_cases: int = 100_000, n_rankings: int = 4, seed: int = 0,
-                          last_resort: str = "random",
-                          partial_sequences: Optional[Sequence[Sequence[int]]] = None) -> Dict:
-    """
-    Run the cascade on random inputs and tabulate the shares settled at each stage,
-    the Kemeny status shares and the Kemeny-optimality rate.
-
-    partial_sequences=None : n_rankings uniformly random COMPLETE permutations per
-                             case (the document's evaluation design).
-    partial_sequences given: one input per sequence, each a uniformly random TAIL
-                             (length 1..5) of that priority sequence - the shape of
-                             the actual mechanism outputs.
-    """
-    rng = np.random.default_rng(seed)
-    settled = {s: 0 for s in STAGES}
-    status = {s: 0 for s in KEMENY_STATUSES}
-    optimal = 0
-    for _ in range(n_cases):
-        if partial_sequences is None:
-            inputs = [list(rng.permutation(OPTIONS)) for _ in range(n_rankings)]
-        else:
-            inputs = [list(seq[N_OPTIONS - int(rng.integers(1, N_OPTIONS + 1)):])
-                      for seq in partial_sequences]
-        res = aggregate_rankings(inputs, rng=rng, last_resort=last_resort)
-        settled[res["settled_by"]] += 1
-        status[res["kemeny_status"]] += 1
-        optimal += int(res["is_kemeny_optimal"])
-    return {
-        "n_cases": n_cases,
-        "settled_by": {k: v / n_cases for k, v in settled.items()},
-        "kemeny_status": {k: v / n_cases for k, v in status.items()},
-        "kemeny_optimal_rate": optimal / n_cases,
-    }

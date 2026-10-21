@@ -11,7 +11,7 @@ Tests verify:
 
 import pytest
 import numpy as np
-from src.decisions.income_utils import (
+from src.engine.income import (
     get_agent_income,
     get_actual_allowance,
     get_percentile_boundaries,

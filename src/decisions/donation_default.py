@@ -7,8 +7,9 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # Import income utilities for Category-First architecture
-from src.decisions.income_utils import get_actual_allowance, get_agent_income
+from src.engine.income import get_actual_allowance, get_agent_income
 from src.utils.stochastic import get_stochastic_sigma, should_use_stochastic
+from src.decisions._shared import normalise_income_mode
 
 # ---------------------------------------------------------------------------
 # Methodology-document constants. config/decisions.yaml is what the engine
@@ -82,7 +83,7 @@ def _income_mode(params: dict) -> str:
     """'continuous' or 'categorical' (UI spellings normalised)."""
     regression_coeffs = params.get('regression_coefficients', {})
     income_mode = regression_coeffs.get('income_mode', params.get('regression', {}).get('income_mode', 'categorical'))
-    return 'continuous' if 'continuous' in str(income_mode).lower() else 'categorical'
+    return normalise_income_mode(income_mode)
 
 
 def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
@@ -123,7 +124,7 @@ def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
 
     # ---------------- Income effect ----------------
     if normalized_mode == 'continuous':
-        # CATEGORY-FIRST: Get actual_allowance (12-200 scale) from income_utils
+        # CATEGORY-FIRST: Get actual_allowance (12-200 scale) from src.engine.income
         # This ensures consistent mapping across all decisions
         actual_allowance = get_actual_allowance(agent_state, simulation_config, rng)
 
@@ -206,12 +207,6 @@ def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
                 sigma_overall = stochastic_params.get('sigma_overall', 9.899547)
                 scale_factor = stochastic_params.get('scale_factor', 1.0)
                 sigma_raw = sigma_overall * scale_factor
-
-        # DEBUG: Print sigma values to diagnose distribution differences
-        print(f"[DonationDefault DEBUG] strategy={sigma_strategy}, sigma_raw={sigma_raw}, "
-              f"scale_factor={stochastic_params.get('scale_factor')}, "
-              f"sigma_value={stochastic_params.get('sigma_value')}, "
-              f"sigma_overall={stochastic_params.get('sigma_overall')}")
 
         # Convert sigma from the 0-112 credit scale to the 0-100 anchor scale
         sigma_0_100_scaled = sigma_raw * (100.0 / 112.0)

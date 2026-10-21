@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from src.decisions.rejected_transaction_defaults import rename_consensus_columns
+from src.contract.columns import rename_consensus_columns
 from app.models import initialize_session_state
 from app.utils.timestamp_utils import (
     get_duration_hours,

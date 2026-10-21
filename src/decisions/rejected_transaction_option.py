@@ -3,7 +3,7 @@
 FALLBACK_OPTION = "forgo_transaction"
 
 
-def rejected_transaction_option(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
+def rejected_transaction_option(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
     """Decision 11: Select option after rejected transaction.
 
     Returns simulation_config['default_decisions']['rejected_transaction_option']['selected_option']

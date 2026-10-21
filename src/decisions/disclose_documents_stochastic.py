@@ -39,9 +39,11 @@ use compute_dd_score() for that. The gate is applied at simulation time only.
 import numpy as np
 from typing import Dict, Any, Optional, List
 
-from src.decisions.income_utils import (
-    get_agent_income, get_simulation_param, get_customer_type, ALLOWANCE_CREDIT_MAPPING,
-)
+from src.engine.income import get_agent_income, ALLOWANCE_CREDIT_MAPPING
+from src.engine.config_access import get_simulation_param
+from src.engine.customer_type import get_customer_type
+from src.decisions._shared import z_score_trait, categorical_intercept, normalise_income_mode
+from src.utils.stochastic import should_use_stochastic
 
 # ---------------------------------------------------------------------------
 # Constants verified against the reference Stata file (Stata_File_Decision 2_260626 - CORRECTED.dta)
@@ -91,26 +93,12 @@ SD_WEIGHTED_DD_CATEGORICAL = 0.13783441040509267   # corrected coeffs (was 0.137
 
 def _z_score_trait(value: float, trait_name: str, z_params: Dict) -> float:
     """Z-score a raw trait using fixed original-280 mean/SD from config."""
-    p = z_params.get(trait_name, {})
-    mean = p.get('mean', 0)
-    sd = p.get('sd', 1)
-    if sd == 0:
-        return 0.0
-    return (value - mean) / sd
+    return z_score_trait(value, trait_name, z_params)
 
 
 def _get_categorical_intercept(params: Dict, level: int) -> float:
     """Resolve the per-level categorical intercept from config (supports level_N keys)."""
-    cfg = params.get('categorical_intercepts')
-    if isinstance(cfg, dict):
-        # accept 'level_1', '1', or 1 keys; fall back to module default
-        return float(
-            cfg.get(f'level_{level}',
-            cfg.get(str(level),
-            cfg.get(level,
-            CATEGORICAL_INTERCEPTS.get(level, 0.0))))
-        )
-    return CATEGORICAL_INTERCEPTS.get(level, 0.0)
+    return categorical_intercept(params, level, CATEGORICAL_INTERCEPTS, 0.0)
 
 
 def compute_dd_score(
@@ -151,8 +139,7 @@ def compute_dd_score(
     level = int(agent_state.get('Assigned Allowance Level', 3))
     total_allowance = float(ALLOWANCE_CREDIT_MAPPING.get(level, 200))
 
-    income_mode = params.get('income_mode', 'categorical')
-    is_continuous = 'continuous' in str(income_mode).lower()
+    is_continuous = normalise_income_mode(params.get('income_mode', 'categorical')) == 'continuous'
     composite_z = params.get('composite_z_scoring', {})
 
     # Agent's raw income (used to surface PersonalIncentive = max_income - income for
@@ -237,12 +224,7 @@ def _apply_stochastic(dd_det: float, params: Dict, pop_context: str,
       - baseline mode: always OFF
     """
     stoch = params.get('stochastic', {})
-    sigma_value = stoch.get('sigma_value', 0)
-    use_stochastic = (
-        (stoch.get('in_copula', False) and pop_context == 'copula') or
-        (pop_context == 'documentation' and sigma_value > 0)
-    )
-    if not use_stochastic:
+    if not should_use_stochastic(stoch, pop_context):
         return dd_det, 0.0
 
     strategy = stoch.get('sigma_strategy', 'overall')

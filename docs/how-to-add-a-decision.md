@@ -39,7 +39,7 @@ as well, exactly as the four modelled decisions do.)
 | `agent_state` | the agent's traits **plus everything the earlier decisions returned**; this is how a decision reads a previous one's output (e.g. `agent_state['disclose_income']`) |
 | `params` | this decision's block of `config/decisions.yaml`, already patched with whatever the UI configured |
 | `rng` | a `numpy.random.Generator` seeded for this agent × this decision. **Draw only from this.** Never `random.random()`, never `np.random.*` |
-| `simulation_config` | the whole run configuration. Read Page-1 parameters with `get_simulation_param(simulation_config, 'market_price', 100.0)` from `src/decisions/income_utils.py`, **not** `simulation_config.get('market_price')`: the Page-1 values live under the `simulation` key, and a top-level read silently returns the default |
+| `simulation_config` | the whole run configuration. Read Page-1 parameters with `get_simulation_param(simulation_config, 'market_price', 100.0)` from `src/engine/config_access.py`, **not** `simulation_config.get('market_price')`: the Page-1 values live under the `simulation` key, and a top-level read silently returns the default |
 
 Return a dictionary. Its keys become columns of the results frame, and they are
 merged into `agent_state` so later decisions can read them.

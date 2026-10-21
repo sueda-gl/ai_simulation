@@ -31,7 +31,8 @@ When fully simulated (future):
 import numpy as np
 from typing import Dict, Any, Optional, List
 
-from src.decisions.income_utils import get_agent_income, get_simulation_param
+from src.engine.income import get_agent_income, _get_distribution_object
+from src.engine.config_access import get_simulation_param
 
 
 def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng) -> int:
@@ -43,8 +44,6 @@ def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng)
     Returns:
         int: vendor_id of the preferred vendor (highest score)
     """
-    import numpy as np
-    
     # Get vendors from simulation_config
     vendors = simulation_config.get('vendors', [])
     
@@ -69,11 +68,6 @@ def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng)
         # This ensures proximity maps change when simulation seed changes,
         # but remain consistent across agents within the same run.
         base_seed = simulation_config.get('simulation_seed', 42) if simulation_config else 42
-        
-        # DEBUG: Print seed for first agent to verify propagation
-        if agent_id == 1:
-            print(f"[PROXIMITY DEBUG] Agent 1: simulation_seed from config = {base_seed}")
-            print(f"[PROXIMITY DEBUG] simulation_config keys: {list(simulation_config.keys()) if simulation_config else 'None'}")
         
         proximity_scores = generate_proximity_scores(agent_id, len(vendors), rng, base_seed=base_seed)
         agent_state['vendor_proximity_scores'] = proximity_scores
@@ -293,25 +287,9 @@ def _assign_income_category(income: float, simulation_config: Optional[Dict]) ->
         Y_min = b * np.power(np.power(small_percentile, -1/p) - 1, -1/a)
         min_income = min_val + Y_min
     else:
-        # For lognormal, generalised_gamma, etc: use scipy
-        from scipy import stats
-        
-        if dist_type == 'lognormal':
-            mu = get_simulation_param(simulation_config, 'lognormal_mu', 10.0)
-            sigma = get_simulation_param(simulation_config, 'lognormal_sigma', 0.5)
-            loc = get_simulation_param(simulation_config, 'lognormal_min', 0.0)
-            dist = stats.lognorm(s=sigma, scale=np.exp(mu), loc=loc)
-        elif dist_type == 'generalised_gamma':
-            k = get_simulation_param(simulation_config, 'gg_k', 1.5)
-            c = get_simulation_param(simulation_config, 'gg_c', 2.0)
-            lambda_param = get_simulation_param(simulation_config, 'gg_lambda', 20000.0)
-            loc = get_simulation_param(simulation_config, 'gg_min', 0.0)
-            dist = stats.gengamma(a=c, c=k, scale=lambda_param, loc=loc)
-        else:
-            # Fallback: uniform distribution
-            min_val = get_simulation_param(simulation_config, 'income_min', 0.0)
-            max_val = get_simulation_param(simulation_config, 'income_max', 100000.0)
-            dist = stats.uniform(loc=min_val, scale=max_val - min_val)
+        # For lognormal, generalised_gamma, etc: the same scipy object the income
+        # generator builds (same keys and defaults; dagum never reaches this branch)
+        dist = _get_distribution_object(sim_params)
         
         # Use a very small percentile (not exactly 0.00 to avoid numerical issues)
         min_income = dist.ppf(0.0001)
@@ -404,7 +382,7 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
     
     # STEP 2: Determine customer type (discount, fixed, or regular)
     # Must determine customer type BEFORE income category assignment
-    from src.decisions.income_utils import get_customer_type
+    from src.engine.customer_type import get_customer_type
     customer_type = get_customer_type(agent_state, simulation_config)
     
     # STEP 3: Assign income category ONLY to Discount and Fixed customers
@@ -499,7 +477,7 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
         agent_id = agent_state.get('agent_id', agent_state.get('index', 0) + 1)
         
         # Get customer type from agent_state (should be set by disclose_documents)
-        from src.decisions.income_utils import get_customer_type
+        from src.engine.customer_type import get_customer_type
         customer_type = get_customer_type(agent_state, simulation_config)
         
         # Create purchase request objects with vendor preference

@@ -18,6 +18,7 @@ equal Stata_File_Decision4_050926.dta's stored choice1..5_* columns directly).
 import copy
 import os
 from itertools import permutations
+from typing import Dict, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -25,11 +26,11 @@ import pytest
 import yaml
 
 from src.decisions.rtd_rank_aggregation import (
-    ALL_PERMS, KEMENY_STATUSES, OPTIONS, STAGES,
+    ALL_PERMS, KEMENY_STATUSES, N_OPTIONS, OPTIONS, STAGES,
     aggregate_rankings, apply_output_rules, collapse_to_groups, copeland_scores,
     footrule_positions, integrate_default_list, kemeny_optimal_set, kemeny_phase,
     kendall_tau_distance, pairwise_matrix, refine_by_copeland, refine_by_footrule,
-    schulze_weak_order, simulate_stage_shares,
+    schulze_weak_order,
 )
 from src.decisions.rejected_transaction_defaults import (
     MECHANISMS, OPTION_CODES, PRIORITY_SEQUENCES, RANKING_KEYS,
@@ -294,6 +295,41 @@ def test_hand_case_partial_input_absent_options_tied_at_bottom():
 # ---------------------------------------------------------------------------
 # Reference statistics from the document / V1 report (random complete rankings)
 # ---------------------------------------------------------------------------
+def simulate_stage_shares(n_cases: int = 100_000, n_rankings: int = 4, seed: int = 0,
+                          last_resort: str = "random",
+                          partial_sequences: Optional[Sequence[Sequence[int]]] = None) -> Dict:
+    """
+    Run the cascade on random inputs and tabulate the shares settled at each stage,
+    the Kemeny status shares and the Kemeny-optimality rate.
+
+    partial_sequences=None : n_rankings uniformly random COMPLETE permutations per
+                             case (the document's evaluation design).
+    partial_sequences given: one input per sequence, each a uniformly random TAIL
+                             (length 1..5) of that priority sequence - the shape of
+                             the actual mechanism outputs.
+    """
+    rng = np.random.default_rng(seed)
+    settled = {s: 0 for s in STAGES}
+    status = {s: 0 for s in KEMENY_STATUSES}
+    optimal = 0
+    for _ in range(n_cases):
+        if partial_sequences is None:
+            inputs = [list(rng.permutation(OPTIONS)) for _ in range(n_rankings)]
+        else:
+            inputs = [list(seq[N_OPTIONS - int(rng.integers(1, N_OPTIONS + 1)):])
+                      for seq in partial_sequences]
+        res = aggregate_rankings(inputs, rng=rng, last_resort=last_resort)
+        settled[res["settled_by"]] += 1
+        status[res["kemeny_status"]] += 1
+        optimal += int(res["is_kemeny_optimal"])
+    return {
+        "n_cases": n_cases,
+        "settled_by": {k: v / n_cases for k, v in settled.items()},
+        "kemeny_status": {k: v / n_cases for k, v in status.items()},
+        "kemeny_optimal_rate": optimal / n_cases,
+    }
+
+
 def test_stage_shares_reproduce_the_documents_experiment():
     stats = simulate_stage_shares(10_000, n_rankings=4, seed=1)
     s = stats["settled_by"]

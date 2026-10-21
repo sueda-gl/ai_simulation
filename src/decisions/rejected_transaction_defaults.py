@@ -64,6 +64,8 @@ import numpy as np
 from typing import Any, Dict, List, Optional
 
 from src.decisions.rtd_rank_aggregation import integrate_default_list
+from src.decisions._shared import z_score_trait, normalise_income_mode
+from src.utils.stochastic import should_use_stochastic
 
 # ---------------------------------------------------------------------------
 # Option codes (canonical across the app - see DEFAULT_DECISION_VALUES) keyed by
@@ -238,12 +240,7 @@ _RESCALE = {
 
 def _z_score_trait(value: float, trait_name: str, z_params: Dict) -> float:
     """Z-score a raw trait using fixed original-280 mean/SD from config."""
-    p = z_params.get(trait_name, DEFAULT_Z_SCORING.get(trait_name, {}))
-    mean = p.get("mean", 0)
-    sd = p.get("sd", 1)
-    if sd == 0:
-        return 0.0
-    return (value - mean) / sd
+    return z_score_trait(value, trait_name, z_params, fallback=DEFAULT_Z_SCORING.get(trait_name, {}))
 
 
 def _coeffs(params: Dict, mechanism: str, defaults: Dict) -> Dict:
@@ -255,8 +252,7 @@ def _coeffs(params: Dict, mechanism: str, defaults: Dict) -> Dict:
 
 def _income_mode(params: Dict) -> str:
     """Resolve the decision's income mode: 'categorical' or 'continuous' (default)."""
-    mode = str(params.get("income_mode", "continuous")).lower()
-    return "categorical" if "categorical" in mode else "continuous"
+    return normalise_income_mode(params.get("income_mode", "continuous"), default="continuous")
 
 
 def _categorical_income_effect(params: Dict, mechanism: str, level: int) -> float:
@@ -541,11 +537,7 @@ def _resolve_sigma(stoch_m: Dict, agent_state: Dict, mechanism: str) -> float:
 
 def _stochastic_enabled(params: Dict, pop_context: str) -> bool:
     """Decision-wide stochastic gate; the same three-way rule as disclose_documents."""
-    stoch = params.get("stochastic", {})
-    return (
-        (stoch.get("in_copula", False) and pop_context == "copula")
-        or (pop_context == "documentation" and stoch.get("sigma_value", 0) > 0)
-    )
+    return should_use_stochastic(params.get("stochastic", {}), pop_context)
 
 
 def _mechanism_stoch(params: Dict) -> Dict[str, Dict]:
@@ -759,29 +751,6 @@ def _aggregate_mechanism_rankings(out: Dict[str, Any], params: Dict, rng) -> Non
     out["rtd_consensus_last_resort"] = agg["last_resort"]
 
 
-# User-facing outputs say "integrated", never "consensus".
-# The model keeps its internal rtd_consensus_* column names (saved-configuration
-# hashes, tests, the
-# Stata-parity checks read them); every export / on-screen table renames them with
-# integrated_column_name / rename_consensus_columns.
-INTERNAL_AGGREGATION_PREFIX = "rtd_consensus_"
-EXPORT_AGGREGATION_PREFIX = "rtd_integrated_"
-
-
-def integrated_column_name(column):
-    """User-facing name of a model column: rtd_consensus_<x> -> rtd_integrated_<x>."""
-    if isinstance(column, str) and column.startswith(INTERNAL_AGGREGATION_PREFIX):
-        return EXPORT_AGGREGATION_PREFIX + column[len(INTERNAL_AGGREGATION_PREFIX):]
-    return column
-
-
-def rename_consensus_columns(df):
-    """A copy-free rename of every rtd_consensus_* column of `df` to rtd_integrated_*."""
-    renames = {c: integrated_column_name(c) for c in df.columns
-               if integrated_column_name(c) != c}
-    return df.rename(columns=renames) if renames else df
-
-
 def _resolve_default_template(simulation_config: Dict, rng: np.random.Generator) -> List[str]:
     """Legacy default path: the configured priority template (or a random fallback)."""
     config = (simulation_config or {}).get("default_decisions", {}).get("rejected_transaction_defaults")
@@ -794,6 +763,87 @@ def _resolve_default_template(simulation_config: Dict, rng: np.random.Generator)
         selected.remove("forgo_transaction")
         selected.append("forgo_transaction")
     return selected
+
+
+def _mechanism_outputs(m: str, scores: Dict[str, Any], pop: Dict[str, Any], params: Dict[str, Any],
+                       agent_state: Dict[str, Any], mech_stoch: Dict[str, Dict],
+                       use_stochastic: bool, noise: Dict[str, float], out: Dict[str, Any]) -> None:
+    """One mechanism's columns, written into ``out`` in order (the entry function's loop body).
+    Uses no random numbers: ``noise`` holds the five normals drawn before the loop."""
+    # FIXED-CUTOFF intercept semantics: pop[m] holds BETA0-FREE statistics (the
+    # hook never applies intercepts), so the segment cutoffs are frozen; the
+    # operative score is the beta0-free composite plus the intercept's raw-scale
+    # equivalent (beta0 itself for ttp - the doc's raw composite scale; beta*sd0
+    # for loyalty/wtp/risk_taking, i.e. beta is measured in SDs of the element's
+    # own score; 0.75*beta4 for flexibility). The
+    # min-max rescaled value then shifts by shift*(span-0.0001)/(max0-min0) and
+    # the agent can cross bin boundaries (clipped at the end bins).
+    raw0 = scores[m]                                     # beta0-free composite
+    shift = _intercept_raw_shift(m, _intercept(params, m), pop[m], params)
+    raw = raw0 + shift                                   # operative score
+    vmin, vmax = pop[m]["min"], pop[m]["max"]            # beta0-free cutoffs
+    stoch_m = mech_stoch[m]
+    sigma = _resolve_sigma(stoch_m, agent_state, m) if use_stochastic else 0.0
+
+    if m == "ttp":
+        # ttp06 rescales the operative score against the beta0-free min/max, so
+        # a nonzero beta0 shifts it by beta0*(6-0.0001)/(max0-min0) (it may
+        # leave [0, 6); the clip below caps the length at the 0/5 boundary bins).
+        ttp06 = _rescale(raw, 0.0, 6.0, vmin, vmax)
+        det_len = int(np.clip(int(np.floor(ttp06)), 0, 5))
+        out["rtd_weighted_ttp"] = raw
+        out["rtd_weighted_ttp06"] = float(ttp06)
+        out["rtd_choice_length_deterministic"] = det_len
+        final_len = det_len
+        drawn = use_stochastic and sigma > 0 and "s_min" in pop[m]
+        if drawn:
+            draw = ttp06 + sigma * noise[m]
+            draw06 = _rescale(draw, 0.0, 6.0, pop[m]["s_min"], pop[m]["s_max"])
+            final_len = int(np.clip(int(np.floor(draw06)), 0, 5))
+            out["rtd_ttp_draw"] = float(draw)
+        out["rtd_choice_length"] = final_len
+        out["rtd_sigma_used_ttp"] = float(sigma if drawn else 0.0)
+        return
+
+    det_seg = _segment(raw, m, vmin, vmax)
+    # z-score of the operative score over the BETA0-FREE population (reporting;
+    # and the continuous anchor of loyalty/risk_taking/flexibility). With
+    # raw = raw0 + beta*sd0 this is exactly z0 + beta for loyalty/wtp/risk_taking
+    # - the doc's standardized-scale intercept; for flexibility it is
+    # z0 + w_calc*beta/sd0. Matches the .dta's weighted_loyalty / z_WTP / z_RT /
+    # z_anchored_flexibility columns at beta = 0.
+    sd = pop[m].get("sd", 1.0) or 1.0
+    z_val = (raw - pop[m].get("mean", 0.0)) / sd
+
+    final_seg = det_seg
+    draw_val = None
+    drawn = use_stochastic and sigma > 0 and "s_min" in pop[m]
+    if drawn:
+        # Anchor on the operative score: shifts by the intercept in anchor units
+        # (raw units for loyalty/wtp, z units for risk_taking, quantized segment
+        # for 'binned'), while s_min/s_max stay beta0-free -> the re-binning
+        # shifts consistently with the deterministic segment.
+        anchor = _anchor_value(m, stoch_m, raw, det_seg, pop)
+        draw_val = anchor + sigma * noise[m]
+        low, span = _RESCALE[m]
+        rescaled = _rescale(draw_val, low, span, pop[m]["s_min"], pop[m]["s_max"])
+        final_seg = int(np.clip(int(np.floor(rescaled)), 1, 5))
+
+    ranking = _ranking_for_segment(m, final_seg)
+    key = RANKING_KEYS[m]
+    # rtd_*_score is the OPERATIVE score: the composite + the intercept's
+    # raw-scale equivalent (beta*sd0 for the standardized-scale intercepts, which
+    # appear as exactly +beta on rtd_*_z; w_calc*beta for flexibility). At
+    # beta = 0 it is the raw composite (for flexibility: anchored_flexibility).
+    out[f"rtd_{key}_score"] = raw
+    out[f"rtd_{key}_z"] = float(z_val)
+    out[f"rtd_{key}_segment_deterministic"] = det_seg
+    out[f"rtd_{key}_segment"] = final_seg
+    out[f"rtd_{key}_ranking"] = ranking
+    out[f"rtd_{key}_ranking_codes"] = [OPTION_CODES[o] for o in ranking]
+    if draw_val is not None:
+        out[f"rtd_{key}_draw"] = float(draw_val)
+    out[f"rtd_sigma_used_{key}"] = float(sigma if drawn else 0.0)
 
 
 def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str, Any],
@@ -826,13 +876,7 @@ def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str,
         template = _resolve_default_template(sim, rng)
         return {"rejected_transaction_defaults": template}
 
-    pop = sim.get("rtd_population_stats")
-    if not pop:
-        # Orchestrator did not provide population stats (should not happen once wired);
-        # fall back to the legacy template rather than emitting wrong bins.
-        template = _resolve_default_template(sim, rng)
-        return {"rejected_transaction_defaults": template,
-                "rtd_model_error": "missing rtd_population_stats"}
+    pop = sim["rtd_population_stats"]   # computed by the engine after Pass 1
 
     scores = compute_rtd_scores(agent_state, params, sim)
     # Flexibility operative score: anchored_flexibility (beta4-free here;
@@ -861,80 +905,7 @@ def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str,
     out["rtd_flex_stdactions_missing"] = scores["stdactions_missing"]
 
     for m in MECHANISMS:
-        # FIXED-CUTOFF intercept semantics: pop[m] holds BETA0-FREE statistics (the
-        # hook never applies intercepts), so the segment cutoffs are frozen; the
-        # operative score is the beta0-free composite plus the intercept's raw-scale
-        # equivalent (beta0 itself for ttp - the doc's raw composite scale; beta*sd0
-        # for loyalty/wtp/risk_taking, i.e. beta is measured in SDs of the element's
-        # own score; 0.75*beta4 for flexibility). The
-        # min-max rescaled value then shifts by shift*(span-0.0001)/(max0-min0) and
-        # the agent can cross bin boundaries (clipped at the end bins).
-        raw0 = scores[m]                                     # beta0-free composite
-        shift = _intercept_raw_shift(m, _intercept(params, m), pop[m], params)
-        raw = raw0 + shift                                   # operative score
-        vmin, vmax = pop[m]["min"], pop[m]["max"]            # beta0-free cutoffs
-        stoch_m = mech_stoch[m]
-        sigma = _resolve_sigma(stoch_m, agent_state, m) if use_stochastic else 0.0
-
-        if m == "ttp":
-            # ttp06 rescales the operative score against the beta0-free min/max, so
-            # a nonzero beta0 shifts it by beta0*(6-0.0001)/(max0-min0) (it may
-            # leave [0, 6); the clip below caps the length at the 0/5 boundary bins).
-            ttp06 = _rescale(raw, 0.0, 6.0, vmin, vmax)
-            det_len = int(np.clip(int(np.floor(ttp06)), 0, 5))
-            out["rtd_weighted_ttp"] = raw
-            out["rtd_weighted_ttp06"] = float(ttp06)
-            out["rtd_choice_length_deterministic"] = det_len
-            final_len = det_len
-            drawn = use_stochastic and sigma > 0 and "s_min" in pop[m]
-            if drawn:
-                draw = ttp06 + sigma * noise[m]
-                draw06 = _rescale(draw, 0.0, 6.0, pop[m]["s_min"], pop[m]["s_max"])
-                final_len = int(np.clip(int(np.floor(draw06)), 0, 5))
-                out["rtd_ttp_draw"] = float(draw)
-            out["rtd_choice_length"] = final_len
-            out["rtd_sigma_used_ttp"] = float(sigma if drawn else 0.0)
-            continue
-
-        det_seg = _segment(raw, m, vmin, vmax)
-        # z-score of the operative score over the BETA0-FREE population (reporting;
-        # and the continuous anchor of loyalty/risk_taking/flexibility). With
-        # raw = raw0 + beta*sd0 this is exactly z0 + beta for loyalty/wtp/risk_taking
-        # - the doc's standardized-scale intercept; for flexibility it is
-        # z0 + w_calc*beta/sd0. Matches the .dta's weighted_loyalty / z_WTP / z_RT /
-        # z_anchored_flexibility columns at beta = 0.
-        sd = pop[m].get("sd", 1.0) or 1.0
-        z_val = (raw - pop[m].get("mean", 0.0)) / sd
-
-        final_seg = det_seg
-        draw_val = None
-        drawn = use_stochastic and sigma > 0 and "s_min" in pop[m]
-        if drawn:
-            # Anchor on the operative score: shifts by the intercept in anchor units
-            # (raw units for loyalty/wtp, z units for risk_taking, quantized segment
-            # for 'binned'), while s_min/s_max stay beta0-free -> the re-binning
-            # shifts consistently with the deterministic segment.
-            anchor = _anchor_value(m, stoch_m, raw, det_seg, pop)
-            draw_val = anchor + sigma * noise[m]
-            low, span = _RESCALE[m]
-            rescaled = _rescale(draw_val, low, span, pop[m]["s_min"], pop[m]["s_max"])
-            final_seg = int(np.clip(int(np.floor(rescaled)), 1, 5))
-
-        ranking = _ranking_for_segment(m, final_seg)
-        key = RANKING_KEYS[m]
-        # rtd_*_score is the OPERATIVE score: the composite + the intercept's
-        # raw-scale equivalent (beta*sd0 for the standardized-scale intercepts, which
-        # appear as exactly +beta on rtd_*_z; w_calc*beta for flexibility). At
-        # beta = 0 it is the raw composite (for flexibility: anchored_flexibility).
-        out[f"rtd_{key}_score"] = raw
-        out[f"rtd_{key}_z"] = float(z_val)
-        out[f"rtd_{key}_segment_deterministic"] = det_seg
-        out[f"rtd_{key}_segment"] = final_seg
-        out[f"rtd_{key}_ranking"] = ranking
-        out[f"rtd_{key}_ranking_codes"] = [OPTION_CODES[o] for o in ranking]
-        if draw_val is not None:
-            out[f"rtd_{key}_draw"] = float(draw_val)
-        out[f"rtd_sigma_used_{key}"] = float(sigma if drawn else 0.0)
+        _mechanism_outputs(m, scores, pop, params, agent_state, mech_stoch, use_stochastic, noise, out)
 
     # ---- Section 6: integrate the ranking mechanisms into one default list ----
     _aggregate_mechanism_rankings(out, params, rng)

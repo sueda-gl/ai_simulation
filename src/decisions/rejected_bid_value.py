@@ -3,7 +3,7 @@
 FALLBACK_VALUE = "NA"
 
 
-def rejected_bid_value(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
+def rejected_bid_value(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
     """Decision 12: Select bid value after rejected transaction.
 
     Returns simulation_config['default_decisions']['rejected_bid_value']['value']

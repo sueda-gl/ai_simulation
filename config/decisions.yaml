@@ -75,7 +75,6 @@ donation_default:
       '4': 1.0
       '5': 1.0
     in_copula: false
-    raw_output: false
   # NOT READ by the engine. The final 0-1 rescale is the methodology doc's
   # section 6 step 4: score_k = max(draw_k, 0) / max_j max(draw_j, 0), the population
   # MAXIMUM of the floored draws (src/engine/core.py, Pass-1 hook). The doc's "99%" sentence
@@ -136,9 +135,6 @@ donation_default:
     shift_value: -4.0
 disclose_income:
   uses_global_parameters: []
-  placeholder: false
-  output_field: disclose_income
-  default_value: NA
   equation1_coefficients:
     agreeable: 0.023776
     openness: 0.016537
@@ -215,9 +211,6 @@ disclose_income:
     level_5: -0.0145324
 disclose_documents:
   uses_global_parameters: []
-  placeholder: false
-  output_field: disclose_documents
-  default_value: NA
   equation_coefficients:
     extraversion: 0.015584630336545
     neuroticism: -0.024781455105683    # CORRECTED (was -0.022306825775166)
@@ -249,8 +242,8 @@ disclose_documents:
       mean: 0.0
       sd: 0.15115619105427494   # CORRECTED coeffs; fallback only, recomputed at runtime (was 0.1509454399)
   # sigma derived from consumedtransferssospeso2periods (two-period sospeso + transfer consumption).
-  # Reconstruct/verify these constants from the raw experiment files: `python -m src.build_dd_sigma`.
-  # NOTE: Period 2 is merged by ROW POSITION, not Participant ID — see src/build_dd_sigma.py.
+  # Reconstruct/verify these constants from the raw experiment files: `python scripts/build_dd_sigma.py`.
+  # NOTE: Period 2 is merged by ROW POSITION, not Participant ID — see scripts/build_dd_sigma.py.
   stochastic:
     sigma_strategy: overall
     sigma_overall: 0.1606568355
@@ -284,9 +277,6 @@ disclose_documents:
 # choice1..5_* columns now equal the app's lists directly (no mirroring).
 rejected_transaction_defaults:
   uses_global_parameters: []
-  placeholder: false
-  output_field: rejected_transaction_defaults
-  default_value: NA
   # Section-6 rank aggregation of the four ranking mechanisms into the integrated default
   # list (src/decisions/rtd_rank_aggregation.py). Equal weights (doc). `mechanisms` null =
   # every ranking mechanism the model computes (loyalty, wtp, risk_taking, flexibility).
@@ -517,55 +507,22 @@ rejected_transaction_defaults:
         anchor: continuous     # z_anchored_flexibility ('binned' = doc-literal Flexibility_combined15)
 vendor_choice_weights:
   uses_global_parameters: []
-  placeholder: true
-  output_field: vendor_choice_weights
-  default_value: NA
 purchasing_quantity:
   uses_global_parameters: []
-  placeholder: true
-  output_field: purchasing_quantity
-  default_value: NA
 purchasing_frequency:
   uses_global_parameters: []
-  placeholder: true
-  output_field: purchasing_frequency
-  default_value: NA
 vendor_selection:
   uses_global_parameters: []
-  placeholder: true
-  output_field: vendor_selection
-  default_value: NA
 purchase_vs_bid:
   uses_global_parameters: []
-  placeholder: true
-  output_field: purchase_vs_bid
-  default_value: NA
 bid_value:
   uses_global_parameters:
   - market_price
   - platform_markup
   - price_range
-  placeholder: false
-  output_field: bid_value
-  formula:
-    baseline_price: "(1 + platform_markup) \xD7 market_price"
-    min_bid: "(1 - price_range) \xD7 baseline_price"
-    max_bid: "(1 + price_range) \xD7 baseline_price"
-  distribution: uniform
-  description: Random bid amount selected uniformly from calculated bidding range
-    [min_bid, max_bid]
 rejected_transaction_option:
   uses_global_parameters: []
-  placeholder: true
-  output_field: rejected_transaction_option
-  default_value: NA
 rejected_bid_value:
   uses_global_parameters: []
-  placeholder: true
-  output_field: rejected_bid_value
-  default_value: NA
 final_donation_rate:
   uses_global_parameters: []
-  placeholder: true
-  output_field: final_donation_rate
-  default_value: NA

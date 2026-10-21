@@ -110,7 +110,7 @@ def _captions(at):
 def _parquet_roundtrip(df: pd.DataFrame, path: Path) -> pd.DataFrame:
     """The transformation scripts/run_simulation.py applies before writing parquet."""
     import json
-    from src.decisions.rejected_transaction_defaults import rename_consensus_columns
+    from src.contract.columns import rename_consensus_columns
     out = rename_consensus_columns(df.copy())
     out["purchase_requests"] = out["purchase_requests"].apply(
         lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x))

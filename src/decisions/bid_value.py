@@ -14,7 +14,7 @@ NOTE: This decision can be called either:
 """
 
 import numpy as np
-from src.decisions.income_utils import get_simulation_param
+from src.engine.config_access import get_simulation_param
 
 
 def generate_single_bid_value(rng, simulation_config: dict = None, params: dict = None, base_price: float = None) -> float:
@@ -63,21 +63,15 @@ def generate_single_bid_value(rng, simulation_config: dict = None, params: dict 
     return bid_amount
 
 
-def bid_value(agent_state: dict, params: dict, rng, simulation_config: dict = None,
-             request_context: dict = None) -> dict:
+def bid_value(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
     """
     Decision 10: For Regular customers - select bid value if Bid chosen
-    
-    Can be called in two modes:
-    1. Agent-level (request_context=None): Returns single bid for agent (backward compatibility)
-    2. Request-level (request_context provided): Returns new bid for specific purchase request
     
     Args:
         agent_state: Current agent state including previous decisions
         params: Decision-specific parameters from decisions.yaml
         rng: Random number generator for this agent
         simulation_config: Global simulation configuration with pricing parameters
-        request_context: Optional dict with request-specific info (for per-request calls)
         
     Returns:
         dict: {"bid_value": float or np.nan}
@@ -90,13 +84,8 @@ def bid_value(agent_state: dict, params: dict, rng, simulation_config: dict = No
         # Discount or Fixed customers don't bid
         return {"bid_value": np.nan}
     
-    # STEP 2: Check if this request is a bid
-    # If request_context provided, use its purchase_vs_bid decision
-    # Otherwise, use agent-level decision (backward compatibility)
-    if request_context is not None:
-        purchase_vs_bid_choice = request_context.get('purchase_vs_bid', 'Purchase Now')
-    else:
-        purchase_vs_bid_choice = agent_state.get('purchase_vs_bid', 'Purchase Now')
+    # STEP 2: Check if this request is a bid (the agent-level decision)
+    purchase_vs_bid_choice = agent_state.get('purchase_vs_bid', 'Purchase Now')
     
     # Handle the new NA values for non-regular customers
     if purchase_vs_bid_choice in ['NA_discount', 'NA_fixed']:

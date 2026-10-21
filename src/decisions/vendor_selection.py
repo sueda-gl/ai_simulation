@@ -24,10 +24,9 @@ Where each attribute is standardized to [0, 1] using FIXED reference ranges:
 """
 
 import numpy as np
-from src.vendor_attribute_generator import generate_proximity_scores, select_best_vendor
 
 
-def vendor_selection(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
+def vendor_selection(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
     """
     Decision 8: Vendor Selection - Currently showcases agent preferences only.
     
@@ -70,7 +69,6 @@ def _showcase_vendor_preference(agent_state: dict, simulation_config: dict) -> d
     NOTE: This is for visualization/analysis purposes only.
     The actual vendor assignment algorithm will be implemented here in the future.
     """
-    import numpy as np
     
     # Get the preferred vendor that was already calculated in Decision 6
     preferred_vendor = agent_state.get('preferred_vendor', None)

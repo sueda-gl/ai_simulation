@@ -1,4 +1,4 @@
-# src/build_dd_sigma.py
+# scripts/build_dd_sigma.py
 """
 Derive the Decision 2 (Disclose Documents) stochastic sigma from the raw experiment data.
 

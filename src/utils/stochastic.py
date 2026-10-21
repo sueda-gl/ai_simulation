@@ -10,15 +10,14 @@ to decision models. It supports:
 - Automatic unit conversion (original → z-score scale)
 
 Usage:
-    from src.utils.stochastic import get_stochastic_sigma, apply_stochastic_draw, should_use_stochastic
+    from src.utils.stochastic import get_stochastic_sigma, should_use_stochastic
 
     if should_use_stochastic(stochastic_params, pop_context):
         sigma = get_stochastic_sigma(level, stochastic_params)
-        draw = apply_stochastic_draw(anchor, sigma, rng)
+        draw = rng.normal(anchor, sigma)
 """
 
-import numpy as np
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any
 
 
 # Default sigma values from empirical data (TWT+Sospeso observed prosocial behavior)
@@ -114,119 +113,3 @@ def get_stochastic_sigma(
         sigma_scaled = sigma_scaled / z_scale_divisor
 
     return sigma_scaled
-
-
-def apply_stochastic_draw(
-    anchor_value: float,
-    sigma: float,
-    rng: np.random.Generator,
-    floor_at_zero: bool = False,
-    clip_range: Optional[Tuple[float, float]] = None
-) -> float:
-    """
-    Apply stochastic Normal(anchor, sigma) draw.
-
-    Args:
-        anchor_value: Mean of the normal distribution
-        sigma: Standard deviation
-        rng: Random number generator
-        floor_at_zero: If True, clip negative values to 0
-        clip_range: Optional (min, max) tuple to clip the result
-
-    Returns:
-        Drawn value
-    """
-    if sigma <= 0:
-        # No stochastic component - return anchor directly
-        draw = anchor_value
-    else:
-        draw = rng.normal(anchor_value, sigma)
-
-    if floor_at_zero:
-        draw = max(draw, 0.0)
-
-    if clip_range is not None:
-        draw = np.clip(draw, clip_range[0], clip_range[1])
-
-    return float(draw)
-
-
-def get_stochastic_config_defaults() -> Dict[str, Any]:
-    """
-    Get default stochastic configuration structure.
-
-    Returns a dict that can be used as a template for decision configs.
-    """
-    return {
-        'sigma_strategy': 'overall',  # 'overall' or 'quintile'
-        'sigma_value': 0,             # 0 = disabled, >0 = enabled
-        'sigma_overall': DEFAULT_SIGMA_OVERALL,
-        'sigma_quintile': DEFAULT_SIGMA_QUINTILE.copy(),
-        'scale_factor': 1.0,
-        'quintile_scale_factors': {
-            '1': 1.0,
-            '2': 1.0,
-            '3': 1.0,
-            '4': 1.0,
-            '5': 1.0,
-        },
-        'in_copula': False,
-    }
-
-
-# Convenience function combining the above
-def compute_stochastic_value(
-    anchor_value: float,
-    level: int,
-    stochastic_params: Dict[str, Any],
-    pop_context: str,
-    rng: np.random.Generator,
-    convert_to_z_scale: bool = False,
-    z_scale_divisor: float = DEFAULT_SIGMA_OVERALL,
-    floor_at_zero: bool = False,
-    clip_range: Optional[Tuple[float, float]] = None
-) -> Tuple[float, bool]:
-    """
-    All-in-one function to compute stochastic value.
-
-    Combines should_use_stochastic, get_stochastic_sigma, and apply_stochastic_draw.
-
-    Args:
-        anchor_value: The deterministic anchor/mean value
-        level: Income level (1-5)
-        stochastic_params: Stochastic configuration dict
-        pop_context: Population context ('documentation', 'baseline', 'copula')
-        rng: Random number generator
-        convert_to_z_scale: Convert sigma to z-score scale
-        z_scale_divisor: Divisor for z-scale conversion
-        floor_at_zero: Floor negative values at 0
-        clip_range: Optional (min, max) clip range
-
-    Returns:
-        Tuple of (stochastic_value, was_stochastic_applied)
-    """
-    if not should_use_stochastic(stochastic_params, pop_context):
-        # Return anchor unchanged
-        result = anchor_value
-        if floor_at_zero:
-            result = max(result, 0.0)
-        if clip_range is not None:
-            result = np.clip(result, clip_range[0], clip_range[1])
-        return float(result), False
-
-    sigma = get_stochastic_sigma(
-        level=level,
-        stochastic_params=stochastic_params,
-        convert_to_z_scale=convert_to_z_scale,
-        z_scale_divisor=z_scale_divisor
-    )
-
-    draw = apply_stochastic_draw(
-        anchor_value=anchor_value,
-        sigma=sigma,
-        rng=rng,
-        floor_at_zero=floor_at_zero,
-        clip_range=clip_range
-    )
-
-    return draw, True

@@ -17,7 +17,7 @@ When fully simulated (future):
 """
 from typing import Optional, Dict, Any
 
-from src.decisions.income_utils import get_simulation_param
+from src.engine.config_access import get_simulation_param
 
 
 def purchasing_frequency(agent_state: dict, params: dict, rng, 
@@ -60,12 +60,8 @@ def purchasing_frequency(agent_state: dict, params: dict, rng,
     except (ValueError, TypeError):
         purchasing_quantity = 0.0
     
-    # STEP 2: Get term duration from Page 1 parameters
+    # STEP 2: Get the number of periods from Page 1 parameters
     periods = get_simulation_param(simulation_config, 'periods', 1)
-    duration_hours = get_simulation_param(simulation_config, 'duration_hours', 1.0)
-    
-    # Calculate term duration
-    term_duration = float(periods * duration_hours)
     
     # STEP 3: Calculate frequency
     # Frequency = quantity / periods (items per period)

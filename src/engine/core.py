@@ -296,7 +296,7 @@ class Engine:
         # Source the agents (copula draw / research sampling) unless supplied
         agents_df = self._resolve_agents(agents_df, n_agents, seed, rng_setup)
 
-        from src.decisions.income_utils import get_agent_income
+        from src.engine.income import get_agent_income
 
         # ====================================================================
         # PASS 1: generate every agent's income and compute population statistics

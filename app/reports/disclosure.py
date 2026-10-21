@@ -5,7 +5,7 @@ The sheet frames behind `app/pages/results/visualizations/disclosure_viz.py`:
 `round(..., 2)` on stored values, z-scores with `ddof=1`, the eligibility-gate
 re-derivation with its `12500.0` default, the `'General'` number format.
 
-No Streamlit: pandas / numpy / openpyxl (and `src.decisions.income_utils`) only.
+No Streamlit: pandas / numpy / openpyxl (and `src.engine.config_access`) only.
 
 `prepare_*` build the sheet frames; the `*_sheets` / `build_*_xlsx` helpers at
 the bottom assemble the results page's DI-only and DD-only export workbooks.
@@ -14,6 +14,8 @@ The workbook plumbing (`to_xlsx_bytes`) and the disclosure number formatter
 live in `app/reports/xlsx.py`; this module imports them rather than
 keeping its own copy.
 """
+from typing import Dict
+
 import pandas as pd
 
 from app.reports.xlsx import apply_disclosure_price_formatting, to_xlsx_bytes
@@ -381,7 +383,7 @@ def prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     # Qualified gate = Disclose Income == 'Y' AND income < discount threshold (strict).
     # Matches the model gate (disclose_documents*.py: income >= threshold -> "NA").
     # For every agent failing that gate (DI != Y, or income at/above threshold), force N/A.
-    from src.decisions.income_utils import get_simulation_param
+    from src.engine.config_access import get_simulation_param
     threshold = None
     try:
         sim_cfg = df.attrs.get('simulation_config') if hasattr(df, 'attrs') else None
@@ -649,3 +651,69 @@ def disclose_documents_export_sheets(results_dict: dict, is_compare_all: bool) -
 def build_disclose_documents_results_xlsx(export_df) -> bytes:
     """DD-only single-configuration export: one 'Disclose Documents' sheet."""
     return build_disclosure_sheets_xlsx({'Disclose Documents': export_df})
+
+
+# ---------------------------------------------------------------------------
+# Customer type distribution (the results page's Customer Type Distribution block)
+# ---------------------------------------------------------------------------
+def analyze_customer_types(results_df) -> Dict[str, any]:
+    """
+    Analyze customer type distribution from simulation results.
+    
+    Provides counts and percentages for each customer type.
+    
+    Args:
+        results_df: DataFrame with simulation results (must have 'customer_type' column)
+        
+    Returns:
+        dict: Statistics about customer type distribution
+        
+    Example:
+        stats = analyze_customer_types(results_df)
+        # Returns: {
+        #   'discount': {'count': 45, 'percentage': 15.0},
+        #   'fixed': {'count': 135, 'percentage': 45.0},
+        #   'regular': {'count': 120, 'percentage': 40.0},
+        #   'total': 300
+        # }
+    """
+    
+    if 'customer_type' not in results_df.columns:
+        return {
+            'error': 'customer_type column not found in results',
+            'discount': {'count': 0, 'percentage': 0.0},
+            'fixed': {'count': 0, 'percentage': 0.0},
+            'regular': {'count': 0, 'percentage': 0.0},
+            'total': 0
+        }
+    
+    total = len(results_df)
+    
+    if total == 0:
+        return {
+            'discount': {'count': 0, 'percentage': 0.0},
+            'fixed': {'count': 0, 'percentage': 0.0},
+            'regular': {'count': 0, 'percentage': 0.0},
+            'total': 0
+        }
+    
+    # Count each type
+    discount_count = len(results_df[results_df['customer_type'] == 'discount'])
+    fixed_count = len(results_df[results_df['customer_type'] == 'fixed'])
+    regular_count = len(results_df[results_df['customer_type'] == 'regular'])
+    
+    return {
+        'discount': {
+            'count': discount_count,
+            'percentage': (discount_count / total) * 100
+        },
+        'fixed': {
+            'count': fixed_count,
+            'percentage': (fixed_count / total) * 100
+        },
+        'regular': {
+            'count': regular_count,
+            'percentage': (regular_count / total) * 100
+        },
+        'total': total
+    }

@@ -12,7 +12,7 @@ NOTE: This decision can be called either:
 2. Request-level: Multiple times per agent, once per purchase request
 """
 
-from src.decisions.income_utils import get_customer_type
+from src.engine.customer_type import get_customer_type
 
 
 def purchase_vs_bid_single(customer_type: str, params: dict, rng, simulation_config: dict = None) -> str:
@@ -59,21 +59,15 @@ def purchase_vs_bid_single(customer_type: str, params: dict, rng, simulation_con
     return rng.choice(["Purchase Now", "bid"])
 
 
-def purchase_vs_bid(agent_state: dict, params: dict, rng, simulation_config: dict = None, 
-                   request_context: dict = None) -> dict:
+def purchase_vs_bid(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
     """
     Decision 9: For Regular customers - decide between Purchase Now and Bid
-    
-    Can be called in two modes:
-    1. Agent-level (request_context=None): Returns agent-level decision for backward compatibility
-    2. Request-level (request_context provided): Returns decision for a specific purchase request
     
     Args:
         agent_state: Agent's state dict
         params: Decision parameters
         rng: Random number generator
         simulation_config: Global simulation configuration
-        request_context: Optional dict with request-specific info (for per-request calls)
         
     Returns:
         dict: {"purchase_vs_bid": str} - the decision result
@@ -90,6 +84,4 @@ def purchase_vs_bid(agent_state: dict, params: dict, rng, simulation_config: dic
     decision = purchase_vs_bid_single(customer_type, params, rng, simulation_config)
     
     # STEP 3: Return result
-    # If request_context provided, we're being called per-request
-    # Otherwise, this is an agent-level call (legacy)
     return {"purchase_vs_bid": decision}

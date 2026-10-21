@@ -352,7 +352,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
 
     # Check if customer_type column exists in the dataframe
     if 'customer_type' in df.columns:
-        from src.decisions.income_utils import analyze_customer_types
+        from app.reports.disclosure import analyze_customer_types
         customer_stats = analyze_customer_types(df)
 
         # Show customer type breakdown with detailed metrics

@@ -58,8 +58,7 @@ rejected_transaction_defaults:
   # data/stata_stdactions.csv because the experiment workbook has no per-cycle counts).
   # NOTE: adding a trait requires retraining the copula (scripts/train_copula.py) -
   # synthetic populations change for ALL decisions (ConscientiousnessBig5/Education
-  # added 2026-08; stdactions added 2026-09-04, previous model backed up as
-  # config/trait_model.pkl.pre_flexibility.bak).
+  # added 2026-08; stdactions added 2026-09-04; the previous model is in the git history).
   - ExtraversionBig5
   - Agreeable
   - NeuroticismBig5

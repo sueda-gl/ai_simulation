@@ -3,7 +3,7 @@
 FALLBACK_RATE = 0.10
 
 
-def final_donation_rate(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
+def final_donation_rate(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
     """Decision 13: Select donation rate after transaction accepted.
 
     Uses the agent's computed donation_default when Decision 3 ran (present in

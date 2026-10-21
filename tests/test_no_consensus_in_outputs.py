@@ -17,8 +17,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.decisions.rejected_transaction_defaults import (integrated_column_name,
-                                                         rename_consensus_columns)
+from src.contract.columns import (integrated_column_name,
+                                  rename_consensus_columns)
 
 REPO = Path(__file__).resolve().parents[1]
 

@@ -127,7 +127,6 @@ src/                  THE ENGINE - pure simulation, never imports Streamlit or a
   trait_engine.py        samples synthetic agents from the copula model
   vendor_attribute_generator.py   vendor attributes and the shared vendor score
   utils/stochastic.py    shared sigma helpers and the one stochastic gate
-  build_dd_sigma.py      re-derives the Decision 2 sigma from the raw experiment data
   orchestrator*.py       three-line wrappers: Orchestrator() == Engine('copula')
 
 app/                  THE STREAMLIT APP
@@ -144,7 +143,8 @@ config/               decisions.yaml, simulation.yaml, trait_model.pkl (copula)
 data/                 experiment/survey workbooks + frozen reference CSVs
 docs/                 README.md (start here), how-to-add-a-decision.md, session-state.md
 docs/reference/       the platform documentation - the source of truth for the model
-scripts/              CLI runners (run_simulation, run_mc_study) and copula training
+scripts/              CLI runners (run_simulation, run_mc_study), copula training,
+                      build_dd_sigma (re-derives the Decision 2 sigma from the raw data)
 tests/                pytest suite
 stata/                Stata scripts of an earlier error model (history only)
 outputs/              simulation results, created at runtime (git-ignored)

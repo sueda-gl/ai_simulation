@@ -150,7 +150,7 @@ def _save_results(results_df, args):
     filename = f"simulation_seed{args.seed}_agents{args.agents}{decision_suffix}_{timestamp}"
 
     # Written files say "integrated", never "consensus" (rtd_integrated_*)
-    from src.decisions.rejected_transaction_defaults import rename_consensus_columns
+    from src.contract.columns import rename_consensus_columns
     results_df = rename_consensus_columns(results_df)
 
     # Save results
