@@ -39,3 +39,22 @@ MC_PINNED_CAPTION_280_BASELINE = ("🔑 Using saved config: agents 280, populati
                                   "seeds vary per run")
 MC_PINNED_CAPTION_1500_SPEC = ("🔑 Using saved config: agents 1,500, population Research "
                                "Specification; seeds vary per run")
+
+# ------------------------------------------------------------------------- navigation
+NEXT_TO_PAGE2 = "Next: Decision Parameters"            # Page 1 -> Page 2
+BACK_TO_PAGE1 = "Back to Common Parameters"            # Page 2 / results -> Page 1
+BACK_TO_PAGE2 = "← Back to Decision Parameters"        # results -> Page 2
+VIEW_RESULTS = "View Results"                          # Page 2 -> results (once results exist)
+
+# ------------------------------------------------------------------------- Page 1 options
+EXECUTION_LIVE = "Live Simulation"                     # Execution Mode radio
+ANALYSIS_MONTE_CARLO = "Monte-Carlo Study"             # Analysis Mode radio
+
+# ------------------------------------------------------------------- decision-tab options
+# Income-mode radio options: Disclose Income, Disclose Documents and Decision 4 use the
+# capitalised labels, the Donation Default tab its own lower-case ones.
+COMPARE_BOTH = "Compare both"                          # every income-mode radio
+CONTINUOUS_ONLY = "Continuous only"                    # DI / DD / Decision 4
+
+# Results page: the button that pins a configuration.
+USE_THIS_CONFIG = "🎯 Use This Config"
