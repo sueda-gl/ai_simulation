@@ -32,13 +32,12 @@ Ported from the original repo (e973a99); sections 1 and 2 are unchanged.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from streamlit.testing.v1 import AppTest
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-APP_FILE = str(REPO_ROOT / "app_enhanced_new.py")
+from conftest import ROOT as REPO_ROOT, start_app
+
+pytestmark = pytest.mark.slow
+
 DECISIONS_YAML = REPO_ROOT / "config" / "decisions.yaml"
 
 DECISIONS = [
@@ -96,7 +95,7 @@ def preserve_decisions_yaml():
 def page2(decisions=None):
     """A fresh app, navigated to Page 2 with `decisions` selected."""
     decisions = list(DECISIONS if decisions is None else decisions)
-    at = AppTest.from_file(APP_FILE, default_timeout=300)
+    at = start_app()
     at.run()
     # Navigate the way the user does, via the Page 1 nav button.
     nav = [b for b in at.button if "Decision Parameters" in b.label]
@@ -247,7 +246,7 @@ def test_toggle_survives_a_page1_round_trip():
     ["Copula (synthetic)", "Research Specification", "Research Baseline", "Compare all"],
 )
 def test_toggle_after_changing_population_mode(population_mode):
-    at = AppTest.from_file(APP_FILE, default_timeout=300)
+    at = start_app()
     at.run()
     at.radio("page1_population_mode").set_value(population_mode).run()
     assert not at.exception

@@ -10,7 +10,6 @@ The frozen reference is data/stata_d4_verification.csv, the 280 participants' va
 exported from Stata_File_Decision4_050926.dta.
 """
 import math
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -23,7 +22,9 @@ from app.reports.rtd import (
     rtd_stata_bins,
 )
 
-D4_CSV = Path(__file__).resolve().parents[1] / "data" / "stata_d4_verification.csv"
+from conftest import ROOT
+
+D4_CSV = ROOT / "data" / "stata_d4_verification.csv"
 D4_SCORES = ["weighted_ttp", "weighted_loyalty", "z_WTP_calculated",
              "z_RT_calculated_hs", "z_anchored_flexibility"]
 

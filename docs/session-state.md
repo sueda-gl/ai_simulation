@@ -91,7 +91,7 @@ every keyed widget whose value lives in session state is drawn through
 (unchanged) whenever the widget was not drawn in the previous run with the same
 arguments, using a per-run render log (`_widget_render_log`, rotated by
 `begin_script_run()` at the top of `app_enhanced_new.py`). `tests/browser_sim.py`
-models the browser for AppTest; `tests/test_widget_browser_state.py` uses it, and
+models the browser for AppTest; `tests/test_browser_state.py` uses it, and
 also checks statically that no value-less keyed widget bypasses `stateful()`.
 
 Registry categories: `page1-widget`, `page2-widget`. Names follow a convention:

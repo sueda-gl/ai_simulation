@@ -14,19 +14,10 @@ from app.seam import build_plan as bp
 from app.seam.config_repo import get_config_repo
 from test_build_plan import ALL, base_state
 
+pytestmark = pytest.mark.slow
+
 RTD = "rejected_transaction_defaults"
 OTHERS = [d for d in ALL if d != RTD]
-
-
-@pytest.fixture(scope="module")
-def repo():
-    return get_config_repo()
-
-
-@pytest.fixture(scope="module")
-def default_values():
-    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
-    return DEFAULT_DECISION_VALUES
 
 
 def _complete(repo, default_values, **overrides):

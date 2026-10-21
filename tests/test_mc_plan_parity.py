@@ -22,12 +22,14 @@ import pandas as pd
 import pytest
 
 from app.seam import build_plan as bp
-from app.seam.config_repo import get_config_repo
 from app.seam.execute import execute
 from app.seam.mc import load_mc_plan_file, run_mc_repetition, select_mc_sub_run, write_mc_plan_file
 from test_build_plan import base_state
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from conftest import ROOT as PROJECT_ROOT   # repo / default_values: conftest fixtures
+
+pytestmark = pytest.mark.slow
+
 SEED = 314
 N_AGENTS = 24
 
@@ -38,17 +40,6 @@ D4_SETTINGS = dict(
     rtd_scale_factor=1.3,
     rtd_income_mode="Continuous only",  # Decision 4's own mode; the global one is categorical
 )
-
-
-@pytest.fixture(scope="module")
-def repo():
-    return get_config_repo()
-
-
-@pytest.fixture(scope="module")
-def default_values():
-    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
-    return DEFAULT_DECISION_VALUES
 
 
 def _state(repo, **overrides):

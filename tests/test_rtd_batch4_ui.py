@@ -32,6 +32,13 @@ from app.pages.results.visualizations.transaction_viz import (
     _RTD_ELEMENT_SHEETS,
     _RTD_OPTION_LINES,
 )
+from ui_strings import (
+    CATEGORICAL_TREATMENT, CONTINUOUS_TREATMENT, DOWNLOAD_D4_AGENT_LEVEL,
+    DOWNLOAD_D4_ALL_ELEMENTS, DOWNLOAD_FLEXIBILITY, DOWNLOAD_INTEGRATED, DOWNLOAD_LOYALTY,
+    DOWNLOAD_OPTIONS_LIST_LENGTH, DOWNLOAD_RISK_TAKING, DOWNLOAD_WTP,
+)
+
+pytestmark = pytest.mark.slow
 
 RTD_SECTION_TITLES = {
     'ttp': "1️⃣ Options List Length (Tendency to Plan)",
@@ -431,8 +438,8 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     assert "Decision 4 Results Export (Loyalty element)" in md
     assert "Transaction-Level" not in md
     dls = _download_labels(at)
-    assert "📊 Download Loyalty Ranking Excel" in dls
-    assert "📊 Download Decision 4 Agent-Level Excel" in dls
+    assert DOWNLOAD_LOYALTY in dls
+    assert DOWNLOAD_D4_AGENT_LEVEL in dls
     assert not any("Options List Length" in l or "Willingness-to-Pay" in l
                    or "Risk-Taking" in l or "Flexibility" in l
                    or "all elements" in l or "Transaction-Level" in l for l in dls)
@@ -470,15 +477,15 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     # the whole-decision workbook + the export section's agent-level workbook; no
     # per-element downloads (the workbook carries the same sheets)
     dls = _download_labels(at)
-    for label in ("📊 Download Decision 4 Excel (all elements)",
-                  "📊 Download Decision 4 Agent-Level Excel"):
+    for label in (DOWNLOAD_D4_ALL_ELEMENTS,
+                  DOWNLOAD_D4_AGENT_LEVEL):
         assert label in dls, label
-    for label in ("📊 Download Options List Length Excel",
-                  "📊 Download Loyalty Ranking Excel",
-                  "📊 Download Willingness-to-Pay Ranking Excel",
-                  "📊 Download Risk-Taking Ranking Excel",
-                  "📊 Download Flexibility Ranking Excel",
-                  "📊 Download Integrated Default List Excel"):
+    for label in (DOWNLOAD_OPTIONS_LIST_LENGTH,
+                  DOWNLOAD_LOYALTY,
+                  DOWNLOAD_WTP,
+                  DOWNLOAD_RISK_TAKING,
+                  DOWNLOAD_FLEXIBILITY,
+                  DOWNLOAD_INTEGRATED):
         assert label not in dls, label
 
     # ---- (B.3) "Run Integrated Default List Only": integrated charts + tie stats ----
@@ -504,8 +511,8 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     assert "Avg. integrated default list length" in metric_labels
     assert "Avg. Options List Length" not in metric_labels
     dls = _download_labels(at)
-    assert "📊 Download Integrated Default List Excel" in dls
-    assert "📊 Download Decision 4 Excel (all elements)" not in dls
+    assert DOWNLOAD_INTEGRATED in dls
+    assert DOWNLOAD_D4_ALL_ELEMENTS not in dls
     assert "Decision 4 Integrated Default List Export" in md
 
 
@@ -529,7 +536,7 @@ def test_apptest_ttp_element_run_keeps_the_options_list_length_metric():
     assert "Avg. Options List Length" in metric_labels
     assert "Min Options List Length" in metric_labels
     assert "Max Options List Length" in metric_labels
-    assert "📊 Download Options List Length Excel" in _download_labels(at)
+    assert DOWNLOAD_OPTIONS_LIST_LENGTH in _download_labels(at)
 
 
 def test_apptest_compare_both_renders_income_free_elements_once():
@@ -558,7 +565,7 @@ def test_apptest_compare_both_renders_income_free_elements_once():
     assert "Transaction-Level" not in md
     # the income-treatment groups still carry their overview cells (and the per-config
     # "Use This Config" buttons), so a configuration can still be selected
-    assert "Categorical Income Treatment" in md and "Continuous Income Treatment" in md
+    assert CATEGORICAL_TREATMENT in md and CONTINUOUS_TREATMENT in md
     button_keys = [b.key for b in at.button]
     assert 'rtd_inline_select_categorical' in button_keys
     assert 'rtd_inline_select_continuous' in button_keys
@@ -566,8 +573,8 @@ def test_apptest_compare_both_renders_income_free_elements_once():
     assert "Decision 4 Results Export (Loyalty element)" in md
     assert "Cat Loyalty Sheet:" in md and "Cont Loyalty Sheet:" in md
     dls = _download_labels(at)
-    assert dls.count("📊 Download Loyalty Ranking Excel") == 1   # rendered once
-    assert "📊 Download Decision 4 Agent-Level Excel" in dls
+    assert dls.count(DOWNLOAD_LOYALTY) == 1   # rendered once
+    assert DOWNLOAD_D4_AGENT_LEVEL in dls
 
 
 def test_apptest_compare_both_repeats_income_dependent_elements():

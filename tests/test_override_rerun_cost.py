@@ -25,16 +25,16 @@ import yaml
 import app.state.widgets as widgets
 from app.seam.config_repo import read_yaml_file
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DECISIONS_YAML = os.path.join(REPO, "config", "decisions.yaml")
+from conftest import DECISIONS_YAML, load_decisions_yaml
+
+pytestmark = pytest.mark.slow
 
 
 # ---------------------------------------------------------------------------
 # 1. cached YAML
 # ---------------------------------------------------------------------------
 def test_read_yaml_file_equals_a_fresh_load_and_is_a_private_copy():
-    with open(DECISIONS_YAML) as f:
-        fresh = yaml.safe_load(f)
+    fresh = load_decisions_yaml()
     first = read_yaml_file(DECISIONS_YAML)
     assert first == fresh
     first["rejected_transaction_defaults"]["intercepts"]["ttp"] = 123.0

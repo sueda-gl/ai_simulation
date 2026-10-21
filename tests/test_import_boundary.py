@@ -38,11 +38,11 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from conftest import ROOT as PROJECT_ROOT
+
 SRC_ROOT = PROJECT_ROOT / "src"
 REPORTS_ROOT = PROJECT_ROOT / "app" / "reports"
 

@@ -20,8 +20,10 @@ from streamlit.testing.v1 import AppTest
 from app.seam.config_repo import get_config_repo, rtd_sigma_coefficient_defaults
 from src.decisions.rejected_transaction_defaults import MECHANISMS, SIGMA_OVERALL
 
-from test_tab_reset_defaults import _consistent, _first_draw
-from test_widget_browser_state import ROOT
+from conftest import ROOT
+from test_browser_state import _first_draw, _reset_consistent as _consistent
+
+pytestmark = pytest.mark.slow
 
 CONFIG = yaml.safe_load((ROOT / "config" / "decisions.yaml").read_text())
 RTD = CONFIG["rejected_transaction_defaults"]

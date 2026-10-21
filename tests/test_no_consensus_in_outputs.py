@@ -12,7 +12,6 @@ table renames them to rtd_integrated_*:
 """
 import argparse
 import sys
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -20,7 +19,7 @@ import pytest
 from src.contract.columns import (integrated_column_name,
                                   rename_consensus_columns)
 
-REPO = Path(__file__).resolve().parents[1]
+from conftest import ROOT as REPO
 
 
 @pytest.fixture(scope="module")

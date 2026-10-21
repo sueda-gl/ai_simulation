@@ -21,14 +21,14 @@ import json
 import os
 import re
 from datetime import datetime
-from pathlib import Path
 
 import pandas as pd
 import pytest
 
 pytestmark = pytest.mark.slow
 
-ROOT = Path(__file__).resolve().parents[1]
+from conftest import ROOT
+
 APP = ROOT / "app_enhanced_new.py"
 GOLDEN_DIR = ROOT / "tests" / "golden_screens"
 UPDATE = os.environ.get("GOLDEN_UPDATE") == "1"

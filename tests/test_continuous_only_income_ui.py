@@ -27,6 +27,9 @@ overview for individual single-mode runs whose decision-specific section
 already rendered; comparison modes ("Compare all" / "Compare both") and the
 Decision 4 summary-first layout are unchanged.
 """
+import pytest
+
+pytestmark = pytest.mark.slow
 
 
 def _di_compare_all_app_script():

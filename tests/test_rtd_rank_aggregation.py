@@ -16,14 +16,12 @@ coefficients and the segment -> option-list direction (all four mechanism lists 
 equal Stata_File_Decision4_050926.dta's stored choice1..5_* columns directly).
 """
 import copy
-import os
 from itertools import permutations
 from typing import Dict, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
 from src.decisions.rtd_rank_aggregation import (
     ALL_PERMS, KEMENY_STATUSES, N_OPTIONS, OPTIONS, STAGES,
@@ -37,9 +35,7 @@ from src.decisions.rejected_transaction_defaults import (
     compute_rtd_population_stats, rejected_transaction_defaults,
 )
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERIFICATION_CSV = os.path.join(REPO, "data", "stata_d4_verification.csv")
-DECISIONS_YAML = os.path.join(REPO, "config", "decisions.yaml")
+from conftest import load_decisions_yaml   # gold / sim_config: conftest fixtures
 
 # The literature review's worked example (four complete rankings).
 LIT_EXAMPLE = [[1, 2, 3, 4, 5], [2, 1, 3, 5, 4], [1, 3, 2, 4, 5], [2, 3, 1, 5, 4]]
@@ -348,22 +344,10 @@ def test_stage_shares_reproduce_the_documents_experiment():
 # Integration into the Decision 4 function
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
-def gold():
-    return pd.read_csv(VERIFICATION_CSV)
-
-
-@pytest.fixture(scope="module")
 def params():
-    with open(DECISIONS_YAML) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_decisions_yaml()
     # no 'model_enabled' switch: the model runs whenever selected
     return dict(cfg["rejected_transaction_defaults"])
-
-
-@pytest.fixture(scope="module")
-def sim_config(gold):
-    return {"income_stats": {"mean": float(gold["income"].mean()),
-                             "sd": float(gold["income"].std(ddof=1))}}
 
 
 def _agent_state(row):

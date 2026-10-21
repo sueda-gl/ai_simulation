@@ -29,7 +29,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from conftest import REPO, require_reference_file
+
 INCOMES_CSV = os.path.join(REPO, "data", "stata_incomes.csv")
 STDACTIONS_CSV = os.path.join(REPO, "data", "stata_stdactions.csv")
 D4_CSV = os.path.join(REPO, "data", "stata_d4_verification.csv")
@@ -151,10 +152,9 @@ def test_merged_carries_the_professor_income(merged_df, frozen_incomes):
             == frozen_incomes["Participant ID"].to_numpy()).all()
 
 
-@pytest.mark.skipif(not os.path.exists(PROF_DTA),
-                    reason="professor's Decision 4 .dta not present")
 def test_merged_income_equals_the_dta_income_per_participant(merged_df):
     """Exact, participant-by-participant, against the .dta itself."""
+    require_reference_file(PROF_DTA, "PROF_DTA in tests/test_research_modes_use_reference_income.py")
     dta = pd.read_stata(PROF_DTA, convert_categoricals=False)
     dta_income = pd.Series(dta["income"].to_numpy(dtype=float),
                            index=dta["participantid"].to_numpy().astype(int))

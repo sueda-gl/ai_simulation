@@ -29,11 +29,15 @@ import pytest
 from app.seam.mc import load_mc_plan_file, pinned_config_caption, population_mode_name
 from src.contract.plan import SubRun
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from conftest import ROOT as PROJECT_ROOT
+from ui_strings import (MC_PINNED_CAPTION_1500_SPEC, MC_PINNED_CAPTION_280_BASELINE,
+                        SAVED_CONFIG_CAPTION_PREFIX)
+
+pytestmark = pytest.mark.slow
+
 PINNED_SEED = 2718
 PINNED_N = 280
-CAPTION = ("🔑 Using saved config: agents 280, population Research Baseline; "
-           "seeds vary per run")
+CAPTION = MC_PINNED_CAPTION_280_BASELINE
 
 
 def _pinned_mc_script():
@@ -215,7 +219,7 @@ def test_without_a_pinned_config_mc_uses_page_1(captured_popen):
     assert _arg(cmd, "--agents") == "1000"
     assert _arg(cmd, "--population-mode") == "copula"
     assert sub_run.n_agents == 1000 and sub_run.population == "copula"
-    assert not any(c.startswith("🔑 Using saved config") for c in _captions(at))
+    assert not any(c.startswith(SAVED_CONFIG_CAPTION_PREFIX) for c in _captions(at))
 
 
 def test_pinned_config_caption_wording():
@@ -224,6 +228,6 @@ def test_pinned_config_caption_wording():
                      simulation_params={}, decision_settings={}, default_decisions_list=(),
                      purchasing_limits={})
     assert pinned_config_caption(sub_run) == (
-        "🔑 Using saved config: agents 1,500, population Research Specification; seeds vary per run")
+        MC_PINNED_CAPTION_1500_SPEC)
     assert population_mode_name("baseline") == "Research Baseline"
     assert population_mode_name("copula") == "Copula (synthetic)"

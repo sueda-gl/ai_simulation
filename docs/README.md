@@ -359,9 +359,16 @@ Run either snippet from the repository root with the virtual environment active.
 ## 8. Tests
 
 ```bash
-pip install pytest          # not in requirements.txt
-pytest tests/ -q            # about two minutes; everything passes
+pip install pytest               # not in requirements.txt
+pytest tests/ -q -m "not slow"   # engine, seam, boundary: about 30 seconds
+pytest tests/ -q                 # everything: about two minutes; everything passes
 ```
+
+`slow` (registered in `pytest.ini`) marks every test module that drives the app
+through Streamlit `AppTest` or the browser model (`tests/browser_sim.py`), or runs the
+simulation in a subprocess. A module is marked as a whole, so the fast run also leaves
+out the fast tests of such a module (the Decision 4 reference-parity file has one
+`AppTest` test, for example); run the full suite before you commit.
 
 Four kinds of test live in `tests/`:
 
@@ -375,12 +382,13 @@ Four kinds of test live in `tests/`:
   Decision 4 layouts and wording. These are the slow ones.
 * **Boundary.** The import rules of §6.
 
-**Four parity tests also read the original Stata `.dta` files and skip silently when
-they are missing.** The paths are the `PROF_DTA` constants at the top of
-`tests/test_disclose_income_stata.py`, `tests/test_disclose_documents.py`,
-`tests/test_donation_default_doc.py` and
-`tests/test_research_modes_use_reference_income.py`. Obtain the files, put them
-where those constants point, and check that the suite reports no skips.
+**Four parity tests also read the original Stata `.dta` files and fail when they are
+missing**, naming the file and the constant that points at it; with
+`COOPECON_ALLOW_DTA_SKIP=1` set they skip instead. The paths are the `PROF_DTA`
+constants at the top of `tests/test_disclose_income_stata.py`,
+`tests/test_disclose_documents.py`, `tests/test_donation_default_doc.py` and
+`tests/test_research_modes_use_reference_income.py`. Obtain the files and put them
+where those constants point (or point the constants at them).
 
 ---
 

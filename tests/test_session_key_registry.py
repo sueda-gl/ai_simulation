@@ -33,7 +33,8 @@ from app.state.registry import (
     specificity,
 )
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from conftest import REPO as ROOT
+
 APP = os.path.join(ROOT, "app")
 
 # ``st.session_state.<attr>`` where <attr> is one of these is a Mapping method,

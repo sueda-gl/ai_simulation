@@ -19,7 +19,6 @@ import os
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
 from src.data import participants as P
 from src.decisions.donation_default import (
@@ -28,9 +27,9 @@ from src.decisions.donation_default import (
 )
 from src.engine.core import Engine
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from conftest import REPO, load_decisions_yaml, require_reference_file
+
 FROZEN = os.path.join(REPO, "data", "d3_doc_reference.csv")
-DECISIONS = os.path.join(REPO, "config", "decisions.yaml")
 PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 1_Updated.dta"
 TOL = 1e-6
 MODES = ("categorical", "continuous")
@@ -63,8 +62,7 @@ def reference():
 
 @pytest.fixture(scope="module")
 def config():
-    with open(DECISIONS) as f:
-        return yaml.safe_load(f)["donation_default"]
+    return load_decisions_yaml()["donation_default"]
 
 
 @pytest.fixture(scope="module")
@@ -96,8 +94,7 @@ def doc_final(reference, mode, pids):
 
 def test_frozen_reference_matches_the_doc_reimplementation():
     """If the reference .dta is present, the frozen CSV is exactly what the script derives."""
-    if not os.path.exists(PROF_DTA):
-        pytest.skip("professor's Stata_File_Decision 1_Updated.dta not present")
+    require_reference_file(PROF_DTA, "PROF_DTA in tests/test_donation_default_doc.py")
     import importlib.util
     spec = importlib.util.spec_from_file_location(
         "d3_doc_reference", os.path.join(REPO, "experiments", "d3_doc_reference.py"))

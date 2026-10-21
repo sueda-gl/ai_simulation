@@ -16,14 +16,14 @@ import os
 import copy
 import numpy as np
 import pandas as pd
-import yaml
 import pytest
 
 from src.decisions.disclose_documents_stochastic import (
     compute_dd_score, compute_continuous_dd_stats, disclose_documents_stochastic,
 )
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from conftest import REPO, load_decisions_yaml, require_reference_file
+
 SURVEY = os.path.join(REPO, "data", "Student Survey Results - Period 1.xlsx")
 EXPERIMENT = os.path.join(REPO, "data", "Student Experiment Results - Period 1-2.xlsx")
 FROZEN_INCOME = os.path.join(REPO, "data", "stata_incomes.csv")
@@ -46,8 +46,7 @@ def merged():
 
 @pytest.fixture(scope="module")
 def dd_params():
-    with open(os.path.join(REPO, "config", "decisions.yaml")) as f:
-        return yaml.safe_load(f)["disclose_documents"]
+    return load_decisions_yaml()["disclose_documents"]
 
 
 def _rates_by_allowance(disclose, total_allowance):
@@ -104,9 +103,9 @@ def test_continuous_reproduces_professor_table_with_frozen_income(merged, dd_par
         assert rates[level] == expected, f"TA{level}: {rates[level]}% != {expected}%"
 
 
-@pytest.mark.skipif(not os.path.exists(PROF_DTA), reason="professor's Decision 2 .dta not present")
 def test_matches_professor_dta_columns(merged, dd_params):
     """Model matches the reference .dta's disclosedoc_cont / disclosedoc_categorical 280/280."""
+    require_reference_file(PROF_DTA, "PROF_DTA in tests/test_disclose_documents.py")
     p = pd.read_stata(PROF_DTA)
 
     # categorical

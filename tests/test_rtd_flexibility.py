@@ -25,7 +25,6 @@ import os
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
 from src.decisions.rejected_transaction_defaults import (
     DEFAULT_Z_SCORING, FLEX_ANCHOR_WEIGHTS, FLEX_COEFFS, MECHANISMS,
@@ -35,9 +34,9 @@ from src.decisions.rejected_transaction_defaults import (
     rejected_transaction_defaults,
 )
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from conftest import REPO, load_decisions_yaml
+
 FLEX_CSV = os.path.join(REPO, "data", "stata_d4_flexibility_verification.csv")
-DECISIONS_YAML = os.path.join(REPO, "config", "decisions.yaml")
 
 ATOL = 5e-6                      # float32 storage tolerance
 EXPECTED_FLEX_DIST = {1: 17, 2: 85, 3: 137, 4: 37, 5: 4}
@@ -51,8 +50,7 @@ def flexgold():
 
 @pytest.fixture(scope="module")
 def params():
-    with open(DECISIONS_YAML) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_decisions_yaml()
     p = copy.deepcopy(cfg["rejected_transaction_defaults"])
     # the .dta embeds no intercepts
     p["intercepts"] = {m: 0.0 for m in MECHANISMS}
@@ -125,8 +123,7 @@ def test_constants_follow_the_document(params):
                "neuroticism": -0.04921357, "agreeable": 0.04339814,
                "conscientiousness": 0.04811179}
     assert FLEX_COEFFS == adopted
-    with open(DECISIONS_YAML) as f:
-        yaml_cfg = yaml.safe_load(f)["rejected_transaction_defaults"]
+    yaml_cfg = load_decisions_yaml()["rejected_transaction_defaults"]
     assert yaml_cfg["coefficients"]["flexibility"] == adopted
     assert params["coefficients"]["flexibility"] == adopted   # no .dta-only override
     assert PRIORITY_SEQUENCES["flexibility"] == SEQ == params["priority_sequences"]["flexibility"]

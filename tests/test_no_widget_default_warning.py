@@ -14,14 +14,14 @@ test therefore resets that flag and also records every widget call that WOULD wa
 (a new session-state value plus a non-None default), through the same policy function
 Streamlit uses.
 """
-from pathlib import Path
-
 import pytest
 from streamlit.elements.lib import policies
 from streamlit.runtime.state import get_session_state
-from streamlit.testing.v1 import AppTest
 
-APP_FILE = str(Path(__file__).resolve().parents[1] / "app_enhanced_new.py")
+from conftest import start_app
+
+pytestmark = pytest.mark.slow
+
 WARNING_TEXT = "was created with a default value but also had its value set via the Session State API"
 
 
@@ -58,7 +58,7 @@ def _click(at, label_part):
 
 
 def test_page1_and_page2_widgets_are_driven_by_session_state_only(offenders):
-    at = AppTest.from_file(APP_FILE, default_timeout=300)
+    at = start_app()
     at.run()
     _no_warning(at, "Page 1, first render", offenders)
     assert at.number_input(key="n_agents_input").value == at.session_state["n_agents"]

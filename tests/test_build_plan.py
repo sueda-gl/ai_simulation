@@ -20,7 +20,6 @@ import re
 import subprocess
 import sys
 import textwrap
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -37,7 +36,8 @@ from app.seam.config_repo import DecisionsConfig, get_config_repo
 from app.seam.execute import configure_engine, execute, verify_saved_expectations
 from app.seam.snapshot import SessionSnapshot, take_snapshot
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from conftest import ROOT as PROJECT_ROOT   # repo / default_values: conftest fixtures
+
 LEGACY_COMMIT = "80ee344"          # original app/simulation.py before the port
 # The September 2026 work in the original repo (Decision 4: Flexibility element,
 # Section-6 rank aggregation, "Use This Config"). Decision 4's mapping is checked
@@ -47,17 +47,6 @@ _SEPTEMBER_FUNCTIONS = ("_apply_rejected_transaction_config", "_apply_saved_reje
 ALL = list(DECISION_ORDER)
 
 # --------------------------------------------------------------------------- fixtures
-
-@pytest.fixture(scope="module")
-def repo():
-    return get_config_repo()
-
-
-@pytest.fixture(scope="module")
-def default_values():
-    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
-    return DEFAULT_DECISION_VALUES
-
 
 def _sim_params():
     from app.models import SimulationParameters

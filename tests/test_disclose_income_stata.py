@@ -23,14 +23,14 @@ import os
 import copy
 import numpy as np
 import pandas as pd
-import yaml
 import pytest
 
 from src.decisions.disclose_income_stochastic import (
     disclose_income_stochastic, compute_continuous_de_stats,
 )
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from conftest import REPO, load_decisions_yaml, require_reference_file
+
 SURVEY = os.path.join(REPO, "data", "Student Survey Results - Period 1.xlsx")
 EXPERIMENT = os.path.join(REPO, "data", "Student Experiment Results - Period 1-2.xlsx")
 FROZEN = os.path.join(REPO, "data", "stata_d1_verification.csv")
@@ -87,8 +87,7 @@ def merged(stata):
 
 @pytest.fixture(scope="module")
 def di_params():
-    with open(os.path.join(REPO, "config", "decisions.yaml")) as f:
-        return yaml.safe_load(f)["disclose_income"]
+    return load_decisions_yaml()["disclose_income"]
 
 
 def _run(merged, di_params, income_mode):
@@ -168,9 +167,9 @@ def test_shipped_default_intercept_unchanged(di_params):
     assert di_params["intercept"] == APP_DEFAULT_BETA0
 
 
-@pytest.mark.skipif(not (os.path.exists(PROF_DTA) and os.path.exists(FROZEN)),
-                    reason="needs both the professor's Decision 1 .dta and the frozen CSV")
 def test_frozen_csv_equals_professor_dta():
+    require_reference_file(PROF_DTA, "PROF_DTA in tests/test_disclose_income_stata.py")
+    require_reference_file(FROZEN, "FROZEN in tests/test_disclose_income_stata.py")
     frozen = pd.read_csv(FROZEN, float_precision="round_trip")
     dta = pd.read_stata(PROF_DTA)[FROZEN_COLS].reset_index(drop=True)
     assert list(frozen.columns) == FROZEN_COLS

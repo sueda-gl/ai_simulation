@@ -27,10 +27,8 @@ bit-identical; nonzero beta shifts scores, draws AND allocations across the
 beta0-free-anchored cutoffs), and an AppTest end-to-end run through the app's
 session-state plumbing.
 """
-import os
 import numpy as np
 import pandas as pd
-import yaml
 import pytest
 
 from src.decisions.rejected_transaction_defaults import (
@@ -39,9 +37,9 @@ from src.decisions.rejected_transaction_defaults import (
     compute_rtd_scores, compute_rtd_population_stats, rejected_transaction_defaults,
 )
 
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-VERIFICATION_CSV = os.path.join(REPO, "data", "stata_d4_verification.csv")
-DECISIONS_YAML = os.path.join(REPO, "config", "decisions.yaml")
+from conftest import load_decisions_yaml   # gold / sim_config: conftest fixtures
+
+pytestmark = pytest.mark.slow
 
 # float32 storage tolerance for continuous scores
 ATOL = 5e-6
@@ -92,26 +90,9 @@ EXPECTED_LENGTH_DIST_BETA0_005 = {0: 0, 1: 6, 2: 59, 3: 95, 4: 86, 5: 34}
 
 
 @pytest.fixture(scope="module")
-def gold():
-    return pd.read_csv(VERIFICATION_CSV)
-
-
-@pytest.fixture(scope="module")
 def params():
-    with open(DECISIONS_YAML) as f:
-        cfg = yaml.safe_load(f)
+    cfg = load_decisions_yaml()
     return cfg["rejected_transaction_defaults"]
-
-
-@pytest.fixture(scope="module")
-def sim_config(gold):
-    # egen std semantics: sample SD (ddof=1) over the reference file's income column
-    return {
-        "income_stats": {
-            "mean": float(gold["income"].mean()),
-            "sd": float(gold["income"].std(ddof=1)),
-        }
-    }
 
 
 def _agent_state(row) -> dict:

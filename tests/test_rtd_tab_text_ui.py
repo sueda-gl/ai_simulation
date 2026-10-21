@@ -21,6 +21,8 @@ import pytest
 
 from app.pages.decision_tabs import rejected_transaction as rtd_tab
 
+pytestmark = pytest.mark.slow
+
 
 def _tab_script():
     """Page 2's Decision 4 configuration tab, rendered on its own."""
