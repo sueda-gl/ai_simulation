@@ -7,7 +7,7 @@ import streamlit as st
 import sys
 from pathlib import Path
 
-# Add  thoject root to path
+# Add the project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 # Import from our modularized app

@@ -12,7 +12,6 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
-from app.pages.results.run_context import RunContext
 from app.reports.donation import (
     build_donation_default_export,
     build_donation_default_xlsx,
@@ -131,8 +130,6 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         results_dict = ctx.results
         if results_dict and len(results_dict) == 1:
             has_only_one_config = True
-            only_config_key = list(results_dict.keys())[0]
-            only_config_df = results_dict[only_config_key]
 
     # Decision logic: Use distribution if selected config OR only one config available
     use_distribution = (has_selected_config or has_only_one_config) and 'donation_default' in df.columns

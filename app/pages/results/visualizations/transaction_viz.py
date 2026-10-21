@@ -440,19 +440,6 @@ def _rtd_is_individual_run():
     return RunContext.from_session().is_individual_run('rejected_transaction_defaults')
 
 
-def _rtd_active_element():
-    """The element selected via a Run button on the Decision 4 tab for an individual
-    Decision 4 run: one of the five element keys ('ttp' | 'loyalty' | 'wtp' |
-    'risk_taking' | 'flexibility'), 'aggregation' for "Run Integrated Default List
-    Only", or None when the whole decision was run. Only individual Decision 4 runs are
-    filtered - combined/complete simulations always return None."""
-    if _rtd_is_individual_run():
-        element = st.session_state.get('rtd_run_element')
-        if element in _RTD_ELEMENT_SHEETS or element == _RTD_AGGREGATION_ELEMENT:
-            return element
-    return None
-
-
 def _rtd_is_combined_frame(df):
     """True when this frame comes from a COMPLETE (combined) simulation - it carries
     another decision's columns, or Decision 4 was not the only decision that ran."""
@@ -464,9 +451,11 @@ def _rtd_is_combined_frame(df):
 def _rtd_run_shape(df):
     """(shape, element) for this frame - see the run-shape comment above.
     `element` is the run element for the 'element' shape and None otherwise."""
+    from app.components import rtd_page_element
+
     if _rtd_is_combined_frame(df):
         return 'combined', None
-    active = _rtd_active_element()
+    active = rtd_page_element()
     if active == _RTD_AGGREGATION_ELEMENT:
         return 'aggregation', None
     if active is not None:
@@ -480,8 +469,8 @@ def _rtd_sections_for_shape(df, shape, element):
     'combined' - see _render_rtd_integrated_section."""
     if shape == 'element':
         return [element], None
-    if shape == _RTD_AGGREGATION_ELEMENT:
-        return [], _RTD_AGGREGATION_ELEMENT
+    if shape == 'aggregation':
+        return [], 'aggregation'
     if shape == 'combined':
         return [], 'combined'
     # whole-decision run: every element, then the integrated list (the integrated

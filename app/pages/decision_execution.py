@@ -3,14 +3,13 @@
 Decision execution functions for running individual and combined simulations.
 """
 import streamlit as st
-import pandas as pd
 from src.contract.plan import RunRequest
 from app.simulation import run_full_simulation, run_monte_carlo_study
 from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
 
 # The 13 decisions' default values and default descriptions are pure contract
-# data (src/contract/defaults.py). Re-exported here because the screens, the
-# seam and the tests have always imported them from this module.
+# data (src/contract/defaults.py). Re-exported here because the screens and the
+# tests import them from this module.
 from src.contract.defaults import (  # noqa: F401
     DEFAULT_DECISION_DESCRIPTIONS,
     DEFAULT_DECISION_VALUES,
@@ -66,11 +65,9 @@ def format_decision_title(decision_name, include_number=False):
 def donation_income_mode_from_settings():
     """Donation Default's own income mode from the live settings.
 
-    The global income_spec_mode can be contaminated when running disclose_income
-    with "Compare both" (simulation.py syncs di_income_mode to income_spec_mode for
-    results display), so the lookup is: 1) the donation tab persistence, 2) the
-    page2_tab_income_spec_mode widget, 3) the global income_spec_mode. The gate
-    (can_run_complete_simulation) and the Overview donation card both use it.
+    The lookup is: 1) the donation tab persistence, 2) the page2_tab_income_spec_mode
+    widget, 3) the global income_spec_mode. The gate (can_run_complete_simulation)
+    and the Overview donation card both use it.
     """
     if (hasattr(st.session_state, 'donation_tab_persistence')
             and 'income_spec_mode' in st.session_state.donation_tab_persistence):
@@ -91,16 +88,17 @@ def can_run_complete_simulation():
     IMPORTANT: Only check config requirements for decisions the user actually selected.
     Unselected decisions will use defaults and don't need explicit config selection.
     
-    FIXED: Now accumulates ALL blocking issues instead of returning on first one.
-    This allows the UI to display all conflicts at once.
+    Accumulates ALL blocking issues instead of returning on the first one, so the
+    UI can display all conflicts at once.
     
     Returns:
         tuple: (can_run: bool, reason: str, config_count: int, block_type: str or None, blocking_issues: list)
             - can_run: Whether complete simulation is allowed
             - reason: Human-readable explanation (combined if multiple issues)
             - config_count: Number of configurations that would be generated
-            - block_type: Primary block type for backward compat - "disclose_income", "donation_config", or None
-            - blocking_issues: List of all blocking issues with details (NEW!)
+            - block_type: The first blocking issue's block type - "disclose_income", "disclose_documents",
+              "rejected_transaction_defaults" or "donation_config" - or None
+            - blocking_issues: List of all blocking issues with details
     """
     # Use unified config system
     configs = get_selected_decision_configs()
@@ -135,19 +133,17 @@ def can_run_complete_simulation():
     dd_income_count = 2 if ('compare' in str(dd_income_mode).lower() or 'both' in str(dd_income_mode).lower()) else 1
 
     # Donation default income modes: "Compare both" generates 2, others generate 1
-    # FIX: Get donation_default's ACTUAL income mode from its dedicated storage
-    # (see donation_income_mode_from_settings)
+    # Donation Default's own income mode (see donation_income_mode_from_settings)
     donation_income_mode = donation_income_mode_from_settings()
     
     donation_income_count = 2 if ('compare' in str(donation_income_mode).lower() or 'both' in str(donation_income_mode).lower()) else 1
     
     # ========================================================================
     # CHECK DISCLOSE_INCOME (only if selected)
-    # FIX: Now correctly multiplies by population_count like donation_default does
     # ========================================================================
     
     disclose_income_selected = 'disclose_income' in selected_decisions
-    di_total_configs = population_count * di_income_count  # FIX: Include population_count!
+    di_total_configs = population_count * di_income_count
     has_disclose_income_config = False
     di_saved_mode = None
     
@@ -303,8 +299,6 @@ def can_run_complete_simulation():
 # results/config_selection.py). Every text keeps the trailing whitespace of the
 # screen's original; Streamlit strips it.
 
-#: The decision a blocking issue names (by its block_type) on the results page, in
-#: its warnings and in its disabled button's help.
 def current_donation_configuration():
     """The donation configuration the CURRENT Page-1 / Donation Default settings imply.
 
@@ -322,8 +316,7 @@ def current_donation_configuration():
         return None
 
     population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
-    # The gate's own lookup, so the Overview card never picks up a global
-    # income_spec_mode that a disclose_income run contaminated.
+    # The gate's own lookup, so the card shows the income mode the gate counts.
     donation_income_mode = donation_income_mode_from_settings()
 
     is_compare_mode = (
@@ -389,12 +382,19 @@ def current_donation_configuration():
     }
 
 
+#: The decision a blocking issue names (by its block_type) on the results page, in
+#: its warnings and in its disabled button's help.
 GATE_BLOCK_TYPE_TITLES = {
     "disclose_income": "Disclose Income",
     "donation_config": "Donation Default",
     "disclose_documents": "Disclose Documents",
     "rejected_transaction_defaults": "Rejected Transaction Defaults",
 }
+
+
+#: The help of the disabled "Run Complete Simulation" button when SEVERAL issues
+#: block the run (a decision tab's button and the results page's button).
+GATE_ISSUE_COUNT_HELP = "{} configuration issue(s) detected"
 
 
 def blocking_issue_text(screen, i, block_type, reason):
@@ -680,9 +680,7 @@ def render_simulation_buttons(decision_name, selected_decisions):
                     st.caption(f"{format_decision_title(dec, include_number=True)}")
         
         # Check if complete simulation can run (validation for multiple configurations)
-        result = can_run_complete_simulation()
-        can_run, reason, config_count, block_type = result[:4]
-        blocking_issues = result[4] if len(result) > 4 else []
+        can_run, reason, config_count, block_type, blocking_issues = can_run_complete_simulation()
         
         if not can_run:
             # The single-issue wording follows the ONE blocking issue's own type (the
@@ -692,7 +690,7 @@ def render_simulation_buttons(decision_name, selected_decisions):
             if len(blocking_issues) == 1:
                 block_type = blocking_issues[0]['block_type']
             # Disabled button with explanation
-            help_text = (f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1
+            help_text = (GATE_ISSUE_COUNT_HELP.format(len(blocking_issues)) if len(blocking_issues) > 1
                          else {"disclose_income": "Disclose Income is in Compare mode",
                                "disclose_documents": "Select a Disclose Documents configuration first",
                                "rejected_transaction_defaults": "Select a Rejected Transaction Defaults configuration first",
@@ -753,7 +751,7 @@ def get_actual_default_value(decision_name, sim_params=None):
     
     base_value = DEFAULT_DECISION_VALUES.get(decision_name)
     
-    # NEW: Handle parametric random decisions with configurable probabilities
+    # Handle parametric random decisions with configurable probabilities
     if isinstance(base_value, dict) and base_value.get("type") == "random_probability":
         # Priority 1: Check for pre-configured default from Overview tab
         pre_config_key = f"{decision_name}_default_probability_y"
@@ -902,8 +900,9 @@ def run_individual_decision(decision_name):
                     st.info(f"🔄 Clearing saved {decision_name} configuration - will use current tab settings")
                     clear_decision_config(decision_name)
 
-            # Record which decisions this run executes with custom parameters: the
-            # results page (and the tests) read these two keys after the run.
+            # Record which decisions this run executes with custom parameters. The
+            # results page reads the run's _run_metadata and falls back to these two
+            # keys (results/run_context.py); the tests read them after the run.
             st.session_state.custom_decisions = [decision_name]  # Only this decision was run with custom parameters
             st.session_state.default_decisions = []  # No decisions used default values (since only one was run)
 
@@ -1013,14 +1012,14 @@ def run_combined_simulation(selected_decisions):
     """Run complete simulation with selected decisions using custom parameters and unselected decisions using defaults.
     
     NOTE: Each decision uses its OWN income mode setting independently.
-    - donation_default uses selected_donation_config.donation_income_mode (if saved) or income_spec_mode
+    - donation_default uses its saved config's donation_income_mode (if saved) or income_spec_mode
     - disclose_income uses di_income_mode from its tab settings
     - Other decisions use their own respective settings
     
-    We no longer override global income_spec_mode from selected_donation_config.
+    The run does not write income_spec_mode.
     
-    FIXED: Now properly adds ALL decisions with saved configs to effective_selected_decisions,
-    not just disclose_income. This ensures manually selected decisions get executed.
+    Every decision with a saved config is added to effective_selected_decisions (the
+    run's custom decisions), not only the decisions selected on Page 2.
     """
     
     # Store information about selected vs default decisions
@@ -1075,7 +1074,6 @@ def run_combined_simulation(selected_decisions):
     
     # Validate income mode compatibility and show warning if mismatched
     # (This is informational only - we proceed with user's explicit settings)
-    # FIX: using_selected_donation_config is now determined by presence in saved_config_info
     using_selected_donation_config = 'donation_default' in saved_config_info
     _validate_income_mode_compatibility(effective_selected_decisions, unselected_decisions, using_selected_donation_config)
     
@@ -1089,9 +1087,10 @@ def run_combined_simulation(selected_decisions):
     
     with st.spinner(spinner_msg):
         try:
-            # Store metadata about which decisions use custom vs default parameters:
-            # the results page (and the tests) read these two keys after the run.
-            # FIX: Use effective_selected_decisions which includes decisions with saved configs
+            # Store which decisions use custom vs default parameters (custom includes
+            # every decision with a saved config). The results page reads the run's
+            # _run_metadata and falls back to these two keys (results/run_context.py);
+            # the tests read them after the run.
             st.session_state.custom_decisions = effective_selected_decisions
             st.session_state.default_decisions = unselected_decisions
 

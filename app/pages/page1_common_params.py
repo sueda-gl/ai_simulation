@@ -278,16 +278,6 @@ def _render_simulation_settings(header_col):
         on_change=lambda: setattr(st.session_state, 'show_individual_agents', st.session_state.show_individual_agents_checkbox)
     )
 
-    # COMMENTED OUT: Auto-save to parquet file (redundant with Results page Excel export)
-    # Uncomment if needed for batch processing or programmatic access
-    # save_results = st.checkbox(
-    #     "Save Results to File",
-    #     value=st.session_state.save_results,
-    #     help="Save simulation results to a file for later analysis",
-    #     key="save_results_checkbox",
-    #     on_change=lambda: setattr(st.session_state, 'save_results', st.session_state.save_results_checkbox)
-    # )
-
 
 def _render_time_parameters(header_col):
     """⏱️ Time Parameters: the header in `header_col`, the inputs below it."""
@@ -322,9 +312,6 @@ def _render_vendor_configuration():
     st.markdown('<h3 class="section-header">🏪 Vendor Configuration</h3>', unsafe_allow_html=True)
     st.caption("Configure all vendor settings: number, prices, products, and carryover behavior")
 
-    # Add reset to defaults button
-
-
     # Number of Vendors (moved from Market Parameters)
     stateful(st.number_input,
         "Number of Vendors (N)",
@@ -344,9 +331,6 @@ def _render_vendor_configuration():
 
 def _render_single_vendor():
     """One vendor: its price, products and carryover."""
-    # Single Vendor Configuration - Simplified Interface
-
-
     col_single_left, col_single_right = st.columns(2)
 
     with col_single_left:
@@ -389,8 +373,6 @@ def _render_single_vendor():
         key="single_vendor_carryover",
         on_change=update_single_vendor_carryover
     )
-
-    # Summary for single vendor
 
 
 def _render_multiple_vendors():
@@ -855,9 +837,7 @@ def _render_market_parameters():
     )
 
     # Show adjustment message if needed
-    if st.session_state.sim_params.price_grid % 2 == 0:
-        st.caption("Price grid adjusted to odd number: " + str(st.session_state.sim_params.price_grid + 1))
-    elif st.session_state.price_grid_input != st.session_state.sim_params.price_grid:
+    if st.session_state.price_grid_input != st.session_state.sim_params.price_grid:
         st.caption(f"Price grid adjusted to odd number: {st.session_state.sim_params.price_grid}")
 
 

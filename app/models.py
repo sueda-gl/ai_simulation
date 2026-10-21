@@ -6,7 +6,7 @@ import copy
 
 import streamlit as st
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 from src.engine.core import DECISION_ORDER
 import numpy as np
@@ -28,49 +28,49 @@ class SimulationParameters:
     simulation_mode: str = "Single Run"  # "Single Run" or "Monte-Carlo Study"
     
     # Time parameters
-    periods: int = 1  # ✅ As specified
-    duration_hours: float = 1.0  # ✅ As specified
+    periods: int = 1
+    duration_hours: float = 1.0
     
     # Market parameters
-    num_vendors: int = 1  # ✅ Changed from 5 to 1
-    market_price: float = 100.0  # ✅ Changed from 10.0 to 100.0
-    vendor_price_min: float = 50.0  # ✅ Changed from 8.0 to 50.0
-    vendor_price_max: float = 150.0  # ✅ Changed from 12.0 to 150.0
+    num_vendors: int = 1
+    market_price: float = 100.0
+    vendor_price_min: float = 50.0
+    vendor_price_max: float = 150.0
     
     # Product offering
-    products_per_vendor: int = 100  # ✅ As specified (kept for backward compatibility)
-    carryover: bool = False  # ✅ As specified (global carryover flag)
+    products_per_vendor: int = 100  # kept for backward compatibility
+    carryover: bool = False  # kept for backward compatibility (Page 1 sets global_carryover)
     
     # Vendor configuration
-    vendor_config_mode: str = "random"  # ✅ Generate randomly as specified
+    vendor_config_mode: str = "random"  # "random" (Generate Randomly) or "upload"
     
     # Random vendor generation parameters (vendor_price_min / vendor_price_max
     # are declared once, under "Market parameters" above)
-    vendor_products_min: int = 50  # ✅ As specified
-    vendor_products_max: int = 150  # ✅ As specified
-    vendor_products_avg: int = 100  # ✅ As specified
-    vendor_carryover_probability: float = 0.0  # ✅ Changed from 0.5 to 0.0 (unchecked = no carryover)
-    override_carryover: bool = False  # ✅ As specified
-    global_carryover: bool = False  # ✅ Changed to False (unchecked)
+    vendor_products_min: int = 50
+    vendor_products_max: int = 150
+    vendor_products_avg: int = 100
+    vendor_carryover_probability: float = 0.0  # 0.0: no vendor has carryover
+    override_carryover: bool = False
+    global_carryover: bool = False
     
     # Uploaded vendor configuration
     vendor_config_data: Optional[List[Dict]] = None  # List of vendor configs from CSV
     vendor_prices: Optional[List[float]] = None  # Legacy - for backward compatibility
-    vendor_price_source: str = "random"  # ✅ Generate randomly as specified
+    vendor_price_source: str = "random"
     
     # Pricing parameters
     bidding_percentage: float = 0.5  # bp (proportion available for bidding)
-    platform_markup: float = 0.1  # ✅ 10% as specified
-    price_range: float = 0.25  # ✅ As specified
-    price_grid: int = 11  # ✅ As specified
+    platform_markup: float = 0.1  # 10%
+    price_range: float = 0.25
+    price_grid: int = 11
     
     # Income distribution parameters
-    income_min: float = 0.0  # ✅ Changed from 1000.0 to 0
-    income_max: float = 100000.0  # ✅ Changed from 10000.0 to 100000
-    income_avg: float = 25000.0  # ✅ Changed from 5000.0 to 25000
-    income_avg_type: str = "average"  # ✅ As specified
-    discount_income_threshold: float = 12500.0  # Set to middle of new range
-    income_distribution: str = "lognormal"  # ✅ As specified
+    income_min: float = 0.0
+    income_max: float = 100000.0
+    income_avg: float = 25000.0
+    income_avg_type: str = "average"
+    discount_income_threshold: float = 12500.0
+    income_distribution: str = "lognormal"
     
     # Distribution-specific parameters
     # Lognormal parameters
@@ -94,11 +94,11 @@ class SimulationParameters:
     dagum_max: Optional[float] = None  # Maximum value (rejection sampling)
     
     # Income categories
-    num_discount_categories: int = 10  # ✅ Changed from 3 to 10
-    num_fixed_categories: int = 10  # ✅ Changed from 5 to 10
+    num_discount_categories: int = 10
+    num_fixed_categories: int = 10
     
     # Consumption limits
-    apply_purchasing_limits: bool = False  # ✅ Changed from True to False (unchecked)
+    apply_purchasing_limits: bool = False
     purchasing_limits: Dict[str, float] = field(default_factory=dict)
     purchasing_limits_source: str = "manual"  # "manual" or "upload"
     max_purchases_per_term: int = 50  # Fallback maximum when purchasing limits disabled
@@ -106,16 +106,6 @@ class SimulationParameters:
     def get_duration_seconds(self) -> float:
         """Convert duration from hours to seconds"""
         return self.duration_hours * 3600
-    
-    def get_purchase_now_price(self, base_price: float) -> float:
-        """Calculate Purchase Now price from base price"""
-        customer_price = base_price * (1 + self.platform_markup)
-        return customer_price * (1 + self.price_range)
-    
-    def get_minimum_bid_price(self, base_price: float) -> float:
-        """Calculate minimum bid price from base price"""
-        customer_price = base_price * (1 + self.platform_markup)
-        return customer_price * (1 - self.price_range)
     
     def get_num_auction_products(self) -> int:
         """Calculate number of products available for auction per vendor (older method)"""
@@ -297,25 +287,6 @@ def load_coefficient_set(coeffs, mode_suffix):
     st.session_state[f'donation_coeff_law_{mode_suffix}'] = beta_study['Law5yr']
     st.session_state[f'donation_coeff_ug_{mode_suffix}'] = beta_study['UG3yr']
     st.session_state[f'donation_coeff_grad_{mode_suffix}'] = beta_study['Grad2yr']
-
-
-# Helper functions for parameter analysis
-def get_decision_global_parameters(selected_decisions: List[str]) -> set:
-    """Get all global parameters used by selected decisions from decisions.yaml"""
-    try:
-        decisions_path = DEFAULT_DECISIONS_PATH
-        decisions_config = read_yaml_file(decisions_path)
-        
-        all_global_params = set()
-        for decision in selected_decisions:
-            decision_config = decisions_config.get(decision, {})
-            global_params = decision_config.get('uses_global_parameters', [])
-            all_global_params.update(global_params)
-        
-        return all_global_params
-    except Exception as e:
-        print(f"Error reading decision parameters: {e}")
-        return set()
 
 
 # All available decisions, in execution order (1-13): the engine's single

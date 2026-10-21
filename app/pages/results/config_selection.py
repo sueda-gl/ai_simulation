@@ -17,6 +17,7 @@ from app.pages.decision_execution import (
     clear_decision_config,
     render_blocking_issues,
     GATE_BLOCK_TYPE_TITLES,
+    GATE_ISSUE_COUNT_HELP,
 )
 from app.models import ALL_DECISIONS
 from app.pages.results.run_context import RunContext
@@ -252,22 +253,17 @@ def render_complete_simulation_section():
     st.markdown('<h3 class="section-header">🚀 Run Complete Simulation</h3>', unsafe_allow_html=True)
     
     # CRITICAL: Check if complete simulation can run FIRST, before showing any config info
-    result = can_run_complete_simulation()
-    can_run, reason, config_count, block_type = result[:4]
-    blocking_issues = result[4] if len(result) > 4 else []
+    can_run, reason, config_count, block_type, blocking_issues = can_run_complete_simulation()
     
     # Get selected decisions from session state
     selected_decisions = getattr(st.session_state.decision_params, 'selected_decisions', [])
-    
-    # Calculate unselected decisions
-    unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
     if not can_run:
         # Show ALL blocking issues, not just the first one
         render_blocking_issues("results", reason, block_type, blocking_issues)
         
         # Disabled button
-        help_text = (f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1
+        help_text = (GATE_ISSUE_COUNT_HELP.format(len(blocking_issues)) if len(blocking_issues) > 1
                      else f"Select a {GATE_BLOCK_TYPE_TITLES[block_type]} config first" if block_type in GATE_BLOCK_TYPE_TITLES
                      else "Configuration issue detected")
             

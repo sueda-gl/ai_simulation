@@ -305,10 +305,6 @@ def _render_vendor_distribution(df, vendors_data, shares):
     has_vendor_data = len(vendor_counts) > 0 or (vendors_data and len(vendors_data) > 0)
     
     if has_vendor_data:
-        # Sort vendor_counts by vendor ID (index) instead of by count
-        if len(vendor_counts) > 0:
-            vendor_counts_sorted = vendor_counts.sort_index()
-        
         # Count purchase requests and transactions per vendor
         vendor_purchase_requests, vendor_transactions = count_requests_per_vendor(df)
         
@@ -588,7 +584,7 @@ def _render_vendor_attributes_table(df, vendors_data, vendor_counts, vendor_purc
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 help="Download detailed vendor attributes including quantity offered for each period"
             )
-        except Exception as e:
+        except Exception:
             # Silent fail or log if needed, but keeping it simple as per style
             pass
     return avg_proximity_per_vendor, vendor_df

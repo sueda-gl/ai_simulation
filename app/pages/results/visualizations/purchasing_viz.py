@@ -547,9 +547,7 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
     if hasattr(st.session_state, 'sim_params'):
         periods = st.session_state.sim_params.periods
         duration_hours = st.session_state.sim_params.duration_hours
-        term_duration = periods * duration_hours
     else:
-        term_duration = 30  # Default
         periods = 15
         duration_hours = 2.0
     

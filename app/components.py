@@ -45,15 +45,10 @@ def rtd_overview_metric(df):
       - Options List Length per-element run, whole-decision runs and combined runs
         -> average options list length (the caller adds its min/max).
 
-    Whether the run was an individual Decision 4 run comes from the run's own
-    decision lists (RunContext, which describes the run that happened), the
-    element from the rtd_run_element flag.
+    The element is rtd_page_element()'s: the rtd_run_element flag of an individual
+    Decision 4 run (RunContext, which describes the run that happened).
     """
-    from app.pages.results.run_context import RunContext
-
-    element = None
-    if RunContext.from_session().is_individual_run('rejected_transaction_defaults'):
-        element = st.session_state.get('rtd_run_element')
+    element = rtd_page_element()
 
     if element in _RTD_NO_HEADLINE_ELEMENTS:
         return None, None
@@ -539,8 +534,6 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
     min_val = raw_values.min()
     max_val = raw_values.max()
     median_val = raw_values.median()
-    q25_val = raw_values.quantile(0.25)
-    q75_val = raw_values.quantile(0.75)
     
     # Calculate Y/N split based on threshold
     y_count = (raw_values > 0).sum()

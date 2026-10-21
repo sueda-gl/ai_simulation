@@ -123,8 +123,15 @@ Streamlit, no globals, no writes to session state.
   vendors, thresholds.
 * `page2_decisions.py` + `decision_tabs/` — Page 2: the Overview tab and one tab per
   configurable decision.
-* `decision_execution.py` — the Run buttons.
+* `decision_execution.py` — the Run buttons (`run_individual_decision`,
+  `run_combined_simulation`, the per-tab `render_simulation_buttons`) and the gate that
+  disables "Run Complete Simulation" while a selected decision would produce several
+  configurations and none is saved (`can_run_complete_simulation` and its warnings).
 * `results/` — the results page; `results/run_context.py` is the piece to know (§5).
+* `app/models.py` — `SimulationParameters` (the Page-1 settings, kept in
+  `st.session_state.sim_params`), `SESSION_DEFAULTS` (the other values a fresh session
+  starts with) and `initialize_session_state()`, which `app_enhanced_new.py` calls on
+  every script run to seed whatever is missing.
 * `app/simulation.py` — the bridge from session state to the seam: snapshot, plan,
   execute, store. It also hosts the in-process Monte-Carlo loop (one
   `run_mc_repetition` per seed, statistics from `app/reports/mc.py`).
@@ -183,7 +190,10 @@ saying which decisions run and which use defaults; the plan builder reads the
 request, never a swapped selection.
 
 The other Run buttons (per-tab "Run X Only", per-tab "Run Complete", the Results-page
-"Run Complete") all funnel into the same `run_full_simulation()`.
+"Run Complete") all funnel into the same `run_full_simulation()` in Single Run mode. In
+Monte-Carlo mode (`sim_params.simulation_mode == "Monte-Carlo Study"`) every Run button
+calls `run_monte_carlo_study(request)` (app/simulation.py) instead, which repeats one
+sub-run of the same plan with a different seed per repetition.
 
 ---
 

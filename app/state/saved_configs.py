@@ -14,6 +14,7 @@ import streamlit as st
 from datetime import datetime
 
 from src.contract.plan import hash_result_columns  # noqa: F401 - the writer and the checker share it
+from app.seam.build_plan import get_population_mode_from_result_key
 from app.seam.config_repo import get_config_repo
 from app.models import DONATION_SIGMA_OVERALL, load_donation_coefficients_from_yaml
 
@@ -64,14 +65,9 @@ def save_selected_configuration(result_key, result_df):
 def extract_configuration_details(result_key):
     """Extract population and income mode from result key"""
 
-    # Population mode detection
-    if 'copula' in result_key:
-        population_mode = 'Copula (synthetic)'
-    elif 'research_spec' in result_key or 'documentation' in result_key:
-        population_mode = 'Research Specification'
-    elif 'baseline' in result_key:
-        population_mode = 'Research Baseline'
-    else:
+    # Population mode detection (the seam's parser of a Compare-all result key)
+    population_mode = get_population_mode_from_result_key(result_key)
+    if population_mode is None:
         # For single-mode results, use current session state
         population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
 

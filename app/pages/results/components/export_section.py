@@ -447,11 +447,12 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     elif is_rtd_only_run:
         # DECISION 4-ONLY EXPORT: agent-level workbook only. An individual Decision 4
         # run produces no purchase requests, so no transaction-level file is offered.
+        from app.components import rtd_page_element
         from app.pages.results.visualizations.transaction_viz import (
-            _prepare_rtd_model_export, _rtd_active_element, _rtd_selected_config_key,
+            _prepare_rtd_model_export, _rtd_selected_config_key,
         )
         from app.reports.rtd import RTD_AGGREGATION_ELEMENT, RTD_ELEMENT_SHEETS
-        active_element = _rtd_active_element()
+        active_element = rtd_page_element()
         # Once a configuration has been selected with "Use This Config" the export
         # covers ONLY that configuration, mirroring the results
         # display (transaction_viz.render_rtd_comparison_results).

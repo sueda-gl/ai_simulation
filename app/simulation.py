@@ -26,18 +26,15 @@ import pandas as pd
 import sys
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Optional, Tuple
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.contract.plan import RunMetadata, RunPlan, RunRequest, UiMessage, deep_merge_patch
-from app.models import ALL_DECISIONS
 from app.seam.build_plan import (
     build_rejected_transaction_patch,
     build_run_plan,
-    get_pop_type,
-    get_population_mode_from_result_key,
 )
 from app.seam.config_repo import get_config_repo
 from app.seam.execute import execute, verify_saved_expectations
