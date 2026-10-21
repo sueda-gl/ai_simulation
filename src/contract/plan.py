@@ -202,6 +202,9 @@ class RunMetadata:
     # Complete run while the Decision 4 tab said "Compare both": Decision 4 ran
     # continuous only (a complete run cannot split it); the page says so.
     rtd_compare_both_fallback: bool = False
+    # The moment the run was started (ISO 8601, ``app.simulation.run_started_at``):
+    # the base time every export's timestamp column is relative to.
+    started_at: str = ""
 
 
 @dataclass(frozen=True)

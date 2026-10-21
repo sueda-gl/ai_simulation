@@ -32,7 +32,7 @@ from conftest import ROOT
 APP = ROOT / "app_enhanced_new.py"
 GOLDEN_DIR = ROOT / "tests" / "golden_screens"
 UPDATE = os.environ.get("GOLDEN_UPDATE") == "1"
-FROZEN_MIDNIGHT = datetime(2025, 1, 15)
+FROZEN_STARTED_AT = datetime(2025, 1, 15)   # the run's start, every export's base time
 N_AGENTS = 40
 TIMEOUT = 900
 
@@ -58,7 +58,7 @@ def normalise(text):
 
 class Recorder:
     """Patches the two things that make a screen non-deterministic: the export base
-    time (midnight of today) and the download buttons' bytes."""
+    time (the moment the run started) and the download buttons' bytes."""
 
     def __init__(self):
         self.downloads = []
@@ -66,11 +66,11 @@ class Recorder:
     def __enter__(self):
         import random
         import streamlit as st
-        from app.reports import timestamps
-        self._midnight = timestamps.midnight_of
+        from app import simulation
+        self._started_at = simulation.run_started_at
         self._download = st.download_button
         self._uniform = random.uniform
-        timestamps.midnight_of = lambda now: FROZEN_MIDNIGHT
+        simulation.run_started_at = lambda: FROZEN_STARTED_AT
         # one caption draws unseeded example bids on every render; pin them
         random.uniform = lambda a, b: (a + b) / 2
         recorder = self
@@ -85,8 +85,8 @@ class Recorder:
     def __exit__(self, *exc):
         import random
         import streamlit as st
-        from app.reports import timestamps
-        timestamps.midnight_of = self._midnight
+        from app import simulation
+        simulation.run_started_at = self._started_at
         st.download_button = self._download
         random.uniform = self._uniform
 

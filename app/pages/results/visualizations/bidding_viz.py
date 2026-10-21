@@ -19,8 +19,8 @@ from app.reports.bidding import (
     build_bid_value_export,
     collect_bid_values,
 )
-from app.reports import timestamps
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
+from app.pages.results.run_context import RunContext
 
 
 def render_bid_value(df, decision_name, decision_title, decision_data):
@@ -100,12 +100,12 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
                 if hasattr(st.session_state, 'vendors'):
                     vendors_data = st.session_state.vendors
 
-                # Build bid records (timestamps relative to today's midnight, Page 1's
+                # Build bid records (timestamps relative to the run's start, Page 1's
                 # period duration and period count)
                 sim_params = getattr(st.session_state, 'sim_params', None)
                 bid_records = build_bid_value_export(
                     df, vendors_data,
-                    timestamps.midnight_of(datetime.now()),
+                    RunContext.from_session().base_time,
                     float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
                     int(getattr(sim_params, 'periods', DEFAULT_PERIODS))
                 )

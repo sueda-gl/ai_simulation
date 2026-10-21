@@ -48,10 +48,9 @@ from app.reports.rtd import (
     rtd_stata_bin_count,
     rtd_stata_bins,
 )
-import datetime as _datetime  # module, not the class: functions below import the class locally
 
-from app.reports import timestamps
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS, TimestampConverter
+from app.pages.results.run_context import RunContext
 
 # The pure builders now live in app/reports/{transactions,rtd}.py. These aliases keep
 # the names this module has always exposed (the Decision 4 tests and the export
@@ -138,10 +137,10 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
         sim_params = getattr(st.session_state, 'sim_params', None)
         transaction_records = build_purchase_vs_bid_export(
             df,
-            # The converter's base time (today's midnight), period duration and
+            # The converter's base time (the run's start), period duration and
             # period count come off the session, so the page builds it
             ts_converter=TimestampConverter(
-                timestamps.midnight_of(_datetime.datetime.now()),
+                RunContext.from_session().base_time,
                 float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
                 int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
             ),

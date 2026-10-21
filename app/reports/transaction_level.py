@@ -42,7 +42,7 @@ def build_transaction_level_dataframe(
         df: Original simulation results DataFrame
         vendors_data: List of vendor dictionaries (optional)
         base_time: Base datetime every timestamp string is relative to (the page
-            passes ``timestamps.midnight_of(datetime.now())``).
+            passes the run's start, ``RunContext.base_time``).
         periods: Number of periods in the run (was ``sim_params.periods``).
         market_price: Market price (was ``sim_params.market_price``)
         platform_markup: Platform markup (was ``sim_params.platform_markup``)
@@ -248,11 +248,25 @@ def build_transaction_level_dataframe(
                 purchase_request_type = customer_type.capitalize() if customer_type else 'Regular'
                 customer_price = pn_price
             
-            # Display customer price:
+            # Display customer price (stored rounded to two decimals, like every
+            # money column of every export):
             # - For Purchase Now: pn_price
             # - For Bid: bid_value (if numeric)
             # - For Discount/Fixed: 'N/A' (actual price calculated by separate algorithm)
-            display_customer_price = customer_price if purchase_request_type in ['Purchase Now', 'Bid'] else 'N/A'
+            if purchase_request_type in ['Purchase Now', 'Bid']:
+                display_customer_price = float(f"{customer_price:.2f}")
+            else:
+                display_customer_price = 'N/A'
+
+            # Bid value as stored: two decimals; N/A for non-Bid transactions
+            if purchase_request_type == 'Bid':
+                try:
+                    display_bid_value = float(f"{float(bid_value):.2f}")
+                except (ValueError, TypeError):
+                    display_bid_value = bid_value
+            else:
+                display_bid_value = 'N/A'
+            display_vendor_price = float(f"{vendor_price:.2f}") if not pd.isna(vendor_price) else vendor_price
             
             # Donation information
             # Priority: request-level > agent-level
@@ -312,7 +326,7 @@ def build_transaction_level_dataframe(
 
                 # ===== DECISION 8: Vendor Selection =====
                 'Vendor ID': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else '',
-                'Vendor Price': vendor_price,
+                'Vendor Price': display_vendor_price,
                 'Vendor Quality': vendor_quality,
                 'Vendor Sustainability': vendor_sustainability,
                 'Vendor Proximity': vendor_proximity,
@@ -326,7 +340,7 @@ def build_transaction_level_dataframe(
 
                 # ===== DECISION 9 & 10: Purchase Decision & Pricing =====
                 'Purchase Request Type': purchase_request_type,
-                'Bid Value': bid_value if purchase_request_type == 'Bid' else 'N/A',  # N/A for non-Bid transactions
+                'Bid Value': display_bid_value,
                 'Customer Price': display_customer_price,
 
                 # ===== DECISION 11: Rejected Transaction Option =====

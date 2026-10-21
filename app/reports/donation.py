@@ -149,9 +149,9 @@ def build_donation_transaction_export(
     misleading. The donation rate (percentage) is the meaningful decision output.
 
     `vendors` is the vendor list the page reads off session state; `base_time`,
-    `duration_hours` and `periods` are the three session values the page reads
-    (today's midnight via `timestamps.midnight_of`, and `sim_params`), so the
-    converter can be built here.
+    `duration_hours` and `periods` are the three values the page reads (the
+    run's start via `RunContext.base_time`, and `sim_params`), so the converter
+    can be built here.
     """
     transaction_records = []
 
@@ -314,10 +314,10 @@ def build_donation_transaction_export(
             # ====================================================================
 
             # Only show price for PN and BID customers (we don't know actual price for Fixed/Discount)
-            # Excel formatting will handle 2-decimal display (no rounding of actual values)
+            # Stored rounded to two decimals, like every money column of every export
             # Use np.nan instead of 'N/A' string to avoid mixed types in the column (Arrow compatibility)
             if purchase_request_type in ['PN', 'Bid']:
-                display_customer_price = customer_price
+                display_customer_price = float(f"{customer_price:.2f}")
             else:
                 display_customer_price = np.nan
 

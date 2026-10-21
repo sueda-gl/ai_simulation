@@ -34,8 +34,8 @@ from app.reports.vendor import (
     vendor_selection_breakdown_xlsx,
     vendor_selection_shares,
 )
-from app.reports import timestamps
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
+from app.pages.results.run_context import RunContext
 
 
 def render_vendor_choice_weights(df, decision_name, decision_title, decision_data):
@@ -464,12 +464,12 @@ def _render_purchase_request_export(df):
         platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
         price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
 
-    # Build purchase request level data (timestamps relative to today's midnight,
+    # Build purchase request level data (timestamps relative to the run's start,
     # Page 1's period duration and period count)
     sim_params = getattr(st.session_state, 'sim_params', None)
     purchase_request_data = build_purchase_request_export(
         df, vendors_for_export,
-        timestamps.midnight_of(datetime.now()),
+        RunContext.from_session().base_time,
         float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
         int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
         platform_markup=platform_markup,

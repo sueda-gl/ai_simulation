@@ -252,7 +252,7 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
                 'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,
                 'Selected Vendor': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else np.nan,
-                'Vendor Price': vendor_price,
+                'Vendor Price': float(f"{vendor_price:.2f}") if not pd.isna(vendor_price) else vendor_price,  # money: two decimals
                 'Quality': vendor_quality,
                 'Sustainability': vendor_sustainability,
                 'Proximity': vendor_proximity,
@@ -860,7 +860,7 @@ def build_vendor_period_details(vendors_data, avg_proximity_per_vendor, vendor_i
                     'Vendor ID': f"Vendor {vendor_id}",
                     'Period': int(period),
                     'Quantity Offered': qty,
-                    'Price': price,
+                    'Price': float(f"{price:.2f}") if not pd.isna(price) else price,   # money: two decimals
                     'Quality': quality,
                     'Sustainability': sustainability,
                     'Average Proximity': avg_prox,
@@ -873,7 +873,7 @@ def build_vendor_period_details(vendors_data, avg_proximity_per_vendor, vendor_i
                 'Vendor ID': f"Vendor {vendor_id}",
                 'Period': 1,
                 'Quantity Offered': qty,
-                'Price': price,
+                'Price': float(f"{price:.2f}") if not pd.isna(price) else price,   # money: two decimals
                 'Quality': quality,
                 'Sustainability': sustainability,
                 'Average Proximity': avg_prox,

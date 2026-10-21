@@ -5,9 +5,9 @@ single / complete run does.
 A complete run with a pinned configuration runs with the pinned seed, agent count
 and population mode (``build_plan.resolve_seed_and_n``), whatever Page 1 says.
 Monte Carlo used to replay the plan's decision settings but take the agent count
-from Page 1 (``--agents``) - so a configuration pinned from a 280-agent Research
-Baseline run was repeated with Page 1's 1000 agents.  Now the study runs the plan's
-sub-run with its own agent count and population; only the seed varies
+from Page 1 - so a configuration pinned from a 280-agent Research Baseline run was
+repeated with Page 1's 1000 agents.  Now the study repeats the plan's sub-run in
+process with its own agent count and population; only the seed varies
 (``base_seed + i``), and the screen says so:
 
     🔑 Using saved config: agents 280, population Research Baseline; seeds vary per run
@@ -17,19 +17,13 @@ set Page 1 to 1000 agents / Copula, run the complete simulation, then the
 Monte-Carlo study with base seed = the pinned seed - its first repetition equals the
 complete run agent by agent.  Without a pinned configuration Monte Carlo uses Page 1.
 """
-import io
-import subprocess
-import sys
-from pathlib import Path
-from types import SimpleNamespace
-
 import pandas as pd
 import pytest
 
-from app.seam.mc import load_mc_plan_file, pinned_config_caption, population_mode_name
+from app.seam.mc import pinned_config_caption, population_mode_name
 from src.contract.plan import SubRun
 
-from conftest import ROOT as PROJECT_ROOT
+from test_mc_plan_parity import _assert_same_rows
 from ui_strings import (MC_PINNED_CAPTION_1500_SPEC, MC_PINNED_CAPTION_280_BASELINE,
                         SAVED_CONFIG_CAPTION_PREFIX)
 
@@ -77,52 +71,36 @@ def _pinned_mc_script():
         run_combined_simulation(['rejected_transaction_defaults'])
 
 
-class _FakeProcess:
-    """Popen stand-in: records nothing, finishes at once with an error code, so the
-    app stops after building the command line (no results, no rerun)."""
-    returncode = 1
-    stdout = io.StringIO("")
-
-    def poll(self):
-        return 1
-
-    def communicate(self):
-        return "", ""
-
-
 @pytest.fixture
-def captured_popen(monkeypatch):
+def captured_repetitions(monkeypatch):
+    """Records every repetition the app's study runs - (sub_run, seed, n_agents,
+    custom_decisions) - and the frame it returned.  With ``real`` set the repetition
+    runs for real (``app.seam.mc.run_mc_repetition``); otherwise a one-agent stand-in
+    frame is returned, so the app stops after choosing what to run."""
     import app.simulation as sim
-    captured = {}
+    from app.seam.mc import run_mc_repetition
 
-    def _fake_popen(cmd, **kwargs):
-        captured["cmd"] = list(cmd)
-        return _FakeProcess()
+    captured = {"calls": [], "frames": [], "real": False}
 
-    monkeypatch.setattr(sim, "subprocess", SimpleNamespace(Popen=_fake_popen, PIPE=subprocess.PIPE))
+    def _repetition(sub_run, seed, n_agents=None, custom_decisions=None, config_repo=None):
+        captured["calls"].append((sub_run, seed, n_agents, tuple(custom_decisions or ())))
+        if captured["real"]:
+            df = run_mc_repetition(sub_run, seed, n_agents, custom_decisions=custom_decisions,
+                                   config_repo=config_repo)
+        else:
+            df = pd.DataFrame({"agent_id": [1], "donation_default": [0.2]})
+        captured["frames"].append(df)
+        return df
+
+    monkeypatch.setattr(sim, "run_mc_repetition", _repetition)
     return captured
-
-
-def _arg(cmd, flag):
-    return cmd[cmd.index(flag) + 1]
 
 
 def _captions(at):
     return [str(c.value) for c in at.caption]
 
 
-def _parquet_roundtrip(df: pd.DataFrame, path: Path) -> pd.DataFrame:
-    """The transformation scripts/run_simulation.py applies before writing parquet."""
-    import json
-    from src.contract.columns import rename_consensus_columns
-    out = rename_consensus_columns(df.copy())
-    out["purchase_requests"] = out["purchase_requests"].apply(
-        lambda x: json.dumps(x) if isinstance(x, (list, dict)) else str(x))
-    out.to_parquet(path, index=False)
-    return pd.read_parquet(path)
-
-
-def test_pinned_config_mc_first_repetition_is_the_pinned_complete_run(captured_popen, tmp_path):
+def test_pinned_config_mc_first_repetition_is_the_pinned_complete_run(captured_repetitions):
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_function(_pinned_mc_script)
@@ -156,34 +134,29 @@ def test_pinned_config_mc_first_repetition_is_the_pinned_complete_run(captured_p
     complete = at.session_state['simulation_results'][complete_key]
     assert len(complete) == PINNED_N
 
-    # the Monte-Carlo study from the same screen
+    # the Monte-Carlo study from the same screen, its one repetition run for real
+    captured_repetitions["real"] = True
     at.session_state['_probe'] = 'mc'
     at.run(timeout=900)
     assert not at.exception
-    cmd = captured_popen["cmd"]
-    plan_file = Path(_arg(cmd, "--plan-file"))
-    try:
-        sub_run, custom = load_mc_plan_file(plan_file)
-        assert _arg(cmd, "--agents") == str(PINNED_N)
-        assert _arg(cmd, "--population-mode") == "baseline"
-        assert _arg(cmd, "--base-seed") == str(PINNED_SEED)
-        assert sub_run.n_agents == PINNED_N and sub_run.population == "baseline"
-        assert sub_run.decision_config_patches["rejected_transaction_defaults"][
-            "intercepts"]["loyalty"] == pytest.approx(0.3)
-        assert CAPTION in _captions(at)
+    (sub_run, seed, n_agents, custom), = captured_repetitions["calls"]
+    assert seed == PINNED_SEED and n_agents is None            # the sub-run's own count
+    assert sub_run.n_agents == PINNED_N and sub_run.population == "baseline"
+    assert sub_run.decision_config_patches["rejected_transaction_defaults"][
+        "intercepts"]["loyalty"] == pytest.approx(0.3)
+    assert custom == ("rejected_transaction_defaults",)
+    assert CAPTION in _captions(at)
 
-        # its first repetition (runs = 1, the app's own command line) is the complete run
-        out_dir = tmp_path / "out"
-        real_cmd = cmd + ["--output-dir", str(out_dir), "--keep-individual"]
-        proc = subprocess.run(real_cmd, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=900)
-        assert proc.returncode == 0, proc.stdout[-2000:] + proc.stderr[-2000:]
-    finally:
-        plan_file.unlink(missing_ok=True)
-    files = sorted(out_dir.glob(f"simulation_seed{PINNED_SEED}_agents{PINNED_N}_*.parquet"))
-    assert len(files) == 1, proc.stdout[-2000:]
-    mc = pd.read_parquet(files[0])
-    expected = _parquet_roundtrip(complete, tmp_path / "complete.parquet")
-    pd.testing.assert_frame_equal(mc, expected)
+    # its first repetition (runs = 1) is the complete run, agent by agent
+    repetition, = captured_repetitions["frames"]
+    _assert_same_rows(complete, repetition)
+
+    # and the study's frames say so: one run of the pinned agent count with the pinned seed
+    mc = at.session_state['mc_results']
+    assert mc['summary']['runs'].tolist() == [1]
+    assert mc['summary']['agents_per_run'].tolist() == [PINNED_N]
+    assert mc['detailed']['seed'].tolist() == [PINNED_SEED]
+    assert mc['detailed']['n_agents'].tolist() == [PINNED_N]
 
 
 def _unpinned_mc_script():
@@ -204,20 +177,14 @@ def _unpinned_mc_script():
     run_monte_carlo_study()
 
 
-def test_without_a_pinned_config_mc_uses_page_1(captured_popen):
+def test_without_a_pinned_config_mc_uses_page_1(captured_repetitions):
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_function(_unpinned_mc_script)
     at.run(timeout=300)
     assert not at.exception
-    cmd = captured_popen["cmd"]
-    plan_file = Path(_arg(cmd, "--plan-file"))
-    try:
-        sub_run, _ = load_mc_plan_file(plan_file)
-    finally:
-        plan_file.unlink(missing_ok=True)
-    assert _arg(cmd, "--agents") == "1000"
-    assert _arg(cmd, "--population-mode") == "copula"
+    (sub_run, seed, n_agents, _), = captured_repetitions["calls"]
+    assert seed == at.session_state['base_seed'] and n_agents is None
     assert sub_run.n_agents == 1000 and sub_run.population == "copula"
     assert not any(c.startswith(SAVED_CONFIG_CAPTION_PREFIX) for c in _captions(at))
 

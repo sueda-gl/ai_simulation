@@ -2,7 +2,9 @@
 Agent Documentation 2026-10-07.docx, Transaction-Level export and Decision 8):
 
 * Customer Price: Purchase Now = (1 + price_range) x (1 + platform_markup) x the
-  VENDOR's price; Bid = the bid value; Fixed / Discount = N/A.
+  VENDOR's price; Bid = the bid value; Fixed / Discount = N/A.  Money columns are
+  stored rounded to two decimals (`float(f"{x:.2f}")`), the price computed from the
+  exact vendor price first.
 * The integrated vendor score is one formula everywhere, so the Agent-Level sheet's
   avg_vendor_score equals the mean of the Transaction-Level sheet's Vendor Integrated
   Score over the same agent's requests (including the single-vendor case, where the
@@ -46,6 +48,7 @@ def _sheets(run):
         duration_hours=1.0, market_price=MARKET_PRICE, platform_markup=PLATFORM_MARKUP,
         price_range=PRICE_RANGE, vendor_price_min=price_min, vendor_price_max=price_max,
     )
+    transactions.attrs["vendors"] = vendors      # the exact vendor prices, by vendor_id
     agents = build_agent_level_dataframe(
         df, vendors_data=vendors, vendor_price_min=price_min, vendor_price_max=price_max)
     return transactions, agents
@@ -71,8 +74,13 @@ def test_purchase_now_price_is_derived_from_the_vendor_price(multi_vendor):
     transactions, _ = multi_vendor
     pn = transactions[transactions["Purchase Request Type"] == "Purchase Now"]
     assert len(pn) > 0
-    expected = (1 + PRICE_RANGE) * (1 + PLATFORM_MARKUP) * pn["Vendor Price"].astype(float)
-    np.testing.assert_allclose(pn["Customer Price"].astype(float), expected, rtol=1e-12)
+    exact = {f"Vendor {int(v['vendor_id'])}": float(v["price"]) for v in transactions.attrs["vendors"]}
+    # computed from the EXACT vendor price, then stored rounded to two decimals
+    expected = [float(f"{(1 + PRICE_RANGE) * (1 + PLATFORM_MARKUP) * exact[vid]:.2f}")
+                for vid in pn["Vendor ID"]]
+    assert pn["Customer Price"].astype(float).tolist() == expected
+    # the stored Vendor Price is the exact price rounded the same way
+    assert pn["Vendor Price"].astype(float).tolist() == [float(f"{exact[vid]:.2f}") for vid in pn["Vendor ID"]]
     # and NOT the market-price convention for vendors priced away from the market
     off_market = pn[np.abs(pn["Vendor Price"].astype(float) - MARKET_PRICE) > 1.0]
     assert len(off_market) > 0

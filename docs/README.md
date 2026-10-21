@@ -100,8 +100,9 @@ Streamlit, no globals, no writes to session state.
 * **`execute.py`** — `execute(plan) -> {result_key: DataFrame}`: for each sub-run,
   samples the agents, builds a fresh `Engine`, applies the patches and the Page-1
   parameters, runs it, then assigns the global transaction IDs.
-* **`mc.py`** — Monte Carlo on the same plan: picks the sub-run a study repeats, hands
-  it to the subprocess as a plan file, and replays it with another seed.
+* **`mc.py`** — Monte Carlo on the same plan: picks the sub-run a study repeats and
+  replays it with another seed (`run_mc_repetition`); the CLI's `--plan-file` reads
+  a sub-run stored with `write_mc_plan_file`.
 
 ### Stores and reports, `app/state/`, `app/reports/`
 
@@ -125,7 +126,8 @@ Streamlit, no globals, no writes to session state.
 * `decision_execution.py` — the Run buttons.
 * `results/` — the results page; `results/run_context.py` is the piece to know (§5).
 * `app/simulation.py` — the bridge from session state to the seam: snapshot, plan,
-  execute, store. It also hosts the Monte-Carlo subprocess runner.
+  execute, store. It also hosts the in-process Monte-Carlo loop (one
+  `run_mc_repetition` per seed, statistics from `app/reports/mc.py`).
 
 ---
 
@@ -304,9 +306,11 @@ python scripts/run_mc_study.py --agents 10000 --runs 500 --base-seed 1
 ```
 
 `--population-mode` takes `copula`, `documentation` or `baseline`; `--decision` may be
-repeated; `--plan-file F` (both scripts) replays the sub-run the app stored in `F`,
-which is how the app's Monte-Carlo button runs. Note that `--income-mode` currently
-patches only `donation_default`; the other modelled decisions keep the income mode of
+repeated; `--plan-file F` (both scripts) replays a sub-run stored with
+`app.seam.mc.write_mc_plan_file`, the same repetition the app's Monte-Carlo button
+runs in process. The study's per-run statistics and summary come from
+`app/reports/mc.py` in both. Note that `--income-mode` currently patches only
+`donation_default`; the other modelled decisions keep the income mode of
 `config/decisions.yaml`. Results land in `outputs/` (git-ignored).
 
 ### From Python: the engine directly
@@ -425,9 +429,11 @@ The reasons behind behaviour that looks odd at first sight.
   still produce are not part of the documented outputs.
 * **Transaction IDs are assigned after the run**, by a stable sort on
   `timestamp_hours`, so the Decision 6 and Decision 9 exports agree.
-* **Export timestamps are relative to today's midnight.** Re-exporting the same run on
-  another day therefore changes every timestamp string. The builders take an injected
-  base time so this can be changed in one place.
+* **Export timestamps are relative to the moment the run was started.** The run
+  records it once (`RunMetadata.started_at`, written by `app/simulation.py` when the
+  plan is built) and every export reads it back through `RunContext.base_time`, so
+  re-exporting the same run on another day gives the same timestamp strings. The
+  builders take an injected base time, so the tests pass a fixed one.
 
 ---
 
@@ -440,5 +446,3 @@ The reasons behind behaviour that looks odd at first sight.
 * Decision 4's five segments are equal slices between a population's lowest and
   highest score, so copula and research populations are cut on different windows. This
   follows the specification.
-* The Monte-Carlo study runs the CLI script in a subprocess and parses its console
-  output for progress and file names.

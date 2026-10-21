@@ -1,16 +1,16 @@
 """Pure timestamp arithmetic behind every export's period / timestamp columns.
 
-The pages read the three session values themselves (the base time as
-`timestamps.midnight_of(datetime.now())`, the period duration and the period
-count off `st.session_state.sim_params`) and pass them in. Nothing in this
-module imports Streamlit or reads session state: `base_time`, `duration_hours`
-and `periods` are always passed in explicitly, so the exact strings and period numbers an export writes can be
-computed (and tested) outside a Streamlit script run.
+The pages read the three values themselves (the base time as the run's start,
+`RunContext.base_time`, and the period duration and the period count off
+`st.session_state.sim_params`) and pass them in. Nothing in this module imports
+Streamlit or reads session state: `base_time`, `duration_hours` and `periods`
+are always passed in explicitly, so the exact strings and period numbers an
+export writes can be computed (and tested) outside a Streamlit script run.
 
-Two long-standing conventions are deliberately kept as they are:
+Two conventions are deliberately kept as they are:
 
-* the base time is *today's midnight* (`midnight_of(datetime.now())`), so a
-  re-export on a later day moves every timestamp string; and
+* the base time is the moment the run was started (`RunMetadata.started_at`),
+  so re-exporting the same run later gives the same timestamp strings; and
 * period numbering is `int(ts // duration_hours) + 1`, i.e. 1-indexed with a
   NaN/None/negative timestamp and a non-positive duration both collapsing to
   period 1.
@@ -59,8 +59,8 @@ def midnight_of(now: datetime) -> datetime:
     """
     Anchor a wall-clock time to the midnight that starts its day.
 
-    This is the base time every export's timestamp column is relative to; the
-    caller passes `datetime.now()`.
+    The former base time of every export's timestamp column; kept for run
+    metadata that carries no ``started_at`` (``RunContext.base_time``).
 
     Args:
         now: Wall-clock time to anchor

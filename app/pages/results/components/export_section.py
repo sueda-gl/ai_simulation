@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import datetime
 from src.contract.columns import rename_consensus_columns
 from app.models import initialize_session_state
-from app.reports import timestamps
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.reports import (
     apply_export_price_formatting,
@@ -555,11 +554,10 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             transaction_df = build_transaction_level_dataframe(
                 df,
                 vendors_data=vendors_data,
-                # The three session values the builder's TimestampConverter used
-                # to read for itself: today's midnight (through the module, so a
-                # patched `timestamps.midnight_of` is honoured) and Page 1's
-                # period duration and period count.
-                base_time=timestamps.midnight_of(datetime.now()),
+                # The three values the builder's TimestampConverter needs: the
+                # run's start (RunContext.base_time) and Page 1's period duration
+                # and period count.
+                base_time=ctx.base_time,
                 duration_hours=float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
                 periods=int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
                 market_price=getattr(sim_params, 'market_price', 100.0),

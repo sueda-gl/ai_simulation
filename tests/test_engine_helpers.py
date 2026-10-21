@@ -49,20 +49,14 @@ def test_assign_global_transaction_ids_are_global_ordered_and_stable():
     assert assign_global_transaction_ids(no_requests) is no_requests
 
 
-# SimulationParameters fields that do NOT go into the simulation mapping (pinned, so a
-# new field has to be either forwarded or added here on purpose).
-NOT_FORWARDED = {
-    "simulation_execution_mode", "simulation_mode", "income_min", "income_max", "income_avg",
-    "income_avg_type", "price_grid", "apply_purchasing_limits", "purchasing_limits",
-    "purchasing_limits_source",
-}
-
-
-def test_build_simulation_params_forwards_the_page1_fields():
+def test_build_simulation_params_forwards_every_page1_field():
+    """Every SimulationParameters field reaches the simulation mapping (a new field
+    is forwarded by being on build_plan._SIMULATION_PARAM_ATTRS or one of the
+    explicit copies; nothing is silently left behind)."""
     from app.models import SimulationParameters
     fields = [f.name for f in dataclasses.fields(SimulationParameters)]
     values = {name: object() for name in fields}                # distinct, never None
     simulation = build_simulation_params({"sim_params": SimulationParameters(**values)})
-    assert set(simulation) == set(fields) - NOT_FORWARDED       # nothing extra, nothing lost
+    assert set(simulation) == set(fields)                       # nothing extra, nothing lost
     for name in simulation:
         assert simulation[name] is values[name], name           # the field's own value

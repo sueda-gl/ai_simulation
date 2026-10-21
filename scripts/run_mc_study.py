@@ -2,11 +2,16 @@
 import argparse
 import subprocess
 import pandas as pd
-import numpy as np
 from pathlib import Path
 import sys
 from datetime import datetime
 import json
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.reports import mc as mc_report   # the study's numbers, shared with the app
+
 
 def main():
     parser = argparse.ArgumentParser(description='Run Monte-Carlo study with multiple simulation runs')
@@ -106,34 +111,14 @@ def main():
                 print("ERROR: Could not find output file")
                 continue
             
-            # Load results and extract key statistics
+            # Load results and extract key statistics (app/reports/mc.py: the same
+            # per-run statistics the app's in-process study computes)
             df = pd.read_parquet(result_file)
-            
-            # Calculate summary statistics for this run
-            run_stats = {
-                'run': i,
-                'seed': current_seed,
-                'n_agents': len(df)
-            }
-            
-            # Add statistics for each decision output
-            for col in df.columns:
-                if col not in ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
-                              'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
-                    if pd.api.types.is_numeric_dtype(df[col]):
-                        run_stats[f'{col}_mean'] = df[col].mean()
-                        run_stats[f'{col}_std'] = df[col].std()
-                        run_stats[f'{col}_min'] = df[col].min()
-                        run_stats[f'{col}_max'] = df[col].max()
-            
-            mc_results.append(run_stats)
+            mc_results.append(mc_report.run_statistics(df, i, current_seed))
             individual_files.append(result_file)
             
             # Show key statistic (donation_default if available)
-            if 'donation_default' in df.columns:
-                print(f"donation_mean={df['donation_default'].mean():.4f}")
-            else:
-                print("completed")
+            print(mc_report.run_outcome_text(df))
                 
         except subprocess.CalledProcessError as e:
             print(f"ERROR: {e}")
@@ -147,26 +132,15 @@ def main():
         return 1
     
     # Convert to DataFrame for analysis
-    mc_df = pd.DataFrame(mc_results)
+    mc_df = mc_report.detailed_frame(mc_results)
     
     print("\n" + "=" * 50)
     print(f"Monte-Carlo study completed: {len(mc_results)} successful runs")
     
-    # Generate summary statistics
-    summary_stats = {}
-    
-    # Focus on donation_default if available
-    if 'donation_default_mean' in mc_df.columns:
-        donation_means = mc_df['donation_default_mean']
-        summary_stats['donation_default'] = {
-            'mean': donation_means.mean(),
-            'std': donation_means.std(),
-            'p2.5': np.percentile(donation_means, 2.5),
-            'p97.5': np.percentile(donation_means, 97.5),
-            'runs': len(donation_means)
-        }
-        
-        print(f"\nDonation Default Summary (across {len(donation_means)} runs):")
+    # Generate summary statistics (donation_default, when the study ran it)
+    summary_stats = mc_report.summary_statistics(mc_df)
+    if 'donation_default' in summary_stats:
+        print(f"\nDonation Default Summary (across {summary_stats['donation_default']['runs']} runs):")
         print(f"  Mean: {summary_stats['donation_default']['mean']:.6f}")
         print(f"  Std:  {summary_stats['donation_default']['std']:.6f}")
         print(f"  95% CI: [{summary_stats['donation_default']['p2.5']:.6f}, {summary_stats['donation_default']['p97.5']:.6f}]")
@@ -181,20 +155,9 @@ def main():
     # Save summary statistics
     mc_summary_path = output_dir / f"mc_summary_runs{args.runs}_agents{args.agents}{decision_suffix}_{timestamp}.csv"
     
-    summary_rows = []
-    for decision, stats in summary_stats.items():
-        summary_rows.append({
-            'decision': decision,
-            'mean': stats['mean'],
-            'std': stats['std'],
-            'p2.5': stats['p2.5'],
-            'p97.5': stats['p97.5'],
-            'runs': stats['runs'],
-            'agents_per_run': args.agents
-        })
-    
-    if summary_rows:
-        pd.DataFrame(summary_rows).to_csv(mc_summary_path, index=False)
+    summary_df = mc_report.summary_frame(summary_stats, args.agents)
+    if len(summary_df):
+        summary_df.to_csv(mc_summary_path, index=False)
         print(f"\nSummary saved to: {mc_summary_path}")
     
     print(f"Detailed results saved to: {mc_detailed_path}")

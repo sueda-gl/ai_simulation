@@ -3,19 +3,21 @@
 Monte-Carlo runs on the SAME plan as a single run.  No Streamlit.
 
 A Monte-Carlo study is ``runs`` repetitions of one engine run, each with seed
-``base_seed + i``.  The subprocess that performs them
-(``scripts/run_mc_study.py`` -> ``scripts/run_simulation.py``) takes only the
-population mode, the global income mode and the donation anchor weight on its
-command line, which cannot carry the Page-2 tab settings (Decision 1/2/4
-intercepts, income modes, sigma tick boxes, the donation coefficient set, the
-default decisions, the Page-1 parameters, ...).
+``base_seed + i``.  The app builds the ordinary ``RunPlan`` from the session
+(the same ``build_run_plan`` a single run uses), picks the one sub-run the
+study repeats (``select_mc_sub_run``) and replays it in process through
+``run_mc_repetition`` - ``app.seam.execute.run_sub_run`` with only the seed
+replaced - so ``runs = 1, base_seed = S`` gives exactly the per-agent results
+of a single run with seed ``S``.  The per-run statistics and the summary are
+``app.reports.mc``'s.
 
-So the app builds the ordinary ``RunPlan`` from the session (the same
-``build_run_plan`` a single run uses), picks the one sub-run the study
-repeats, and hands it to the subprocess as a plan file.  The subprocess
-replays that sub-run through ``app.seam.execute.run_sub_run`` with only the
-seed replaced - so ``runs = 1, base_seed = S`` gives exactly the per-agent
-results of a single run with seed ``S``.
+The CLI (``scripts/run_mc_study.py`` -> ``scripts/run_simulation.py``) takes
+only the population mode, the global income mode and the donation anchor
+weight on its command line, which cannot carry the Page-2 tab settings
+(Decision 1/2/4 intercepts, income modes, sigma tick boxes, the donation
+coefficient set, the default decisions, the Page-1 parameters, ...); its
+``--plan-file`` option replays a sub-run stored with ``write_mc_plan_file``
+instead, through the same ``run_mc_repetition``.
 
 A selected ("Use This Config") saved configuration is honoured exactly as a
 single run honours it: the plan already carries the pinned agent count and -
@@ -29,9 +31,9 @@ above), so each repetition samples its own participants - the ones a single
 run with that seed takes - while Research Baseline (file order, cycling) and
 N = 280 keep the same agents.
 
-The file is a pickle: the patches carry ``Replace`` markers and Python tuples
-that JSON would not round-trip exactly.  It is written by the app into
-``outputs/`` and read back only by the project's own scripts.
+The plan file is a pickle: the patches carry ``Replace`` markers and Python
+tuples that JSON would not round-trip exactly.  It is read only by the
+project's own scripts; the app itself writes no file.
 """
 
 import dataclasses

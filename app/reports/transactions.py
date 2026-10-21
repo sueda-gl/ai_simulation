@@ -208,7 +208,7 @@ def build_purchase_vs_bid_export(
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
                 'Vendor': vendor_id,
-                'Vendor Price': vendor_price,
+                'Vendor Price': float(f"{vendor_price:.2f}") if vendor_price is not None else vendor_price,  # money: two decimals
                 'Purchase Timestamp': timestamp_str,
                 'Period': period,
                 'Customer Price': display_customer_price,

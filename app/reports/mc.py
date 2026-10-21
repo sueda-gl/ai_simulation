@@ -8,8 +8,15 @@ module imports Streamlit.
 `mc_results` is the dict written by `app/pages/decision_execution.py` from
 `run_monte_carlo_study()`: `{'summary': DataFrame, 'detailed': DataFrame,
 'log': str}`. The summary frame carries one row per decision with columns
-`decision, mean, std, p2.5, p97.5, runs`; the detailed frame carries one row per
-Monte-Carlo run with `run` and `<decision>_mean` columns.
+`decision, mean, std, p2.5, p97.5, runs, agents_per_run`; the detailed frame
+carries one row per Monte-Carlo run with `run`, `seed`, `n_agents` and the
+`<column>_mean / _std / _min / _max` of every numeric result column.
+
+The study's own numbers - the per-run statistics, the detailed frame and the
+summary - are computed here too (`run_statistics`, `detailed_frame`,
+`summary_statistics`, `summary_frame`), by the app's in-process loop
+(`app.simulation.run_monte_carlo_study`) and by `scripts/run_mc_study.py`
+alike, so the two produce the same frames.
 
 Two behaviours are deliberately preserved rather than fixed:
 
@@ -22,7 +29,7 @@ Two behaviours are deliberately preserved rather than fixed:
   final running mean.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -37,6 +44,81 @@ DONATION_MEAN_COLUMN = 'donation_default_mean'
 
 # Summary columns rendered as percentages in the on-screen table.
 PERCENT_SUMMARY_COLUMNS = ['mean', 'p2.5', 'p97.5']
+
+# Agent-trait columns the per-run statistics leave out (they are inputs, not
+# decision outputs); every other numeric column gets mean / std / min / max.
+NON_STATISTIC_COLUMNS = (
+    'Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility',
+    'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}',
+)
+
+
+# ---------------------------------------------------------------------------
+# the study's numbers: one repetition -> the detailed frame -> the summary
+# ---------------------------------------------------------------------------
+def run_statistics(df: pd.DataFrame, run: int, seed: int) -> Dict[str, Any]:
+    """One row of the detailed frame: the run index, its seed, the agent count and
+    the mean / std / min / max of every numeric result column.
+
+    Args:
+        df: one repetition's result frame (``rtd_integrated_*`` names, as written)
+        run: 0-based repetition index
+        seed: the seed the repetition ran with (``base_seed + run``)
+    """
+    stats: Dict[str, Any] = {'run': run, 'seed': seed, 'n_agents': len(df)}
+    for col in df.columns:
+        if col not in NON_STATISTIC_COLUMNS and pd.api.types.is_numeric_dtype(df[col]):
+            stats[f'{col}_mean'] = df[col].mean()
+            stats[f'{col}_std'] = df[col].std()
+            stats[f'{col}_min'] = df[col].min()
+            stats[f'{col}_max'] = df[col].max()
+    return stats
+
+
+def run_outcome_text(df: pd.DataFrame) -> str:
+    """The tail of a repetition's progress line: its donation mean, or 'completed'."""
+    if DONATION_DECISION in df.columns:
+        return f"donation_mean={df[DONATION_DECISION].mean():.4f}"
+    return "completed"
+
+
+def detailed_frame(run_stats: Sequence[Dict[str, Any]]) -> pd.DataFrame:
+    """The detailed frame: one `run_statistics` row per repetition."""
+    return pd.DataFrame(list(run_stats))
+
+
+def summary_statistics(detailed_df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """{decision: {mean, std, p2.5, p97.5, runs}} across the repetitions - for
+    `donation_default` when the study ran it, else empty."""
+    summary_stats: Dict[str, Dict[str, Any]] = {}
+    if DONATION_MEAN_COLUMN in detailed_df.columns:
+        donation_means = detailed_df[DONATION_MEAN_COLUMN]
+        summary_stats[DONATION_DECISION] = {
+            'mean': donation_means.mean(),
+            'std': donation_means.std(),
+            'p2.5': np.percentile(donation_means, 2.5),
+            'p97.5': np.percentile(donation_means, 97.5),
+            'runs': len(donation_means),
+        }
+    return summary_stats
+
+
+def summary_frame(summary_stats: Dict[str, Dict[str, Any]], agents_per_run: int) -> pd.DataFrame:
+    """The summary frame: one row per decision in `summary_stats` (columns
+    `decision, mean, std, p2.5, p97.5, runs, agents_per_run`); empty when the
+    study has no summary (no `donation_default`)."""
+    rows: List[Dict[str, Any]] = []
+    for decision, stats in summary_stats.items():
+        rows.append({
+            'decision': decision,
+            'mean': stats['mean'],
+            'std': stats['std'],
+            'p2.5': stats['p2.5'],
+            'p97.5': stats['p97.5'],
+            'runs': stats['runs'],
+            'agents_per_run': agents_per_run,
+        })
+    return pd.DataFrame(rows)
 
 
 def donation_summary_row(summary_df: pd.DataFrame) -> Optional[pd.Series]:

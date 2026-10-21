@@ -309,13 +309,20 @@ def build_transaction_export(df, base_time, duration_hours, periods):
                     period = ts_result['period']
                     timestamp_str = ts_result['formatted']
 
+                    # the bid value is money: stored rounded to two decimals ('N/A' stays)
+                    bid_value = req.get('bid_value', 'N/A')
+                    try:
+                        bid_value = float(f"{float(bid_value):.2f}")
+                    except (ValueError, TypeError):
+                        pass
+
                     transactions.append({
                         'transaction_id': req.get('transaction_id'),
                         'Agent ID': req.get('customer_id', idx + 1),
                         'vendorID': req.get('vendorID', 1),
                         'platformProductID': req.get('platformProductID', 1),
                         'purchase type': req.get('platformPrice', 'N/A'),
-                        'purchase_bid_value': req.get('bid_value', 'N/A'),
+                        'purchase_bid_value': bid_value,
                         'Purchase Timestamp': timestamp_str,
                         'Period': period,
                         'timestamp_hours': timestamp_hours  # Keep for sorting

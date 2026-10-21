@@ -259,7 +259,7 @@ _PAGE1_MIRRORS = (
     _row("seed", 42, MODELS_DEFAULTS, "page1-mirror", engine_input=True,
          notes="fallback when seed_input is absent"),
     _row("n_runs", 10, MODELS_DEFAULTS, "page1-mirror",
-         notes="Monte-Carlo only; the MC subprocess takes it as --runs"),
+         notes="Monte-Carlo only; the number of in-process repetitions"),
     _row("base_seed", 42, MODELS_DEFAULTS, "page1-mirror", engine_input=True,
          notes="fallback when base_seed_input is absent"),
     _row("population_mode", "Copula (synthetic)", MODELS_DEFAULTS, "page1-mirror",
@@ -314,9 +314,10 @@ _PAGE2_MIRRORS = (
     _row("donation_coeff_{name}", "<config/decisions.yaml regression_coefficients>",
          DON_YAML, "page2-mirror",
          notes="the flat display set the Donation tab edits (intercept, hh, linear, "
-               "midsub, nosub, fullsub, q1..q5, the older q45, incoming, law, ug, "
-               "grad).  The engine runs the _cat / _cont set below, so this "
-               "one is UI state."),
+               "midsub, nosub, fullsub, q1..q5, incoming, law, ug, grad).  The "
+               "older q45 is never written; state.saved_configs still names it as "
+               "a fallback for q5.  The engine runs the _cat / _cont set below, "
+               "so this one is UI state."),
     _row("donation_coeff_intercept", "<config/decisions.yaml intercept>", DON_YAML,
          "page2-mirror",
          notes="the presence sentinel: models.initialize_session_state reloads the "
@@ -567,11 +568,13 @@ _RESULTS = (
     _row("simulation_results", None, MODELS_INIT, "results",
          notes="{result_key: DataFrame} after a run; None after a Monte-Carlo run."),
     _row("mc_results", None, MODELS_INIT, "results",
-         notes="{'summary', 'detailed', 'log'} from the Monte-Carlo subprocess."),
+         notes="{'summary', 'detailed', 'log'} from the in-process Monte-Carlo "
+               "study (simulation.run_monte_carlo_study)."),
     _row("_run_metadata", "<RunMetadata as a dict>", "simulation.run_full_simulation",
          "results",
          notes="the results page reads the run's real population / income mode "
-               "from here, so the chart titles cannot drift from what ran."),
+               "from here, so the chart titles cannot drift from what ran; its "
+               "started_at is the base time of every export's timestamps."),
     _row("vendors", "<df.attrs['vendors'] of the first result>",
          "simulation.run_full_simulation", "results"),
 )

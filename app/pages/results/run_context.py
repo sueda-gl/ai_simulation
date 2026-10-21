@@ -24,6 +24,7 @@ property here; the semantics are the ones the page had when it read those keys:
   the comparison grids always did.
 """
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
@@ -66,6 +67,9 @@ class RunContext:
     # decision actually ran with (absent in metadata from before 2026-10-07)
     decision_income_modes: Dict[str, Dict[str, str]] = field(default_factory=dict)
     rtd_compare_both_fallback: bool = False
+    # ISO 8601 moment the run was started (``RunMetadata.started_at``); None when the
+    # metadata does not carry it
+    started_at: Optional[str] = None
 
     # ------------------------------------------------------------ factory
     @classmethod
@@ -118,7 +122,20 @@ class RunContext:
             decision_income_modes={str(k): dict(v) for k, v in
                                    (metadata.get("decision_income_modes") or {}).items()},
             rtd_compare_both_fallback=bool(metadata.get("rtd_compare_both_fallback", False)),
+            started_at=metadata.get("started_at") or None,
         )
+
+    # ----------------------------------------------------------- base time
+    @property
+    def base_time(self) -> datetime:
+        """The base time of every export's timestamp column: the moment the run was
+        started.  Re-exporting the same run later therefore gives the same timestamp
+        strings.  Metadata without ``started_at`` (a foreign session) falls back to
+        the former anchor, today's midnight."""
+        if self.started_at:
+            return datetime.fromisoformat(self.started_at)
+        from app.reports.timestamps import midnight_of
+        return midnight_of(datetime.now())
 
     # ---------------------------------------------------------- run shape
     @property

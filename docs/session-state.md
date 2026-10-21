@@ -225,13 +225,13 @@ Two things are easy to get wrong here.
   `config/decisions.yaml`, and the seam recomputes the product itself from
   `sigma_coefficient`.
 
-One more path exists outside the seam: `n_runs`, `n_agents`, `base_seed`,
-`anchor_observed_weight`, `population_mode` and the selected decisions are *also*
-passed to the Monte-Carlo subprocess as command-line arguments by
-`app/simulation.py`. Of these only `n_runs` is not a seam input. The Monte-Carlo
-runner also builds the ordinary run plan from the same snapshot and hands its
-sub-run to the subprocess as a plan file (`app/seam/mc.py`), so every tab setting
-reaches the Monte-Carlo runs exactly as it reaches a single run. A selected ("Use
+One more path exists outside the seam: `n_runs`, `base_seed`, `population_mode` and
+`income_spec_mode` are *also* read by the in-process Monte-Carlo loop in
+`app/simulation.py` (the seeds, and which sub-run the study repeats). Of these only
+`n_runs` is not a seam input. The Monte-Carlo runner builds the ordinary run plan
+from the same snapshot and repeats one of its sub-runs in process
+(`app/seam/mc.py`), so every tab setting reaches the Monte-Carlo runs exactly as it
+reaches a single run. A selected ("Use
 This Config") saved configuration pins the Monte-Carlo agent count and population
 exactly as it pins a complete run's; only the seed varies (`base_seed + i`), and the
 screen says so.
@@ -262,7 +262,7 @@ always falls through to the next priority.
 | `{decision_name}_selection` (concretely `vendor_choice_weights_selection`) | same, priority 1 | same |
 | `rejected_transaction_defaults_option`, `rejected_transaction_option_selection` | same, priority 1 for the two radio decisions, and `decision_execution.get_actual_default_value` | same |
 | `{decision_name}_config` | `decision_execution.get_actual_default_value`, priority 2 | the hard-coded default |
-| `donation_coeff_q45` | the legacy Q4+Q5 fallback in the categorical formula display, read when `donation_coeff_q5` is missing | `0.0` |
+| `donation_coeff_q45` | never written; `state.saved_configs` still names it as the fallback for `donation_coeff_q5` when saving a configuration | `0.0` |
 
 These are the remains of an "adjust the default on the results page and re-run"
 feature that no screen offers any more. The priority chains still have a slot for it.

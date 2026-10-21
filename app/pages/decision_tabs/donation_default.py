@@ -490,12 +490,13 @@ def render_categorical_formula():
             st.session_state.get('donation_coeff_ug', -2.139093511519692),
             st.session_state.get('donation_coeff_grad', 0.0)
         ],
-        income_labels=['Q1 (Level 1)', 'Q2 (Level 2)', 'Q3 (Level 3)', 'Q4_Q5 (Levels 4-5, ref)'],
+        income_labels=['Q1 (Level 12, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
         income=[
-            st.session_state.get('donation_coeff_q1', -0.520290427509808),
-            st.session_state.get('donation_coeff_q2', 3.754612744416796),
-            st.session_state.get('donation_coeff_q3', 4.001714810873598),
-            st.session_state.get('donation_coeff_q45', 0.0)
+            get_coefficient('q1', 'cat'),
+            get_coefficient('q2', 'cat'),
+            get_coefficient('q3', 'cat'),
+            get_coefficient('q4', 'cat'),
+            get_coefficient('q5', 'cat')
         ],
     )
 

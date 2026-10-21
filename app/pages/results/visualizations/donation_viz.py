@@ -11,8 +11,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from app.reports import timestamps
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
+from app.pages.results.run_context import RunContext
 from app.reports.donation import (
     build_donation_default_export,
     build_donation_default_xlsx,
@@ -256,7 +256,7 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
 
             transaction_records = build_donation_transaction_export(
                 df, vendors=vendors_data,
-                base_time=timestamps.midnight_of(datetime.now()),
+                base_time=RunContext.from_session().base_time,
                 duration_hours=float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
                 periods=int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
                 market_price=getattr(sim_params, 'market_price', 100.0),

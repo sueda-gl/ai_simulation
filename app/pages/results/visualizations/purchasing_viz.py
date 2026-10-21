@@ -31,8 +31,8 @@ from app.reports.purchasing import (
     timestamps_by_customer_type,
     top_agents_by_quantity,
 )
-from app.reports import timestamps
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
+from app.pages.results.run_context import RunContext
 
 
 def render_purchasing_quantity(df, decision_name, decision_title, decision_data):
@@ -453,10 +453,10 @@ def _render_purchasing_exports(df):
         
         try:
             # Flatten purchase_requests to a transaction-level DataFrame (timestamps
-            # relative to today's midnight, Page 1's period duration and count)
+            # relative to the run's start, Page 1's period duration and count)
             sim_params = getattr(st.session_state, 'sim_params', None)
             transactions_df = build_transaction_export(
-                df, timestamps.midnight_of(datetime.now()),
+                df, RunContext.from_session().base_time,
                 float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
                 int(getattr(sim_params, 'periods', DEFAULT_PERIODS))
             )

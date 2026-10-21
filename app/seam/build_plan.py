@@ -112,6 +112,16 @@ _SIMULATION_PARAM_ATTRS: Tuple[str, ...] = (
     "vendor_products_min", "vendor_products_max", "vendor_products_avg",
     # Vendor carryover parameters
     "vendor_carryover_probability", "override_carryover", "global_carryover",
+    # Run mode, income summary, price grid and purchasing-limit settings: every
+    # Page-1 field reaches the mapping.  Of these the engine reads income_min and
+    # income_max (src/engine/income.py, the uniform fallback; purchasing_quantity's
+    # income_max); the others have no reader in src/ (purchasing_quantity reads the
+    # purchasing limits from simulation_config['purchasing_limits'], the top-level
+    # key apply_simulation_settings writes from SubRun.purchasing_limits).
+    "simulation_execution_mode", "simulation_mode",
+    "income_min", "income_max", "income_avg", "income_avg_type",
+    "price_grid",
+    "apply_purchasing_limits", "purchasing_limits", "purchasing_limits_source",
 )
 
 

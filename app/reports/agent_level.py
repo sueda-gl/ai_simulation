@@ -347,10 +347,10 @@ def build_agent_level_dataframe(
                             sum_score += _vendor_score(vendor, vendor_weights, v_prox,
                                                        price_min_config, price_max_config)
 
-        # 2. Assign Averages
+        # 2. Assign Averages (avg_vendor_price is money: stored rounded to two decimals)
         if count_requests > 0:
             agent_record['avg_vendor_proximity'] = sum_prox / count_requests
-            agent_record['avg_vendor_price'] = sum_price / count_requests
+            agent_record['avg_vendor_price'] = float(f"{sum_price / count_requests:.2f}")
             agent_record['avg_vendor_quality'] = sum_quality / count_requests
             agent_record['avg_vendor_sustainability'] = sum_sust / count_requests
             agent_record['avg_vendor_score'] = sum_score / count_requests
@@ -369,7 +369,7 @@ def build_agent_level_dataframe(
                 if pref_vendor_id is not None:
                     v_prox = proximity_scores.get(str(int(pref_vendor_id)), np.nan)
                 
-                agent_record['avg_vendor_price'] = v_price
+                agent_record['avg_vendor_price'] = float(f"{v_price:.2f}") if not pd.isna(v_price) else v_price
                 agent_record['avg_vendor_quality'] = v_quality
                 agent_record['avg_vendor_sustainability'] = v_sust
                 agent_record['avg_vendor_proximity'] = float(v_prox) if not pd.isna(v_prox) else np.nan

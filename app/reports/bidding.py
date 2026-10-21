@@ -173,8 +173,9 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
                 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
                 'income': income,
                 'Vendor ID': f"Vendor {int(vendor_id)}" if vendor_id is not None and not pd.isna(vendor_id) else '',
-                'Vendor Price': vendor_price,
-                'Bid Value': bid_value_numeric,
+                # money columns are stored rounded to two decimals
+                'Vendor Price': float(f"{vendor_price:.2f}") if not pd.isna(vendor_price) else vendor_price,
+                'Bid Value': float(f"{bid_value_numeric:.2f}"),
                 'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,
                 '_sort_datetime': request_datetime  # Hidden for sorting
