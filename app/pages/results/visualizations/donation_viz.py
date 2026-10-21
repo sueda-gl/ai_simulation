@@ -11,11 +11,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from app.utils.timestamp_utils import (
-    get_duration_hours,
-    get_periods,
-    get_simulation_base_time,
-)
+from app.reports import timestamps
+from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.reports.donation import (
     build_donation_default_export,
     build_donation_default_xlsx,
@@ -23,7 +20,10 @@ from app.reports.donation import (
     build_donation_transactions_xlsx,
     donation_default_export_columns,
     donation_default_stats_frame,
+    donation_distribution_stats,
+    donation_rate_summary,
     donation_transactions_frame,
+    donation_transactions_summary,
 )
 
 
@@ -32,15 +32,16 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
     try:
         numeric_data = pd.to_numeric(decision_data, errors='coerce')
         if not numeric_data.isna().all():
+            summary = donation_rate_summary(numeric_data)
             col1, col2, col3, col4 = st.columns([1, 1.1, 1.1, 1.2])
             with col1:
                 st.metric("Total Agents", f"{len(decision_data):,}")
             with col2:
-                st.metric("Mean", f"{numeric_data.mean():.2%}")
+                st.metric("Mean", f"{summary['mean']:.2%}")
             with col3:
-                st.metric("Std Dev", f"{numeric_data.std():.2%}")
+                st.metric("Std Dev", f"{summary['std']:.2%}")
             with col4:
-                st.metric("Range", f"{numeric_data.min():.2%} - {numeric_data.max():.2%}")
+                st.metric("Range", f"{summary['min']:.2%} - {summary['max']:.2%}")
             col_plot, col_stats = st.columns([2, 1])
             with col_plot:
                 st.markdown(f"**Distribution of {decision_title}**")
@@ -187,12 +188,13 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
 
         with col_stats:
             st.markdown("**📈 Distribution Stats:**")
-            st.write(f"• **Min**: {donation_data.min():.2%}")
-            st.write(f"• **25th %ile**: {donation_data.quantile(0.25):.2%}")
-            st.write(f"• **50th %ile**: {donation_data.quantile(0.50):.2%}")
-            st.write(f"• **75th %ile**: {donation_data.quantile(0.75):.2%}")
-            st.write(f"• **Max**: {donation_data.max():.2%}")
-            st.write(f"• **Range**: {donation_data.max() - donation_data.min():.2%}")
+            dist = donation_distribution_stats(donation_data)
+            st.write(f"• **Min**: {dist['min']:.2%}")
+            st.write(f"• **25th %ile**: {dist['q25']:.2%}")
+            st.write(f"• **50th %ile**: {dist['q50']:.2%}")
+            st.write(f"• **75th %ile**: {dist['q75']:.2%}")
+            st.write(f"• **Max**: {dist['max']:.2%}")
+            st.write(f"• **Range**: {dist['range']:.2%}")
 
             st.markdown("---")
             st.markdown("**ℹ️ Source:**")
@@ -254,9 +256,9 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
 
             transaction_records = build_donation_transaction_export(
                 df, vendors=vendors_data,
-                base_time=get_simulation_base_time(),
-                duration_hours=get_duration_hours(),
-                periods=get_periods(),
+                base_time=timestamps.midnight_of(datetime.now()),
+                duration_hours=float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
+                periods=int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
                 market_price=getattr(sim_params, 'market_price', 100.0),
                 platform_markup=getattr(sim_params, 'platform_markup', 0.1),
                 price_range=getattr(sim_params, 'price_range', 0.25),
@@ -267,17 +269,15 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                 transactions_df = donation_transactions_frame(transaction_records)
 
                 # Show summary
+                num_agents, num_periods, avg_donation = donation_transactions_summary(transactions_df)
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Total Requests", f"{len(transactions_df):,}")
                 with col2:
-                    num_agents = transactions_df['Agent ID'].nunique()
                     st.metric("Total Agents", f"{num_agents:,}")
                 with col3:
-                    num_periods = transactions_df['Period'].nunique()
                     st.metric("Periods", f"{int(num_periods)}")
                 with col4:
-                    avg_donation = transactions_df['Final Donation Rate'].mean()
                     if not pd.isna(avg_donation):
                         st.metric("Avg Donation Rate", f"{avg_donation:.2%}")
                     else:

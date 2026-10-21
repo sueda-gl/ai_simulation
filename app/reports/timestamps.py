@@ -1,10 +1,10 @@
 """Pure timestamp arithmetic behind every export's period / timestamp columns.
 
-`app/utils/timestamp_utils.py` keeps the three *session readers*
-(`get_simulation_base_time`, `get_duration_hours`, `get_periods`) and delegates
-the arithmetic here. Nothing in this module imports Streamlit or reads session
-state: `base_time`, `duration_hours` and `periods` are always passed in
-explicitly, so the exact strings and period numbers an export writes can be
+The pages read the three session values themselves (the base time as
+`timestamps.midnight_of(datetime.now())`, the period duration and the period
+count off `st.session_state.sim_params`) and pass them in. Nothing in this
+module imports Streamlit or reads session state: `base_time`, `duration_hours`
+and `periods` are always passed in explicitly, so the exact strings and period numbers an export writes can be
 computed (and tested) outside a Streamlit script run.
 
 Two long-standing conventions are deliberately kept as they are:
@@ -28,9 +28,6 @@ USAGE:
     #     'period': int,
     #     'timestamp_hours': float (original)
     # }
-
-The UI keeps importing `TimestampConverter` from `app.utils.timestamp_utils`,
-where a thin subclass fills the three arguments in from session state.
 """
 
 from datetime import datetime, timedelta
@@ -63,7 +60,7 @@ def midnight_of(now: datetime) -> datetime:
     Anchor a wall-clock time to the midnight that starts its day.
 
     This is the base time every export's timestamp column is relative to; the
-    caller passes `datetime.now()` (see `get_simulation_base_time`).
+    caller passes `datetime.now()`.
 
     Args:
         now: Wall-clock time to anchor

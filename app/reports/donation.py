@@ -20,7 +20,8 @@ import numpy as np
 import pandas as pd
 
 from app.reports.timestamps import TimestampConverter
-from app.reports.xlsx import apply_donation_price_formatting, to_xlsx_bytes
+from app.reports.xlsx import apply_donation_price_formatting, period_sheets, to_xlsx_bytes
+from src.contract.columns import rename_consensus_columns
 
 # The pricing constants the transaction export was written with. They are
 # hard-coded defaults, NOT the Page-1 simulation parameters: this export never
@@ -51,6 +52,23 @@ def donation_default_stats_frame(numeric_data: pd.Series) -> pd.DataFrame:
         'Statistic': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
         'Donation Rate': [f"{stats[key]:.2%}" for key in ['mean', 'std', 'min', 'max', '50%', '25%', '75%']]
     })
+
+
+def donation_rate_summary(numeric_data: pd.Series) -> dict:
+    """Mean, std, min and max of the donation rates (the metric row)."""
+    return {'mean': numeric_data.mean(), 'std': numeric_data.std(),
+            'min': numeric_data.min(), 'max': numeric_data.max()}
+
+
+def donation_distribution_stats(donation_data: pd.Series) -> dict:
+    """The 'Distribution Stats' list beside the final donation rate histogram:
+    min, 25th / 50th / 75th percentiles, max and range."""
+    return {'min': donation_data.min(),
+            'q25': donation_data.quantile(0.25),
+            'q50': donation_data.quantile(0.50),
+            'q75': donation_data.quantile(0.75),
+            'max': donation_data.max(),
+            'range': donation_data.max() - donation_data.min()}
 
 
 def donation_default_export_columns(df: pd.DataFrame, decision_name: str) -> list:
@@ -131,9 +149,9 @@ def build_donation_transaction_export(
     misleading. The donation rate (percentage) is the meaningful decision output.
 
     `vendors` is the vendor list the page reads off session state; `base_time`,
-    `duration_hours` and `periods` are the three session values the page reads with
-    `get_simulation_base_time()`, `get_duration_hours()` and `get_periods()`, so
-    the converter can be built here.
+    `duration_hours` and `periods` are the three session values the page reads
+    (today's midnight via `timestamps.midnight_of`, and `sim_params`), so the
+    converter can be built here.
     """
     transaction_records = []
 
@@ -352,16 +370,136 @@ def donation_transactions_frame(transaction_records: list) -> pd.DataFrame:
     return transactions_df
 
 
+def donation_transactions_summary(transactions_df: pd.DataFrame):
+    """The summary row above the transaction-level download: (distinct agents,
+    distinct periods, average final donation rate)."""
+    num_agents = transactions_df['Agent ID'].nunique()
+    num_periods = transactions_df['Period'].nunique()
+    avg_donation = transactions_df['Final Donation Rate'].mean()
+    return num_agents, num_periods, avg_donation
+
+
 def build_donation_transactions_xlsx(transactions_df: pd.DataFrame) -> bytes:
     """The `donation_transactions_{ts}.xlsx` workbook: 'Total' + one sheet per period."""
-    # Sheet 1: Total (all periods combined)
-    sheets = {'Total': transactions_df}
-
-    # Additional sheets: One per Period
-    periods = sorted(transactions_df['Period'].dropna().unique())
-    for period_val in periods:
-        period_df = transactions_df[transactions_df['Period'] == period_val]
-        sheet_name = f'Period {int(period_val)}'
-        sheets[sheet_name] = period_df
-
+    # this frame always has a Period column (no Total-only fallback)
+    sheets = period_sheets(transactions_df, missing_ok=False)
     return to_xlsx_bytes(sheets, formatter=apply_donation_price_formatting)
+
+
+# ---------------------------------------------------------------------------
+# donation-only run: the sheets of the results page's export section
+# (`app/pages/results/components/export_section.py`)
+# ---------------------------------------------------------------------------
+
+# The trait columns the export section keeps for a donation-only run, in order.
+DONATION_ONLY_EXPORT_TRAIT_COLUMNS = ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program',
+                                      'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
+
+
+def donation_compare_all_sheets(results_dict) -> dict:
+    """Compare-all export: one sheet per population mode ('Copula', 'ResSpec',
+    'ResBase') with the agent id, the trait columns (shortened names) and one
+    donation column per income mode. A population mode without results has no
+    sheet, so the dict may be empty."""
+    trait_columns = DONATION_ONLY_EXPORT_TRAIT_COLUMNS
+    population_modes = [
+        ('copula', 'Copula'),
+        ('research_spec', 'ResSpec'),
+        ('research_baseline', 'ResBase')
+    ]
+    
+    sheets_data = {}  # Store DataFrames for each sheet
+    
+    for pop_key, pop_prefix in population_modes:
+        # Find the DataFrames for this population mode
+        cat_key = f"{pop_key}_categorical"
+        cont_key = f"{pop_key}_continuous"
+        
+        cat_df = results_dict.get(cat_key)
+        cont_df = results_dict.get(cont_key)
+        
+        # Use whichever DataFrame is available for traits (they have the same agents)
+        base_df = cat_df if cat_df is not None and not cat_df.empty else cont_df
+        
+        if base_df is None or base_df.empty:
+            continue
+        
+        # Build DataFrame for this population mode
+        sheet_data = {}
+        
+        # Add Agent ID
+        if 'agent_id' in base_df.columns:
+            sheet_data['Agent_ID'] = base_df['agent_id'].values
+        else:
+            sheet_data['Agent_ID'] = list(range(1, len(base_df) + 1))
+        
+        # Add trait columns
+        for trait in trait_columns:
+            if trait in base_df.columns:
+                # Use shorter column names for readability
+                short_trait = trait.replace('Assigned Allowance Level', 'Income_Level')
+                short_trait = short_trait.replace('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 'TWT_Sospeso')
+                short_trait = short_trait.replace('Group_experiment', 'Group')
+                short_trait = short_trait.replace('Study Program', 'Study_Program')
+                sheet_data[short_trait] = base_df[trait].values
+        
+        # Add donation columns for each income mode
+        if cat_df is not None and not cat_df.empty and 'donation_default' in cat_df.columns:
+            sheet_data['donation_Categorical'] = cat_df['donation_default'].values
+        
+        if cont_df is not None and not cont_df.empty and 'donation_default' in cont_df.columns:
+            sheet_data['donation_Continuous'] = cont_df['donation_default'].values
+        
+        # Create DataFrame for this sheet
+        sheet_df = pd.DataFrame(sheet_data)
+        sheets_data[pop_prefix] = sheet_df
+
+    return sheets_data
+
+
+def donation_all_configs_frame(results_dict) -> pd.DataFrame:
+    """Same-population export of several configurations (e.g. Compare both): the
+    first configuration's trait columns, 'Agent ID' first, then one
+    `donation_default_<Config>` column per configuration (same agents, so the
+    rows line up)."""
+    trait_columns = DONATION_ONLY_EXPORT_TRAIT_COLUMNS
+    first_config_df = next(iter(results_dict.values()))
+    available_traits = [col for col in trait_columns if col in first_config_df.columns]
+    combined_df = first_config_df[available_traits].copy()
+    
+    # Add agent_id if it exists
+    if 'agent_id' in first_config_df.columns:
+        combined_df['Agent ID'] = first_config_df['agent_id'].values
+    
+    # Add donation_default from each configuration
+    for config_key, config_df in results_dict.items():
+        if not config_df.empty and 'donation_default' in config_df.columns:
+            config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
+            new_col_name = f"donation_default_{config_suffix}"
+            combined_df[new_col_name] = config_df['donation_default'].values
+    
+    # Reorder columns to put Agent ID first
+    if 'Agent ID' in combined_df.columns:
+        cols = ['Agent ID'] + [col for col in combined_df.columns if col != 'Agent ID']
+        combined_df = combined_df[cols]
+
+    return combined_df
+
+
+def donation_single_export_frame(df) -> pd.DataFrame:
+    """Single-configuration export: the (already donation-only) frame with
+    Decision 4's 'consensus' columns named 'integrated' and `agent_id` renamed to
+    'Agent ID', first."""
+    # (Decision 4 columns say "integrated", not "consensus")
+    df_export = rename_consensus_columns(df.copy())
+    
+    # Rename agent_id to 'Agent ID' for clarity
+    if 'agent_id' in df_export.columns:
+        df_export = df_export.rename(columns={'agent_id': 'Agent ID'})
+    
+    # Reorder columns to put Agent ID first
+    if 'Agent ID' in df_export.columns:
+        cols = ['Agent ID'] + [col for col in df_export.columns if col != 'Agent ID']
+        df_export = df_export[cols]
+
+    return df_export

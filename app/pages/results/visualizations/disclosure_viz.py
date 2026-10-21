@@ -17,6 +17,8 @@ from app.reports.disclosure import (
     build_disclose_income_xlsx,
     build_disclosure_xlsx,
     customer_type_summary_frame,
+    disclose_documents_choice_counts,
+    disclose_income_choice_counts,
     prepare_disclose_documents_excel_data,
     prepare_disclose_income_excel_data,
     prepare_disclosure_excel_data,
@@ -51,24 +53,18 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
     """Visualization for disclose_income - binary Y/N choice"""
 
     # Binary choice metrics
+    counts = disclose_income_choice_counts(decision_data)
+    value_counts = counts['value_counts']
     col1, col2, col3, col4 = st.columns(4)
 
-    value_counts = decision_data.value_counts()
-    total = len(decision_data)
-
     with col1:
-        st.metric("Total Agents", f"{total:,}")
+        st.metric("Total Agents", f"{counts['total']:,}")
     with col2:
-        yes_count = value_counts.get('Y', 0)
-        pct_yes = (yes_count/total)*100
-        st.metric("Disclosed income (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
+        st.metric("Disclosed income (Y)", f"{counts['yes_count']:,} ({counts['pct_yes']:.2f}%)")
     with col3:
-        no_count = value_counts.get('N', 0)
-        pct_no = (no_count/total)*100
-        st.metric("Not disclosed income (N)", f"{no_count:,} ({pct_no:.2f}%)")
+        st.metric("Not disclosed income (N)", f"{counts['no_count']:,} ({counts['pct_no']:.2f}%)")
     with col4:
-        disclosure_rate = (yes_count/total)*100
-        st.metric("Disclosure Rate", f"{disclosure_rate:.2f}%")
+        st.metric("Disclosure Rate", f"{counts['disclosure_rate']:.2f}%")
 
     # Check if raw DI values are available for histogram
     has_raw_values = 'disclose_income_raw' in df.columns
@@ -95,13 +91,6 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                 # Calculate statistics
                 stats = raw_value_stats(raw_values)
                 mean_val = stats['mean']
-
-                # Calculate Y/N split based on threshold
-                y_count_raw = (raw_values > 0).sum()
-                n_count_raw = (raw_values <= 0).sum()
-                total_raw = len(raw_values)
-                y_pct_raw = (y_count_raw / total_raw) * 100 if total_raw > 0 else 0
-                n_pct_raw = (n_count_raw / total_raw) * 100 if total_raw > 0 else 0
 
                 mode_suffix = _income_mode_suffix()
 
@@ -214,11 +203,10 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
     """
 
     # Separate NA (not applicable) from Y/N choices
-    value_counts = decision_data.value_counts()
-    total_agents = len(decision_data)
-
-    na_count = value_counts.get('NA', 0)
-    qualified_agents = total_agents - na_count
+    counts = disclose_documents_choice_counts(decision_data)
+    total_agents = counts['total_agents']
+    na_count = counts['na_count']
+    qualified_agents = counts['qualified_agents']
 
     # Show overall metrics
     st.markdown("### Eligibility & Application")
@@ -241,28 +229,22 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
         # Binary choice metrics for qualified agents only
         col1, col2, col3, col4 = st.columns(4)
 
-        yes_count = value_counts.get('Y', 0)
-        no_count = value_counts.get('N', 0)
-
         with col1:
             st.metric("Qualified Agents", f"{qualified_agents:,}")
         with col2:
-            pct_yes = (yes_count/qualified_agents)*100
-            st.metric("Disclosed documents (Y)", f"{yes_count:,} ({pct_yes:.2f}%)")
+            st.metric("Disclosed documents (Y)", f"{counts['yes_count']:,} ({counts['pct_yes']:.2f}%)")
         with col3:
-            pct_no = (no_count/qualified_agents)*100
-            st.metric("Not disclosed documents (N)", f"{no_count:,} ({pct_no:.2f}%)")
+            st.metric("Not disclosed documents (N)", f"{counts['no_count']:,} ({counts['pct_no']:.2f}%)")
         with col4:
-            disclosure_rate = (yes_count/qualified_agents)*100
-            st.metric("Disclosure Rate", f"{disclosure_rate:.2f}%",
+            st.metric("Disclosure Rate", f"{counts['disclosure_rate']:.2f}%",
                       help="Percentage of qualified agents who disclosed documents")
 
         # TWO-COLUMN LAYOUT: Pie chart on left, raw histogram on right (mirrors Disclose Income)
         col_pie, col_hist = st.columns(2)
 
         with col_pie:
-            # Filter out NA for the pie chart
-            qualified_counts = {k: v for k, v in value_counts.items() if k != 'NA'}
+            # NA filtered out for the pie chart
+            qualified_counts = counts['qualified_counts']
             if len(qualified_counts) > 0:
                 st.markdown(f"**{decision_title} Distribution**")
                 fig = px.pie(

@@ -1,13 +1,9 @@
 import streamlit as st
-import pandas as pd
 from datetime import datetime
 from src.contract.columns import rename_consensus_columns
 from app.models import initialize_session_state
-from app.utils.timestamp_utils import (
-    get_duration_hours,
-    get_periods,
-    get_simulation_base_time,
-)
+from app.reports import timestamps
+from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.reports import (
     apply_export_price_formatting,
     build_agent_level_dataframe,
@@ -18,6 +14,10 @@ from app.reports import (
     disclose_documents_export_sheets,
     disclose_income_compare_all_sheets,
     disclose_income_compare_both_sheets,
+    DONATION_ONLY_EXPORT_TRAIT_COLUMNS,
+    donation_all_configs_frame,
+    donation_compare_all_sheets,
+    donation_single_export_frame,
     prepare_disclose_documents_excel_data,
     prepare_disclose_income_excel_data,
     rtd_config_sheet_prefix,
@@ -49,6 +49,63 @@ def _is_compare_all_mode(results_dict):
     return population_count >= 2
 
 
+_XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+def _xlsx_download_button(label, data, file_name, help):
+    """One (unkeyed) Excel download button of the export section."""
+    st.download_button(
+        label=label,
+        data=data,
+        file_name=file_name,
+        mime=_XLSX_MIME,
+        help=help
+    )
+
+
+def _column_list(columns, max_columns=None):
+    """The column names joined by ', ': all of them, or the first `max_columns`
+    followed by '...' when there are more."""
+    if max_columns is None:
+        return ', '.join(columns)
+    return f"{', '.join(columns[:max_columns])}{'...' if len(columns) > max_columns else ''}"
+
+
+def _preview_frame(frame, max_columns=None):
+    """Preview of one export frame: its first 5 rows and its column list."""
+    st.dataframe(frame.head(), use_container_width=True)
+    st.caption(f"**Columns ({len(frame.columns)})**: {_column_list(frame.columns, max_columns)}")
+
+
+def _preview_sheets(sheets, caption=True, max_columns=None, as_text=False):
+    """Preview of a multi-sheet export: per sheet its name, its first 5 rows
+    (as text when `as_text`) and, when `caption`, its column list."""
+    for sheet_name, sheet_df in sheets.items():
+        st.markdown(f"**{sheet_name} Sheet:**")
+        st.dataframe(sheet_df.head().astype(str) if as_text else sheet_df.head(), use_container_width=True)
+        if caption:
+            st.caption(f"Columns: {_column_list(sheet_df.columns, max_columns)}")
+
+
+def _metrics_row(metrics):
+    """(label, value) metrics: one on its own, several in equal columns."""
+    if len(metrics) == 1:
+        st.metric(*metrics[0])
+    else:
+        for column, (name, value) in zip(st.columns(len(metrics)), metrics):
+            with column:
+                st.metric(name, value)
+
+
+def _download_with_preview(metrics, label, data, file_name, help, preview_title, preview):
+    """The block the export section repeats per export: a row of metrics, the
+    Excel download button and a preview expander filled by `preview()`."""
+    _metrics_row(metrics)
+    _xlsx_download_button(label, data, file_name, help)
+    with st.expander(preview_title):
+        preview()
+
+
 def render_export_section(df, results_dict=None, using_selected_config=False):
     """Render the export/download section (simplified)"""
     from app.pages.results.run_context import RunContext
@@ -68,8 +125,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     st.subheader("💾 Export Results")
     
     # Check if this is a donation-only run (special simplified export)
-    trait_columns = ['Honesty_Humility', 'Assigned Allowance Level', 'Study Program', 
-                     'Group_experiment', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
+    trait_columns = DONATION_ONLY_EXPORT_TRAIT_COLUMNS
     
     is_donation_only_run = ctx.is_individual_run('donation_default')
 
@@ -119,58 +175,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             if export_all_configs and is_compare_all:
                 # COMPARE ALL MODE: Each population mode gets its own sheet
                 # Each sheet contains traits + both categorical and continuous donation columns
-                
-                population_modes = [
-                    ('copula', 'Copula'),
-                    ('research_spec', 'ResSpec'),
-                    ('research_baseline', 'ResBase')
-                ]
-                
-                sheets_data = {}  # Store DataFrames for each sheet
-                
-                for pop_key, pop_prefix in population_modes:
-                    # Find the DataFrames for this population mode
-                    cat_key = f"{pop_key}_categorical"
-                    cont_key = f"{pop_key}_continuous"
-                    
-                    cat_df = results_dict.get(cat_key)
-                    cont_df = results_dict.get(cont_key)
-                    
-                    # Use whichever DataFrame is available for traits (they have the same agents)
-                    base_df = cat_df if cat_df is not None and not cat_df.empty else cont_df
-                    
-                    if base_df is None or base_df.empty:
-                        continue
-                    
-                    # Build DataFrame for this population mode
-                    sheet_data = {}
-                    
-                    # Add Agent ID
-                    if 'agent_id' in base_df.columns:
-                        sheet_data['Agent_ID'] = base_df['agent_id'].values
-                    else:
-                        sheet_data['Agent_ID'] = list(range(1, len(base_df) + 1))
-                    
-                    # Add trait columns
-                    for trait in trait_columns:
-                        if trait in base_df.columns:
-                            # Use shorter column names for readability
-                            short_trait = trait.replace('Assigned Allowance Level', 'Income_Level')
-                            short_trait = short_trait.replace('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 'TWT_Sospeso')
-                            short_trait = short_trait.replace('Group_experiment', 'Group')
-                            short_trait = short_trait.replace('Study Program', 'Study_Program')
-                            sheet_data[short_trait] = base_df[trait].values
-                    
-                    # Add donation columns for each income mode
-                    if cat_df is not None and not cat_df.empty and 'donation_default' in cat_df.columns:
-                        sheet_data['donation_Categorical'] = cat_df['donation_default'].values
-                    
-                    if cont_df is not None and not cont_df.empty and 'donation_default' in cont_df.columns:
-                        sheet_data['donation_Continuous'] = cont_df['donation_default'].values
-                    
-                    # Create DataFrame for this sheet
-                    sheet_df = pd.DataFrame(sheet_data)
-                    sheets_data[pop_prefix] = sheet_df
+                sheets_data = donation_compare_all_sheets(results_dict)
                 
                 if not sheets_data:
                     st.warning("⚠️ No data available for export")
@@ -183,30 +188,9 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 # Show metrics
                 total_sheets = len(sheets_data)
                 first_sheet_df = next(iter(sheets_data.values()))
-                n_agents = len(first_sheet_df)
-                n_columns = len(first_sheet_df.columns)
-                
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Sheets", total_sheets)
-                with col2:
-                    st.metric("Agents per Sheet", n_agents)
-                with col3:
-                    st.metric("Columns per Sheet", n_columns)
-                
-                excel_label = f"📊 Download Donation Excel ({total_sheets} Sheets)"
-                excel_filename = f"donation_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                
-                st.download_button(
-                    label=excel_label,
-                    data=excel_bytes,
-                    file_name=excel_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Each population mode has its own sheet with traits and donation rates for both income modes"
-                )
                 
                 # Show preview with explanation
-                with st.expander("📋 Preview Donation Data (first 5 rows per sheet)"):
+                def preview():
                     st.info("""
                     **Sheet Structure:**
                     - **Copula**: Synthetic agents generated from copula
@@ -215,92 +199,57 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     
                     Each sheet contains Agent ID, traits, and donation rates for both Categorical and Continuous income modes.
                     """)
-                    
-                    for sheet_name, sheet_df in sheets_data.items():
-                        st.markdown(f"**{sheet_name} Sheet:**")
-                        st.dataframe(sheet_df.head(), use_container_width=True)
-                        st.caption(f"Columns: {', '.join(sheet_df.columns)}")
+                    _preview_sheets(sheets_data)
+                
+                _download_with_preview(
+                    [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
+                     ("Columns per Sheet", len(first_sheet_df.columns))],
+                    label=f"📊 Download Donation Excel ({total_sheets} Sheets)",
+                    data=excel_bytes,
+                    file_name=f"donation_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help="Each population mode has its own sheet with traits and donation rates for both income modes",
+                    preview_title="📋 Preview Donation Data (first 5 rows per sheet)",
+                    preview=preview,
+                )
             
             elif export_all_configs:
                 # SAME POPULATION MODE: Multiple income modes with same agents
                 # Safe to combine by row since agents are identical
-                first_config_df = next(iter(results_dict.values()))
-                available_traits = [col for col in trait_columns if col in first_config_df.columns]
-                combined_df = first_config_df[available_traits].copy()
-                
-                # Add agent_id if it exists
-                if 'agent_id' in first_config_df.columns:
-                    combined_df['Agent ID'] = first_config_df['agent_id'].values
-                
-                # Add donation_default from each configuration
-                for config_key, config_df in results_dict.items():
-                    if not config_df.empty and 'donation_default' in config_df.columns:
-                        config_suffix = config_key.replace('_', ' ').title().replace(' ', '_')
-                        new_col_name = f"donation_default_{config_suffix}"
-                        combined_df[new_col_name] = config_df['donation_default'].values
-                
-                # Reorder columns to put Agent ID first
-                if 'Agent ID' in combined_df.columns:
-                    cols = ['Agent ID'] + [col for col in combined_df.columns if col != 'Agent ID']
-                    combined_df = combined_df[cols]
+                combined_df = donation_all_configs_frame(results_dict)
                 
                 # Apply 2-decimal formatting to price/rate columns
                 excel_bytes = to_xlsx_bytes(
                     {'All Configurations': combined_df}, apply_export_price_formatting
                 )
                 
-                st.metric("Total Agents", len(combined_df))
-                
-                excel_label = f"📊 Download Donation Excel (All {len(results_dict)} Configs)"
-                excel_filename = f"donation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                
-                st.download_button(
-                    label=excel_label,
+                _download_with_preview(
+                    [("Total Agents", len(combined_df))],
+                    label=f"📊 Download Donation Excel (All {len(results_dict)} Configs)",
                     data=excel_bytes,
-                    file_name=excel_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help=f"Donation results with {len(results_dict)} configurations for comparison"
+                    file_name=f"donation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help=f"Donation results with {len(results_dict)} configurations for comparison",
+                    preview_title="📋 Preview Donation Data (first 5 rows)",
+                    preview=lambda: _preview_frame(combined_df, 10),
                 )
-                
-                # Show preview
-                with st.expander("📋 Preview Donation Data (first 5 rows)"):
-                    st.dataframe(combined_df.head(), use_container_width=True)
-                    st.caption(f"**Columns ({len(combined_df.columns)})**: {', '.join(combined_df.columns[:10])}{'...' if len(combined_df.columns) > 10 else ''}")
             
             else:
                 # SINGLE CONFIG: Simple export with just one configuration
-                # (Decision 4 columns say "integrated", not "consensus")
-                df_export = rename_consensus_columns(df.copy())
-                
-                # Rename agent_id to 'Agent ID' for clarity
-                if 'agent_id' in df_export.columns:
-                    df_export = df_export.rename(columns={'agent_id': 'Agent ID'})
-                
-                # Reorder columns to put Agent ID first
-                if 'Agent ID' in df_export.columns:
-                    cols = ['Agent ID'] + [col for col in df_export.columns if col != 'Agent ID']
-                    df_export = df_export[cols]
+                df_export = donation_single_export_frame(df)
                 
                 # Apply 2-decimal formatting to price/rate columns
                 excel_bytes = to_xlsx_bytes(
                     {'Donation Results': df_export}, apply_export_price_formatting
                 )
                 
-                st.metric("Total Agents", len(df_export))
-                
-                excel_filename = f"donation_default_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                st.download_button(
+                _download_with_preview(
+                    [("Total Agents", len(df_export))],
                     label="📊 Download Donation Default Excel",
                     data=excel_bytes,
-                    file_name=excel_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Donation results with agent traits and donation rates"
+                    file_name=f"donation_default_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help="Donation results with agent traits and donation rates",
+                    preview_title="📋 Preview Donation Data (first 5 rows)",
+                    preview=lambda: _preview_frame(df_export),
                 )
-                
-                # Show preview
-                with st.expander("📋 Preview Donation Data (first 5 rows)"):
-                    st.dataframe(df_export.head(), use_container_width=True)
-                    st.caption(f"**Columns ({len(df_export.columns)})**: {', '.join(df_export.columns)}")
         
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
@@ -364,30 +313,9 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     # Show metrics
                     total_sheets = len(sheets_data)
                     first_sheet_df = next(iter(sheets_data.values()))
-                    n_agents = len(first_sheet_df)
-                    n_columns = len(first_sheet_df.columns)
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Sheets", total_sheets)
-                    with col2:
-                        st.metric("Agents per Sheet", n_agents)
-                    with col3:
-                        st.metric("Columns per Sheet", n_columns)
-                    
-                    excel_label = f"📊 Download Disclose Income Excel ({total_sheets} Sheets)"
-                    excel_filename = f"disclose_income_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    
-                    st.download_button(
-                        label=excel_label,
-                        data=excel_bytes,
-                        file_name=excel_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        help="Each configuration (population mode + income mode) has its own sheet"
-                    )
                     
                     # Show preview
-                    with st.expander("📋 Preview Disclose Income Data (first 5 rows per sheet)"):
+                    def preview():
                         st.info("""
                         **Sheet Structure (separate sheets for each configuration):**
                         - **Copula_Cat / Copula_Cont**: Synthetic agents with Categorical/Continuous income
@@ -396,11 +324,18 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                         
                         Each sheet contains all 19 disclose income columns with PB_i, DI_i, and disclose_income values specific to that configuration.
                         """)
-                        
-                        for sheet_name, sheet_df in sheets_data.items():
-                            st.markdown(f"**{sheet_name} Sheet:**")
-                            st.dataframe(sheet_df.head(), use_container_width=True)
-                            st.caption(f"Columns: {', '.join(sheet_df.columns[:10])}{'...' if len(sheet_df.columns) > 10 else ''}")
+                        _preview_sheets(sheets_data, max_columns=10)
+                    
+                    _download_with_preview(
+                        [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
+                         ("Columns per Sheet", len(first_sheet_df.columns))],
+                        label=f"📊 Download Disclose Income Excel ({total_sheets} Sheets)",
+                        data=excel_bytes,
+                        file_name=f"disclose_income_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        help="Each configuration (population mode + income mode) has its own sheet",
+                        preview_title="📋 Preview Disclose Income Data (first 5 rows per sheet)",
+                        preview=preview,
+                    )
             
             elif export_all_configs:
                 # COMPARE BOTH MODE: Separate sheets for each income mode
@@ -415,30 +350,9 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                     # Show metrics
                     total_sheets = len(sheets_data)
                     first_sheet_df = next(iter(sheets_data.values()))
-                    n_agents = len(first_sheet_df)
-                    n_columns = len(first_sheet_df.columns)
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Sheets", total_sheets)
-                    with col2:
-                        st.metric("Agents per Sheet", n_agents)
-                    with col3:
-                        st.metric("Columns per Sheet", n_columns)
-                    
-                    excel_label = f"📊 Download Disclose Income Excel ({total_sheets} Sheets)"
-                    excel_filename = f"disclose_income_compare_both_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    
-                    st.download_button(
-                        label=excel_label,
-                        data=excel_bytes,
-                        file_name=excel_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        help="Each income mode has its own sheet with all 19 disclose income columns"
-                    )
                     
                     # Show preview
-                    with st.expander("📋 Preview Disclose Income Data (first 5 rows per sheet)"):
+                    def preview():
                         st.info("""
                         **Sheet Structure:**
                         - **Categorical**: Results with categorical income treatment
@@ -446,10 +360,18 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                         
                         Each sheet contains all 19 columns with PB_i, DI_i, and disclose_income values specific to that income mode.
                         """)
-                        for sheet_name, sheet_df in sheets_data.items():
-                            st.markdown(f"**{sheet_name} Sheet:**")
-                            st.dataframe(sheet_df.head(), use_container_width=True)
-                            st.caption(f"Columns: {', '.join(sheet_df.columns[:10])}{'...' if len(sheet_df.columns) > 10 else ''}")
+                        _preview_sheets(sheets_data, max_columns=10)
+                    
+                    _download_with_preview(
+                        [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
+                         ("Columns per Sheet", len(first_sheet_df.columns))],
+                        label=f"📊 Download Disclose Income Excel ({total_sheets} Sheets)",
+                        data=excel_bytes,
+                        file_name=f"disclose_income_compare_both_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        help="Each income mode has its own sheet with all 19 disclose income columns",
+                        preview_title="📋 Preview Disclose Income Data (first 5 rows per sheet)",
+                        preview=preview,
+                    )
             
             else:
                 # SINGLE CONFIG: Simple export with just one configuration
@@ -460,21 +382,15 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 else:
                     excel_bytes = build_disclose_income_results_xlsx(export_df)
                     
-                    st.metric("Total Agents", len(export_df))
-                    
-                    excel_filename = f"disclose_income_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    st.download_button(
+                    _download_with_preview(
+                        [("Total Agents", len(export_df))],
                         label="📊 Download Disclose Income Excel",
                         data=excel_bytes,
-                        file_name=excel_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        help="Disclose income results with all 19 columns"
+                        file_name=f"disclose_income_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        help="Disclose income results with all 19 columns",
+                        preview_title="📋 Preview Disclose Income Data (first 5 rows)",
+                        preview=lambda: _preview_frame(export_df),
                     )
-                    
-                    # Show preview
-                    with st.expander("📋 Preview Disclose Income Data (first 5 rows)"):
-                        st.dataframe(export_df.head(), use_container_width=True)
-                        st.caption(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns)}")
         
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
@@ -501,40 +417,31 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 else:
                     excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
                     first = next(iter(sheets_data.values()))
-                    c1, c2, c3 = st.columns(3)
-                    with c1: st.metric("Sheets", len(sheets_data))
-                    with c2: st.metric("Agents per Sheet", len(first))
-                    with c3: st.metric("Columns per Sheet", len(first.columns))
-                    st.download_button(
+                    _download_with_preview(
+                        [("Sheets", len(sheets_data)), ("Agents per Sheet", len(first)),
+                         ("Columns per Sheet", len(first.columns))],
                         label=f"📄 Download Agent Disclose Documents Data ({len(sheets_data)} Sheets)",
                         data=excel_bytes,
                         file_name=f"disclose_documents_compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Each configuration (population × income mode) has its own sheet",
+                        preview_title="📋 Preview Disclose Documents Data (first 5 rows per sheet)",
+                        preview=lambda: _preview_sheets(sheets_data, caption=False),
                     )
-                    with st.expander("📋 Preview Disclose Documents Data (first 5 rows per sheet)"):
-                        for name, sdf in sheets_data.items():
-                            st.markdown(f"**{name} Sheet:**")
-                            st.dataframe(sdf.head(), use_container_width=True)
             else:
                 export_df = prepare_disclose_documents_excel_data(df)
                 if export_df is None or export_df.empty:
                     st.warning("⚠️ No disclose documents data available for export")
                 else:
                     excel_bytes = build_disclose_documents_results_xlsx(export_df)
-                    c1, c2 = st.columns(2)
-                    with c1: st.metric("Agents", len(export_df))
-                    with c2: st.metric("Columns", len(export_df.columns))
-                    st.download_button(
+                    _download_with_preview(
+                        [("Agents", len(export_df)), ("Columns", len(export_df.columns))],
                         label="📄 Download Agent Disclose Documents Data",
                         data=excel_bytes,
                         file_name=f"disclose_documents_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         help="Disclose documents results with the full calculation chain",
+                        preview_title="📋 Preview Disclose Documents Data (first 5 rows)",
+                        preview=lambda: _preview_frame(export_df),
                     )
-                    with st.expander("📋 Preview Disclose Documents Data (first 5 rows)"):
-                        st.dataframe(export_df.head(), use_container_width=True)
-                        st.caption(f"**Columns ({len(export_df.columns)})**: {', '.join(export_df.columns)}")
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
 
@@ -603,24 +510,18 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             else:
                 excel_bytes = rtd_model_xlsx_bytes(sheets_data)
                 first = next(iter(sheets_data.values()))
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.metric("Agents", len(first))
-                with c2:
-                    st.metric("Sheets", len(sheets_data))
+                # the one keyed download of the section, so it is drawn here
+                _metrics_row([("Agents", len(first)), ("Sheets", len(sheets_data))])
                 st.download_button(
                     label="📊 Download Decision 4 Agent-Level Excel",
                     data=excel_bytes,
                     file_name=f"rejected_transaction_defaults_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    mime=_XLSX_MIME,
                     help="One row per agent with the Decision 4 element results",
                     key="rtd_export_section_download",
                 )
                 with st.expander("📋 Preview Decision 4 Data (first 5 rows per sheet)"):
-                    for sheet_name, sheet_df in sheets_data.items():
-                        st.markdown(f"**{sheet_name} Sheet:**")
-                        st.dataframe(sheet_df.head().astype(str), use_container_width=True)
-                        st.caption(f"Columns: {', '.join(sheet_df.columns)}")
+                    _preview_sheets(sheets_data, as_text=True)
         except ImportError:
             st.caption("⚠️ Excel export requires openpyxl")
 
@@ -655,10 +556,12 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 df,
                 vendors_data=vendors_data,
                 # The three session values the builder's TimestampConverter used
-                # to read for itself; the same readers, so the same converter.
-                base_time=get_simulation_base_time(),
-                duration_hours=get_duration_hours(),
-                periods=get_periods(),
+                # to read for itself: today's midnight (through the module, so a
+                # patched `timestamps.midnight_of` is honoured) and Page 1's
+                # period duration and period count.
+                base_time=timestamps.midnight_of(datetime.now()),
+                duration_hours=float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
+                periods=int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
                 market_price=getattr(sim_params, 'market_price', 100.0),
                 platform_markup=getattr(sim_params, 'platform_markup', 0.1),
                 price_range=getattr(sim_params, 'price_range', 0.25),
@@ -693,35 +596,29 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             col1, col2 = st.columns(2)
             
             with col1:
-                agent_filename = f"simulation_agent_level_{timestamp}.xlsx"
-                st.download_button(
-                    label="📊 Download Agent-Level Excel",
-                    data=agent_bytes,
-                    file_name=agent_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help=f"Agent-level data: {len(agent_df)} agents × {len(agent_df.columns)} columns"
+                _xlsx_download_button(
+                    "📊 Download Agent-Level Excel",
+                    agent_bytes,
+                    f"simulation_agent_level_{timestamp}.xlsx",
+                    f"Agent-level data: {len(agent_df)} agents × {len(agent_df.columns)} columns"
                 )
             
             with col2:
-                transaction_filename = f"simulation_transaction_level_{timestamp}.xlsx"
-                st.download_button(
-                    label="📊 Download Transaction-Level Excel",
-                    data=transaction_bytes,
-                    file_name=transaction_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help=f"Transaction-level data: {len(transaction_df)} transactions × {len(transaction_df.columns)} columns"
+                _xlsx_download_button(
+                    "📊 Download Transaction-Level Excel",
+                    transaction_bytes,
+                    f"simulation_transaction_level_{timestamp}.xlsx",
+                    f"Transaction-level data: {len(transaction_df)} transactions × {len(transaction_df.columns)} columns"
                 )
             
             # Show preview of what's in each file
             st.markdown("### 📋 Data Preview")
             
             with st.expander("👥 Preview Agent-Level Data (first 5 rows)"):
-                st.dataframe(agent_df.head(), use_container_width=True)
-                st.caption(f"**Columns ({len(agent_df.columns)})**: {', '.join(agent_df.columns[:15])}{'...' if len(agent_df.columns) > 15 else ''}")
+                _preview_frame(agent_df, 15)
             
             with st.expander("🔄 Preview Transaction-Level Data (first 5 rows)"):
-                st.dataframe(transaction_df.head(), use_container_width=True)
-                st.caption(f"**Columns ({len(transaction_df.columns)})**: {', '.join(transaction_df.columns[:15])}{'...' if len(transaction_df.columns) > 15 else ''}")
+                _preview_frame(transaction_df, 15)
             
         except Exception as e:
             st.error(f"Error creating Excel export: {str(e)}")

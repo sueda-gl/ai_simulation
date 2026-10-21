@@ -42,8 +42,8 @@ def build_transaction_level_dataframe(
         df: Original simulation results DataFrame
         vendors_data: List of vendor dictionaries (optional)
         base_time: Base datetime every timestamp string is relative to (the page
-            reads it from ``app.utils.timestamp_utils.get_simulation_base_time``).
-        periods: Number of periods in the run (was ``get_periods()``).
+            passes ``timestamps.midnight_of(datetime.now())``).
+        periods: Number of periods in the run (was ``sim_params.periods``).
         market_price: Market price (was ``sim_params.market_price``)
         platform_markup: Platform markup (was ``sim_params.platform_markup``)
         price_range: Purchase-Now price range (was ``sim_params.price_range``)
@@ -227,36 +227,17 @@ def build_transaction_level_dataframe(
             bid_value = request.get('bid_value', 'N/A')
             
             # Determine purchase request type and customer price
-            # Customer Type can be: 'Regular', 'Fixed', or 'Bid'
-            # Note: 'PN' (Purchase Now) is treated as a sub-type of 'Regular' or 'Bid' but for high-level Customer Type
-            # we classify it based on the platform price mechanism.
-            
-            customer_type_str = 'Regular' # Default
-            
             if platform_price == 'DISCOUNT':
                 purchase_request_type = 'Discount'
                 customer_price = np.nan  # set by the platform algorithm; exported as N/A
-                customer_type_str = 'Regular' # Discount is a type of regular price
             elif platform_price == 'FIXED':
                 purchase_request_type = 'Fixed'
                 customer_price = np.nan  # set by the platform algorithm; exported as N/A
-                customer_type_str = 'Fixed'
             elif platform_price == 'PN':
                 purchase_request_type = 'Purchase Now'
                 customer_price = pn_price
-                # PN is typically available in Bid scenarios or as a specific option, 
-                # but if it stands alone or is the chosen option, it's a fixed price purchase.
-                # However, user requested mapping: Regular, Bid, Fixed.
-                # If PN is a "buy it now" option in a bid, it might be considered 'Bid' context or 'Fixed' price execution.
-                # Let's look at how customer_type is derived in the simulation.
-                # If customer_type variable exists, use it.
-                if customer_type:
-                     customer_type_str = customer_type.capitalize()
-                else:
-                     customer_type_str = 'Regular' 
             elif platform_price == 'BID':
                 purchase_request_type = 'Bid'
-                customer_type_str = 'Bid'
                 try:
                     # For BID transactions, Customer Price is the bid amount if successful
                     bid_val_numeric = float(bid_value) if bid_value != 'N/A' else pn_price
@@ -266,7 +247,6 @@ def build_transaction_level_dataframe(
             else:
                 purchase_request_type = customer_type.capitalize() if customer_type else 'Regular'
                 customer_price = pn_price
-                customer_type_str = 'Regular'
             
             # Display customer price:
             # - For Purchase Now: pn_price

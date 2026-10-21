@@ -3,11 +3,11 @@
 Everything the transaction visualisations write to a file or compute as a
 statistic, minus the Decision 4 model sheets (those live in `app.reports.rtd`):
 
-* Decision 3 - "purchase now vs bid": the request-level export and the PN/BID
+* Decision 9 - "purchase now vs bid": the request-level export and the PN/BID
   request statistics.
 * Decision 4 in DEFAULT (unselected) mode - the priority-lists export and the
   priority statistics shown alongside it.
-* Decision 5 - "rejected transaction option": the result value counts.
+* Decision 11 - "rejected transaction option": the result value counts.
 
 `app/pages/results/visualizations/transaction_viz.py` imports them and keeps
 only the Streamlit rendering. Nothing here imports Streamlit or reads session
@@ -19,7 +19,7 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 
-from app.reports.xlsx import apply_transaction_price_formatting, to_xlsx_bytes
+from app.reports.xlsx import apply_transaction_price_formatting, period_sheets, to_xlsx_bytes
 
 
 def build_purchase_vs_bid_export(
@@ -47,8 +47,6 @@ def build_purchase_vs_bid_export(
     
     Records are sorted by timestamp in chronological order.
     """
-    from datetime import datetime, timedelta
-    
     transaction_records = []
     
     if 'purchase_requests' not in df.columns:
@@ -233,17 +231,8 @@ def build_purchase_vs_bid_export(
 
 def purchase_vs_bid_xlsx_bytes(export_df):
     """Purchase-now-vs-bid workbook bytes: `Total` plus one sheet per period."""
-    # Sheet 1: Total (all data)
-    sheets = {'Total': export_df}
-
-    # Additional sheets by Period
-    if 'Period' in export_df.columns:
-        periods = sorted(export_df['Period'].dropna().unique())
-        for period in periods:
-            sheets[f'Period {int(period)}'] = export_df[export_df['Period'] == period]
-
     # 2-decimal formatting on every sheet
-    return to_xlsx_bytes(sheets, apply_transaction_price_formatting)
+    return to_xlsx_bytes(period_sheets(export_df), apply_transaction_price_formatting)
 
 
 def purchase_vs_bid_request_counts(df):
@@ -326,7 +315,7 @@ def priority_first_choice_counts(decision_data):
 
 
 def rejected_option_value_counts(decision_data):
-    """(value counts of the chosen option, most common option) for Decision 5."""
+    """(value counts of the chosen option, most common option) for Decision 11."""
     value_counts = decision_data.value_counts()
     current_option = value_counts.index[0] if len(value_counts) > 0 else "forgo_transaction"
     return value_counts, current_option

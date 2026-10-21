@@ -122,113 +122,116 @@ def render_configuration_selection_ui(results_dict, ctx=None):
         render_complete_simulation_section()
 
 
-def render_disclose_income_config_selection_ui(results_dict, ctx=None):
-    """Render configuration selection UI for disclose_income decision results"""
+def _di_dd_banner_title(label):
+    """Banner title of Decisions 1 and 2: the saved configuration's income mode."""
+    def title(config):
+        income_mode = config.get('params', {}).get('income_mode', config.get('income_mode', 'Unknown'))
+        return f"✅ **Selected {label} Configuration**: {income_mode}"
+    return title
+
+
+def _y_rate_caption(label):
+    """Left-hand caption of the Decision 1 / 2 banner: the saved Y rate."""
+    def caption(config, metrics):
+        y_rate = metrics.get('y_rate', 0)
+        st.caption(f"{label}: {y_rate:.2%}")
+    return caption
+
+
+def _rtd_banner_title(config):
+    """Banner title of Decision 4: population mode + income mode."""
+    income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+    population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+    return (f"✅ **Selected Rejected Transaction Defaults Configuration**: "
+            f"{population_mode} + {income_mode}")
+
+
+def _rtd_banner_captions(config, metrics):
+    """Left-hand captions of the Decision 4 banner: only the average that belongs
+    to the element on this page."""
+    shown = rtd_summary_metric_keys(rtd_page_element())
+    if 'mean_choice_length' in metrics and 'mean_choice_length' in shown:
+        st.caption(f"Avg options list length: {metrics['mean_choice_length']:.2f}")
+    if 'mean_default_list_length' in metrics and 'mean_default_list_length' in shown:
+        st.caption(f"Avg integrated default list length: {metrics['mean_default_list_length']:.2f}")
+
+
+# Per decision: the column its results carry, the banner title, the left-hand
+# caption(s), and whether the caption / timestamp / Clear row shows even when the
+# saved configuration has no metrics. (The Clear buttons' keys are spelled out in
+# _render_saved_config_banner, where the session-key registry scan reads them.)
+_SAVED_CONFIG_BANNERS = {
+    'disclose_income': dict(
+        results_column='disclose_income', title=_di_dd_banner_title("Disclose Income"),
+        captions=_y_rate_caption("Y Rate"), row_without_metrics=False),
+    'disclose_documents': dict(
+        results_column='disclose_documents', title=_di_dd_banner_title("Disclose Documents"),
+        captions=_y_rate_caption("Y Rate (qualified)"), row_without_metrics=False),
+    'rejected_transaction_defaults': dict(
+        results_column='rtd_choice_length', title=_rtd_banner_title,
+        captions=_rtd_banner_captions, row_without_metrics=True),
+}
+
+
+def _render_saved_config_banner(decision_name, results_dict, ctx):
+    """Once a configuration of an individual `decision_name` run has been selected
+    with "Use This Config": the selected configuration (with Clear) and the
+    "Run Complete Simulation" section."""
+    spec = _SAVED_CONFIG_BANNERS[decision_name]
+    clear_key = ("clear_di_selection" if decision_name == 'disclose_income'
+                 else "clear_dd_selection" if decision_name == 'disclose_documents'
+                 else "clear_rtd_selection")
     ctx = ctx if ctx is not None else RunContext.from_session()
 
     if not results_dict:
         return
 
-    # Check if any results have disclose_income column
-    has_di_results = any(
-        'disclose_income' in df.columns 
-        for df in results_dict.values() 
+    has_results = any(
+        spec['results_column'] in df.columns
+        for df in results_dict.values()
         if isinstance(df, pd.DataFrame) and not df.empty
     )
-    
-    if not has_di_results:
+    if not has_results:
         return
-    
-    # Check if this is from an individual disclose_income decision run
-    is_individual_di_run = ctx.is_individual_run('disclose_income')
 
-    if not is_individual_di_run:
+    # the run's own decision lists, not the live widgets
+    if not ctx.is_individual_run(decision_name):
         return
-    
-    # Check if config is already selected (from unified or legacy storage)
-    di_config = get_decision_config('disclose_income')
-    has_selected_config = di_config is not None
-    
-    # If config is selected, show the selected config info and potentially the Run Complete Simulation button
+
+    config = get_decision_config(decision_name)
+    has_selected_config = config is not None
+
     if has_selected_config:
         st.markdown("---")
-        config = di_config
-        
-        income_mode = config.get('params', {}).get('income_mode', config.get('income_mode', 'Unknown'))
-        
+        title = spec['title'](config)
+
         with st.container():
-            st.success(f"✅ **Selected Disclose Income Configuration**: {income_mode}")
-            
-            # Show metrics if available
-            metrics = config.get('metrics', {})
-            if metrics:
+            st.success(title)
+            metrics = config.get('metrics', {}) or {}
+            if metrics or spec['row_without_metrics']:
                 col1, col2, col3 = st.columns([2, 2, 1])
                 with col1:
-                    y_rate = metrics.get('y_rate', 0)
-                    st.caption(f"Y Rate: {y_rate:.2%}")
+                    spec['captions'](config, metrics)
                 with col2:
                     timestamp = config.get('selected_timestamp')
                     if timestamp:
                         st.caption(f"Selected at {timestamp.strftime('%H:%M:%S')}")
                 with col3:
-                    if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_di_selection"):
-                        clear_decision_config('disclose_income')
+                    if st.button("🗑️ Clear", help="Clear the selected configuration", key=clear_key):
+                        clear_decision_config(decision_name)
                         st.rerun()
-        
-        # CRITICAL: Check if complete simulation can actually run before showing the section
-        can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
-        
-        # Only show Run Complete Simulation section if simulation is viable OR if it's blocked 
-        # (so we can show the user why it's blocked and what to do)
+
         render_complete_simulation_section()
+
+
+def render_disclose_income_config_selection_ui(results_dict, ctx=None):
+    """Render configuration selection UI for disclose_income decision results"""
+    _render_saved_config_banner('disclose_income', results_dict, ctx)
 
 
 def render_disclose_documents_config_selection_ui(results_dict, ctx=None):
     """Render configuration selection UI for disclose_documents results (mirrors disclose_income)."""
-    ctx = ctx if ctx is not None else RunContext.from_session()
-
-    if not results_dict:
-        return
-
-    has_dd_results = any(
-        'disclose_documents' in df.columns
-        for df in results_dict.values()
-        if isinstance(df, pd.DataFrame) and not df.empty
-    )
-    if not has_dd_results:
-        return
-
-    is_individual_dd_run = ctx.is_individual_run('disclose_documents')
-    if not is_individual_dd_run:
-        return
-
-    dd_config = get_decision_config('disclose_documents')
-    has_selected_config = dd_config is not None
-
-    if has_selected_config:
-        st.markdown("---")
-        config = dd_config
-        income_mode = config.get('params', {}).get('income_mode', config.get('income_mode', 'Unknown'))
-
-        with st.container():
-            st.success(f"✅ **Selected Disclose Documents Configuration**: {income_mode}")
-            metrics = config.get('metrics', {})
-            if metrics:
-                col1, col2, col3 = st.columns([2, 2, 1])
-                with col1:
-                    y_rate = metrics.get('y_rate', 0)
-                    st.caption(f"Y Rate (qualified): {y_rate:.2%}")
-                with col2:
-                    timestamp = config.get('selected_timestamp')
-                    if timestamp:
-                        st.caption(f"Selected at {timestamp.strftime('%H:%M:%S')}")
-                with col3:
-                    if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_dd_selection"):
-                        clear_decision_config('disclose_documents')
-                        st.rerun()
-
-        can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
-        render_complete_simulation_section()
+    _render_saved_config_banner('disclose_documents', results_dict, ctx)
 
 
 def render_rejected_transaction_config_selection_ui(results_dict, ctx=None):
@@ -237,54 +240,46 @@ def render_rejected_transaction_config_selection_ui(results_dict, ctx=None):
     configuration of an individual Decision 4 run has been selected with
     "Use This Config", show the selected configuration (with Clear) and the
     "Run Complete Simulation" section."""
-    ctx = ctx if ctx is not None else RunContext.from_session()
+    _render_saved_config_banner('rejected_transaction_defaults', results_dict, ctx)
 
-    if not results_dict:
-        return
 
-    has_rtd_results = any(
-        'rtd_choice_length' in df.columns
-        for df in results_dict.values()
-        if isinstance(df, pd.DataFrame) and not df.empty
-    )
-    if not has_rtd_results:
-        return
+# The decision a blocking issue names (by its block_type) in the warnings and in
+# the disabled button's help.
+_BLOCK_TYPE_TITLES = {
+    "disclose_income": "Disclose Income",
+    "donation_config": "Donation Default",
+    "disclose_documents": "Disclose Documents",
+    "rejected_transaction_defaults": "Rejected Transaction Defaults",
+}
 
-    # the run's own decision lists, not the live widgets
-    if not ctx.is_individual_run('rejected_transaction_defaults'):
-        return
 
-    rtd_config = get_decision_config('rejected_transaction_defaults')
-    has_selected_config = rtd_config is not None
+def _issue_warning(i, title, reason):
+    """Warning text of issue `i` when several issues block the complete run.
+    (The trailing whitespace is the original's; Streamlit strips it.)"""
+    return f"""
+**Issue {i}: {title}**
 
-    if has_selected_config:
-        st.markdown("---")
-        config = rtd_config
-        income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
-        population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+{reason}
 
-        with st.container():
-            st.success(f"✅ **Selected Rejected Transaction Defaults Configuration**: "
-                       f"{population_mode} + {income_mode}")
-            metrics = config.get('metrics', {}) or {}
-            # only the average that belongs to the element on this page
-            shown = rtd_summary_metric_keys(rtd_page_element())
-            col1, col2, col3 = st.columns([2, 2, 1])
-            with col1:
-                if 'mean_choice_length' in metrics and 'mean_choice_length' in shown:
-                    st.caption(f"Avg options list length: {metrics['mean_choice_length']:.2f}")
-                if 'mean_default_list_length' in metrics and 'mean_default_list_length' in shown:
-                    st.caption(f"Avg integrated default list length: {metrics['mean_default_list_length']:.2f}")
-            with col2:
-                timestamp = config.get('selected_timestamp')
-                if timestamp:
-                    st.caption(f"Selected at {timestamp.strftime('%H:%M:%S')}")
-            with col3:
-                if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_rtd_selection"):
-                    clear_decision_config('rejected_transaction_defaults')
-                    st.rerun()
+**Action Required:**
+1. Run **{title} Only** from the {title} tab
+2. Click **"Use This Config"** on the result you want to use
+                    """
 
-        render_complete_simulation_section()
+
+def _configuration_required_warning(title, reason):
+    """Warning text when exactly one issue blocks the complete run.
+    (The trailing whitespace is the original's; Streamlit strips it.)"""
+    return f"""
+⚠️ **{title} Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Run **{title} Only** from the {title} tab
+2. Click **"Use This Config"** on the result you want to use
+3. Return here to run complete simulation
+                """
 
 
 def render_complete_simulation_section():
@@ -310,93 +305,13 @@ def render_complete_simulation_section():
             # Multiple issues - show them all together
             st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
             for i, issue in enumerate(blocking_issues, 1):
-                if issue['block_type'] == "disclose_income":
-                    st.warning(f"""
-**Issue {i}: Disclose Income**
-
-{issue['reason']}
-
-**Action Required:**
-1. Run **Disclose Income Only** from the Disclose Income tab
-2. Click **"Use This Config"** on the result you want to use
-                    """)
-                elif issue['block_type'] == "disclose_documents":
-                    st.warning(f"""
-**Issue {i}: Disclose Documents**
-
-{issue['reason']}
-
-**Action Required:**
-1. Run **Disclose Documents Only** from the Disclose Documents tab
-2. Click **"Use This Config"** on the result you want to use
-                    """)
-                elif issue['block_type'] == "rejected_transaction_defaults":
-                    st.warning(f"""
-**Issue {i}: Rejected Transaction Defaults**
-
-{issue['reason']}
-
-**Action Required:**
-1. Run **Rejected Transaction Defaults Only** from the Rejected Transaction Defaults tab
-2. Click **"Use This Config"** on the result you want to use
-                    """)
-                else:
-                    # donation_config block type
-                    st.warning(f"""
-**Issue {i}: Donation Default**
-
-{issue['reason']}
-
-**Action Required:**
-1. Run **Donation Default Only** from the Donation Default tab
-2. Click **"Use This Config"** on the result you want to use
-                    """)
+                # an issue of any other block type is the donation_config one
+                title = _BLOCK_TYPE_TITLES.get(issue['block_type'], "Donation Default")
+                st.warning(_issue_warning(i, title, issue['reason']))
         else:
             # Single issue - show original format
-            if block_type == "disclose_income":
-                st.warning(f"""
-⚠️ **Disclose Income Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Run **Disclose Income Only** from the Disclose Income tab
-2. Click **"Use This Config"** on the result you want to use
-3. Return here to run complete simulation
-                """)
-            elif block_type == "donation_config":
-                st.warning(f"""
-⚠️ **Donation Default Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Run **Donation Default Only** from the Donation Default tab
-2. Click **"Use This Config"** on the result you want to use
-3. Return here to run complete simulation
-                """)
-            elif block_type == "disclose_documents":
-                st.warning(f"""
-⚠️ **Disclose Documents Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Run **Disclose Documents Only** from the Disclose Documents tab
-2. Click **"Use This Config"** on the result you want to use
-3. Return here to run complete simulation
-                """)
-            elif block_type == "rejected_transaction_defaults":
-                st.warning(f"""
-⚠️ **Rejected Transaction Defaults Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Run **Rejected Transaction Defaults Only** from the Rejected Transaction Defaults tab
-2. Click **"Use This Config"** on the result you want to use
-3. Return here to run complete simulation
-                """)
+            if block_type in _BLOCK_TYPE_TITLES:
+                st.warning(_configuration_required_warning(_BLOCK_TYPE_TITLES[block_type], reason))
             else:
                 st.warning(f"""
 ⚠️ **Configuration Issue**
@@ -405,7 +320,9 @@ def render_complete_simulation_section():
                 """)
         
         # Disabled button
-        help_text = f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1 else ("Select a Disclose Income config first" if block_type == "disclose_income" else ("Select a Donation Default config first" if block_type == "donation_config" else ("Select a Disclose Documents config first" if block_type == "disclose_documents" else ("Select a Rejected Transaction Defaults config first" if block_type == "rejected_transaction_defaults" else "Configuration issue detected"))))
+        help_text = (f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1
+                     else f"Select a {_BLOCK_TYPE_TITLES[block_type]} config first" if block_type in _BLOCK_TYPE_TITLES
+                     else "Configuration issue detected")
             
         st.button(
             "🚀 Run Complete Simulation",

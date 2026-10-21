@@ -11,7 +11,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-from app.reports.xlsx import apply_vendor_price_formatting, to_xlsx_bytes
+from app.reports.xlsx import apply_vendor_price_formatting, period_sheets, to_xlsx_bytes
 from app.reports.timestamps import TimestampConverter
 from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
 
@@ -278,16 +278,8 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
 
 def purchase_requests_xlsx(pr_df: pd.DataFrame) -> bytes:
     """Total sheet + one sheet per Period, with the vendor price formatting."""
-    sheets = {'Total': pr_df}
-
-    # Additional sheets by Period
-    if 'Period' in pr_df.columns:
-        periods = sorted(pr_df['Period'].unique())
-        for period in periods:
-            period_df = pr_df[pr_df['Period'] == period]
-            sheet_name = f'Period {period}'
-            sheets[sheet_name] = period_df
-
+    # this export has always named its sheets by the raw value and kept every value
+    sheets = period_sheets(pr_df, int_names=False, dropna=False)
     return to_xlsx_bytes(sheets, apply_price_formatting_vendor)
 
 
@@ -407,6 +399,82 @@ def count_vendor_requests(df):
                                 vendor_tx_counts[vendor_id] = vendor_tx_counts.get(vendor_id, 0) + 1
 
     return total_purchase_requests, total_transactions_completed, vendor_pr_counts, vendor_tx_counts
+
+
+def vendor_selection_shares(decision_data, df):
+    """The overview numbers of the vendor-selection results.
+
+    Returns a dict: `vendor_counts` (agents per selected vendor, NaN excluded),
+    `num_vendors_selected`, `agents_with_selection`, the highest share of agents
+    held by one vendor (`max_agent_share`, in %) and that vendor
+    (`dominant_agent_vendor`, None without selections), and the highest share of
+    purchase requests (`max_pr_share`) and of completed transactions
+    (`max_tx_share`) going to one vendor (in %).
+    """
+    # Count unique vendors selected (excluding NaN)
+    vendor_counts = decision_data.dropna().value_counts()
+    num_vendors_selected = len(vendor_counts)
+    
+    # Calculate purchase request and transaction shares per vendor
+    (total_purchase_requests, total_transactions_completed,
+     vendor_pr_counts, vendor_tx_counts) = count_vendor_requests(df)
+    
+    # Calculate ACTUAL dominant share (maximum share held by any single vendor)
+    agents_with_selection = decision_data.notna().sum()
+    
+    # Find dominant vendor for agents
+    if len(vendor_counts) > 0 and agents_with_selection > 0:
+        max_agent_count = vendor_counts.max()
+        max_agent_share = (max_agent_count / agents_with_selection) * 100
+        dominant_agent_vendor = vendor_counts.idxmax()
+    else:
+        max_agent_share = 0
+        dominant_agent_vendor = None
+    
+    # Find dominant vendor for purchase requests
+    if vendor_pr_counts and total_purchase_requests > 0:
+        max_pr_count = max(vendor_pr_counts.values())
+        max_pr_share = (max_pr_count / total_purchase_requests) * 100
+    else:
+        max_pr_share = 0
+    
+    # Find dominant vendor for transactions
+    if vendor_tx_counts and total_transactions_completed > 0:
+        max_tx_count = max(vendor_tx_counts.values())
+        max_tx_share = (max_tx_count / total_transactions_completed) * 100
+    else:
+        max_tx_share = 0
+
+    return {
+        'vendor_counts': vendor_counts,
+        'num_vendors_selected': num_vendors_selected,
+        'agents_with_selection': agents_with_selection,
+        'max_agent_share': max_agent_share,
+        'dominant_agent_vendor': dominant_agent_vendor,
+        'max_pr_share': max_pr_share,
+        'max_tx_share': max_tx_share,
+    }
+
+
+def vendor_agent_count_series(vendor_ids, vendor_counts):
+    """The 'Number of Agents Selecting Each Vendor' bar series: ('Vendor <id>'
+    labels, agents per vendor), 0 for a vendor nobody selected."""
+    # Prepare data for chart (include 0s for unselected vendors)
+    chart_x = []
+    chart_y = []
+    
+    for vid in vendor_ids:
+        chart_x.append(f"Vendor {vid}")
+        
+        # Get count
+        count = 0
+        if vid in vendor_counts.index:
+            count = vendor_counts[vid]
+        elif float(vid) in vendor_counts.index:
+            count = vendor_counts[float(vid)]
+        chart_y.append(count)
+
+    return chart_x, chart_y
 
 
 def count_requests_per_vendor(df):
@@ -735,6 +803,39 @@ def build_vendor_attributes_table(vendors_data, vendor_counts, vendor_purchase_r
         })
 
     return vendor_table_data
+
+
+def vendor_price_scores(price_labels):
+    """The 'Price Score (0-100)' bars from the table's '$x.xx' prices: min-max
+    normalised and inverted (the lowest price scores 100); 50 for every vendor
+    when all prices are equal."""
+    # Normalize to 0-100 scale
+    prices = [float(p.replace('$', '').replace(',', '')) for p in price_labels]
+    min_price = min(prices) if prices else 0
+    max_price = max(prices) if prices else 100
+    
+    # Inverted normalization: lower price = higher score
+    if max_price > min_price:
+        price_scores = [100 * (1 - (p - min_price) / (max_price - min_price)) for p in prices]
+    else:
+        price_scores = [50.0] * len(prices)  # All same price
+    return price_scores
+
+
+def vendor_rating_values(values):
+    """A 1-5 rating column of the vendor table as bar heights (0 where it is not an int)."""
+    return [v if isinstance(v, int) else 0 for v in values]
+
+
+def vendor_score_values(values):
+    """A score column of the vendor table as bar heights ("N/A" -> 0.0)."""
+    score_values = []
+    for val in values:
+        if val != "N/A":
+            score_values.append(float(val))
+        else:
+            score_values.append(0.0)
+    return score_values
 
 
 def build_vendor_period_details(vendors_data, avg_proximity_per_vendor, vendor_integrated_scores):

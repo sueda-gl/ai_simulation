@@ -115,6 +115,44 @@ def quantities_by_customer_type(df, target_type):
     return pd.Series(quantities) if quantities else pd.Series([0])
 
 
+def quantity_overview(decision_data):
+    """The purchasing-quantity headline numbers: (mean quantity, total purchase
+    requests, % of agents with at least one purchase request)."""
+    mean_qty = decision_data.mean()
+    total_purchases = decision_data.sum()
+    agents_with_purchases = (decision_data > 0).sum()
+    pct_with_purchases = agents_with_purchases / len(decision_data) * 100
+    return mean_qty, total_purchases, pct_with_purchases
+
+
+def customer_type_pie_frame(customer_type_counts) -> pd.DataFrame:
+    """Pie data of the purchase requests per customer type (zero rows dropped)."""
+    pie_data = pd.DataFrame({
+        'Customer Type': list(customer_type_counts.keys()),
+        'Purchase Requests': list(customer_type_counts.values())
+    })
+    
+    # Filter out zero values for cleaner pie chart
+    pie_data = pie_data[pie_data['Purchase Requests'] > 0]
+    return pie_data
+
+
+def requests_and_completed_frame(period_labels, requests_per_period):
+    """The per-period chart data: purchase requests and completed transactions.
+    For now every purchase request is completed (100% completion rate).
+    Returns (completed per period, the chart frame)."""
+    # In future versions, this could be different based on rejection logic
+    completed_per_period = requests_per_period.copy()
+    
+    # Create DataFrame for the chart
+    period_df = pd.DataFrame({
+        'Period': period_labels,
+        'Purchase Requests': requests_per_period,
+        'Purchases Completed': completed_per_period
+    })
+    return completed_per_period, period_df
+
+
 def customer_type_quantity_stats_frame(type_quantities, periods) -> pd.DataFrame:
     """Per-customer-type version of the purchase-quantity statistics table."""
     type_stats_desc = type_quantities.describe()
@@ -166,23 +204,17 @@ def income_category_stats_frame(df_with_category) -> pd.DataFrame:
 # purchasing quantity: per-period request tables
 # ---------------------------------------------------------------------------
 def collect_purchase_timestamps(df):
-    """All purchase timestamps plus the (unused-by-the-page) per-agent timeline."""
+    """All purchase timestamps (`timestamp_hours` of every purchase request)."""
     all_timestamps = []
-    agent_timelines = []
 
     for idx, requests in enumerate(df['purchase_requests']):
         if isinstance(requests, list) and len(requests) > 0:
-            agent_id = df.iloc[idx].get('agent_id', idx + 1)
             for req in requests:
                 if isinstance(req, dict) and 'timestamp_hours' in req:
                     timestamp = req['timestamp_hours']
                     all_timestamps.append(timestamp)
-                    agent_timelines.append({
-                        'agent_id': agent_id,
-                        'timestamp': timestamp
-                    })
 
-    return all_timestamps, agent_timelines
+    return all_timestamps
 
 
 def period_bins_and_labels(periods, duration_hours, term_duration):

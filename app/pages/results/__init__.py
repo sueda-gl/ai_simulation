@@ -7,10 +7,8 @@ from app.pages.results.comparisons import (
     render_all_modes_comparison,
     render_income_comparison
 )
-from app.pages.results.details import (
-    render_individual_agent_details,
-    render_export_section
-)
+from app.pages.results.components.agent_details import render_individual_agent_details
+from app.pages.results.components.export_section import render_export_section
 from app.pages.results.run_context import RunContext
 
 __all__ = [

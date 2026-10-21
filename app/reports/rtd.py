@@ -343,11 +343,6 @@ RTD_ELEMENT_FILE_SLUGS = {'ttp': 'options_list_length', 'loyalty': 'loyalty',
                           'flexibility': 'flexibility'}
 
 
-def rtd_element_xlsx_bytes(export_df, mech):
-    """Per-element workbook bytes: the element frame on its own sheet, unformatted."""
-    return to_xlsx_bytes({RTD_ELEMENT_SHEETS[mech]: export_df})
-
-
 def rtd_model_xlsx_bytes(sheets):
     """Decision 4 workbook bytes: one sheet per entry, in dict order, unformatted."""
     return to_xlsx_bytes(sheets)
@@ -561,3 +556,82 @@ def rtd_settled_by_frame(df):
         'Settled by': [RTD_STAGE_LABELS[s] for s in RTD_STAGE_LABELS],
         '% of agents': [f"{settled.get(s, 0) / n * 100:.1f}%" for s in RTD_STAGE_LABELS],
     })
+
+
+# ---------------------------------------------------------------------------
+# The series and tables behind the Decision 4 result charts
+# (`app/pages/results/visualizations/transaction_viz.py`).
+# ---------------------------------------------------------------------------
+def rtd_density_bars(series):
+    """A score series on Stata's histogram bins, as density bars.
+
+    Returns (the numeric series, the bin edges, the counts per bin, the bin width,
+    the proportion of agents per bin, the density per bin = proportion / width).
+    """
+    s = pd.Series(series).dropna().astype(float)
+    edges, counts = rtd_stata_bins(s)
+    edges = np.asarray(edges, dtype=float)
+    size = float(edges[1] - edges[0])
+    props = np.asarray(counts, dtype=float) / max(len(s), 1)
+    density = props / size
+    return s, edges, counts, size, props, density
+
+
+def rtd_length_allocation(df, column, table_header):
+    """Allocation of a 0-5 list length (`column`): the lengths 0..5 in natural
+    order, the fraction of agents per length, and the table shown under the chart
+    (`table_header` | '% of agents')."""
+    n = len(df)
+    counts = df[column].astype(int).value_counts()
+    lengths = list(range(0, 6))
+    fractions = [counts.get(l, 0) / n for l in lengths]
+    table = pd.DataFrame({
+        table_header: lengths,
+        '% of agents': [f"{counts.get(l, 0) / n * 100:.1f}%" for l in lengths],
+    })
+    return lengths, fractions, table
+
+
+def rtd_first_choice_allocation(df, col_key, seq):
+    """Allocation of a ranking element's first choice: the options in reversed
+    priority order (the chart's order), the fraction of agents per option, and the
+    table of options 1-5 (natural order) -> first-ranked % of agents."""
+    n = len(df)
+    # First choice read from the element's RANKING column, never derived from the
+    # segment (see rtd_first_choice): direction-agnostic by construction.
+    counts = rtd_first_choice(df, col_key).value_counts()
+    order = rtd_reversed_sequence(seq)
+    fractions = [counts.get(o, 0) / n for o in order]
+    table = pd.DataFrame({
+        'Option': [f"Option {o}" for o in range(1, 6)],
+        '% of agents': [f"{counts.get(o, 0) / n * 100:.1f}%" for o in range(1, 6)],
+    })
+    return order, fractions, table
+
+
+def rtd_integrated_first_choice_allocation(df):
+    """Allocation of the first option of the integrated default list: options 1-5,
+    the fraction of agents per option, and the table (plus the 'No default
+    options' row for list length 0)."""
+    n = len(df)
+    # Direction-agnostic: the first option of the model's own integrated list.
+    counts = rtd_integrated_first_choice(df).value_counts()
+    order = list(range(1, 6))
+    fractions = [counts.get(o, 0) / n for o in order]
+    rows = [{'Option': f"Option {o}", '% of agents': f"{counts.get(o, 0) / n * 100:.1f}%"}
+            for o in order]
+    rows.append({'Option': 'No default options (list length 0)',
+                 '% of agents': f"{counts.get(0, 0) / n * 100:.1f}%"})
+    return order, fractions, pd.DataFrame(rows)
+
+
+def rtd_kemeny_tie_share(df):
+    """% of agents whose Kemeny step left ties (status other than 'unique')."""
+    status = df['rtd_consensus_kemeny_status'].astype(str)
+    return (status != 'unique').mean() * 100
+
+
+def rtd_kemeny_optimal_share(df):
+    """% of agents whose final ranking is Kemeny-optimal."""
+    return df['rtd_consensus_is_kemeny_optimal'].astype(bool).mean() * 100
+

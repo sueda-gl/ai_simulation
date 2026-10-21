@@ -35,6 +35,52 @@ def raw_value_stats(raw_values: pd.Series) -> dict:
     }
 
 
+def disclose_income_choice_counts(decision_data: pd.Series) -> dict:
+    """The Y/N metrics of the Decision 1 results: `value_counts`, `total`,
+    `yes_count` / `pct_yes`, `no_count` / `pct_no` (% of all agents) and
+    `disclosure_rate` (= `pct_yes`)."""
+    value_counts = decision_data.value_counts()
+    total = len(decision_data)
+    yes_count = value_counts.get('Y', 0)
+    pct_yes = (yes_count/total)*100
+    no_count = value_counts.get('N', 0)
+    pct_no = (no_count/total)*100
+    disclosure_rate = (yes_count/total)*100
+    return {'value_counts': value_counts, 'total': total, 'yes_count': yes_count,
+            'pct_yes': pct_yes, 'no_count': no_count, 'pct_no': pct_no,
+            'disclosure_rate': disclosure_rate}
+
+
+def disclose_documents_choice_counts(decision_data: pd.Series) -> dict:
+    """The metrics of the Decision 2 results: `total_agents`, `na_count` (not
+    qualified), `qualified_agents`, `yes_count` / `no_count`, their % of the
+    qualified agents `pct_yes` / `pct_no` and `disclosure_rate` (None without
+    qualified agents), and `qualified_counts`, the value counts without 'NA'
+    (the pie chart)."""
+    # Separate NA (not applicable) from Y/N choices
+    value_counts = decision_data.value_counts()
+    total_agents = len(decision_data)
+
+    na_count = value_counts.get('NA', 0)
+    qualified_agents = total_agents - na_count
+
+    yes_count = value_counts.get('Y', 0)
+    no_count = value_counts.get('N', 0)
+    if qualified_agents > 0:
+        pct_yes = (yes_count/qualified_agents)*100
+        pct_no = (no_count/qualified_agents)*100
+        disclosure_rate = (yes_count/qualified_agents)*100
+    else:
+        pct_yes = pct_no = disclosure_rate = None
+
+    # Filter out NA for the pie chart
+    qualified_counts = {k: v for k, v in value_counts.items() if k != 'NA'}
+    return {'total_agents': total_agents, 'na_count': na_count,
+            'qualified_agents': qualified_agents, 'yes_count': yes_count,
+            'no_count': no_count, 'pct_yes': pct_yes, 'pct_no': pct_no,
+            'disclosure_rate': disclosure_rate, 'qualified_counts': qualified_counts}
+
+
 def raw_stats_frame(stats: dict, value_label: str) -> pd.DataFrame:
     """The '📈 Statistics' table shown under a raw DI / DD histogram."""
     return pd.DataFrame({

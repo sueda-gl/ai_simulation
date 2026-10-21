@@ -43,6 +43,27 @@ def to_xlsx_bytes(sheets: dict[str, pd.DataFrame], formatter=None) -> bytes:
     return buffer.getvalue()
 
 
+def period_sheets(df: pd.DataFrame, *, int_names: bool = True, dropna: bool = True,
+                  missing_ok: bool = True) -> dict[str, pd.DataFrame]:
+    """The 'Total' sheet (the whole frame) followed by one sheet per value of
+    `df['Period']`, in sorted order, each holding that period's rows.
+
+    Args:
+        int_names: name a sheet `Period {int(value)}` (False: `Period {value}`).
+        dropna: leave missing period values out.
+        missing_ok: without a 'Period' column return the Total sheet alone
+            (False: `df['Period']` raises its KeyError).
+    """
+    sheets = {'Total': df}
+    if missing_ok and 'Period' not in df.columns:
+        return sheets
+    values = df['Period'].dropna().unique() if dropna else df['Period'].unique()
+    for value in sorted(values):
+        sheet_name = f'Period {int(value)}' if int_names else f'Period {value}'
+        sheets[sheet_name] = df[df['Period'] == value]
+    return sheets
+
+
 # ---------------------------------------------------------------------------
 # The six formatters. The page each one serves is named above it.
 # ---------------------------------------------------------------------------
@@ -65,8 +86,6 @@ def apply_export_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
         sheet_name: Name of the sheet to format
         df: DataFrame being written (to identify column positions)
     """
-    from openpyxl.styles import numbers
-    
     # Columns with 4 decimal places (trait values from disclose_income)
     four_decimal_columns = [
         'Agreeable', 'Openness', 'Honesty_Humility', 'Extraversion', 'Neuroticism',
@@ -183,8 +202,6 @@ def apply_bid_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
     """
     Apply Excel number formatting to price-related columns to display 2 decimal places.
     """
-    from openpyxl.styles import numbers
-    
     price_columns = [
         'Honesty_Humility', 'income', 'Vendor Price', 'Bid Value',
         'TWT+Sospeso [=AW2+AX2]{Periods 1+2}'
@@ -234,8 +251,6 @@ def apply_donation_price_formatting(writer, sheet_name: str, df: pd.DataFrame):
     
     This formats the DISPLAY only - the underlying values retain full precision.
     """
-    from openpyxl.styles import numbers
-    
     # Define columns that should display with 2 decimal places
     # Note: 'Donation Paid' and 'Total Paid by Customer' columns were removed
     # because actual price is unknown for Fixed/Discount customers

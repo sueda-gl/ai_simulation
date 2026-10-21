@@ -12,10 +12,7 @@ import numpy as np
 import pandas as pd
 
 from app.reports.timestamps import TimestampConverter
-from app.reports.xlsx import apply_bid_price_formatting, to_xlsx_bytes
-
-# `apply_bid_price_formatting` lives in app/reports/xlsx.py; this is its older name.
-apply_price_formatting_bid = apply_bid_price_formatting
+from app.reports.xlsx import apply_bid_price_formatting, period_sheets, to_xlsx_bytes
 
 
 def collect_bid_values(df):
@@ -198,17 +195,7 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
 
 def bid_values_xlsx(bid_df: pd.DataFrame) -> bytes:
     """'Total' sheet plus one sheet per period, with the bid price formatting."""
-    sheets = {'Total': bid_df}
-
-    # Additional sheets by Period
-    if 'Period' in bid_df.columns:
-        periods = sorted(bid_df['Period'].dropna().unique())
-        for period_val in periods:
-            period_df = bid_df[bid_df['Period'] == period_val]
-            sheet_name = f'Period {int(period_val)}'
-            sheets[sheet_name] = period_df
-
-    return to_xlsx_bytes(sheets, apply_bid_price_formatting)
+    return to_xlsx_bytes(period_sheets(bid_df), apply_bid_price_formatting)
 
 
 def bidding_range(platform_markup, price_range, example_vendor_price):

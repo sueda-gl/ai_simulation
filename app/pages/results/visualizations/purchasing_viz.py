@@ -17,6 +17,7 @@ from app.reports.purchasing import (
     count_requests_by_customer_type,
     count_requests_by_customer_type_lower,
     counts_per_period,
+    customer_type_pie_frame,
     customer_type_quantity_stats_frame,
     customer_type_stats_frame,
     income_category_stats_frame,
@@ -24,39 +25,48 @@ from app.reports.purchasing import (
     period_details_frame,
     purchasing_transactions_xlsx,
     quantities_by_customer_type,
+    quantity_overview,
     quantity_stats_frame,
+    requests_and_completed_frame,
     timestamps_by_customer_type,
     top_agents_by_quantity,
 )
-from app.utils.timestamp_utils import (
-    get_duration_hours,
-    get_periods,
-    get_simulation_base_time,
-)
+from app.reports import timestamps
+from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 
 
 def render_purchasing_quantity(df, decision_name, decision_title, decision_data):
     """Visualization for purchasing_quantity - quantity analysis with purchase requests"""
-    
+    _render_quantity_overview(decision_data)
+    _render_quantity_distribution(df, decision_name, decision_data)
+    _render_requests_by_customer_type(df, decision_name)
+    _render_requests_by_income_category(df)
+    _render_request_timing(df)
+    _render_quantity_explanation()
+    _render_purchasing_exports(df)
+
+
+def _render_quantity_overview(decision_data):
+    """Headline metrics of the purchase request quantities."""
     # Overview metrics
+    mean_qty, total_purchases, pct_with_purchases = quantity_overview(decision_data)
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("Total Agents", f"{len(decision_data):,}")
     
     with col2:
-        mean_qty = decision_data.mean()
         st.metric("Mean Quantity", f"{mean_qty:.1f}")
     
     with col3:
-        total_purchases = decision_data.sum()
         st.metric("Total Purchase Requests", f"{int(total_purchases):,}")
     
     with col4:
-        agents_with_purchases = (decision_data > 0).sum()
-        pct_with_purchases = agents_with_purchases / len(decision_data) * 100
         st.metric("Agents w/ Purchase Requests", f"{pct_with_purchases:.1f}%")
-    
+
+
+def _render_quantity_distribution(df, decision_name, decision_data):
+    """Histogram of purchase requests per agent and its statistics table."""
     # Distribution plot and statistics
     col_plot, col_stats = st.columns([2, 1])
     
@@ -86,7 +96,10 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         
         stats_df = quantity_stats_frame(decision_data, periods)
         st.dataframe(stats_df, use_container_width=True, hide_index=True)
-    
+
+
+def _render_requests_by_customer_type(df, decision_name):
+    """Purchase requests by customer type: pie, statistics and one section per type."""
     # Customer Type Breakdown - Purchase Requests by customer type
     if 'purchase_requests' in df.columns:
         st.markdown("---")
@@ -102,14 +115,8 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             col_pie, col_stats_table = st.columns([2, 1])
             
             with col_pie:
-                # Create pie chart
-                pie_data = pd.DataFrame({
-                    'Customer Type': list(customer_type_counts.keys()),
-                    'Purchase Requests': list(customer_type_counts.values())
-                })
-                
-                # Filter out zero values for cleaner pie chart
-                pie_data = pie_data[pie_data['Purchase Requests'] > 0]
+                # Create pie chart (zero values filtered out for a cleaner pie chart)
+                pie_data = customer_type_pie_frame(customer_type_counts)
                 
                 st.markdown("### Purchase Request Distribution by Customer Type")
                 fig_pie = px.pie(
@@ -189,7 +196,10 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                         st.info(f"No purchase data for {ctype} customers")
         else:
             st.info("No purchase data available by customer type")
-    
+
+
+def _render_requests_by_income_category(df):
+    """Requests by income category: the table and the box plot."""
     # Income category analysis if available
     if 'income_category' in df.columns:
         st.markdown("---")
@@ -246,7 +256,10 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                 st.plotly_chart(fig_box, use_container_width=True)
         else:
             st.info("No agents with income categories found. This can happen if all agents are Regular customers.")
-    
+
+
+def _render_request_timing(df):
+    """Purchase requests and completed transactions per period, overall and per customer type."""
     # Purchase request timing analysis if available
     if 'purchase_requests' in df.columns:
         st.markdown("---")
@@ -264,7 +277,7 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         )
         
         # Extract all timestamps and prepare data
-        all_timestamps, agent_timelines = collect_purchase_timestamps(df)
+        all_timestamps = collect_purchase_timestamps(df)
         
         if len(all_timestamps) > 0:
             # Get simulation parameters for period breakdown
@@ -287,16 +300,10 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
             # Count purchases per period
             purchase_requests_per_period = counts_per_period(all_timestamps, period_bins, period_labels)
             
-            # For now, all purchase requests are completed (100% completion rate)
-            # In future versions, this could be different based on rejection logic
-            purchases_completed_per_period = purchase_requests_per_period.copy()
-            
-            # Create DataFrame for the chart
-            period_df = pd.DataFrame({
-                'Period': period_labels,
-                'Purchase Requests': purchase_requests_per_period,
-                'Purchases Completed': purchases_completed_per_period
-            })
+            # For now, all purchase requests are completed (100% completion rate);
+            # the chart frame holds both series
+            purchases_completed_per_period, period_df = requests_and_completed_frame(
+                period_labels, purchase_requests_per_period)
             
             # Grouped bar chart showing both metrics side by side
             st.markdown("### Purchase Requests and Completed Transactions per Period")
@@ -355,14 +362,8 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
                     type_requests_per_period = counts_per_period(type_timestamps, period_bins, period_labels)
                     
                     # All requests are completed (100% completion rate)
-                    type_completed_per_period = type_requests_per_period.copy()
-                    
-                    # Create DataFrame for the chart
-                    type_period_df = pd.DataFrame({
-                        'Period': period_labels,
-                        'Purchase Requests': type_requests_per_period,
-                        'Purchases Completed': type_completed_per_period
-                    })
+                    type_completed_per_period, type_period_df = requests_and_completed_frame(
+                        period_labels, type_requests_per_period)
                     
                     # Grouped bar chart for this customer type
                     st.markdown(f"### Purchase Requests and Completed Transactions - {ctype} Customers")
@@ -396,7 +397,10 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         
         else:
             st.info("No purchase requests found in the data")
-    
+
+
+def _render_quantity_explanation():
+    """How this decision works (default behaviour)."""
     # Default behavior explanation
     with st.expander("ℹ️ How This Decision Works (Default Behavior)", expanded=False):
         st.markdown("""
@@ -438,16 +442,23 @@ def render_purchasing_quantity(df, decision_name, decision_title, decision_data)
         random number between 0 and the purchasing limit, with each purchase order for 1 item 
         by default, randomly spread during the term."
         """)
-    
+
+
+def _render_purchasing_exports(df):
+    """Transaction-level and agent-level purchasing Excel exports."""
     # Export section for purchasing quantity / transactions
     if 'purchase_requests' in df.columns:
         st.markdown("---")
         st.markdown("**📥 Export Transaction Data**")
         
         try:
-            # Flatten purchase_requests to a transaction-level DataFrame
+            # Flatten purchase_requests to a transaction-level DataFrame (timestamps
+            # relative to today's midnight, Page 1's period duration and count)
+            sim_params = getattr(st.session_state, 'sim_params', None)
             transactions_df = build_transaction_export(
-                df, get_simulation_base_time(), get_duration_hours(), get_periods()
+                df, timestamps.midnight_of(datetime.now()),
+                float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
+                int(getattr(sim_params, 'periods', DEFAULT_PERIODS))
             )
             
             if transactions_df is not None:
@@ -581,29 +592,6 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
         st.metric("Regular Requests", 
                  f"{regular_count:,}",
                  f"↗ {regular_pct:.1f}%")
-    
-    # # Add completed transactions metrics (all requests are considered completed transactions)
-    # st.markdown("---")
-    # st.markdown("### ✅ Completed Transactions")
-    # st.caption("All purchase requests result in completed transactions in this simulation")
-    # 
-    # col1, col2, col3, col4 = st.columns(4)
-    # 
-    # with col1:
-    #     st.metric("Total Transactions", f"{total_requests:,}", 
-    #              help="Total completed transactions (same as total requests)")
-    # with col2:
-    #     st.metric("Discount Transactions", 
-    #              f"{discount_count:,}",
-    #              f"↗ {discount_pct:.1f}%")
-    # with col3:
-    #     st.metric("Fixed Transactions", 
-    #              f"{fixed_count:,}",
-    #              f"↗ {fixed_pct:.1f}%")
-    # with col4:
-    #     st.metric("Regular Transactions", 
-    #              f"{regular_count:,}",
-    #              f"↗ {regular_pct:.1f}%")
     
     # MAIN VISUALIZATION: Sample Agent Purchase Schedules (Timeline)
     st.markdown("---")

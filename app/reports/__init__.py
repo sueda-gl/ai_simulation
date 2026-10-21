@@ -10,18 +10,19 @@ Streamlit script run.  Nothing in this package imports Streamlit.
 The modules, and what each one holds:
 
 * ``app.reports.agent_level`` -- agent-level export frame (one row per agent);
-* ``app.reports.bidding`` -- Decision 12 bid-value export and its statistics;
+* ``app.reports.bidding`` -- Decision 10 bid-value export and its statistics;
 * ``app.reports.disclosure`` -- Decisions 1 and 2 sheet builders, statistics and export workbooks;
 * ``app.reports.donation`` -- Decisions 3 and 13 export frames and workbooks;
 * ``app.reports.mc`` -- Monte-Carlo summary tables, convergence series and CSV bytes;
 * ``app.reports.preview`` -- Page-1 income-distribution preview maths (was on SimulationParameters);
-* ``app.reports.purchase`` -- Decisions 5/6 purchase-vs-bid and rejected-option exports;
-* ``app.reports.purchasing`` -- Decisions 9/10 quantity, frequency and period tables;
+* ``app.reports.purchasing`` -- Decisions 6/7 quantity, frequency and period tables;
 * ``app.reports.rtd`` -- Decision 4 per-element and whole-decision sheet builders;
 * ``app.reports.timestamps`` -- timestamp/period arithmetic shared by every export;
 * ``app.reports.transaction_level`` -- transaction-level export frame (one row per purchase request);
-* ``app.reports.vendor`` -- Decisions 7/8 vendor scoring, selection and proximity tables;
-* ``app.reports.xlsx`` -- workbook plumbing (to_xlsx_bytes) and the six price formatters.
+* ``app.reports.transactions`` -- Decisions 9 and 11 purchase-vs-bid and rejected-option exports,
+  and the Decision 4 default-mode priority lists;
+* ``app.reports.vendor`` -- Decisions 5/8 vendor scoring, selection and proximity tables;
+* ``app.reports.xlsx`` -- workbook plumbing (to_xlsx_bytes, period_sheets) and the six price formatters.
 
 Every public name of every module is re-exported here, so callers can import
 either ``from app.reports import build_agent_level_dataframe`` or
@@ -46,7 +47,9 @@ from app.reports.disclosure import (
     build_disclosure_sheets_xlsx,
     build_disclosure_xlsx,
     customer_type_summary_frame,
+    disclose_documents_choice_counts,
     disclose_documents_export_sheets,
+    disclose_income_choice_counts,
     disclose_income_compare_all_sheets,
     disclose_income_compare_both_sheets,
     prepare_disclose_documents_excel_data,
@@ -60,13 +63,20 @@ from app.reports.donation import (
     DEFAULT_PLATFORM_MARKUP,
     DEFAULT_PRICE_RANGE,
     DONATION_DEFAULT_TRAIT_COLUMNS,
+    DONATION_ONLY_EXPORT_TRAIT_COLUMNS,
     build_donation_default_export,
     build_donation_default_xlsx,
     build_donation_transaction_export,
     build_donation_transactions_xlsx,
+    donation_all_configs_frame,
+    donation_compare_all_sheets,
     donation_default_export_columns,
     donation_default_stats_frame,
+    donation_distribution_stats,
+    donation_rate_summary,
+    donation_single_export_frame,
     donation_transactions_frame,
+    donation_transactions_summary,
 )
 from app.reports.mc import (
     DONATION_DECISION,
@@ -88,19 +98,6 @@ from app.reports.preview import (
     distribution_kwargs,
     sample_income_distribution,
 )
-from app.reports.purchase import (
-    build_purchase_vs_bid_export,
-    prepare_priority_lists_export,
-    priority_first_choice_counts,
-    priority_length_breakdown_lines,
-    priority_list_agent_count,
-    priority_lists_xlsx_bytes,
-    priority_option_agent_counts,
-    purchase_vs_bid_breakdown_frame,
-    purchase_vs_bid_request_counts,
-    purchase_vs_bid_xlsx_bytes,
-    rejected_option_value_counts,
-)
 from app.reports.purchasing import (
     agent_level_purchases_xlsx,
     build_agent_level_purchases,
@@ -111,6 +108,7 @@ from app.reports.purchasing import (
     count_requests_by_customer_type,
     count_requests_by_customer_type_lower,
     counts_per_period,
+    customer_type_pie_frame,
     customer_type_quantity_stats_frame,
     customer_type_stats_frame,
     income_category_stats_frame,
@@ -118,7 +116,9 @@ from app.reports.purchasing import (
     period_details_frame,
     purchasing_transactions_xlsx,
     quantities_by_customer_type,
+    quantity_overview,
     quantity_stats_frame,
+    requests_and_completed_frame,
     timestamps_by_customer_type,
     top_agents_by_quantity,
 )
@@ -144,13 +144,18 @@ from app.reports.rtd import (
     rtd_bin_count,
     rtd_choice_columns,
     rtd_config_sheet_prefix,
+    rtd_density_bars,
     rtd_element_inputs_frame,
     rtd_element_subset,
-    rtd_element_xlsx_bytes,
     rtd_first_choice,
+    rtd_first_choice_allocation,
     rtd_frame_income_mode,
     rtd_integrated_first_choice,
+    rtd_integrated_first_choice_allocation,
+    rtd_kemeny_optimal_share,
     rtd_kemeny_status_frame,
+    rtd_kemeny_tie_share,
+    rtd_length_allocation,
     rtd_list_str,
     rtd_model_xlsx_bytes,
     rtd_prefixed_sheet_name,
@@ -174,6 +179,19 @@ from app.reports.timestamps import (
 from app.reports.transaction_level import (
     build_transaction_level_dataframe,
 )
+from app.reports.transactions import (
+    build_purchase_vs_bid_export,
+    prepare_priority_lists_export,
+    priority_first_choice_counts,
+    priority_length_breakdown_lines,
+    priority_list_agent_count,
+    priority_lists_xlsx_bytes,
+    priority_option_agent_counts,
+    purchase_vs_bid_breakdown_frame,
+    purchase_vs_bid_request_counts,
+    purchase_vs_bid_xlsx_bytes,
+    rejected_option_value_counts,
+)
 from app.reports.vendor import (
     average_vendor_scores,
     build_period_breakdown,
@@ -193,10 +211,15 @@ from app.reports.vendor import (
     proximity_statistics,
     purchase_requests_xlsx,
     sorted_vendor_ids,
+    vendor_agent_count_series,
     vendor_choice_weights_xlsx,
     vendor_period_details_xlsx,
+    vendor_price_scores,
+    vendor_rating_values,
     vendor_score_breakdown_xlsx,
+    vendor_score_values,
     vendor_selection_breakdown_xlsx,
+    vendor_selection_shares,
 )
 from app.reports.xlsx import (
     apply_bid_price_formatting,
@@ -205,6 +228,7 @@ from app.reports.xlsx import (
     apply_export_price_formatting,
     apply_transaction_price_formatting,
     apply_vendor_price_formatting,
+    period_sheets,
     to_xlsx_bytes,
 )
 
@@ -226,7 +250,9 @@ __all__ = [
     "build_disclosure_sheets_xlsx",
     "build_disclosure_xlsx",
     "customer_type_summary_frame",
+    "disclose_documents_choice_counts",
     "disclose_documents_export_sheets",
+    "disclose_income_choice_counts",
     "disclose_income_compare_all_sheets",
     "disclose_income_compare_both_sheets",
     "prepare_disclose_documents_excel_data",
@@ -239,13 +265,20 @@ __all__ = [
     "DEFAULT_PLATFORM_MARKUP",
     "DEFAULT_PRICE_RANGE",
     "DONATION_DEFAULT_TRAIT_COLUMNS",
+    "DONATION_ONLY_EXPORT_TRAIT_COLUMNS",
     "build_donation_default_export",
     "build_donation_default_xlsx",
     "build_donation_transaction_export",
     "build_donation_transactions_xlsx",
+    "donation_all_configs_frame",
+    "donation_compare_all_sheets",
     "donation_default_export_columns",
     "donation_default_stats_frame",
+    "donation_distribution_stats",
+    "donation_rate_summary",
+    "donation_single_export_frame",
     "donation_transactions_frame",
+    "donation_transactions_summary",
     # mc
     "DONATION_DECISION",
     "DONATION_MEAN_COLUMN",
@@ -264,18 +297,6 @@ __all__ = [
     "discount_qualification_rate",
     "distribution_kwargs",
     "sample_income_distribution",
-    # purchase
-    "build_purchase_vs_bid_export",
-    "prepare_priority_lists_export",
-    "priority_first_choice_counts",
-    "priority_length_breakdown_lines",
-    "priority_list_agent_count",
-    "priority_lists_xlsx_bytes",
-    "priority_option_agent_counts",
-    "purchase_vs_bid_breakdown_frame",
-    "purchase_vs_bid_request_counts",
-    "purchase_vs_bid_xlsx_bytes",
-    "rejected_option_value_counts",
     # purchasing
     "agent_level_purchases_xlsx",
     "build_agent_level_purchases",
@@ -286,6 +307,7 @@ __all__ = [
     "count_requests_by_customer_type",
     "count_requests_by_customer_type_lower",
     "counts_per_period",
+    "customer_type_pie_frame",
     "customer_type_quantity_stats_frame",
     "customer_type_stats_frame",
     "income_category_stats_frame",
@@ -293,7 +315,9 @@ __all__ = [
     "period_details_frame",
     "purchasing_transactions_xlsx",
     "quantities_by_customer_type",
+    "quantity_overview",
     "quantity_stats_frame",
+    "requests_and_completed_frame",
     "timestamps_by_customer_type",
     "top_agents_by_quantity",
     # rtd
@@ -318,13 +342,18 @@ __all__ = [
     "rtd_bin_count",
     "rtd_choice_columns",
     "rtd_config_sheet_prefix",
+    "rtd_density_bars",
     "rtd_element_inputs_frame",
     "rtd_element_subset",
-    "rtd_element_xlsx_bytes",
     "rtd_first_choice",
+    "rtd_first_choice_allocation",
     "rtd_frame_income_mode",
     "rtd_integrated_first_choice",
+    "rtd_integrated_first_choice_allocation",
+    "rtd_kemeny_optimal_share",
     "rtd_kemeny_status_frame",
+    "rtd_kemeny_tie_share",
+    "rtd_length_allocation",
     "rtd_list_str",
     "rtd_model_xlsx_bytes",
     "rtd_prefixed_sheet_name",
@@ -345,6 +374,18 @@ __all__ = [
     "timestamp_hours_to_formatted_string",
     # transaction_level
     "build_transaction_level_dataframe",
+    # transactions
+    "build_purchase_vs_bid_export",
+    "prepare_priority_lists_export",
+    "priority_first_choice_counts",
+    "priority_length_breakdown_lines",
+    "priority_list_agent_count",
+    "priority_lists_xlsx_bytes",
+    "priority_option_agent_counts",
+    "purchase_vs_bid_breakdown_frame",
+    "purchase_vs_bid_request_counts",
+    "purchase_vs_bid_xlsx_bytes",
+    "rejected_option_value_counts",
     # vendor
     "average_vendor_scores",
     "build_period_breakdown",
@@ -364,10 +405,15 @@ __all__ = [
     "proximity_statistics",
     "purchase_requests_xlsx",
     "sorted_vendor_ids",
+    "vendor_agent_count_series",
     "vendor_choice_weights_xlsx",
     "vendor_period_details_xlsx",
+    "vendor_price_scores",
+    "vendor_rating_values",
     "vendor_score_breakdown_xlsx",
+    "vendor_score_values",
     "vendor_selection_breakdown_xlsx",
+    "vendor_selection_shares",
     # xlsx
     "apply_bid_price_formatting",
     "apply_disclosure_price_formatting",
@@ -375,5 +421,6 @@ __all__ = [
     "apply_export_price_formatting",
     "apply_transaction_price_formatting",
     "apply_vendor_price_formatting",
+    "period_sheets",
     "to_xlsx_bytes",
 ]

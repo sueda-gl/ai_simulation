@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 
-from app.reports.purchase import (
+from app.reports.transactions import (
     build_purchase_vs_bid_export,
     prepare_priority_lists_export,
     priority_first_choice_counts,
@@ -32,9 +32,14 @@ from app.reports.rtd import (
     prepare_rtd_integrated_export,
     prepare_rtd_model_export,
     rtd_bin_count,
+    rtd_density_bars,
     rtd_first_choice,
-    rtd_integrated_first_choice,
+    rtd_first_choice_allocation,
+    rtd_integrated_first_choice_allocation,
+    rtd_kemeny_optimal_share,
     rtd_kemeny_status_frame,
+    rtd_kemeny_tie_share,
+    rtd_length_allocation,
     rtd_model_xlsx_bytes,
     rtd_reversed_sequence,
     rtd_score_chart_data,
@@ -43,9 +48,12 @@ from app.reports.rtd import (
     rtd_stata_bin_count,
     rtd_stata_bins,
 )
-from app.utils.timestamp_utils import TimestampConverter
+import datetime as _datetime  # module, not the class: functions below import the class locally
 
-# The pure builders now live in app/reports/{purchase,rtd}.py. These aliases keep
+from app.reports import timestamps
+from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS, TimestampConverter
+
+# The pure builders now live in app/reports/{transactions,rtd}.py. These aliases keep
 # the names this module has always exposed (the Decision 4 tests and the export
 # section import them from here).
 _RTD_ELEMENT_SHEETS = RTD_ELEMENT_SHEETS
@@ -130,9 +138,13 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
         sim_params = getattr(st.session_state, 'sim_params', None)
         transaction_records = build_purchase_vs_bid_export(
             df,
-            # TimestampConverter takes its base time, period duration and period
-            # count off session state, so the page builds it
-            ts_converter=TimestampConverter(),
+            # The converter's base time (today's midnight), period duration and
+            # period count come off the session, so the page builds it
+            ts_converter=TimestampConverter(
+                timestamps.midnight_of(_datetime.datetime.now()),
+                float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
+                int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
+            ),
             market_price=getattr(sim_params, 'market_price', 100.0),
             platform_markup=getattr(sim_params, 'platform_markup', 0.1),
             price_range=getattr(sim_params, 'price_range', 0.25),
@@ -515,12 +527,7 @@ def _rtd_density_hist(series, title, x_title, chart_key):
     the chart looks identical to the Stata graph. The hover shows both the density and
     the % of agents in the bin. The series mean is marked with a vertical red line."""
     import plotly.graph_objects as go
-    s = pd.Series(series).dropna().astype(float)
-    edges, counts = _rtd_stata_bins(s)
-    edges = np.asarray(edges, dtype=float)
-    size = float(edges[1] - edges[0])
-    props = np.asarray(counts, dtype=float) / max(len(s), 1)
-    density = props / size
+    s, edges, counts, size, props, density = rtd_density_bars(series)
     fig = go.Figure(go.Bar(
         x=(edges[:-1] + edges[1:]) / 2.0, y=density, width=size * 0.95,
         customdata=np.column_stack([edges[:-1], edges[1:], props * 100.0, counts]),
@@ -917,7 +924,6 @@ def _render_rtd_ttp_section(df, decision_name, chart_suffix, element_section, do
     """Element 1: Options List Length (Tendency to Plan)."""
     if 'rtd_weighted_ttp' not in df.columns:
         return
-    n = len(df)
     st.markdown("---")
     st.markdown("**1️⃣ Options List Length (Tendency to Plan)**")
     st.markdown("presents how many default options each agent pre-selects (0-5)")
@@ -930,19 +936,15 @@ def _render_rtd_ttp_section(df, decision_name, chart_suffix, element_section, do
         _rtd_drawn_caption(drawn, "options list lengths")
 
     def _alloc_chart():
-        counts = df['rtd_choice_length'].astype(int).value_counts()
         # Bars ALWAYS in natural 0..5 order (the specification: "always start with 0 and
         # end with 5, presenting bars in order rather than from low to high").
-        lengths = list(range(0, 6))
-        fractions = [counts.get(l, 0) / n for l in lengths]
+        lengths, fractions, table = rtd_length_allocation(
+            df, 'rtd_choice_length', 'Number of pre-selected options')
         _rtd_fraction_bar([str(l) for l in lengths], fractions,
                           "Number of pre-selected options",
                           "Number of pre-selected options",
                           f"{decision_name}_rtd_length_chart{chart_suffix}")
-        st.dataframe(pd.DataFrame({
-            'Number of pre-selected options': lengths,
-            '% of agents': [f"{counts.get(l, 0) / n * 100:.1f}%" for l in lengths],
-        }), hide_index=True, use_container_width=True)
+        st.dataframe(table, hide_index=True, use_container_width=True)
         _rtd_option_lines()
 
     element_section(_score_chart, _alloc_chart)
@@ -956,7 +958,6 @@ def _render_rtd_ranking_section(df, decision_name, chart_suffix, element_section
     idx, col_key, label, seq = _RTD_MECH_BY_KEY[mech]
     if f'rtd_{col_key}_segment' not in df.columns:
         return
-    n = len(df)
     st.markdown("---")
     st.markdown(f"**{idx}️⃣ {label} Ranking**")
     st.markdown("Priority sequence " + " > ".join(f"Option {o}" for o in seq))
@@ -970,20 +971,15 @@ def _render_rtd_ranking_section(df, decision_name, chart_suffix, element_section
         _rtd_drawn_caption(drawn, "segments")
 
     def _alloc_chart():
-        # First choice read from the element's RANKING column, never derived from the
-        # segment (see rtd_first_choice): direction-agnostic by construction.
-        counts = _rtd_first_choice(df, col_key).value_counts()
-        order = _rtd_reversed_sequence(seq)
-        fractions = [counts.get(o, 0) / n for o in order]
+        # First choice read from the element's RANKING column (reversed priority
+        # order on the chart), plus the companion table: options 1-5 (natural
+        # order) -> first-ranked % of agents
+        order, fractions, table = rtd_first_choice_allocation(df, col_key, seq)
         _rtd_fraction_bar([f"Option {o}" for o in order], fractions,
                           f"% of {label.lower()}-based options ranking",
                           "Selected option",
                           f"{decision_name}_rtd_{col_key}_seg_chart{chart_suffix}")
-        # Companion table: options 1-5 (natural order) -> first-ranked % of agents
-        st.dataframe(pd.DataFrame({
-            'Option': [f"Option {o}" for o in range(1, 6)],
-            '% of agents': [f"{counts.get(o, 0) / n * 100:.1f}%" for o in range(1, 6)],
-        }), hide_index=True, use_container_width=True)
+        st.dataframe(table, hide_index=True, use_container_width=True)
         _rtd_option_lines()
 
     element_section(_score_chart, _alloc_chart)
@@ -1009,38 +1005,27 @@ def _render_rtd_integrated_section(df, decision_name, chart_suffix, element_sect
         st.info("The rank aggregation is disabled on the Decision 4 tab, so no integrated "
                 "default list was produced; the individual elements are shown instead.")
         return
-    n = len(df)
 
     st.markdown("---")
     st.markdown("**6️⃣ Integrated Default List**")
 
     def _length_chart():
-        lengths = list(range(0, 6))
-        counts = df['rtd_default_list_length'].astype(int).value_counts()
-        fractions = [counts.get(l, 0) / n for l in lengths]
+        lengths, fractions, table = rtd_length_allocation(
+            df, 'rtd_default_list_length', 'Integrated default list length')
         _rtd_fraction_bar([str(l) for l in lengths], fractions,
                           "% of agents with default list length",
                           "Number of options in the integrated default list",
                           f"{decision_name}_rtd_agg_length_chart{chart_suffix}")
-        st.dataframe(pd.DataFrame({
-            'Integrated default list length': lengths,
-            '% of agents': [f"{counts.get(l, 0) / n * 100:.1f}%" for l in lengths],
-        }), hide_index=True, use_container_width=True)
+        st.dataframe(table, hide_index=True, use_container_width=True)
 
     def _first_choice_chart():
         # Direction-agnostic: the first option of the model's own integrated list.
-        counts = rtd_integrated_first_choice(df).value_counts()
-        order = list(range(1, 6))
-        fractions = [counts.get(o, 0) / n for o in order]
+        order, fractions, table = rtd_integrated_first_choice_allocation(df)
         _rtd_fraction_bar([f"Option {o}" for o in order], fractions,
                           "% of first integrated default option",
                           "First option in the integrated default list",
                           f"{decision_name}_rtd_agg_first_chart{chart_suffix}")
-        rows = [{'Option': f"Option {o}", '% of agents': f"{counts.get(o, 0) / n * 100:.1f}%"}
-                for o in order]
-        rows.append({'Option': 'No default options (list length 0)',
-                     '% of agents': f"{counts.get(0, 0) / n * 100:.1f}%"})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.dataframe(table, hide_index=True, use_container_width=True)
         _rtd_option_lines()
 
     if mode == 'whole':
@@ -1087,8 +1072,7 @@ def _render_rtd_tie_statistics(df, element_section):
         return
     st.markdown("---")
     st.markdown("**Tie statistics of the Kemeny aggregation**")
-    status = df['rtd_consensus_kemeny_status'].astype(str)
-    tie_share = (status != 'unique').mean() * 100
+    tie_share = rtd_kemeny_tie_share(df)
     st.markdown(f"% of agents with initial ties after Kemeny: **{tie_share:.1f}%**")
 
     def _status_table():
@@ -1102,7 +1086,7 @@ def _render_rtd_tie_statistics(df, element_section):
     element_section(_status_table, _stage_table)
 
     if 'rtd_consensus_is_kemeny_optimal' in df.columns:
-        opt_share = df['rtd_consensus_is_kemeny_optimal'].astype(bool).mean() * 100
+        opt_share = rtd_kemeny_optimal_share(df)
         st.markdown(f"Final ranking is Kemeny-optimal for **{opt_share:.1f}%** of agents.")
 
 

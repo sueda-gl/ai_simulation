@@ -1,8 +1,10 @@
 # app/pages/results/visualizations/__init__.py
 """
 Visualization module for decision-specific render functions.
-This module organizes all visualization functions by category.
+This module organizes all visualization functions by category, and
+``render_decision_results`` routes a decision to its render function.
 """
+import streamlit as st
 
 # Import all visualization functions from category modules
 from .donation_viz import (
@@ -45,7 +47,6 @@ from .viz_helpers import (
 DECISION_VISUALIZATIONS = {
     # Donation decisions
     'donation_default': render_donation_default,
-    'donation_default_raw': render_donation_default,  # Same as donation_default
     'final_donation_rate': render_final_donation_rate,
     
     # Disclosure decisions
@@ -71,6 +72,38 @@ DECISION_VISUALIZATIONS = {
     
     # Note: Any decision not in this registry will automatically use render_generic_decision
 }
+
+
+def render_decision_results(df, decision_name, decision_title):
+    """
+    Main entry point for rendering decision-specific visualizations.
+    
+    This function routes to the appropriate visualization based on decision_name.
+    All specific render functions are imported from the category modules above.
+    
+    Args:
+        df: DataFrame containing simulation results
+        decision_name: Name of the decision (e.g., 'donation_default')
+        decision_title: Display title for the decision
+    """
+    if decision_name not in df.columns:
+        st.warning(f"No results available for {decision_title}")
+        return
+    
+    decision_data = df[decision_name]
+    
+    # Get the appropriate visualization function for this decision
+    viz_function = DECISION_VISUALIZATIONS.get(decision_name)
+    
+    if viz_function is None:
+        # Fallback for decisions without specific visualizations
+        st.info(f"No specialized visualization available for {decision_title}")
+        st.write(f"**Data preview:**")
+        st.write(decision_data.describe())
+        return
+    
+    # Call the specific visualization function
+    viz_function(df, decision_name, decision_title, decision_data)
 
 
 # Export all symbols
@@ -103,7 +136,8 @@ __all__ = [
     # Helpers
     'get_dynamic_description',
     
-    # Registry
+    # Registry and router
     'DECISION_VISUALIZATIONS',
+    'render_decision_results',
 ]
 
