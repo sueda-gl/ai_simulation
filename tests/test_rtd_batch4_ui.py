@@ -48,10 +48,10 @@ RANKING_COL_KEYS = {'loyalty': 'loyalty', 'wtp': 'wtp',
 
 def _build_rtd_frame(inc_mode):
     """Individual Decision 4 model run on the first 60 original participants."""
-    from src.orchestrator_baseline import OrchestratorBaseline
+    from src.engine.core import Engine
     from app.simulation import _apply_rejected_transaction_config
 
-    orch = OrchestratorBaseline()
+    orch = Engine("baseline")
     _apply_rejected_transaction_config(orch, "baseline", inc_mode)
     agents = orch.original_data.iloc[:60].copy()
     agents.index = range(len(agents))

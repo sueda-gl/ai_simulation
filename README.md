@@ -127,7 +127,7 @@ src/                  THE ENGINE - pure simulation, never imports Streamlit or a
   trait_engine.py        samples synthetic agents from the copula model
   vendor_attribute_generator.py   vendor attributes and the shared vendor score
   utils/stochastic.py    shared sigma helpers and the one stochastic gate
-  orchestrator*.py       three-line wrappers: Orchestrator() == Engine('copula')
+  config.py              the one loader of config/decisions.yaml and simulation.yaml
 
 app/                  THE STREAMLIT APP
   simulation.py          the module connecting st.session_state to the engine

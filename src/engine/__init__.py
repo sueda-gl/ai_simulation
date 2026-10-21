@@ -12,8 +12,8 @@ The single simulation engine shared by every population mode.
 * :mod:`src.engine.customer_type` - discount / fixed / regular from the disclosure decisions
 * :mod:`src.engine.log`         - prefixed console logging
 
-``src.orchestrator``, ``src.orchestrator_doc_mode`` and ``src.orchestrator_baseline``
-are thin subclasses of :class:`src.engine.core.Engine` bound to one profile each.
+``Engine("copula")`` / ``Engine("documentation")`` / ``Engine("baseline")`` binds the
+engine to one profile (the former ``src.orchestrator*`` wrappers).
 """
 
 from src.engine.profile import ModeProfile, PROFILES

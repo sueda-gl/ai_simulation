@@ -9,6 +9,12 @@ per-decision patch functions that map the tabs' settings onto the engine's
 configuration.  It reads ONLY the snapshot and the config repo, writes
 nothing, and never imports Streamlit.
 
+Facts first, then messages: ``resolve_run_facts`` reads the snapshot into a
+``RunFacts`` (seed source, pinned configs, effective modes, decisions run with
+defaults, research sampling parameters); ``enumerate_sub_runs`` and
+``build_metadata`` build the plan from it; ``messages_for(facts)`` is the one
+place the screen's texts are composed.
+
 Rules the builder follows (each noted inline where it applies):
   * The Donation tab's flat coefficient set (donation_coeff_*_{cat,cont}
     session keys, loaded from the file) is what the engine runs - the nested
@@ -36,7 +42,8 @@ Rules the builder follows (each noted inline where it applies):
 """
 
 import copy
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.contract.defaults import DEFAULT_DECISION_VALUES
 from src.contract.plan import (
@@ -570,7 +577,162 @@ def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
     return patch
 
 
-# ---------------------------------------------------------- disclose_income
+# ------------------------------------------- the modelled decisions' patches
+#
+# Decisions 1, 2 and 4 map the tab onto the engine the same way: an income mode, a
+# few scalar tab values (each also kept by a saved "Use This Config" record), and
+# the stochastic block. The table below says, per decision, which session key
+# feeds which path of the patch, where a saved record keeps the same value, and
+# the transform applied on the way; ``_apply_scalar_fields`` is the one applier.
+# What does not fit the table is written out as an explicit special case:
+# donation's ``Replace(...)`` coefficient block (above), a saved Decision 4
+# record's whole ``intercepts`` block, the Flexibility anchor mix (W_CFlex is
+# derived) and Decision 4's per-mechanism sigma replication.
+
+@dataclass(frozen=True)
+class ScalarField:
+    """One tab value in a decision's patch: ``session_key`` (the tab), ``saved_path``
+    (inside a saved record's ``params``; None when the saved record is read another
+    way), ``config_path`` (inside the decision block) and the transform applied."""
+    session_key: str
+    saved_path: Optional[Tuple[str, ...]]
+    config_path: Tuple[str, ...]
+    transform: Optional[Callable[[Any], Any]] = None
+
+
+SCALAR_FIELDS: Dict[str, Tuple[ScalarField, ...]] = {
+    "disclose_income": (
+        ScalarField("di_intercept", ("intercept",), ("intercept",)),
+        ScalarField("di_wopb", ("anchor_weights", "observed_prosocial"), ("anchor_weights", "observed_prosocial")),
+        ScalarField("di_wpb", ("anchor_weights", "prosocial_weight"), ("anchor_weights", "prosocial_weight")),
+    ),
+    "disclose_documents": (
+        ScalarField("dd_intercept", ("intercept",), ("intercept",)),
+    ),
+    "rejected_transaction_defaults": (
+        # Per-element intercepts (doc notation beta0..beta4; research defaults from
+        # config/decisions.yaml - all five 0; TTP beta0 on the raw composite). A saved
+        # record's intercepts block is taken whole (see _saved_rtd_intercepts).
+        *(ScalarField(f"rtd_intercept_{mech}", None, ("intercepts", mech), float) for mech in RTD_MECHANISMS),
+        # Section-6 rank aggregation: enable flag (the last-resort tie-break is
+        # always the document's random rule, from the config file).
+        ScalarField("rtd_aggregation_enabled", ("aggregation", "enabled"), ("aggregation", "enabled"), bool),
+    ),
+}
+
+# Patch sub-dicts that are always present (possibly empty), per decision
+_PATCH_CONTAINERS: Dict[str, Tuple[str, ...]] = {
+    "disclose_income": ("anchor_weights",),
+    "disclose_documents": (),
+    "rejected_transaction_defaults": ("intercepts", "aggregation"),
+}
+
+
+@dataclass(frozen=True)
+class IncomeModeRule:
+    """How a decision's patch income mode is read: the tab key, the saved record's
+    default spelling, the mode a 'Compare both' tab value falls back to when no
+    explicit per-run mode is passed, whether the tab value is normalised (Decision 4)
+    or passed through (Decisions 1 and 2), and the saved value's normaliser."""
+    session_key: str
+    saved_default: str
+    compare_fallback: str
+    normalise_session_value: bool
+    saved_normalise: Callable[[Any], str]
+
+
+def _rtd_normalize_income_mode(mode: Any) -> str:
+    """Decision 4's reading: 'categorical' if the string mentions it, else 'continuous'."""
+    return "categorical" if "categorical" in str(mode).lower() else "continuous"
+
+
+INCOME_MODE_RULES: Dict[str, IncomeModeRule] = {
+    "disclose_income": IncomeModeRule("di_income_mode", "Categorical only", "categorical", False, normalize_income_mode),
+    "disclose_documents": IncomeModeRule("dd_income_mode", "Categorical only", "categorical", False, normalize_income_mode),
+    "rejected_transaction_defaults": IncomeModeRule("rtd_income_mode", "Continuous only", "continuous", True,
+                                                    _rtd_normalize_income_mode),
+}
+
+# Session-key prefix of each decision's stochastic toggles / sigma settings
+_SIGMA_PREFIX = {"disclose_income": "di", "disclose_documents": "dd", "rejected_transaction_defaults": "rtd"}
+
+
+def _lookup_path(mapping: Mapping, path: Tuple[str, ...]) -> Tuple[bool, Any]:
+    """(present, value) of ``path`` inside nested mappings; a missing or None
+    intermediate block counts as empty (``block.get(key, {}) or {}``)."""
+    current: Any = mapping
+    for key in path[:-1]:
+        current = current.get(key, {}) or {}
+        if not isinstance(current, Mapping):
+            return False, None
+    return (path[-1] in current), current.get(path[-1])
+
+
+def _set_path(patch: Dict[str, Any], path: Tuple[str, ...], value: Any) -> None:
+    target = patch
+    for key in path[:-1]:
+        target = target.setdefault(key, {})
+    target[path[-1]] = value
+
+
+def _apply_scalar_fields(patch: Dict[str, Any], fields: Sequence[ScalarField],
+                         source: Mapping, from_saved: bool) -> None:
+    """The one applier: copy each present field from the tab (``source`` is the
+    snapshot) or from a saved record's ``params`` into the patch."""
+    for field_ in fields:
+        if from_saved:
+            if field_.saved_path is None:
+                continue
+            present, value = _lookup_path(source, field_.saved_path)
+        else:
+            present, value = field_.session_key in source, source.get(field_.session_key)
+        if not present:
+            continue
+        _set_path(patch, field_.config_path, field_.transform(value) if field_.transform else value)
+
+
+def _patch_income_mode(decision: str, snapshot: Mapping, inc_mode: Optional[str],
+                       saved: Optional[Mapping]) -> Optional[str]:
+    """
+    Priority: saved record (top-level income_mode, from the selected result cell,
+    over params.income_mode) > explicit inc_mode (Compare both) > the tab key; a
+    'Compare both' tab value without an explicit mode falls back to the rule's
+    mode. None when none of them says anything (the file's value stays).
+    """
+    rule = INCOME_MODE_RULES[decision]
+    if saved is not None:
+        params = saved.get("params", {}) or {}
+        return rule.saved_normalise(saved.get("income_mode", params.get("income_mode", rule.saved_default)))
+    if inc_mode is not None:
+        return normalize_income_mode(inc_mode)
+    if rule.session_key in snapshot:
+        session_mode = snapshot[rule.session_key]
+        if is_compare_income_mode(session_mode):
+            return rule.compare_fallback  # safeguard; the runner passes an explicit mode
+        return normalize_income_mode(session_mode) if rule.normalise_session_value else session_mode
+    return None
+
+
+def _model_settings_patch(decision: str, snapshot: Mapping, inc_mode: Optional[str],
+                          saved: Optional[Mapping]) -> Dict[str, Any]:
+    """Income mode + the table's scalar fields, from the saved record or the tab."""
+    patch: Dict[str, Any] = {}
+    income_mode = _patch_income_mode(decision, snapshot, inc_mode, saved)
+    if income_mode is not None:
+        patch["income_mode"] = income_mode
+    for container in _PATCH_CONTAINERS[decision]:
+        patch[container] = {}
+    if saved is not None:
+        _apply_scalar_fields(patch, SCALAR_FIELDS[decision], saved.get("params", {}) or {}, from_saved=True)
+    else:
+        _apply_scalar_fields(patch, SCALAR_FIELDS[decision], snapshot, from_saved=False)
+    return patch
+
+
+def _sigma_toggles(snapshot: Mapping, prefix: str) -> Tuple[bool, bool]:
+    """(sigma_enabled, sigma_in_copula): absent key = the tab's default (on / off)."""
+    return snapshot.get(f"{prefix}_sigma_enabled", True), snapshot.get(f"{prefix}_sigma_in_copula", False)
+
 
 def _copy_prefixed_sigma_settings(snapshot: Mapping, prefix: str, stochastic: Dict[str, Any]) -> None:
     """Copy {prefix}_sigma_strategy / _scale_factor / _quintile_scale_factors when present."""
@@ -594,83 +756,36 @@ def _three_way_stochastic(pop_mode: str, sigma_enabled: bool, sigma_in_copula: b
     return {"sigma_value": 0.0, "in_copula": False}
 
 
+def _disclosure_stochastic(decision: str, snapshot: Mapping, pop_mode: str, sentinel: float,
+                           only_when_draws_on: bool) -> Dict[str, Any]:
+    """Decision 1 / 2 stochastic block: the three-way rule plus the CURRENT sigma
+    strategy / scale / quintiles - always, or (Decision 1 from the tab) only when
+    the draws are on."""
+    prefix = _SIGMA_PREFIX[decision]
+    sigma_enabled, sigma_in_copula = _sigma_toggles(snapshot, prefix)
+    stochastic = _three_way_stochastic(pop_mode, sigma_enabled, sigma_in_copula, sentinel)
+    draws_on = (pop_mode == "copula" and sigma_in_copula) or (pop_mode == "documentation" and sigma_enabled)
+    if draws_on or not only_when_draws_on:
+        _copy_prefixed_sigma_settings(snapshot, prefix, stochastic)
+    return stochastic
+
+
+# ---------------------------------------------------------- disclose_income
+
 def build_disclose_income_patch(snapshot: Mapping, config_repo: DecisionsConfig,
                                 pop_mode: str, inc_mode: Optional[str] = None) -> dict:
     """
     Decision 1 patch.  Priority: saved config (it pins what the pinned run
-    used) > explicit inc_mode (Compare both) > session state.
+    used) > explicit inc_mode (Compare both) > session state.  The stochastic
+    on/off comes from the CURRENT tab toggles (absent key = the tab's default,
+    on - never "off"); with a saved config the current strategy / scale /
+    quintiles always travel, from the tab only when the draws are on.
     """
     saved = explicit_saved_configs(snapshot).get("disclose_income")
-    if saved is not None:
-        return _saved_disclose_income_patch(snapshot, config_repo, pop_mode, saved)
-    return _session_disclose_income_patch(snapshot, config_repo, pop_mode, inc_mode)
-
-
-def _saved_disclose_income_patch(snapshot: Mapping, config_repo: DecisionsConfig,
-                                 pop_mode: str, saved: Mapping) -> dict:
-    params = saved.get("params", {}) or {}
-
-    # Priority: top-level income_mode (from result_key) > params.income_mode (at save time)
-    income_mode = saved.get("income_mode", params.get("income_mode", "Categorical only"))
-    patch: Dict[str, Any] = {"income_mode": normalize_income_mode(income_mode)}
-
-    if "intercept" in params:
-        patch["intercept"] = params["intercept"]
-
-    anchor_weights: Dict[str, Any] = {}
-    saved_anchors = params.get("anchor_weights", {}) or {}
-    if "observed_prosocial" in saved_anchors:
-        anchor_weights["observed_prosocial"] = saved_anchors["observed_prosocial"]
-    if "prosocial_weight" in saved_anchors:
-        anchor_weights["prosocial_weight"] = saved_anchors["prosocial_weight"]
-    patch["anchor_weights"] = anchor_weights
-
-    # Stochastic on/off from the CURRENT tab toggles (absent key = the tab's default, on - never "off")
-    stochastic = _three_way_stochastic(
-        pop_mode,
-        sigma_enabled=snapshot.get("di_sigma_enabled", True),
-        sigma_in_copula=snapshot.get("di_sigma_in_copula", False),
-        sentinel=disclose_income_sigma_sentinel(config_repo),
-    )
-    # Always the CURRENT strategy / scale / quintiles (saved precedence)
-    _copy_prefixed_sigma_settings(snapshot, "di", stochastic)
-    patch["stochastic"] = stochastic
-    return patch
-
-
-def _session_disclose_income_patch(snapshot: Mapping, config_repo: DecisionsConfig,
-                                   pop_mode: str, inc_mode: Optional[str]) -> dict:
-    patch: Dict[str, Any] = {}
-
-    # Income mode. Priority: explicit inc_mode parameter > session state
-    if inc_mode is not None:
-        patch["income_mode"] = normalize_income_mode(inc_mode)
-    elif "di_income_mode" in snapshot:
-        session_mode = snapshot["di_income_mode"]
-        if is_compare_income_mode(session_mode):
-            # "Compare both" without an explicit mode - categorical as safeguard
-            patch["income_mode"] = "categorical"
-        else:
-            patch["income_mode"] = session_mode
-
-    if "di_intercept" in snapshot:
-        patch["intercept"] = snapshot["di_intercept"]
-
-    anchor_weights: Dict[str, Any] = {}
-    if "di_wopb" in snapshot:
-        anchor_weights["observed_prosocial"] = snapshot["di_wopb"]
-    if "di_wpb" in snapshot:
-        anchor_weights["prosocial_weight"] = snapshot["di_wpb"]
-    patch["anchor_weights"] = anchor_weights
-
-    sigma_enabled = snapshot.get("di_sigma_enabled", True)  # absent key = the tab's default (on)
-    sigma_in_copula = snapshot.get("di_sigma_in_copula", False)
-    stochastic = _three_way_stochastic(
-        pop_mode, sigma_enabled, sigma_in_copula, disclose_income_sigma_sentinel(config_repo))
-    # Strategy / scale / quintiles only when the draws are on (session precedence)
-    if (pop_mode == "copula" and sigma_in_copula) or (pop_mode == "documentation" and sigma_enabled):
-        _copy_prefixed_sigma_settings(snapshot, "di", stochastic)
-    patch["stochastic"] = stochastic
+    patch = _model_settings_patch("disclose_income", snapshot, inc_mode, saved)
+    patch["stochastic"] = _disclosure_stochastic(
+        "disclose_income", snapshot, pop_mode, disclose_income_sigma_sentinel(config_repo),
+        only_when_draws_on=saved is None)
     return patch
 
 
@@ -681,63 +796,40 @@ def build_disclose_documents_patch(snapshot: Mapping, config_repo: DecisionsConf
     """
     Decision 2 patch.  A saved Disclose Documents config is applied exactly
     like a saved Disclose Income config (same precedence); otherwise explicit
-    inc_mode (Compare both) > session state.
+    inc_mode (Compare both) > session state.  The intercept override comes from
+    the tab's session key (never from the file).
     """
     saved = explicit_saved_configs(snapshot).get("disclose_documents")
-    if saved is not None:
-        return _saved_disclose_documents_patch(snapshot, config_repo, pop_mode, saved)
-    return _session_disclose_documents_patch(snapshot, config_repo, pop_mode, inc_mode)
-
-
-def _saved_disclose_documents_patch(snapshot: Mapping, config_repo: DecisionsConfig,
-                                    pop_mode: str, saved: Mapping) -> dict:
-    params = saved.get("params", {}) or {}
-    income_mode = saved.get("income_mode", params.get("income_mode", "Categorical only"))
-    patch: Dict[str, Any] = {"income_mode": normalize_income_mode(income_mode)}
-    if "intercept" in params:
-        patch["intercept"] = params["intercept"]
-
-    stochastic = _three_way_stochastic(
-        pop_mode,
-        sigma_enabled=snapshot.get("dd_sigma_enabled", True),   # absent key = the tab's default (on)
-        sigma_in_copula=snapshot.get("dd_sigma_in_copula", False),
-        sentinel=disclose_documents_sigma_sentinel(config_repo),
-    )
-    _copy_prefixed_sigma_settings(snapshot, "dd", stochastic)
-    patch["stochastic"] = stochastic
-    return patch
-
-
-def _session_disclose_documents_patch(snapshot: Mapping, config_repo: DecisionsConfig,
-                                      pop_mode: str, inc_mode: Optional[str]) -> dict:
-    patch: Dict[str, Any] = {}
-
-    # Income mode: explicit inc_mode (Compare both) > session state > config default
-    if inc_mode is not None:
-        patch["income_mode"] = normalize_income_mode(inc_mode)
-    elif "dd_income_mode" in snapshot:
-        session_mode = snapshot["dd_income_mode"]
-        if is_compare_income_mode(session_mode):
-            patch["income_mode"] = "categorical"  # safeguard; the runner passes an explicit mode
-        else:
-            patch["income_mode"] = session_mode
-
-    # Optional intercept override from the tab's session key (never from the file)
-    if "dd_intercept" in snapshot:
-        patch["intercept"] = snapshot["dd_intercept"]
-
-    stochastic = _three_way_stochastic(
-        pop_mode,
-        sigma_enabled=snapshot.get("dd_sigma_enabled", True),   # absent key = the tab's default (on)
-        sigma_in_copula=snapshot.get("dd_sigma_in_copula", False),
-        sentinel=disclose_documents_sigma_sentinel(config_repo),
-    )
-    _copy_prefixed_sigma_settings(snapshot, "dd", stochastic)
-    patch["stochastic"] = stochastic
+    patch = _model_settings_patch("disclose_documents", snapshot, inc_mode, saved)
+    patch["stochastic"] = _disclosure_stochastic(
+        "disclose_documents", snapshot, pop_mode, disclose_documents_sigma_sentinel(config_repo),
+        only_when_draws_on=False)
     return patch
 
 
 # ------------------------------------------- rejected_transaction_defaults
+
+def _saved_rtd_intercepts(saved: Mapping) -> Dict[str, float]:
+    """A saved Decision 4 record's intercepts block, taken whole (every element it carries)."""
+    params = saved.get("params", {}) or {}
+    return {mech: float(value) for mech, value in (params.get("intercepts") or {}).items()}
+
+
+def _flexibility_anchor(snapshot: Mapping, saved: Optional[Mapping]) -> Optional[Dict[str, float]]:
+    """Flexibility Anchor Mix (sub-tab 5): W_OFlex from the saved record or the tab
+    slider, W_CFlex = 1 - W_OFlex (a saved record may carry its own)."""
+    if saved is not None:
+        saved_anchor = (saved.get("params", {}) or {}).get("flexibility_anchor") or {}
+        if "observed_weight" in saved_anchor:
+            w_obs = float(saved_anchor["observed_weight"])
+            return {"observed_weight": w_obs,
+                    "calculated_weight": float(saved_anchor.get("calculated_weight", 1.0 - w_obs))}
+        return None
+    if "rtd_flex_observed_weight" in snapshot:
+        w_obs = float(snapshot["rtd_flex_observed_weight"])
+        return {"observed_weight": w_obs, "calculated_weight": 1.0 - w_obs}
+    return None
+
 
 def build_rejected_transaction_patch(snapshot: Mapping, config_repo: DecisionsConfig,
                                      pop_mode: str, inc_mode: Optional[str] = None) -> dict:
@@ -768,90 +860,26 @@ def build_rejected_transaction_patch(snapshot: Mapping, config_repo: DecisionsCo
     mechanism.  (The September 2026 tab removed the per-element stochastic
     anchor control, so no ``anchor`` is sent; the model keeps its default.)
     """
-    patch: Dict[str, Any] = {}
-
     saved = explicit_saved_configs(snapshot).get("rejected_transaction_defaults") if inc_mode is None else None
+    patch = _model_settings_patch("rejected_transaction_defaults", snapshot, inc_mode, saved)
     if saved is not None:
-        _saved_rejected_transaction_model_settings(patch, saved)
-    else:
-        if inc_mode is not None:
-            patch["income_mode"] = normalize_income_mode(inc_mode)
-        elif "rtd_income_mode" in snapshot:
-            session_mode = str(snapshot["rtd_income_mode"])
-            if is_compare_income_mode(session_mode):
-                patch["income_mode"] = "continuous"  # safeguard; runner passes explicit mode
-            else:
-                patch["income_mode"] = normalize_income_mode(session_mode)
+        patch["intercepts"] = _saved_rtd_intercepts(saved)
+    flexibility_anchor = _flexibility_anchor(snapshot, saved)
+    if flexibility_anchor is not None:
+        patch["flexibility_anchor"] = flexibility_anchor
 
-        # Per-element intercepts (doc notation beta0..beta4; research defaults from
-        # config/decisions.yaml - all five 0; TTP beta0 on the raw composite)
-        intercepts: Dict[str, float] = {}
-        for mech in RTD_MECHANISMS:
-            key = f"rtd_intercept_{mech}"
-            if key in snapshot:
-                intercepts[mech] = float(snapshot[key])
-        patch["intercepts"] = intercepts
-
-        # Flexibility Anchor Mix (sub-tab 5): W_OFlex slider, W_CFlex = 1 - W_OFlex
-        if "rtd_flex_observed_weight" in snapshot:
-            w_obs = float(snapshot["rtd_flex_observed_weight"])
-            patch["flexibility_anchor"] = {"observed_weight": w_obs,
-                                           "calculated_weight": 1.0 - w_obs}
-
-        # Section-6 rank aggregation: enable flag (the last-resort tie-break is
-        # always the document's random rule, from the config file).
-        aggregation: Dict[str, Any] = {}
-        if "rtd_aggregation_enabled" in snapshot:
-            aggregation["enabled"] = bool(snapshot["rtd_aggregation_enabled"])
-        patch["aggregation"] = aggregation
-
-    sigma_enabled = snapshot.get("rtd_sigma_enabled", True)
-    sigma_in_copula = snapshot.get("rtd_sigma_in_copula", False)
+    # Stochastic: the three-way rule, then the decision-wide sigma settings replicated
+    # to every mechanism (explicit special case)
+    sigma_enabled, sigma_in_copula = _sigma_toggles(snapshot, "rtd")
     stochastic: Dict[str, Any] = _three_way_stochastic(pop_mode, sigma_enabled, sigma_in_copula, RTD_SIGMA_ENABLE)
-
     mechanisms: Dict[str, Dict[str, Any]] = {}
     for mech in RTD_MECHANISMS:
         mech_cfg: Dict[str, Any] = {}
-        if "rtd_sigma_strategy" in snapshot:
-            mech_cfg["sigma_strategy"] = snapshot["rtd_sigma_strategy"]
-        if "rtd_scale_factor" in snapshot:
-            mech_cfg["scale_factor"] = snapshot["rtd_scale_factor"]
-        if "rtd_quintile_scale_factors" in snapshot:
-            mech_cfg["quintile_scale_factors"] = copy.deepcopy(snapshot["rtd_quintile_scale_factors"])
+        _copy_prefixed_sigma_settings(snapshot, "rtd", mech_cfg)
         mechanisms[mech] = mech_cfg
     stochastic["mechanisms"] = mechanisms
     patch["stochastic"] = stochastic
     return patch
-
-
-def _saved_rejected_transaction_model_settings(patch: Dict[str, Any], saved: Mapping) -> None:
-    """
-    A saved Decision 4 configuration's MODEL settings, written into ``patch``:
-    income mode (top-level, from the selected result cell, over
-    params.income_mode), per-element intercepts, the Flexibility anchor mix and
-    the rank-aggregation enable flag.  The stochastic on/off toggles, sigma
-    strategy and coefficients follow the CURRENT tab, as for disclose_income.
-    """
-    params = saved.get("params", {}) or {}
-    income_mode = saved.get("income_mode", params.get("income_mode", "Continuous only"))
-    patch["income_mode"] = "categorical" if "categorical" in str(income_mode).lower() else "continuous"
-
-    patch["intercepts"] = {mech: float(value)
-                           for mech, value in (params.get("intercepts") or {}).items()}
-
-    aggregation: Dict[str, Any] = {}
-    saved_agg = params.get("aggregation") or {}
-    if "enabled" in saved_agg:
-        aggregation["enabled"] = bool(saved_agg["enabled"])
-    patch["aggregation"] = aggregation
-
-    saved_anchor = params.get("flexibility_anchor") or {}
-    if "observed_weight" in saved_anchor:
-        w_obs = float(saved_anchor["observed_weight"])
-        patch["flexibility_anchor"] = {
-            "observed_weight": w_obs,
-            "calculated_weight": float(saved_anchor.get("calculated_weight", 1.0 - w_obs)),
-        }
 
 
 def build_decision_patches(snapshot: Mapping, config_repo: DecisionsConfig, pop_mode: str,
@@ -948,13 +976,318 @@ def build_saved_expectations(configs: Mapping[str, Mapping], sub_runs: Sequence[
     return tuple(expectations)
 
 
+# ----------------------------------------------------------------- the facts
+
+@dataclass(frozen=True)
+class RunFacts:
+    """
+    What one click resolved to, before any text is written: the seed and its
+    source, the pinned configurations in play, the decisions and the effective
+    population / income modes with where each came from, the default-decision
+    settings, and the research sampling parameters (``n_agents`` with the
+    population).  ``messages_for`` turns these into the screen's texts.
+    """
+    seed: Any
+    n_agents: Any
+    seed_source: str                                 # 'configs' | 'session_state'
+    saved_configs: Dict[str, dict]                   # the explicit "Use This Config" records, store order
+    decision_settings: dict                          # collect_decision_settings() output
+    selected_decisions: Tuple[str, ...]
+    single_decision: Optional[Tuple[str, ...]]       # None = all 13
+    decisions_to_run: Optional[Tuple[str, ...]]      # the list handed to the engine (DD-only adds DI first)
+    force_di_default: bool                           # standalone DD run without a saved DI config
+    default_decisions_list: Tuple[str, ...]
+    branch: str                                      # the single modelled decision run alone, or 'combined'
+    effective_income_mode: Any
+    income_mode_source: str                          # 'tab' | 'saved_disclose_income' | 'saved_donation_default' | 'session'
+    effective_population_mode: str
+    pinned_population_mode: Optional[str]            # a saved config's population mode, when one pinned it
+    population: Optional[str]                        # internal population type; None for Compare all
+
+
+def _effective_decisions(snapshot: Mapping) -> Tuple[Tuple[str, ...], Optional[Tuple[str, ...]]]:
+    """(selected, single_decision): single_decision is None when every decision is selected."""
+    selected = tuple(_selected_decisions(snapshot))
+    return selected, (None if len(selected) == len(ALL_DECISIONS) else selected)
+
+
+def _resolve_modes(snapshot: Mapping, saved_configs: Mapping[str, dict],
+                   single_decision: Optional[Tuple[str, ...]]) -> Dict[str, Any]:
+    """
+    The effective income and population modes of the run and where they came
+    from (the DI-only / DD-only / RTD-only / donation-only / combined branches).
+    The single-decision branches never rewrite income_spec_mode; the modes a
+    run used travel in RunMetadata, so a run cannot change the mode shown on
+    Page 2.  Returns the RunFacts fields it decides.
+    """
+    di_saved = saved_configs.get("disclose_income")
+    donation_saved = saved_configs.get("donation_default")
+    dd_saved = saved_configs.get("disclose_documents")
+
+    modes: Dict[str, Any] = {
+        "decisions_to_run": single_decision,
+        "force_di_default": False,
+        "income_mode_source": "tab",
+        # Default: the user's current population mode (never mutated)
+        "effective_population_mode": snapshot.get("population_mode", "Copula (synthetic)"),
+        "pinned_population_mode": None,
+    }
+
+    if single_decision == ("disclose_income",):
+        modes["branch"] = "disclose_income"
+        modes["effective_income_mode"] = snapshot.get("di_income_mode", "Categorical only")
+    elif single_decision == ("disclose_documents",):
+        modes["branch"] = "disclose_documents"
+        modes["effective_income_mode"] = snapshot.get("dd_income_mode", "Categorical only")
+        # ELIGIBILITY (qualified subgroup) for the STANDALONE DD run: Decision 1 runs first.
+        #   (i)  no saved disclose_income config -> DI via its DEFAULT probability (the
+        #        default-decisions short-circuit, forced through default_decisions_list)
+        #   (ii) a saved disclose_income config -> the full DI model with that config
+        modes["decisions_to_run"] = ("disclose_income", "disclose_documents")
+        modes["force_di_default"] = di_saved is None
+    elif single_decision == ("rejected_transaction_defaults",):
+        modes["branch"] = "rejected_transaction_defaults"
+        modes["effective_income_mode"] = snapshot.get("rtd_income_mode", "Continuous only")
+    elif single_decision == ("donation_default",):
+        modes["branch"] = "donation_default"
+        if donation_saved:
+            modes["effective_income_mode"] = donation_saved.get(
+                "donation_income_mode", donation_saved.get("income_spec_mode", "categorical only"))
+        else:
+            modes["effective_income_mode"] = snapshot.get("income_spec_mode", "categorical only")
+    else:
+        # Combined simulation or other decisions: a saved config's income mode wins
+        modes["branch"] = "combined"
+        effective_income_mode = None
+        if di_saved:
+            effective_income_mode = di_saved.get("income_mode",
+                                                 di_saved.get("params", {}).get("income_mode"))
+            modes["income_mode_source"] = "saved_disclose_income"
+        if effective_income_mode is None and donation_saved:
+            effective_income_mode = donation_saved.get("donation_income_mode",
+                                                       donation_saved.get("income_spec_mode"))
+            modes["income_mode_source"] = "saved_donation_default"
+        if effective_income_mode is None:
+            effective_income_mode = snapshot.get("income_spec_mode", "categorical only")
+            modes["income_mode_source"] = "session"
+        modes["effective_income_mode"] = effective_income_mode
+
+        # Population mode for THIS run: a saved config pins it (to reproduce the pinned run) - the user's
+        # population_mode is read, never changed.
+        rtd_saved = saved_configs.get("rejected_transaction_defaults")
+        for saved_cfg in (di_saved, donation_saved, dd_saved, rtd_saved):
+            if saved_cfg:
+                pop_mode = saved_cfg.get("population_mode")
+                if not pop_mode:
+                    pop_mode = get_population_mode_from_result_key(saved_cfg.get("result_key"))
+                if pop_mode:
+                    modes["pinned_population_mode"] = pop_mode
+                    modes["effective_population_mode"] = pop_mode
+                    break
+
+    effective_pop_mode = modes["effective_population_mode"]
+    modes["population"] = None if effective_pop_mode == "Compare all" else get_pop_type(effective_pop_mode)
+    return modes
+
+
+def resolve_run_facts(snapshot: Mapping, default_decision_values: Mapping,
+                      seed_resolution: Optional[Tuple[Any, Any, str]] = None) -> RunFacts:
+    """Everything the plan needs, read once from the snapshot (no text yet)."""
+    # Seed / n_agents from the explicit saved configs (if any) or the session
+    if seed_resolution is not None:
+        seed, n_agents, source = seed_resolution
+    else:
+        seed, n_agents, source = resolve_seed_and_n(snapshot)
+
+    saved_configs = explicit_saved_configs(snapshot)
+    selected_decisions, single_decision = _effective_decisions(snapshot)
+    decision_settings = collect_decision_settings(snapshot, default_decision_values)
+    modes = _resolve_modes(snapshot, saved_configs, single_decision)
+
+    # Default-decision list handed to the engine (the force-DI-default rule lives here)
+    default_decisions_list = list(snapshot.get("default_decisions", []) or [])
+    if modes["force_di_default"] and "disclose_income" not in default_decisions_list:
+        default_decisions_list.append("disclose_income")
+
+    return RunFacts(
+        seed=seed,
+        n_agents=n_agents,
+        seed_source=source,
+        saved_configs=saved_configs,
+        decision_settings=decision_settings,
+        selected_decisions=selected_decisions,
+        single_decision=single_decision,
+        default_decisions_list=tuple(default_decisions_list),
+        **modes,
+    )
+
+
+# -------------------------------------------------------------- the messages
+
+def _saved_config_caption(decision_name: str, config: Mapping) -> str:
+    decision_title = decision_name.replace("_", " ").title()
+    if decision_name == "donation_default":
+        income_mode = config.get("donation_income_mode",
+                                 config.get("income_spec_mode", "categorical only"))
+        return f"  🎯 {decision_title}: {income_mode}"
+    if decision_name == "disclose_income":
+        income_mode = config.get("income_mode",
+                                 config.get("params", {}).get("income_mode", "Categorical only"))
+        return f"  📋 {decision_title}: {income_mode}"
+    return f"  ✓ {decision_title}"
+
+
+def messages_for(facts: RunFacts) -> Tuple[UiMessage, ...]:
+    """The st.info / caption / success texts the screen shows before the run, in order."""
+    messages: List[UiMessage] = []
+
+    def info(text: str) -> None:
+        messages.append(UiMessage("info", text))
+
+    def caption(text: str) -> None:
+        messages.append(UiMessage("caption", text))
+
+    def success(text: str) -> None:
+        messages.append(UiMessage("success", text))
+
+    if facts.saved_configs:
+        info(f"📋 Using {len(facts.saved_configs)} saved decision configuration(s)")
+        for decision_name, config in facts.saved_configs.items():
+            caption(_saved_config_caption(decision_name, config))
+        if facts.seed_source == "configs":
+            caption(f"🔑 Using saved seed: {facts.seed}, agents: {facts.n_agents:,}")
+
+    if facts.decision_settings:
+        setting_info = describe_decision_settings(facts.decision_settings)
+        if setting_info:
+            success(f"🎲 Using configured defaults: {', '.join(setting_info)}")
+
+    mode = facts.effective_income_mode
+    if facts.branch == "disclose_income":
+        caption(f"🎯 Using Disclose Income specific mode: {mode}")
+    elif facts.branch == "disclose_documents":
+        caption(f"🎯 Using Disclose Documents specific mode: {mode}")
+        if facts.force_di_default:
+            probability = facts.decision_settings.get("disclose_income", {}).get("probability_y", 0.5)
+            caption(
+                "🔐 Eligibility: assigning Disclose Income via its default probability "
+                f"({probability:.0%} Y) "
+                "to identify the qualified subgroup (income < threshold AND disclosed income)."
+            )
+        else:
+            caption(
+                "🔐 Eligibility: using the selected Disclose Income configuration to "
+                "identify the qualified subgroup (income < threshold AND disclosed income)."
+            )
+    elif facts.branch == "rejected_transaction_defaults":
+        caption(f"🎯 Using Rejected Transaction Defaults specific mode: {mode}")
+    elif facts.branch == "donation_default":
+        caption(f"🎯 Using Donation Default income mode: {mode}")
+    else:
+        if facts.income_mode_source == "saved_disclose_income" and mode:
+            caption(f"📋 Using saved Disclose Income mode: {mode}")
+        elif facts.income_mode_source == "saved_donation_default" and mode:
+            caption(f"🎯 Using saved Donation Default mode: {mode}")
+        if facts.pinned_population_mode:
+            caption(f"🔄 Running with saved population mode: {facts.pinned_population_mode}")
+
+    if facts.population is None:
+        # Compare all three population modes - each uses its natural agent source
+        info("🔄 Running Compare All mode - each population uses its natural agent source")
+    elif facts.population == "copula":
+        info("🎲 Using synthetic agents from copula")
+    elif facts.population in ("documentation", "baseline"):
+        # Research Specification samples the participants randomly (seeded by the run
+        # seed); Research Baseline takes them in file order, cycling
+        info(research_population_text(facts.n_agents, random_sample=(facts.population == "documentation")))
+
+    return tuple(messages)
+
+
+# -------------------------------------------------------------- the sub-runs
+
+def income_modes_for(mode: Any) -> Tuple[str, ...]:
+    """The per-run income modes of an effective income mode ('Compare both' -> both)."""
+    if mode == "Compare both":
+        return ("categorical", "continuous")
+    if "continuous" in str(mode).lower():
+        return ("continuous",)
+    return ("categorical",)  # categorical only
+
+
+def enumerate_sub_runs(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFacts) -> Tuple[SubRun, ...]:
+    """One SubRun per result key, in execution order (Compare all: the three
+    populations in COMPARE_ALL_POPULATIONS order, each with its income modes)."""
+    simulation_params = build_simulation_params(snapshot)
+    purchasing_limits = build_purchasing_limits(snapshot)
+    decisions_to_run = facts.decisions_to_run
+
+    def make_sub_run(result_key: str, pop_type: str, inc_mode: str) -> SubRun:
+        return SubRun(
+            result_key=result_key,
+            population=pop_type,
+            income_mode=inc_mode,
+            seed=facts.seed,
+            n_agents=facts.n_agents,
+            decisions_to_run=decisions_to_run,
+            decision_config_patches=build_decision_patches(
+                snapshot, config_repo, pop_type, inc_mode, decisions_to_run),
+            simulation_params=simulation_params,
+            decision_settings=facts.decision_settings,
+            default_decisions_list=facts.default_decisions_list,
+            purchasing_limits=purchasing_limits,
+        )
+
+    sub_runs: List[SubRun] = []
+    if facts.population is None:
+        for result_name, pop_type in COMPARE_ALL_POPULATIONS:
+            for inc_mode in income_modes_for(facts.effective_income_mode):
+                sub_runs.append(make_sub_run(f"{result_name}_{inc_mode}", pop_type, inc_mode))
+    else:
+        for inc_mode in income_modes_for(facts.effective_income_mode):
+            sub_runs.append(make_sub_run(inc_mode, facts.population, inc_mode))
+    return tuple(sub_runs)
+
+
+# -------------------------------------------------------------- the metadata
+
+def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFacts,
+                   sub_runs: Sequence[SubRun]) -> RunMetadata:
+    """What was actually run, for the results page."""
+    # What each income-dependent decision actually ran with (the result keys follow the
+    # run's income mode; Decision 4 in a combined run follows its own tab instead).
+    decision_income_modes = {sub_run.result_key: sub_run_decision_income_modes(sub_run, config_repo)
+                             for sub_run in sub_runs}
+    rtd_ran_combined = (
+        facts.decisions_to_run != ("rejected_transaction_defaults",)
+        and any("rejected_transaction_defaults" in modes for modes in decision_income_modes.values()))
+    rtd_compare_both_fallback = bool(
+        rtd_ran_combined
+        and "rejected_transaction_defaults" not in facts.saved_configs
+        and is_compare_income_mode(snapshot.get("rtd_income_mode", "Continuous only")))
+
+    return RunMetadata(
+        effective_population_mode=facts.effective_population_mode,
+        effective_income_mode=facts.effective_income_mode,
+        result_keys=tuple(sub_run.result_key for sub_run in sub_runs),
+        custom_decisions=tuple(snapshot.get("custom_decisions", []) or []),
+        default_decisions=tuple(snapshot.get("default_decisions", []) or []),
+        seed=facts.seed,
+        n_agents=facts.n_agents,
+        is_comparison=len(sub_runs) > 1,
+        decision_income_modes=decision_income_modes,
+        rtd_compare_both_fallback=rtd_compare_both_fallback,
+    )
+
+
 # -------------------------------------------------------------- the plan
 
 def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
                    default_decision_values: Optional[Mapping] = None,
                    seed_resolution: Optional[Tuple[Any, Any, str]] = None) -> RunPlan:
     """
-    Turn one click into a RunPlan.
+    Turn one click into a RunPlan: facts first, then the sub-runs, the
+    metadata and the messages.
 
     snapshot               : SessionSnapshot (or any mapping - a test's dict)
     config_repo            : the read-only config files
@@ -968,230 +1301,19 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
     if default_decision_values is None:
         default_decision_values = DEFAULT_DECISION_VALUES
 
-    messages: List[UiMessage] = []
-
-    def info(text: str) -> None:
-        messages.append(UiMessage("info", text))
-
-    def caption(text: str) -> None:
-        messages.append(UiMessage("caption", text))
-
-    def success(text: str) -> None:
-        messages.append(UiMessage("success", text))
-
-    # Seed / n_agents from the explicit saved configs (if any) or the session
-    if seed_resolution is not None:
-        seed, n_agents, source = seed_resolution
-    else:
-        seed, n_agents, source = resolve_seed_and_n(snap)
-
-    saved_configs = explicit_saved_configs(snap)
-    if saved_configs:
-        info(f"📋 Using {len(saved_configs)} saved decision configuration(s)")
-
-        # Show details for each saved config
-        for decision_name, config in saved_configs.items():
-            decision_title = decision_name.replace("_", " ").title()
-            if decision_name == "donation_default":
-                income_mode = config.get("donation_income_mode",
-                                         config.get("income_spec_mode", "categorical only"))
-                caption(f"  🎯 {decision_title}: {income_mode}")
-            elif decision_name == "disclose_income":
-                income_mode = config.get("income_mode",
-                                         config.get("params", {}).get("income_mode", "Categorical only"))
-                caption(f"  📋 {decision_title}: {income_mode}")
-            else:
-                caption(f"  ✓ {decision_title}")
-
-        if source == "configs":
-            caption(f"🔑 Using saved seed: {seed}, agents: {n_agents:,}")
-
-    # Determine which decisions to run
-    selected_decisions = _selected_decisions(snap)
-    single_decision = None if len(selected_decisions) == len(ALL_DECISIONS) else selected_decisions
-
-    # execution_single_decision is the list actually passed to the engine. It usually
-    # equals single_decision, but for a STANDALONE disclose_documents run we additionally
-    # execute disclose_income FIRST so the platform eligibility gate can be applied.
-    execution_single_decision = single_decision
-
-    # Collect current decision settings
-    decision_settings = collect_decision_settings(snap, default_decision_values)
-
-    if decision_settings:
-        setting_info = describe_decision_settings(decision_settings)
-        if setting_info:
-            success(f"🎲 Using configured defaults: {', '.join(setting_info)}")
-
-    # Default: use the user's current population mode (never mutated)
-    effective_pop_mode = snap.get("population_mode", "Copula (synthetic)")
-    force_di_default = False
-
-    di_saved = saved_configs.get("disclose_income")
-    donation_saved = saved_configs.get("donation_default")
-    dd_saved = saved_configs.get("disclose_documents")
-
-    if single_decision == ["disclose_income"]:
-        # Running ONLY disclose_income - use its specific mode (income_spec_mode is never
-        # written back: the run must not change the mode shown on Page 2)
-        effective_income_mode = snap.get("di_income_mode", "Categorical only")
-        caption(f"🎯 Using Disclose Income specific mode: {effective_income_mode}")
-    elif single_decision == ["disclose_documents"]:
-        # Running ONLY disclose_documents - use its specific mode
-        effective_income_mode = snap.get("dd_income_mode", "Categorical only")
-        caption(f"🎯 Using Disclose Documents specific mode: {effective_income_mode}")
-
-        # ELIGIBILITY (qualified subgroup) for the STANDALONE DD run: Decision 1 runs first.
-        #   (i)  no saved disclose_income config -> DI via its DEFAULT probability (the
-        #        default-decisions short-circuit, forced through default_decisions_list)
-        #   (ii) a saved disclose_income config -> the full DI model with that config
-        execution_single_decision = ["disclose_income", "disclose_documents"]
-        if di_saved is None:
-            force_di_default = True
-            caption(
-                "🔐 Eligibility: assigning Disclose Income via its default probability "
-                f"({decision_settings.get('disclose_income', {}).get('probability_y', 0.5):.0%} Y) "
-                "to identify the qualified subgroup (income < threshold AND disclosed income)."
-            )
-        else:
-            caption(
-                "🔐 Eligibility: using the selected Disclose Income configuration to "
-                "identify the qualified subgroup (income < threshold AND disclosed income)."
-            )
-    elif single_decision == ["rejected_transaction_defaults"]:
-        # Running ONLY rejected_transaction_defaults - use its specific mode
-        effective_income_mode = snap.get("rtd_income_mode", "Continuous only")
-        caption(f"🎯 Using Rejected Transaction Defaults specific mode: {effective_income_mode}")
-    elif single_decision == ["donation_default"]:
-        # Running ONLY donation_default - check for saved config first
-        if donation_saved:
-            effective_income_mode = donation_saved.get(
-                "donation_income_mode", donation_saved.get("income_spec_mode", "categorical only"))
-        else:
-            effective_income_mode = snap.get("income_spec_mode", "categorical only")
-        caption(f"🎯 Using Donation Default income mode: {effective_income_mode}")
-    else:
-        # Combined simulation or other decisions: a saved config's income mode wins
-        effective_income_mode = None
-
-        if di_saved:
-            effective_income_mode = di_saved.get("income_mode",
-                                                 di_saved.get("params", {}).get("income_mode"))
-            if effective_income_mode:
-                caption(f"📋 Using saved Disclose Income mode: {effective_income_mode}")
-
-        if effective_income_mode is None and donation_saved:
-            effective_income_mode = donation_saved.get("donation_income_mode",
-                                                       donation_saved.get("income_spec_mode"))
-            if effective_income_mode:
-                caption(f"🎯 Using saved Donation Default mode: {effective_income_mode}")
-
-        if effective_income_mode is None:
-            effective_income_mode = snap.get("income_spec_mode", "categorical only")
-
-        # Population mode for THIS run: a saved config pins it (to reproduce the pinned run) - the user's
-        # population_mode is read, never changed.
-        effective_pop_mode = None
-        rtd_saved = saved_configs.get("rejected_transaction_defaults")
-        for saved_cfg in (di_saved, donation_saved, dd_saved, rtd_saved):
-            if saved_cfg:
-                pop_mode = saved_cfg.get("population_mode")
-                if not pop_mode:
-                    pop_mode = get_population_mode_from_result_key(saved_cfg.get("result_key"))
-                if pop_mode:
-                    effective_pop_mode = pop_mode
-                    caption(f"🔄 Running with saved population mode: {pop_mode}")
-                    break
-
-        if effective_pop_mode is None:
-            effective_pop_mode = snap.get("population_mode", "Copula (synthetic)")
-
-    # Default-decision list handed to the engine (the force-DI-default rule lives here)
-    default_decisions_list = list(snap.get("default_decisions", []) or [])
-    if force_di_default and "disclose_income" not in default_decisions_list:
-        default_decisions_list.append("disclose_income")
-
-    simulation_params = build_simulation_params(snap)
-    purchasing_limits = build_purchasing_limits(snap)
-    decisions_to_run = tuple(execution_single_decision) if execution_single_decision is not None else None
-
-    def make_sub_run(result_key: str, pop_type: str, inc_mode: str) -> SubRun:
-        return SubRun(
-            result_key=result_key,
-            population=pop_type,
-            income_mode=inc_mode,
-            seed=seed,
-            n_agents=n_agents,
-            decisions_to_run=decisions_to_run,
-            decision_config_patches=build_decision_patches(
-                snap, config_repo, pop_type, inc_mode, execution_single_decision),
-            simulation_params=simulation_params,
-            decision_settings=decision_settings,
-            default_decisions_list=tuple(default_decisions_list),
-            purchasing_limits=purchasing_limits,
-        )
-
-    def income_modes_for(mode: Any) -> Tuple[str, ...]:
-        if mode == "Compare both":
-            return ("categorical", "continuous")
-        if "continuous" in str(mode).lower():
-            return ("continuous",)
-        return ("categorical",)  # categorical only
-
-    sub_runs: List[SubRun] = []
-    if effective_pop_mode == "Compare all":
-        # Compare all three population modes - each uses its natural agent source
-        info("🔄 Running Compare All mode - each population uses its natural agent source")
-        for result_name, pop_type in COMPARE_ALL_POPULATIONS:
-            for inc_mode in income_modes_for(effective_income_mode):
-                sub_runs.append(make_sub_run(f"{result_name}_{inc_mode}", pop_type, inc_mode))
-    else:
-        # Single population mode
-        pop_type = get_pop_type(effective_pop_mode)
-        if pop_type == "copula":
-            info("🎲 Using synthetic agents from copula")
-        elif pop_type in ("documentation", "baseline"):
-            # Research Specification samples the participants randomly (seeded by the run
-            # seed); Research Baseline takes them in file order, cycling
-            info(research_population_text(n_agents, random_sample=(pop_type == "documentation")))
-        for inc_mode in income_modes_for(effective_income_mode):
-            sub_runs.append(make_sub_run(inc_mode, pop_type, inc_mode))
+    facts = resolve_run_facts(snap, default_decision_values, seed_resolution)
+    sub_runs = enumerate_sub_runs(snap, config_repo, facts)
 
     # Only a complete run re-checks the pinned decisions' output hashes (a pinned
     # decision must reproduce the run it was pinned from)
     saved_expectations: Tuple[SavedExpectation, ...] = ()
-    if execution_single_decision is None:
-        saved_expectations = build_saved_expectations(saved_configs, sub_runs)
-
-    # What each income-dependent decision actually ran with (the result keys follow the
-    # run's income mode; Decision 4 in a combined run follows its own tab instead).
-    decision_income_modes = {sub_run.result_key: sub_run_decision_income_modes(sub_run, config_repo)
-                             for sub_run in sub_runs}
-    rtd_ran_combined = (
-        execution_single_decision != ["rejected_transaction_defaults"]
-        and any("rejected_transaction_defaults" in modes for modes in decision_income_modes.values()))
-    rtd_compare_both_fallback = bool(
-        rtd_ran_combined
-        and "rejected_transaction_defaults" not in saved_configs
-        and is_compare_income_mode(snap.get("rtd_income_mode", "Continuous only")))
-
-    metadata = RunMetadata(
-        effective_population_mode=effective_pop_mode,
-        effective_income_mode=effective_income_mode,
-        result_keys=tuple(sub_run.result_key for sub_run in sub_runs),
-        custom_decisions=tuple(snap.get("custom_decisions", []) or []),
-        default_decisions=tuple(snap.get("default_decisions", []) or []),
-        seed=seed,
-        n_agents=n_agents,
-        is_comparison=len(sub_runs) > 1,
-        decision_income_modes=decision_income_modes,
-        rtd_compare_both_fallback=rtd_compare_both_fallback,
-    )
+    if facts.decisions_to_run is None:
+        saved_expectations = build_saved_expectations(facts.saved_configs, sub_runs)
 
     return RunPlan(
-        sub_runs=tuple(sub_runs),
-        messages=tuple(messages),
-        metadata=metadata,
+        sub_runs=sub_runs,
+        messages=messages_for(facts),
+        metadata=build_metadata(snap, config_repo, facts, sub_runs),
         saved_expectations=saved_expectations,
     )
 
@@ -1202,9 +1324,15 @@ __all__ = [
     "DEFAULT_DECISION_VALUES",
     "COMPARE_ALL_POPULATIONS",
     "build_decision_patches",
+    "INCOME_MODE_RULES",
+    "IncomeModeRule",
+    "RunFacts",
+    "SCALAR_FIELDS",
+    "ScalarField",
     "build_disclose_documents_patch",
     "build_disclose_income_patch",
     "build_donation_patch",
+    "build_metadata",
     "build_purchasing_limits",
     "build_rejected_transaction_patch",
     "build_run_plan",
@@ -1213,11 +1341,15 @@ __all__ = [
     "collect_decision_settings",
     "decision_income_mode",
     "describe_decision_settings",
+    "enumerate_sub_runs",
     "explicit_saved_configs",
     "get_pop_type",
     "get_population_mode_from_result_key",
+    "income_modes_for",
     "is_compare_income_mode",
+    "messages_for",
     "normalize_income_mode",
+    "resolve_run_facts",
     "resolve_seed_and_n",
     "session_donation_coefficient_set",
     "sub_run_decision_income_modes",

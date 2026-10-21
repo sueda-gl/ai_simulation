@@ -154,7 +154,8 @@ class SubRun:
     simulation_params       : the ['simulation'] mapping (Page 1 parameters)
     decision_settings       : collect_decision_settings() output; becomes BOTH
                               simulation_config['random_decisions'] and
-                              ['default_decisions'] (the same object, as today)
+                              ['default_decisions'] (the same object; the
+                              engine reads default_decisions)
     default_decisions_list  : simulation_config['default_decisions_list']
                               (the force-DI-default rule for a standalone
                               Disclose Documents run lives here, not in a flag)

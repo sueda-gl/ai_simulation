@@ -42,8 +42,8 @@ def purchase_vs_bid_single(customer_type: str, params: dict, rng, simulation_con
     
     # For REGULAR customers, apply probability-based decision
     # Check if probability settings are available from simulation config
-    if simulation_config and 'random_decisions' in simulation_config:
-        prob_config = simulation_config['random_decisions'].get('purchase_vs_bid')
+    if simulation_config and 'default_decisions' in simulation_config:
+        prob_config = simulation_config['default_decisions'].get('purchase_vs_bid')
         if prob_config and prob_config.get("type") == "random_probability":
             # Use weighted random choice with proper RNG
             probability_y = prob_config.get("probability_y", 0.5)

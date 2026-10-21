@@ -16,22 +16,24 @@ RNG scheme (unchanged, parity-critical):
 Agents are iterated with ``agents_df.iterrows()`` and ``row.to_dict()``.
 """
 
+import copy
 import importlib
-from pathlib import Path
 from typing import List, Optional, Union
 
 import numpy as np
 import pandas as pd
-import yaml
 
+from src.config import DEFAULT_DECISIONS_PATH, DEFAULT_SIMULATION_PATH, read_yaml_file
+from src.decisions._shared import normalise_income_mode
 from src.engine.log import EngineLog
 from src.engine.profile import ModeProfile, PROFILES
 from src.engine.sampling import sample_participants_internal
 from src.engine.vendors import initialize_vendors
 from src.trait_engine import TraitEngine
 
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "decisions.yaml"
-SIMULATION_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "simulation.yaml"
+# The two configuration files (src/config.py is the one loader)
+CONFIG_PATH = DEFAULT_DECISIONS_PATH
+SIMULATION_CONFIG_PATH = DEFAULT_SIMULATION_PATH
 
 # The ONE decision order for every mode (== app.models.ALL_DECISIONS).
 # Position in this list * 1000 is the decision's RNG offset from the agent base seed.
@@ -60,6 +62,13 @@ STOCHASTIC_MODULE_DECISIONS = ('disclose_income', 'disclose_documents')
 POP_CONTEXT_DECISIONS = ('donation_default', 'disclose_income', 'disclose_documents',
                          'rejected_transaction_defaults')
 
+# Per-run scratch state run_simulation writes into simulation_config (the seed, the
+# vendors and the Pass-1 population statistics); cleared at the start of every run so
+# a reused engine never sees a previous run's values.
+RUN_SCRATCH_KEYS = ('simulation_seed', 'vendors', 'income_median', 'income_stats',
+                    'di_cont_de_stats', 'dd_cont_stats', 'donation_population_max',
+                    'rtd_population_stats')
+
 
 class Engine:
     """
@@ -71,19 +80,28 @@ class Engine:
     agent state is the output row.
     """
 
-    def __init__(self, profile: Union[ModeProfile, str]):
+    def __init__(self, profile: Union[ModeProfile, str],
+                 decisions: Optional[dict] = None, simulation: Optional[dict] = None,
+                 trait_engine: Optional[TraitEngine] = None):
+        """
+        ``decisions`` / ``simulation``: the decisions.yaml and simulation.yaml dicts
+        this engine runs with (the seam passes the patched copies); when None the
+        file is loaded through the one loader, :func:`src.config.read_yaml_file`.
+        ``trait_engine``: an already loaded copula (the seam samples the agents with
+        it and hands it over, so the model is read once per sub-run); when None it is
+        loaded on first use.
+        """
         if isinstance(profile, str):
             profile = PROFILES[profile]
         self.profile: ModeProfile = profile
         self.log = EngineLog(profile.log_prefix)
 
-        # Load decision configuration
-        with open(CONFIG_PATH, 'r') as f:
-            self.config = yaml.safe_load(f)
+        # Decision configuration
+        self.config = decisions if decisions is not None else read_yaml_file(CONFIG_PATH)
 
-        # Load global simulation configuration (Page 1 parameters)
-        with open(SIMULATION_CONFIG_PATH, 'r') as f:
-            self.simulation_config = yaml.safe_load(f)
+        # Global simulation configuration (Page 1 parameters)
+        self.simulation_config = (simulation if simulation is not None
+                                  else read_yaml_file(SIMULATION_CONFIG_PATH))
 
         # Population context for decision modules
         self.pop_context = profile.pop_context
@@ -104,8 +122,8 @@ class Engine:
             except (ImportError, AttributeError) as e:
                 print(f"Warning: Could not load decision module {decision_name}: {e}")
 
-        # Lazily built agent sources
-        self._trait_engine: Optional[TraitEngine] = None
+        # Lazily built agent sources (the copula may be supplied)
+        self._trait_engine: Optional[TraitEngine] = trait_engine
         self._original_data: Optional[pd.DataFrame] = None
 
     # ------------------------------------------------------------------ agents
@@ -199,7 +217,7 @@ class Engine:
             di_income_mode = disclose_income_params.get('income_mode', 'categorical')
             log(f"disclose_income income_mode: {di_income_mode}")
 
-            if 'continuous' in str(di_income_mode).lower():
+            if normalise_income_mode(di_income_mode) == 'continuous':
                 from src.decisions.disclose_income_stochastic import compute_continuous_de_stats
                 di_cont_stats = compute_continuous_de_stats(
                     agents_df, all_incomes, disclose_income_params, self.simulation_config)
@@ -210,7 +228,7 @@ class Engine:
         if 'disclose_documents' in decisions_to_run and 'disclose_documents' in self.decision_modules:
             dd_params = self.config.get('disclose_documents', {})
             dd_income_mode = dd_params.get('income_mode', 'categorical')
-            if 'continuous' in str(dd_income_mode).lower():
+            if normalise_income_mode(dd_income_mode) == 'continuous':
                 from src.decisions.disclose_documents_stochastic import compute_continuous_dd_stats
                 dd_cont_stats = compute_continuous_dd_stats(
                     agents_df, all_incomes, dd_params, self.simulation_config)
@@ -223,7 +241,6 @@ class Engine:
         # be known before Pass 2, because Decisions 6 and 13 read donation_default inside
         # the agent loop, so - like Decision 4 below - every agent's Pass-2 draw is replayed
         # here with its own decision RNG stream (base seed + decision_index * 1000).
-        self.simulation_config.pop('donation_population_max', None)
         from src.decisions.donation_default import (compute_donation_population_max,
                                                     configured_default_value)
         if ('donation_default' in decisions_to_run
@@ -284,14 +301,14 @@ class Engine:
         # Setup RNG (vendors)
         rng_setup = np.random.default_rng(seed)
 
+        # Clear the previous run's scratch state (see RUN_SCRATCH_KEYS)
+        for key in RUN_SCRATCH_KEYS:
+            self.simulation_config.pop(key, None)
+
         # Store seed in simulation_config for access by decision modules
         self.simulation_config['simulation_seed'] = seed
 
         self._initialize_vendors(rng_setup)
-
-        # Reset vendor capacity tracking for this simulation run
-        if 'vendor_remaining_capacity' in self.simulation_config:
-            del self.simulation_config['vendor_remaining_capacity']
 
         # Source the agents (copula draw / research sampling) unless supplied
         agents_df = self._resolve_agents(agents_df, n_agents, seed, rng_setup)
@@ -384,8 +401,9 @@ class Engine:
             results_df.attrs['vendors'] = self.simulation_config['vendors']
 
         # The resolved sim config (incl. Page-1 discount_income_threshold) so the Excel
-        # export's eligibility re-check uses the same threshold the model gated on.
-        results_df.attrs['simulation_config'] = self.simulation_config
+        # export's eligibility re-check uses the same threshold the model gated on - a
+        # copy, so a later run of this engine cannot change what the result carries.
+        results_df.attrs['simulation_config'] = copy.deepcopy(self.simulation_config)
 
         return results_df
 
@@ -399,4 +417,4 @@ class Engine:
 
 
 __all__ = ["Engine", "DECISION_ORDER", "STOCHASTIC_MODULE_DECISIONS", "POP_CONTEXT_DECISIONS",
-           "CONFIG_PATH", "SIMULATION_CONFIG_PATH"]
+           "RUN_SCRATCH_KEYS", "CONFIG_PATH", "SIMULATION_CONFIG_PATH"]

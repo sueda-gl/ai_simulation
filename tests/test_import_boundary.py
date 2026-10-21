@@ -132,8 +132,8 @@ def _brief(leaked, n=12):
 def test_src_modules_were_discovered():
     """Guard against the walk silently finding nothing (then everything 'passes')."""
     assert len(SRC_MODULES) >= 20, f"only found {SRC_MODULES}"
-    for expected in ("src.orchestrator", "src.orchestrator_baseline",
-                     "src.orchestrator_doc_mode", "src.trait_engine",
+    for expected in ("src.engine.core", "src.engine.profile",
+                     "src.config", "src.trait_engine",
                      "src.decisions.rejected_transaction_defaults"):
         assert expected in SRC_MODULES, f"{expected} missing from {SRC_MODULES}"
 
@@ -144,14 +144,6 @@ def test_src_module_does_not_import_ui(module_name):
     rc, leaked, out, err = _import_in_fresh_subprocess(module_name)
 
     if rc != 0:
-        # Only src/orchestrator_depvar.py is allowed to be unimportable, and
-        # only because it cannot import without streamlit. Anything else is a
-        # real breakage and must fail the test.
-        if module_name == "src.orchestrator_depvar" and "streamlit" in (err or ""):
-            pytest.skip(
-                "src.orchestrator_depvar cannot be imported without streamlit; "
-                f"skipped per spec. stderr tail:\n{_tail(err)}"
-            )
         pytest.fail(
             f"importing {module_name} in a fresh interpreter failed "
             f"(rc={rc}).\nstderr:\n{_tail(err)}\nstdout:\n{_tail(out)}"
@@ -171,7 +163,8 @@ def test_src_module_does_not_import_ui(module_name):
 
 # The four modules that historically reached back into
 # app.pages.decision_execution for default decision values
-# (src/orchestrator_baseline.py:17-18 and the three decision modules).
+# (the former src/orchestrator_baseline.py:17-18 - now src/engine/core.py - and
+# the three decision modules).
 # Called out explicitly so a regression names the culprit even if the
 # parametrized walk above is changed.
 @pytest.mark.parametrize(
@@ -180,7 +173,7 @@ def test_src_module_does_not_import_ui(module_name):
         "src.decisions.rejected_transaction_option",
         "src.decisions.final_donation_rate",
         "src.decisions.rejected_bid_value",
-        "src.orchestrator_baseline",
+        "src.engine.core",
     ],
 )
 def test_known_app_importers_are_clean(module_name):

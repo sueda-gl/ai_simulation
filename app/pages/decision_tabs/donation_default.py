@@ -6,13 +6,12 @@ Donation Default decision tab configuration.
 import streamlit as st
 from app.state.widgets import stateful
 import pandas as pd
-from app.seam.config_repo import read_yaml_file
-from pathlib import Path
+from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 from app.pages.decision_execution import run_individual_decision
 from app.models import load_donation_coefficients_from_yaml
 
 
-CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+CONFIG_PATH = DEFAULT_DECISIONS_PATH  # the shared constant (src/config.py)
 
 
 def _load_base_sigma_overall():
@@ -1074,9 +1073,8 @@ def render_intercept_override_section():
 def get_current_yaml_intercepts():
     """Get current intercept values from configuration file"""
     import yaml
-    from pathlib import Path
     
-    config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+    config_path = CONFIG_PATH
     
     config = read_yaml_file(config_path)
     
@@ -1282,9 +1280,8 @@ def render_actions_and_management_section():
 def get_current_yaml_adjustment():
     """Get current adjustment values from configuration file"""
     import yaml
-    from pathlib import Path
     
-    config_path = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+    config_path = CONFIG_PATH
     
     config = read_yaml_file(config_path)
     

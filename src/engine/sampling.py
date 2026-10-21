@@ -85,11 +85,6 @@ def _select(original_df: pd.DataFrame, indices) -> pd.DataFrame:
     return df
 
 
-def cyclic_participants(original_df: pd.DataFrame, n_agents: int) -> pd.DataFrame:
-    """Agent k = row k mod len(original_df), file order, index reset to range(n_agents)."""
-    return _select(original_df, cyclic_indices(n_agents, len(original_df)))
-
-
 def research_participants(original_df: pd.DataFrame, n_agents: int, random_sample: bool,
                           seed: int = None) -> pd.DataFrame:
     """The research agents drawn from ``original_df``, index reset to range(n_agents)."""

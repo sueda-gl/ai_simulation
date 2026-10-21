@@ -31,10 +31,10 @@ def _combined_run_script():
     st.session_state.n_agents = 30
 
     if not st.session_state.get('simulation_results'):
-        from src.orchestrator_baseline import OrchestratorBaseline
+        from src.engine.core import Engine
         from app.simulation import _apply_rejected_transaction_config
         from src.engine.sampling import load_original_participants
-        orch = OrchestratorBaseline()
+        orch = Engine("baseline")
         _apply_rejected_transaction_config(orch, "baseline", "categorical")
         agents = load_original_participants(30)
         df = orch.run_simulation(30, 1, None, agents_df=agents)     # every decision

@@ -1100,10 +1100,10 @@ def test_categorical_stochastic_rng_replication(gold, cat_model_params, sim_conf
 # ---------------------------------------------------------------------------
 def _apptest_rtd_script():
     import streamlit as st
-    from src.orchestrator_baseline import OrchestratorBaseline
+    from src.engine.core import Engine
     from app.simulation import _apply_rejected_transaction_config
 
-    orch = OrchestratorBaseline()
+    orch = Engine("baseline")
     _apply_rejected_transaction_config(orch, "baseline", "continuous")
     agents = orch.original_data.iloc[:80].copy()
     agents.index = range(len(agents))

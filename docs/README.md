@@ -77,8 +77,8 @@ Everything needed to produce numbers, and nothing else.
 * **`src/trait_engine.py`** — samples synthetic agents from the fitted copula in
   `config/trait_model.pkl`. Retrain only with `scripts/train_copula.py`, and only if
   the experiment data or the master trait list changes.
-* **`src/orchestrator*.py`** — three-line subclasses of `Engine`, one per mode, kept
-  for the CLI and a few tests. `Orchestrator()` is exactly `Engine('copula')`.
+* **`src/config.py`** — the one loader of the two YAML files (`read_yaml_file`, the
+  path constants, `DecisionsConfig`); the engine and the seam both load through it.
 
 ### The seam, `app/seam/`
 

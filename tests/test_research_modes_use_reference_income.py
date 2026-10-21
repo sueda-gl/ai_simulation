@@ -9,7 +9,7 @@ Stata_File_Decision 1.dta), and every income-using result in the reference docum
 with it. src/data/participants.py therefore merges data/stata_incomes.csv into
 `merged()` by Participant ID and carries that column into `original_data()` (the
 successor of the original repo's src/validate_traits.py and the two research
-orchestrators' `original_data`), and income_utils.get_agent_income() finds it
+orchestrators' `original_data`), and src.engine.income.get_agent_income() finds it
 already cached.
 
 What this pins down:
@@ -250,9 +250,9 @@ def test_copula_incomes_unchanged_for_seed_42():
     """Regression pin: the copula population's incomes (and the derived 12-200 credit)
     for seed 42 are bit-identical to the behaviour before the research populations
     started carrying the reference income."""
-    from src.orchestrator import Orchestrator
+    from src.engine.core import Engine
 
-    df = Orchestrator().run_simulation(COPULA_N, COPULA_SEED, ["donation_default"])
+    df = Engine("copula").run_simulation(COPULA_N, COPULA_SEED, ["donation_default"])
     assert df["income"].tolist()[:10] == COPULA_INCOMES_FIRST10
     assert df["actual_allowance"].tolist()[:10] == COPULA_ALLOWANCE_FIRST10
     # not the reference incomes

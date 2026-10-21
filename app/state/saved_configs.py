@@ -9,12 +9,11 @@ the user looked at.
 ``app/pages/decision_execution.py`` re-exports every function here, so
 callers may import them from either module.
 """
-import hashlib
 
-import pandas as pd
 import streamlit as st
 from datetime import datetime
 
+from src.contract.plan import hash_result_columns  # noqa: F401 - the writer and the checker share it
 from app.seam.config_repo import get_config_repo
 
 
@@ -318,32 +317,6 @@ def get_decision_result_columns(decision_name, result_df):
 
     # Any other decision: just its own column, when the result carries one.
     return [c for c in columns if c == decision_name]
-
-
-def hash_result_columns(result_df, columns):
-    """Deterministic sha256 over the given columns of a result DataFrame.
-
-    Returns None when there is nothing to hash, so a caller can tell
-    "no expectation recorded" apart from "hashes differ".
-    """
-    if result_df is None or not columns:
-        return None
-
-    present = [c for c in columns if c in result_df.columns]
-    if not present:
-        return None
-
-    subset = result_df[present]
-    try:
-        row_hashes = pd.util.hash_pandas_object(subset, index=False)
-    except TypeError:
-        # Unhashable cell values (lists / dicts) - hash their string form instead.
-        row_hashes = pd.util.hash_pandas_object(subset.astype(str), index=False)
-
-    digest = hashlib.sha256()
-    digest.update('\x1f'.join(present).encode('utf-8'))
-    digest.update(row_hashes.to_numpy(dtype='uint64').tobytes())
-    return digest.hexdigest()
 
 
 def save_decision_config(decision_name, result_key, result_df, params, metrics=None, extra_data=None):

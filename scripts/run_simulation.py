@@ -8,8 +8,6 @@ from datetime import datetime
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.orchestrator import Orchestrator
-
 def main():
     parser = argparse.ArgumentParser(description='Run AI agent simulation')
     parser.add_argument('--agents', type=int, default=1000,
@@ -29,7 +27,9 @@ def main():
                        help='Population generation mode (default: copula)')
     parser.add_argument('--income-mode', type=str, default='categorical',
                        choices=['categorical', 'continuous'],
-                       help='Income specification mode (default: categorical)')
+                       help='Income specification mode of donation_default - the only decision '
+                            'this flag patches; Decisions 1, 2 and 4 keep the income mode of '
+                            'config/decisions.yaml (default: categorical)')
     parser.add_argument('--plan-file', type=str, default=None,
                        help="Run the sub-run stored in this plan file (written by the app's "
                             "Monte-Carlo runner, app/seam/mc.py) with --seed and --agents: "
@@ -41,59 +41,61 @@ def main():
     if args.plan_file:
         return _run_plan_file(args)
     
-    # Initialize appropriate orchestrator based on population mode
+    return _run_cli_settings(args)
+
+
+def _run_cli_settings(args):
+    """A run from the command-line settings alone: the same path as one app sub-run
+    (app/seam/execute.run_sub_run - agents sampled, a fresh Engine built with the
+    patched configuration), with one patch on donation_default: the anchor weights
+    and --income-mode."""
+    from src.contract.plan import SubRun
+    from src.engine.core import DECISION_ORDER
+    from app.seam.execute import run_sub_run
+
     print("Initializing simulation...")
     print(f"Population mode: {args.population_mode}")
     print(f"Income specification: {args.income_mode}")
-    
-    if args.population_mode == 'documentation':
-        from src.orchestrator_doc_mode import OrchestratorDocMode
-        orchestrator = OrchestratorDocMode()
-    elif args.population_mode == 'baseline':
-        from src.orchestrator_baseline import OrchestratorBaseline
-        orchestrator = OrchestratorBaseline()
-    else:  # copula (default)
-        orchestrator = Orchestrator()
-    
-    # Apply anchor weights and income mode if donation_default is in scope
-    if hasattr(orchestrator, 'config') and 'donation_default' in orchestrator.config:
-        orchestrator.config['donation_default']['anchor_weights']['observed'] = args.anchor_observed
-        orchestrator.config['donation_default']['anchor_weights']['predicted'] = 1 - args.anchor_observed
-        print(f"Using anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
-        
-        # Set income mode
-        if 'regression' not in orchestrator.config['donation_default']:
-            orchestrator.config['donation_default']['regression'] = {}
-        orchestrator.config['donation_default']['regression']['income_mode'] = args.income_mode
-        
-        if 'regression_coefficients' not in orchestrator.config['donation_default']:
-            orchestrator.config['donation_default']['regression_coefficients'] = {}
-        orchestrator.config['donation_default']['regression_coefficients']['income_mode'] = args.income_mode
-        print(f"Income specification mode: {args.income_mode}")
-    
+
+    # Anchor weights and income mode: donation_default only (the other modelled
+    # decisions keep the income mode of config/decisions.yaml)
+    donation_patch = {
+        'anchor_weights': {'observed': args.anchor_observed, 'predicted': 1 - args.anchor_observed},
+        'regression': {'income_mode': args.income_mode},
+        'regression_coefficients': {'income_mode': args.income_mode},
+    }
+    print(f"Using anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
+    print(f"Income specification mode: {args.income_mode}")
+
     if args.decision:
-        # Check if orchestrator has method to get available decisions
-        if hasattr(orchestrator, 'get_available_decisions'):
-            available = orchestrator.get_available_decisions()
-            for decision in args.decision:
-                if decision not in available:
-                    print(f"Error: Decision '{decision}' not available.")
-                    print(f"Available decisions: {', '.join(available)}")
-                    return 1
+        for decision in args.decision:
+            if decision not in DECISION_ORDER:
+                print(f"Error: Decision '{decision}' not available.")
+                print(f"Available decisions: {', '.join(DECISION_ORDER)}")
+                return 1
         print(f"Running decisions: {', '.join(args.decision)}")
     else:
         print("Running all 13 decisions")
-    
+
     # Run simulation
     print(f"Generating {args.agents} synthetic agents with seed {args.seed}...")
-    
+
     try:
-        results_df = orchestrator.run_simulation(
-            n_agents=args.agents,
+        sub_run = SubRun(
+            result_key=args.income_mode,
+            population=args.population_mode,
+            income_mode=args.income_mode,
             seed=args.seed,
-            single_decision=args.decision
+            n_agents=args.agents,
+            decisions_to_run=tuple(args.decision) if args.decision else None,
+            decision_config_patches={'donation_default': donation_patch},
+            simulation_params={},
+            decision_settings={},
+            default_decisions_list=(),
+            purchasing_limits=None,
         )
-        
+        results_df = run_sub_run(sub_run)
+
         return _save_results(results_df, args)
 
     except Exception as e:

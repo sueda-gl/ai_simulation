@@ -44,11 +44,11 @@ def _rtd_config_app_script():
     # Probe: how a combined run (inc_mode=None) vs an individual run (explicit inc_mode)
     # would configure the orchestrator with the current saved config / tab state.
     if st.session_state.get('_probe_apply'):
-        from src.orchestrator_baseline import OrchestratorBaseline
+        from src.engine.core import Engine
         from app.simulation import _apply_rejected_transaction_config
         probe = {}
         for label, inc_mode in (('combined', None), ('individual', 'continuous')):
-            orch = OrchestratorBaseline()
+            orch = Engine("baseline")
             _apply_rejected_transaction_config(orch, "baseline", inc_mode)
             cfg = orch.config['rejected_transaction_defaults']
             probe[label] = {

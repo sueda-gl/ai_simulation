@@ -51,15 +51,18 @@ def main():
     print(f"Starting Monte-Carlo study with {args.runs} repetitions")
     print(f"Population size: {args.agents} agents per run")
     print(f"Base seed: {args.base_seed}")
-    print(f"Population mode: {args.population_mode}")
-    print(f"Income specification: {args.income_mode}")
-    print(f"Anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
     if args.plan_file:
+        # The plan file overrides the population / income mode, anchor weights and
+        # decision list, so only it is reported
         print(f"Plan file: {args.plan_file} (all decision settings from the app's run plan)")
-    if args.decision:
-        print(f"Decisions: {', '.join(args.decision)}")
     else:
-        print("Running all 13 decisions")
+        print(f"Population mode: {args.population_mode}")
+        print(f"Income specification: {args.income_mode}")
+        print(f"Anchor weights: {args.anchor_observed:.2f} observed | {1 - args.anchor_observed:.2f} predicted")
+        if args.decision:
+            print(f"Decisions: {', '.join(args.decision)}")
+        else:
+            print("Running all 13 decisions")
     print("-" * 50)
     
     # Run Monte-Carlo loop

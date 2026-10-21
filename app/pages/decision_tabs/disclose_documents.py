@@ -10,12 +10,11 @@ stochastic settings. UI mirrors the Disclose Income tab for consistency.
 """
 import streamlit as st
 from app.state.widgets import stateful
-from app.seam.config_repo import read_yaml_file
+from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 import pandas as pd
-from pathlib import Path
 
 
-CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
+CONFIG_PATH = DEFAULT_DECISIONS_PATH  # the shared constant (src/config.py)
 
 # Base σ values (empirical, from the reference Stata file's constranssospeso2periods01 column)
 BASE_SIGMA_OVERALL = 0.16066
