@@ -1,12 +1,9 @@
 # app/reports/disclosure.py
 """Pure builders behind the disclosure results exports (Decisions 1 and 2).
 
-Everything here was moved VERBATIM out of
-`app/pages/results/visualizations/disclosure_viz.py`: the same column order and
-fallbacks, the same `round(..., 2)` on stored values, the same z-scores
-(`ddof=1`), the same eligibility-gate re-derivation with its `12500.0` default,
-the same `'General'` number format. Only the `st.*` calls were replaced by
-return values -- these functions never read session state and never imported it.
+The sheet frames behind `app/pages/results/visualizations/disclosure_viz.py`:
+`round(..., 2)` on stored values, z-scores with `ddof=1`, the eligibility-gate
+re-derivation with its `12500.0` default, the `'General'` number format.
 
 No Streamlit: pandas / numpy / openpyxl (and `src.decisions.income_utils`) only.
 
@@ -14,7 +11,7 @@ No Streamlit: pandas / numpy / openpyxl (and `src.decisions.income_utils`) only.
 the bottom assemble the results page's DI-only and DD-only export workbooks.
 
 The workbook plumbing (`to_xlsx_bytes`) and the disclosure number formatter
-live in `app/reports/xlsx.py` (B1); this module imports them rather than
+live in `app/reports/xlsx.py`; this module imports them rather than
 keeping its own copy.
 """
 import pandas as pd
@@ -282,7 +279,7 @@ def prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare disclose DOCUMENTS data for Excel export (privacy-calculus model, item-22 layout).
 
-    Column order (per professor feedback item 22):
+    Column order (item-22 layout):
         Agent ID,
         Extraversion, Neuroticism, Agreeable          (raw traits),
         Assigned Allowance Level, Income,

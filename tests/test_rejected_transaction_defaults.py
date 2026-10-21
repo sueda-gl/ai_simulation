@@ -1,7 +1,7 @@
 """
 Validation tests for Decision 4: Rejected Transaction Defaults.
 
-Ground truth: data/stata_d4_verification.csv - a frozen extract of the professor's
+Ground truth: data/stata_d4_verification.csv - a frozen extract of the reference Stata file
 `Stata_File_Decision4_050926.dta` (280 participants) holding the raw inputs, the
 Stata z-scores, and every derived Decision-4 column (TTP, Loyalty incl. the
 standardized weighted_loyalty, WTP, RT, categorical scores, Flexibility) plus the
@@ -9,12 +9,12 @@ June file's WTP stochastic columns (the 050926 file carries none).
 
 All deterministic mechanisms must reproduce 280/280 EXACTLY (bin/choice level;
 float32 tolerance on continuous scores). Doc rev 040926-2 and the 050926 file ADOPTED
-the segment -> option-list direction the professor instructed on 2026-09-16
+the segment -> option-list direction the specification prescribes
 (segment s -> seq[5-s:], segment 5 = the full list, segment 1 = one option), so the
 stored choice1..5_* columns now EQUAL the model's lists directly - NaN pattern
 included - for all four ranking elements. (The superseded 290826 file embedded the
 mirror.) The WTP stochastic PIPELINE (rescale +
-floor + choice mapping keyed on sWTP_calculated15) is validated on the professor's
+floor + choice mapping keyed on sWTP_calculated15) is validated on the file's
 stored draws; the draws themselves are RNG-dependent and not reproducible. NOTE the
 June file predates the direction flip, so its stored choice*_WTP_calculated_stoc
 columns still carry the OLD direction; the draw -> sWTP_calculated15 step, which is
@@ -83,7 +83,7 @@ DOC_RANGES = {"loyalty": 7.0783045, "wtp": 6.868056,
 WTP_SIGMA = DOC_SIGMA_OVERALL["wtp"]   # the sigma the stochastic tests pin
 # beta0 applies on the RAW weighted_ttp composite - the scale the document specifies
 # (Section 1: TTP_i = beta0 + ..., no "after standardization" qualifier). App default
-# beta0 = 0 (owner ruling 2026-10-07, as in the owner's September version), which
+# beta0 = 0 (as in the original September 2026 version), which
 # reproduces Stata exactly. The raw composite spans only ~0.21 on the 280, so an
 # explicit beta0 = 0.05 moves weighted_ttp06 by ~+1.43 and leaves no zero-length lists
 # (on the standardized scale the Sep-2026 original used, 0.05 gave
@@ -105,7 +105,7 @@ def params():
 
 @pytest.fixture(scope="module")
 def sim_config(gold):
-    # egen std semantics: sample SD (ddof=1) over the professor's income column
+    # egen std semantics: sample SD (ddof=1) over the reference file's income column
     return {
         "income_stats": {
             "mean": float(gold["income"].mean()),
@@ -398,11 +398,11 @@ def test_sigma_tables_internal_consistency_and_the_two_doc_slips(params):
 
 
 # ---------------------------------------------------------------------------
-# WTP stochastic pipeline on the professor's stored draws
+# WTP stochastic pipeline on the reference file's stored draws
 # ---------------------------------------------------------------------------
 def test_wtp_stochastic_pipeline_on_stata_draws(gold):
     """Our rescale+floor+mapping reproduces sWTP_calculated15 and the stochastic
-    choices from the professor's stored sWTP_calculated draws."""
+    choices from the reference file's stored sWTP_calculated draws."""
     draws = gold["sWTP_calculated"].to_numpy()
     smin, smax = draws.min(), draws.max()
     np.testing.assert_allclose(
@@ -429,7 +429,7 @@ def test_wtp_stochastic_pipeline_on_stata_draws(gold):
 
 
 def test_wtp_stochastic_anchor_is_raw_score(gold):
-    """The professor's draws are anchored on the RAW WTP_calculated (not the binned
+    """The reference file's draws are anchored on the RAW WTP_calculated (not the binned
     1-5 score): residual mean ~0 and sd consistent with sigma_overall 0.45266."""
     resid = gold["sWTP_calculated"] - gold["WTP_calculated"]
     n = len(resid)
@@ -445,7 +445,7 @@ def test_wtp_stochastic_anchor_is_raw_score(gold):
 # ---------------------------------------------------------------------------
 @pytest.fixture(scope="module")
 def model_params(params):
-    # No 'model_enabled' switch any more (ruling R23): the model runs whenever the
+    # No 'model_enabled' switch any more: the model runs whenever the
     # decision is selected.
     return dict(params)
 
@@ -482,7 +482,7 @@ def _run_model(gold, model_params, sim_config, stochastic=False, in_copula=False
 
 def test_model_path_deterministic_matches_stata(gold, model_params, sim_config):
     # Explicit zero intercepts: the .dta embeds NO intercepts (the config's research
-    # defaults are all 0 too, owner ruling 2026-10-07). Parity of the
+    # defaults are all 0 too). Parity of the
     # mechanism arithmetic is asserted at explicit beta = 0 (bit-identical to a
     # no-intercepts run per test_zero_intercepts_bit_identical).
     results = _run_model(gold, model_params, sim_config, stochastic=False,
@@ -553,7 +553,7 @@ def test_segment_to_option_mapping_direction(gold, model_params, sim_config):
     """The 2026-09-16 mapping rule for ALL four ranking elements: segment s receives
     the LAST s options of the priority sequence. Segment 5 (highest construct scores)
     gets the full sequence starting with the top option; segment 1 (lowest) gets only
-    the final option, list length 1 - the professor's instruction, verbatim for
+    the final option, list length 1 - the specification's wording, verbatim for
     Flexibility ("5 (Highest 20% ...) corresponds to 2>4>3>1>5, and (Lowest 20% ...)
     corresponds to 5 with option list length 1")."""
     from src.decisions.rejected_transaction_defaults import _ranking_for_segment
@@ -624,7 +624,7 @@ def test_baseline_mode_never_stochastic(gold, model_params, sim_config):
 
 
 # ---------------------------------------------------------------------------
-# Per-element intercepts: FIXED-CUTOFF semantics (professor's request that beta0
+# Per-element intercepts: FIXED-CUTOFF semantics (the requirement that beta0
 # observably shift the allocation). All population statistics (min/max/mean/sd,
 # s_min/s_max) are anchored on the BETA0-FREE scores, freezing the segment
 # cutoffs; the per-agent operative score adds the intercept's raw-scale
@@ -637,8 +637,8 @@ INTERCEPTS_MIXED = {'ttp': 0.7, 'loyalty': -0.3, 'wtp': 1.5, 'risk_taking': -2.0
 
 
 def test_research_default_intercepts(params):
-    """Config defaults: all five 0 - TTP beta0 = 0 as in the owner's September
-    version (owner ruling 2026-10-07), the other four doc placeholders 'XXX'.
+    """Config defaults: all five 0 - TTP beta0 = 0 as in the original September 2026
+    version, the other four doc placeholders 'XXX'.
     The Stata value of every intercept is 0 - see the parity tests."""
     assert params["intercepts"] == {
         "ttp": 0.0, "loyalty": 0.0, "wtp": 0.0, "risk_taking": 0.0, "flexibility": 0.0}
@@ -668,7 +668,7 @@ def test_ttp_intercept_is_on_the_raw_composite_scale(gold, model_params, sim_con
 def test_app_default_ttp_intercept_allocation(gold, model_params, sim_config):
     """beta0 = 0.05 on the raw composite (doc scale) lengthens every list by ~1.43
     positions and leaves no zero-length lists; the app default beta0 = 0 (the Stata
-    value, owner ruling 2026-10-07) reproduces the Stata allocation exactly,
+    value) reproduces the Stata allocation exactly,
     participant by participant."""
     zeros = {m: 0.0 for m in MECHANISMS}
     res = _run_model(gold, model_params, sim_config, stochastic=False,
@@ -730,7 +730,7 @@ def test_intercepts_shift_scores_on_natural_scale(gold, model_params, sim_config
 
 
 def test_negative_ttp_intercept_shortens_option_lists(gold, model_params, sim_config):
-    """The professor's use case: a negative TTP beta0 visibly shortens the Options
+    """The intended use case: a negative TTP beta0 visibly shortens the Options
     lists - every agent's length is <= its baseline, some strictly lower, and the
     mean strictly decreases. beta0 is on the raw composite (doc scale; range ~0.21),
     so -0.02 (~ -0.57 list positions) is used against the beta0 = 0 baseline."""
@@ -883,7 +883,7 @@ def test_categorical_intercepts_apply_same_way(gold, cat_model_params, sim_confi
 
 
 def test_default_template_path_unchanged(gold, model_params, sim_config):
-    """Unselected decision keeps the legacy template behaviour."""
+    """Unselected decision keeps the original template behaviour."""
     sim = {"default_decisions_list": ["rejected_transaction_defaults"],
            "default_decisions": {"rejected_transaction_defaults": {
                "type": "prioritized_selection",
@@ -1113,7 +1113,7 @@ def _apptest_rtd_script():
 
 
 def test_apptest_negative_ttp_intercept_end_to_end():
-    """AppTest end-to-end (professor's use case): rtd_intercept_ttp = -0.05 (raw
+    """AppTest end-to-end (the intended use case): rtd_intercept_ttp = -0.05 (raw
     composite, the doc's scale) set via the session key the tab widget writes must
     change the simulated rtd_choice_length distribution and shift it lower."""
     from streamlit.testing.v1 import AppTest

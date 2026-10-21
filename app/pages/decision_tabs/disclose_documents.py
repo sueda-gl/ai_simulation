@@ -4,7 +4,7 @@ Disclose Documents decision tab configuration.
 
 Decision 2: Disclose supporting documents to qualify for Discount Customer status.
 Privacy-Calculus model (Bansal et al. 2016 + Dinev & Hart 2006). The model
-coefficients/intercepts are fixed (verified bit-for-bit against the professor's Stata
+coefficients/intercepts are fixed (verified bit-for-bit against the reference Stata
 Decision 2 file); the tab exposes the income mode, optional intercept override, and the
 stochastic settings. UI mirrors the Disclose Income tab for consistency.
 """
@@ -17,7 +17,7 @@ from pathlib import Path
 
 CONFIG_PATH = Path(__file__).parent.parent.parent.parent / "config" / "decisions.yaml"
 
-# Base σ values (empirical, from the professor's constranssospeso2periods01 column)
+# Base σ values (empirical, from the reference Stata file's constranssospeso2periods01 column)
 BASE_SIGMA_OVERALL = 0.16066
 BASE_SIGMAS = {
     '1': 0.1690045319,   # Level 1 (€12)
@@ -130,7 +130,8 @@ def render_dd_sigma_controls(mode_suffix: str):
         st.markdown(f"Base σ = {BASE_SIGMA_OVERALL} (empirical from 280 participants)")
         coeff_widget_key = f'dd_tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'dd_sigma_coefficient_{mode_suffix}'
-        # 0.0 is a legal, persisted coefficient: sigma 0, no noise (R6); no 0 -> 1.0 snap.
+        # 0.0 is a legal, persisted coefficient: tick box on + coefficient 0 means sigma 0,
+        # no noise; no 0 -> 1.0 snap.
         scale_fallback = st.session_state.dd_scale_factor
 
         coeff_val = restore_widget_from_storage(
@@ -392,7 +393,7 @@ def render_categorical_dd_formula(config):
     st.markdown("**PIcat = 200 if income-level = 12; 128 if = 32; 72 if = 72; 32 if = 128; 12 if = 200**")
     st.markdown("**Income Quintile Effects (β_PIcat_q):**")
     df = pd.DataFrame({
-        # €-values are the INVERSE of income (PIcat), per professor: "we use the inverse of
+        # €-values are the INVERSE of income (PIcat), per the Decision 2 document: "we use the inverse of
         # income throughout" — so income-12 agents show as €200, income-200 as €12, etc.
         'Quintile': ['Q1 (€200)', 'Q2 (€128)', 'Q3 (€72)', 'Q4 (€32)', 'Q5 (€12)'],
         'β_PIcat_q': [
@@ -447,7 +448,7 @@ def render_intercept_override_section(config):
         with col2:
             st.markdown("**Override Value**")
             # Seed only when absent + no rerun-dependent `value=` (stable widget id): the
-            # +/- buttons used to jump back one step under fast clicks (professor 2026-09-17).
+            # +/- buttons used to jump back one step under fast clicks.
             if 'dd_override_intercept' not in st.session_state:
                 st.session_state.dd_override_intercept = float(
                     st.session_state.dd_intercept_override_values.get('intercept', current_config_value))
@@ -555,8 +556,8 @@ def reset_intercept_to_default():
     st.session_state.dd_intercept = default_intercept
     if 'dd_intercept_override_values' in st.session_state:
         st.session_state.dd_intercept_override_values['intercept'] = default_intercept
-    # The override input is seeded only while its key is absent (September 2026
-    # stable-widget fix): drop the key so the rerun re-seeds it from the default.
+    # The override input is seeded only while its key is absent (stable widget id
+    # under fast clicks): drop the key so the rerun re-seeds it from the default.
     if 'dd_override_intercept' in st.session_state:
         del st.session_state['dd_override_intercept']
     return True

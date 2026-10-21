@@ -1,9 +1,9 @@
 """
 Monte Carlo honours a selected ("Use This Config") saved configuration exactly as a
-single / complete run does (owner ruling, 2026-10-07).
+single / complete run does.
 
 A complete run with a pinned configuration runs with the pinned seed, agent count
-and population mode (``build_plan.resolve_seed_and_n``, R14), whatever Page 1 says.
+and population mode (``build_plan.resolve_seed_and_n``), whatever Page 1 says.
 Monte Carlo used to replay the plan's decision settings but take the agent count
 from Page 1 (``--agents``) - so a configuration pinned from a 280-agent Research
 Baseline run was repeated with Page 1's 1000 agents.  Now the study runs the plan's

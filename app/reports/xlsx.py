@@ -3,15 +3,13 @@
 Two things live here:
 
 * :func:`to_xlsx_bytes` -- the `BytesIO` + `pd.ExcelWriter(engine='openpyxl')`
-  + `to_excel(index=False)` (+ optional per-sheet formatter) dance that each
-  export page repeated inline. Same engine, same argument order, same
-  per-sheet formatter call after the write, so the bytes it returns are the
-  bytes the pages produced.
+  + `to_excel(index=False)` (+ optional per-sheet formatter, called after the
+  write) sequence every export shares.
 
-* The six `_apply_price_formatting*` variants, moved VERBATIM from the page
-  modules under distinct names. They are genuinely six different functions --
+* The six `_apply_price_formatting*` variants, one per family of workbooks,
+  under distinct names. They are genuinely six different functions --
   different column lists, different number formats -- and are deliberately
-  NOT merged: each one is the exact formatter one family of workbooks was
+  NOT merged: each one is the exact formatter its family of workbooks is
   written with, and merging them would silently move number formats between
   files.
 
@@ -46,7 +44,7 @@ def to_xlsx_bytes(sheets: dict[str, pd.DataFrame], formatter=None) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# The six formatters, moved verbatim. Source module named above each one.
+# The six formatters. The page each one serves is named above it.
 # ---------------------------------------------------------------------------
 
 # was `app/pages/results/components/export_section.py::_apply_price_formatting`

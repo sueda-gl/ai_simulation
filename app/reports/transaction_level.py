@@ -1,12 +1,10 @@
 """Transaction-level export: one row per purchase request.
 
-`build_transaction_level_dataframe` is `_build_transaction_level_dataframe`
-moved verbatim out of `app/pages/results/components/export_section.py`. The
-only edits are to its head: the pricing parameters it used to read off
-`st.session_state.sim_params`, and the base time / period duration / period
-count its `TimestampConverter` used to read from session state, are now
-parameters. Nothing here imports Streamlit or touches session state; every
-value, rounding and column order is exactly what the page produced.
+`build_transaction_level_dataframe` builds the Transaction-Level sheet the
+results page (`app/pages/results/components/export_section.py`) exports. The
+pricing parameters and the base time / period duration / period count of its
+`TimestampConverter` are parameters; nothing here imports Streamlit or touches
+session state.
 """
 from datetime import datetime
 
@@ -72,10 +70,11 @@ def build_transaction_level_dataframe(
     price_max_config = vendor_price_max
     
     # Calculate standard prices
-    baseline_price = (1 + platform_markup) * market_price
-    pn_price = (1 + price_range) * baseline_price
-    discount_price = market_price * 0.7
-    fixed_price = market_price
+    # Customer Price rule (COOPECON AI Agent Documentation 2026-10-07, Transaction-Level
+    # export): Purchase Now = (1 + price_range) x (1 + platform_markup) x vendor_price;
+    # Bid = the bid value; Fixed / Discount = N/A (the platform algorithm sets them).
+    # The market price is the fallback for a request that names no vendor.
+    market_pn_price = (1 + price_range) * (1 + platform_markup) * market_price
     
     # Build vendor lookup
     vendor_lookup = {}
@@ -220,6 +219,9 @@ def build_transaction_level_dataframe(
                     vendor_proximity_score = score_result['norm_proximity']
                     vendor_integrated_score = score_result['integrated_score']
             
+            pn_price = ((1 + price_range) * (1 + platform_markup) * vendor_price
+                        if not pd.isna(vendor_price) else market_pn_price)
+
             # Purchase decision and pricing
             platform_price = request.get('platformPrice', '')
             bid_value = request.get('bid_value', 'N/A')
@@ -233,11 +235,11 @@ def build_transaction_level_dataframe(
             
             if platform_price == 'DISCOUNT':
                 purchase_request_type = 'Discount'
-                customer_price = discount_price
+                customer_price = np.nan  # set by the platform algorithm; exported as N/A
                 customer_type_str = 'Regular' # Discount is a type of regular price
             elif platform_price == 'FIXED':
                 purchase_request_type = 'Fixed'
-                customer_price = fixed_price
+                customer_price = np.nan  # set by the platform algorithm; exported as N/A
                 customer_type_str = 'Fixed'
             elif platform_price == 'PN':
                 purchase_request_type = 'Purchase Now'

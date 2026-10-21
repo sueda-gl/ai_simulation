@@ -2,8 +2,8 @@
 """
 Per-mode profiles for the unified engine.
 
-After the owner rulings (one 13-decision order, one row-building mechanism, one
-donation module, errors always raise) the three population modes differ only in:
+With one 13-decision order, one row-building mechanism, one donation module and
+errors always raising, the three population modes differ only in:
 
 * ``pop_context`` - the string handed to the four modelled decisions
   (donation_default, disclose_income, disclose_documents,
@@ -12,8 +12,8 @@ donation module, errors always raise) the three population modes differ only in:
   ``TraitEngine.sample(n, seed)``; the research modes take the 280 original
   participants - Research Specification RANDOMLY (seeded: a subset without
   replacement for N < 280, all 280 for N = 280, a bootstrap for N > 280), Research
-  Baseline in file order, cycling (agent k = participant k mod 280); ruling R-CYC as
-  clarified by the owner 2026-10-07, see src/engine/sampling.py.
+  Baseline in file order, cycling (agent k = participant k mod 280); see
+  src/engine/sampling.py.
 * ``force_donation_sigma_zero`` - Research Baseline never adds noise: the
   donation_default params are shallow-copied with ``stochastic.sigma_value = 0.0``.
 * the console log prefix.

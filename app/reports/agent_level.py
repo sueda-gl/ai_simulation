@@ -1,14 +1,25 @@
 """Agent-level export: one row per agent.
 
-`build_agent_level_dataframe` is `_build_agent_level_dataframe` moved verbatim
-out of `app/pages/results/components/export_section.py`. The only edits are to
-its head: the two vendor-price bounds it used to read off
-`st.session_state.sim_params` are now parameters, so nothing here imports
-Streamlit or touches session state. Every value, rounding and column order is
-exactly what the page produced.
+`build_agent_level_dataframe` builds the Agent-Level sheet the results page
+(`app/pages/results/components/export_section.py`) exports. The two vendor-price
+bounds are parameters, so nothing here imports Streamlit or touches session state.
 """
 import numpy as np
 import pandas as pd
+
+from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
+
+
+def _vendor_score(vendor, weights, proximity, price_min, price_max):
+    """The integrated vendor score of ``calculate_vendor_score_with_breakdown`` (the
+    one formula, COOPECON AI Agent Documentation 2026-10-07, Decision 8), so this
+    sheet agrees with the Transaction-Level sheet and the vendor tables. A weight the
+    agent's dict does not carry counts as 0.25, as this sheet always did."""
+    weights = {k: weights.get(k, 0.25) for k in ('price', 'quality', 'proximity', 'sustainability')}
+    return calculate_vendor_score_with_breakdown(
+        vendor, weights, float(proximity),
+        price_min_config=price_min, price_max_config=price_max,
+    )['integrated_score']
 
 
 def build_agent_level_dataframe(
@@ -177,8 +188,8 @@ def build_agent_level_dataframe(
         # Decision 4 MODEL outputs (five trait-based sub-decision elements + the
         # Section-6 rank aggregation; present only when Decision 4 ran as a custom
         # decision). The complete-simulation results page shows only the integrated
-        # default list, so this workbook must carry EVERY element variable (professor
-        # 2026-09): the raw inputs, the z-scores the equations use, each element's
+        # default list, so this workbook must carry EVERY element variable: the raw
+        # inputs, the z-scores the equations use, each element's
         # score, intermediates, deterministic/final segment, its option list, and the
         # integration diagnostics. Lists are exported as 'a > b > c' option-number
         # strings; the dedicated Decision 4 Excel has the per-element sheets.
@@ -227,15 +238,15 @@ def build_agent_level_dataframe(
             # -- 6. Section-6 rank aggregation: the integrated default list (option
             # numbers, after the list-length and Option-5 truncation), the integrated
             # ranking it was cut from, and the tie-break diagnostics. Headers say
-            # "integrated", never "consensus" (professor 2026-09-17; Lavie #14).
+            # "integrated", never "consensus".
             if 'rtd_default_list' in row:
                 default_list = row.get('rtd_default_list', None)
                 agent_record['rtd_default_list'] = (
                     ' > '.join(str(o) for o in default_list) if isinstance(default_list, list) else 'N/A'
                 )
                 consensus = row.get('rtd_consensus_ranking', None)
-                # Exported as rtd_integrated_ranking (professor 2026-09-17: "integrated",
-                # not "consensus", in the Excel outputs); the model columns keep their names.
+                # Exported as rtd_integrated_ranking ("integrated", not "consensus", in
+                # the Excel outputs); the model columns keep their names.
                 agent_record['rtd_integrated_ranking'] = (
                     ' > '.join(str(o) for o in consensus) if isinstance(consensus, list) else 'N/A'
                 )
@@ -331,26 +342,10 @@ def build_agent_level_dataframe(
                         if not pd.isna(v_sust): sum_sust += v_sust
                         if not pd.isna(v_prox): sum_prox += float(v_prox)
                         
-                        # Calculate Score for this specific transaction
+                        # Score of this transaction's vendor, with the shared formula
                         if not (pd.isna(v_price) or pd.isna(v_quality) or pd.isna(v_sust) or pd.isna(v_prox)):
-                            # Normalize
-                            if price_max_config > price_min_config:
-                                clamped_price = max(price_min_config, min(v_price, price_max_config))
-                                norm_price = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
-                            else:
-                                norm_price = 0.5
-                                
-                            norm_quality = (v_quality - 1) / 4 if v_quality >= 1 else 0
-                            norm_sust = (v_sust - 1) / 4 if v_sust >= 1 else 0
-                            norm_prox = float(v_prox) / 100
-                            
-                            score = (
-                                vendor_weights.get('price', 0.25) * norm_price +
-                                vendor_weights.get('quality', 0.25) * norm_quality +
-                                vendor_weights.get('proximity', 0.25) * norm_prox +
-                                vendor_weights.get('sustainability', 0.25) * norm_sust
-                            )
-                            sum_score += score
+                            sum_score += _vendor_score(vendor, vendor_weights, v_prox,
+                                                       price_min_config, price_max_config)
 
         # 2. Assign Averages
         if count_requests > 0:
@@ -381,23 +376,8 @@ def build_agent_level_dataframe(
                 
                 # Calculate single score
                 if not (pd.isna(v_price) or pd.isna(v_quality) or pd.isna(v_sust) or pd.isna(v_prox)):
-                    if price_max_config > price_min_config:
-                        clamped_price = max(price_min_config, min(v_price, price_max_config))
-                        norm_price = 1 - ((clamped_price - price_min_config) / (price_max_config - price_min_config))
-                    else:
-                        norm_price = 0.5
-                    
-                    norm_quality = (v_quality - 1) / 4 if v_quality >= 1 else 0
-                    norm_sust = (v_sust - 1) / 4 if v_sust >= 1 else 0
-                    norm_prox = float(v_prox) / 100
-                    
-                    score = (
-                        vendor_weights.get('price', 0.25) * norm_price +
-                        vendor_weights.get('quality', 0.25) * norm_quality +
-                        vendor_weights.get('proximity', 0.25) * norm_prox +
-                        vendor_weights.get('sustainability', 0.25) * norm_sust
-                    )
-                    agent_record['avg_vendor_score'] = score
+                    agent_record['avg_vendor_score'] = _vendor_score(
+                        vendor, vendor_weights, v_prox, price_min_config, price_max_config)
                 else:
                     agent_record['avg_vendor_score'] = np.nan
             else:

@@ -12,8 +12,8 @@ import pandas as pd
 from app.components import show_income_distribution_histogram
 from app.pages.navigation import render_navigation
 
-# Ruling R-CYC (2026-10-07, owner clarification the same day): Research Specification
-# samples the participants randomly (seeded), Research Baseline takes them in order.
+# Research Specification samples the participants randomly (seeded by the run seed);
+# Research Baseline takes them in file order, cycling.
 RESEARCH_SPEC_SAMPLING_NOTE = ("With 280 agents all 280 participants are used; with fewer, "
                                "the simulation randomly selects a unique subset of the real "
                                "participants; with more, it uses bootstrap sampling with "
@@ -37,7 +37,8 @@ PAGE1_UI_DEFAULTS = {
 
 #: Widgets that still pass ``value=`` (derived from sim_params / a session value):
 #: their keys are dropped, never written, so they re-initialise from that value
-#: (a Session-State write plus ``value=`` is the Q-41 warning).
+#: (a Session-State write plus ``value=`` triggers Streamlit's "created with a
+#: default value but also had its value set via the Session State API" warning).
 PAGE1_VALUE_WIDGET_KEYS = ("lognormal_max_text_input", "gg_max_text_input",
                            "dagum_max_text_input", "uniform_purchasing_limit_input",
                            "show_individual_agents_checkbox")
@@ -53,7 +54,8 @@ def _carryover_mode(sim_params):
 def page1_widget_values(sim_params, session):
     """Widget key -> the value that Page-1 widget starts from.
 
-    The ONE definition of what Page 1 shows (owner ruling Q-39, 2026-10-07): a
+    The ONE definition of what Page 1 shows (a reset must restore exactly what a
+    fresh session shows, from one source of defaults): a
     fresh session seeds every absent key from it (``initialize_widget_keys``) and
     "Reset to Default Values" writes all of it after putting ``sim_params`` back
     to the ``SimulationParameters`` dataclass defaults and the Page-1 session
@@ -127,7 +129,7 @@ def initialize_widget_keys():
     passes `value=` / `index=` (2026-10-07). Passing both a default and a key that
     was set through the Session State API made Streamlit print "The widget with
     key ... was created with a default value but also had its value set via the
-    Session State API" (Q-41). They are drawn through `stateful()`
+    Session State API". They are drawn through `stateful()`
     (app/state/widgets.py), which pushes the key's value to a browser that has not
     drawn the widget in the previous run - without that, such a browser shows (and
     sends back) the widget's built-in default instead."""
@@ -1399,11 +1401,10 @@ BUDGET_SHOP,5.25,50,0""")
     with col_reset1:
         st.caption("💡 Reset all simulation parameters (vendors, prices, distributions) to system defaults.")
     with col_reset2:
-        # on_click (2026-10-07, Q-39): the reset runs BEFORE the script, while no
-        # widget exists yet, so it may write every widget key. Called from the
-        # script body (September version) the first widget-key write raised
-        # StreamlitAPIException and the widgets, agents, seed and population mode
-        # were never reset.
+        # on_click: the reset runs BEFORE the script, while no widget exists yet,
+        # so it may write every widget key. Called from the script body instead,
+        # the first widget-key write raises StreamlitAPIException and the widgets,
+        # agents, seed and population mode are never reset.
         if st.button("🔄 Reset to Default Values", help="Reset all Page 1 parameters to system defaults",
                      key="reset_page1_defaults", on_click=reset_all_page1_defaults):
             st.success("✅ All parameters reset to defaults")
@@ -1413,8 +1414,8 @@ BUDGET_SHOP,5.25,50,0""")
 
 
 def reset_all_page1_defaults():
-    """Reset every Page-1 setting to exactly what a FRESH session shows (owner
-    ruling Q-39, 2026-10-07).
+    """Reset every Page-1 setting to exactly what a FRESH session shows (one
+    source of defaults).
 
     Runs as the button's ``on_click`` callback, i.e. before the script draws any
     widget, so every widget key may be written. The values come from the same

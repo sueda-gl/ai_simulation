@@ -14,7 +14,7 @@ from app.seam.sentinels import donation_sigma_overall
 from app.reports import preview
 
 
-# R12: one sigma constant for the donation model, read from
+# One sigma constant for the donation model, read from
 # `donation_default.stochastic.sigma_overall` in config/decisions.yaml (never a
 # literal in app/). The UI multiplies it by the sigma coefficient slider.
 DONATION_SIGMA_OVERALL = donation_sigma_overall()
@@ -38,8 +38,8 @@ class SimulationParameters:
     vendor_price_max: float = 150.0  # ✅ Changed from 12.0 to 150.0
     
     # Product offering
-    products_per_vendor: int = 100  # ✅ As specified (legacy - for backward compatibility)
-    carryover: bool = False  # ✅ As specified (legacy global carryover)
+    products_per_vendor: int = 100  # ✅ As specified (kept for backward compatibility)
+    carryover: bool = False  # ✅ As specified (global carryover flag)
     
     # Vendor configuration
     vendor_config_mode: str = "random"  # ✅ Generate randomly as specified
@@ -119,7 +119,7 @@ class SimulationParameters:
         return customer_price * (1 - self.price_range)
     
     def get_num_auction_products(self) -> int:
-        """Calculate number of products available for auction per vendor (legacy method)"""
+        """Calculate number of products available for auction per vendor (older method)"""
         return int(self.products_per_vendor * self.bidding_percentage)
     
     def sample_income_distribution(self, n_samples: int = 1000, seed: int = 42) -> np.ndarray:
@@ -146,7 +146,8 @@ class SimulationParameters:
 #: Session-state values seeded once per session by initialize_session_state (the
 #: ones not held in SimulationParameters). Page 1's "Reset to Default Values"
 #: puts its Page-1 entries (n_agents, seed, n_runs, base_seed,
-#: show_individual_agents, population_mode) back to these same values (Q-39).
+#: show_individual_agents, population_mode) back to these same values, so a
+#: reset restores exactly what a fresh session shows.
 SESSION_DEFAULTS = {
     'population_mode': 'Copula (synthetic)',
     'income_spec_mode': 'categorical only',
@@ -226,12 +227,9 @@ def initialize_session_state():
             elif sim_params.income_distribution == 'weibull':
                 sim_params.income_distribution = 'generalised_gamma'  # Migrate Weibull to GG
 
-        # R9: the vendor price / product "value migration" block that used to sit
-        # here is gone. It rewrote vendor_price_min/max, market_price and
-        # vendor_products_min/max on every rerun whenever they happened to equal one
-        # of the old defaults, so a single vendor could not be run at the Page-1
-        # average price / average products the user typed. A single vendor now runs
-        # at exactly those values.
+        # Nothing rewrites vendor_price_min/max, market_price or
+        # vendor_products_min/max here: a single vendor runs at exactly the Page-1
+        # average price / average products the user typed.
 
     if 'decision_params' not in st.session_state:
         st.session_state.decision_params = DecisionParameters()
@@ -279,7 +277,7 @@ def load_donation_coefficients_from_yaml():
         else:
             coeffs = cat_coeffs  # default for categorical only and compare both
     else:
-        # Fall back to legacy format
+        # Fall back to the older single ``regression`` block
         coeffs = regression_coeffs if regression_coeffs else donation_config.get('regression', {})
         load_coefficient_set(coeffs, 'cat')  # Store as categorical
         load_coefficient_set(coeffs, 'cont')  # Store as continuous (same values)
@@ -307,7 +305,7 @@ def load_donation_coefficients_from_yaml():
     st.session_state.donation_coeff_q2 = beta_income_q.get('Q2', 0.0)
     st.session_state.donation_coeff_q3 = beta_income_q.get('Q3', 0.0)
     st.session_state.donation_coeff_q4 = beta_income_q.get('Q4', 0.0)
-    st.session_state.donation_coeff_q5 = beta_income_q.get('Q5', beta_income_q.get('Q4_Q5', 0.0))  # Support both Q5 and legacy Q4_Q5
+    st.session_state.donation_coeff_q5 = beta_income_q.get('Q5', beta_income_q.get('Q4_Q5', 0.0))  # Support both Q5 and the older Q4_Q5 name
     
     # Study programme coefficients
     beta_study = coeffs['beta_study']
@@ -343,7 +341,7 @@ def load_coefficient_set(coeffs, mode_suffix):
     st.session_state[f'donation_coeff_q2_{mode_suffix}'] = beta_income_q.get('Q2', 0.0)
     st.session_state[f'donation_coeff_q3_{mode_suffix}'] = beta_income_q.get('Q3', 0.0)
     st.session_state[f'donation_coeff_q4_{mode_suffix}'] = beta_income_q.get('Q4', 0.0)
-    st.session_state[f'donation_coeff_q5_{mode_suffix}'] = beta_income_q.get('Q5', beta_income_q.get('Q4_Q5', 0.0))  # Support both Q5 and legacy Q4_Q5
+    st.session_state[f'donation_coeff_q5_{mode_suffix}'] = beta_income_q.get('Q5', beta_income_q.get('Q4_Q5', 0.0))  # Support both Q5 and the older Q4_Q5 name
     
     # Study programme coefficients
     beta_study = coeffs['beta_study']

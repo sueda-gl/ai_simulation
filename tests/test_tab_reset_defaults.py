@@ -5,7 +5,7 @@ its first draw - and both come from config/decisions.yaml (single source of trut
 Disclose Income's "Reset Config to Defaults" used to apply a hard-coded dict
 (``_DI_RESET_DEFAULTS``) on top of the file, whose ``stochastic.scale_factor: 1.0``
 set the σ coefficient to 1.0 while the shipped file - and therefore the first draw -
-say 0.1 (owner ruling R-DI01, Q-59: 0.1 is correct). The resets now read the file:
+say 0.1 (0.1 is the intended default). The resets now read the file:
 Disclose Income / Documents through ``research_default_config()``, Donation Default
 through ``research_defaults()``; Decision 4's reset re-runs the tab's own
 initialiser.
@@ -50,7 +50,7 @@ TABS = {
         "dd_reset_btn"),
     "donation_default": (
         lambda key: key in DONATION_KEYS,
-        # Q-44 (deferred, kept): this reset leaves the live σ controls alone - the σ
+        # Kept behaviour: this reset leaves the live σ controls alone - the σ
         # coefficient slider and the σ strategy / quintile widgets keep their values
         # (it writes donation_sigma_strategy, but the strategy radio's own key wins on
         # the next render) - so they are not edited here.
@@ -119,7 +119,7 @@ def test_reset_restores_the_first_draw(tab):
 def test_disclose_income_sigma_coefficient_is_the_config_value_after_reset():
     """The reported drift: first draw 0.1 (config), reset 1.0 (hard-coded dict)."""
     config_scale = CONFIG["disclose_income"]["stochastic"]["scale_factor"]
-    assert config_scale == pytest.approx(0.1)   # R-DI01
+    assert config_scale == pytest.approx(0.1)   # the intended default
     sim = _first_draw()
     assert sim.shown("di_tab_sigma_coefficient_stochastic") == pytest.approx(config_scale)
     sim.set("di_tab_sigma_coefficient_stochastic", 1.3)

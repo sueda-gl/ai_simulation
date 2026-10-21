@@ -6,10 +6,8 @@ decision result.  It pins the seed, the agent count, the population mode and
 that decision's parameters so a later complete simulation reproduces the run
 the user looked at.
 
-Every function here was moved verbatim out of
-``app/pages/decision_execution.py`` (which re-exports all of them, so existing
-callers keep working).  The deltas applied on top of the move are marked with
-their ruling number in a comment.
+``app/pages/decision_execution.py`` re-exports every function here, so
+callers may import them from either module.
 """
 import hashlib
 
@@ -47,7 +45,7 @@ def get_current_disclose_income_params():
             'prosocial_weight': st.session_state.get('di_wpb', 0.50)
         },
         'stochastic': {
-            # R18: the Disclose Income tab's own default is ON, so an unopened tab
+            # The Disclose Income tab's own default is ON, so an unopened tab
             # must report the same sigma the run would use.
             'sigma_enabled': st.session_state.get('di_sigma_enabled', True),
             'sigma_in_copula': st.session_state.get('di_sigma_in_copula', False),
@@ -114,7 +112,7 @@ def get_current_disclose_documents_params():
         'intercept': st.session_state.get('dd_intercept', -0.5),
         'income_mode': st.session_state.get('dd_income_mode', 'Categorical only'),
         'stochastic': {
-            # R18: the Disclose Documents tab's own default is ON, so an unopened tab
+            # The Disclose Documents tab's own default is ON, so an unopened tab
             # must report the same sigma the run would use.
             'sigma_enabled': st.session_state.get('dd_sigma_enabled', True),
             'sigma_in_copula': st.session_state.get('dd_sigma_in_copula', False),
@@ -205,10 +203,11 @@ def get_current_rejected_transaction_params():
             'enabled': bool(st.session_state.get('rtd_aggregation_enabled', True)),
         },
         'stochastic': {
-            # R18: the Decision 4 tab's own default is ON.
+            # The Decision 4 tab's own default is ON, so an unopened tab must
+            # report the same sigma the run would use.
             'sigma_enabled': st.session_state.get('rtd_sigma_enabled', True),
             'sigma_in_copula': st.session_state.get('rtd_sigma_in_copula', False),
-            # σ coefficient defaults from config/decisions.yaml (0.5, owner ruling 2026-10-07)
+            # σ coefficient defaults from config/decisions.yaml (0.5, per the platform documentation)
             'scale_factor': st.session_state.get(
                 'rtd_scale_factor', get_config_repo().rtd_sigma_coefficient_defaults()[0]),
             'sigma_strategy': st.session_state.get('rtd_sigma_strategy', 'overall'),
@@ -257,8 +256,8 @@ def validate_seed_consistency(new_decision_name, new_seed, new_n_agents):
     """
     Check if new config's seed/n_agents matches existing configs.
 
-    Every stored config is an explicit "Use This Config" selection (R13 removed
-    the auto-implied ones), so all of them take part in the check.
+    Every stored config is an explicit "Use This Config" selection (auto-implied
+    ones do not exist), so all of them take part in the check.
 
     Args:
         new_decision_name: Name of the decision being saved
@@ -289,7 +288,7 @@ def validate_seed_consistency(new_decision_name, new_seed, new_n_agents):
 
 
 def get_decision_result_columns(decision_name, result_df):
-    """R14: the output columns a decision owns in a result DataFrame.
+    """The output columns a decision owns in a result DataFrame.
 
     The decision's own column plus its model columns, exactly as the
     visualisations define them.  Column order follows the DataFrame so the hash
@@ -322,7 +321,7 @@ def get_decision_result_columns(decision_name, result_df):
 
 
 def hash_result_columns(result_df, columns):
-    """R14: deterministic sha256 over the given columns of a result DataFrame.
+    """Deterministic sha256 over the given columns of a result DataFrame.
 
     Returns None when there is nothing to hash, so a caller can tell
     "no expectation recorded" apart from "hashes differ".
@@ -376,7 +375,7 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     
     original_n_agents = st.session_state.get('n_agents', 1000)
 
-    # R14: record what this decision produced, so a later complete simulation can
+    # Record what this decision produced, so a later complete simulation can
     # prove it reproduced the run the user pinned.
     result_columns = get_decision_result_columns(decision_name, result_df)
     result_sha256 = hash_result_columns(result_df, result_columns)
@@ -522,8 +521,8 @@ def get_simulation_seed_from_configs():
     """
     Get the seed to use for simulation from saved configs.
 
-    Only explicit "Use This Config" selections are stored (R13 removed the
-    auto-implied ones), so the pinned seed always comes from a run the user
+    Only explicit "Use This Config" selections are stored (auto-implied ones do
+    not exist), so the pinned seed always comes from a run the user
     actually looked at.  If configs exist, returns their seed (all configs have
     matching seed).  Otherwise returns the current session state seed.
 

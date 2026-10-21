@@ -114,8 +114,9 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
     ctx = RunContext.from_session()
 
     # CASE 3: Check if a donation configuration has been selected - an explicitly
-    # pinned record, or (R13) donation_default run as a custom decision of THIS run,
-    # whose donation_default column IS the selected distribution
+    # pinned record (only "Use This Config" creates one), or donation_default run as
+    # a custom decision of THIS run, whose donation_default column IS the selected
+    # distribution
     _donation_config = get_decision_config('donation_default')
     donation_was_custom = 'donation_default' in ctx.custom_decisions
     has_selected_config = _donation_config is not None or donation_was_custom
@@ -199,7 +200,7 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
                 st.markdown(f"Population: {_donation_config.get('population_mode', 'Unknown')}")
                 st.markdown(f"Income: {_donation_config.get('donation_income_mode', _donation_config.get('income_spec_mode', 'Unknown'))}")
             elif donation_was_custom:
-                # R13: the modes this run computed donation_default with
+                # no pinned record: the modes this run computed donation_default with
                 st.markdown(f"Population: {ctx.effective_population_mode}")
                 st.markdown(f"Income: {ctx.effective_income_mode}")
 
@@ -242,20 +243,23 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         st.markdown("Download detailed purchase request data with donation rates (one row per request)")
 
         try:
-            # Session values the pure builder needs. The pricing constants it uses
-            # (market_price / platform_markup / price_range) stay its own defaults:
-            # this export never read the Page-1 parameters.
+            # Session values the pure builder needs: the vendor list, the timestamp
+            # anchors, and the Page-1 pricing parameters (Customer Price rule, COOPECON
+            # AI Agent Documentation 2026-10-07: the run's markup and price range, not
+            # the builder's defaults).
             vendors_data = None
             if hasattr(st.session_state, 'vendors'):
                 vendors_data = st.session_state.vendors
+            sim_params = getattr(st.session_state, 'sim_params', None)
 
-            # Build transaction records. The three values the builder's
-            # TimestampConverter used to read from session state are read here.
             transaction_records = build_donation_transaction_export(
                 df, vendors=vendors_data,
                 base_time=get_simulation_base_time(),
                 duration_hours=get_duration_hours(),
                 periods=get_periods(),
+                market_price=getattr(sim_params, 'market_price', 100.0),
+                platform_markup=getattr(sim_params, 'platform_markup', 0.1),
+                price_range=getattr(sim_params, 'price_range', 0.25),
             )
 
             if len(transaction_records) > 0:

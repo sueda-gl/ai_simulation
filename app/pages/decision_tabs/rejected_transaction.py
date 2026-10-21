@@ -3,7 +3,7 @@
 Decision 4: Rejected Transaction Defaults - tab configuration.
 
 Five trait-based sub-decision mechanisms (per the "Decision 4 - Rejected Transaction
-Defaults" design document rev 280826-2, verified against the professor's Stata file
+Defaults" design document rev 280826-2, verified against the reference Stata file
 Stata_File_Decision4_290826.dta):
 
   1. Options List Length (Tendency to Plan) - how many default options to pre-select (0-5)
@@ -63,7 +63,7 @@ LEVEL_LABELS = {
 }
 
 # Fallback sigma constants (config/decisions.yaml is the source of truth).
-# Values from the professor's revised Decision 4 document (2026-09): loyalty, WTP,
+# Values from the revised Decision 4 document (2026-09): loyalty, WTP,
 # risk-taking and flexibility sigmas were all restated; TTP is unchanged.
 FALLBACK_SIGMA_OVERALL = {
     'ttp': 0.395446, 'loyalty': 0.4665145336,
@@ -84,10 +84,9 @@ FALLBACK_CATEGORICAL_EFFECTS = {
 def load_rtd_config():
     """Load rejected_transaction_defaults configuration from YAML (read-only).
 
-    The September 2026 original read this through a retrying reader that tolerated
-    a concurrent non-atomic rewrite of decisions.yaml by the other tabs' reset
-    buttons. Here the app never writes the file (ruling R11), so there is no
-    half-written document to tolerate and a plain read is kept."""
+    The app never writes a configuration file (tab values live in session keys and
+    travel to the engine as patches), so there is no half-written document to
+    tolerate and a plain read suffices."""
     config = read_yaml_file(CONFIG_PATH)
     return config.get('rejected_transaction_defaults', {})
 
@@ -106,7 +105,7 @@ def initialize_rtd_session_state():
     # Sigma is a DECISION-WIDE setting (one strategy + coefficient applied to all five
     # elements; each element keeps its own base sigma from config). Anchors and
     # intercepts remain per element. The coefficient defaults come from the file
-    # (owner ruling 2026-10-07: 0.5 overall and per budget level; was 1.0).
+    # (the updated user manual: 0.5 overall and per budget level; was 1.0).
     default_scale, default_quintile_scales = rtd_sigma_coefficient_defaults(config)
     defaults = {
         'rtd_income_mode': 'Continuous only',
@@ -145,7 +144,7 @@ def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_v
     widget on another page. Rewriting the key on every rerun (the previous behaviour)
     forced the backend to push its value to the browser each rerun, which - together
     with a rerun-dependent `value=` default - made the +/- buttons of the intercept
-    inputs jump back one step under fast clicks (professor 2026-09-17)."""
+    inputs jump back one step under fast clicks."""
     if widget_key in st.session_state:
         return st.session_state[widget_key]
     if storage_dict and storage_key in storage_dict:
@@ -174,8 +173,8 @@ def save_to_rtd_storage(widget_key, storage_key):
 def _render_black_table(df, full_width=False):
     """Render a DataFrame as a compact HTML table whose column TITLES are black.
 
-    st.dataframe renders its column headers in gray; the professor asked for black
-    header ink on every table of this tab, so the tables are emitted as plain HTML
+    st.dataframe renders its column headers in gray; every table of this tab must
+    have black header ink, so the tables are emitted as plain HTML
     with explicit header styling. All values come from the config / fixed labels
     (no user-entered text), so no HTML escaping is required and the ">" separators
     of the priority lists render literally.
@@ -366,7 +365,7 @@ def _categorical_effects(config, mech):
 
 
 # Quintile labels for the categorical income effects table - EXACTLY the
-# disclose_income tab's wording (professor: same names/titles across decisions).
+# disclose_income tab's wording (same names/titles across decisions).
 QUINTILE_LABELS = ['Q1 (€12)', 'Q2 (€32)', 'Q3 (€72)', 'Q4 (€128)', 'Q5 (€200)']
 
 
@@ -591,8 +590,8 @@ def render_intercept_control(config, mech):
         st.session_state[f'rtd_intercept_{m}'] = st.session_state[f'rtd_tab_intercept_{m}']
         save_to_rtd_storage(f'rtd_tab_intercept_{m}', f'rtd_intercept_{m}')
 
-    # Narrow, vertically stacked control (professor 2026-09-17: the intercept override
-    # was too wide); the caller places it in the left of two columns. No `value=`
+    # Narrow, vertically stacked control (a full-width intercept override was too
+    # wide); the caller places it in the left of two columns. No `value=`
     # argument: the seeded session-state key carries the value, so the widget id is
     # stable across reruns (a rerun-dependent default would re-create the widget on
     # every click, see restore_widget_from_storage).
@@ -628,8 +627,8 @@ def render_intercept_control(config, mech):
         st.metric("Change", "No change")
 
 
-# The Override value as a FRAGMENT (Lavie 2026-10: a few quick +/- clicks froze /
-# faded the whole simulation page for seconds): a click reruns only this control -
+# The Override value as a FRAGMENT (a few quick +/- clicks used to freeze / fade
+# the whole simulation page for seconds): a click reruns only this control -
 # the input, its on_change (which writes rtd_intercept_<mech>) and the Change metric
 # - instead of the whole of Page 2 with every selected decision tab. Nothing else on
 # the page shows the intercept; the Run buttons read rtd_intercept_<mech> from
@@ -702,7 +701,7 @@ def render_mechanism_subtab(config, mech):
     render_stochastic_explanation(mech)
     st.markdown("---")
     # Intercept Override (left) and, for Flexibility, the Anchor Mix slider (right)
-    # side by side in two narrow columns (professor 2026-09-17).
+    # side by side in two narrow columns.
     left_col, right_col = st.columns(2)
     with left_col:
         render_intercept_control_fragment(config, mech)
@@ -801,12 +800,12 @@ def render_aggregation_subtab(config):
 
 def render_selected_config_notice():
     """Shows the Decision 4 configuration saved with "Use This Config" (if any) above the
-    run buttons, with an Unselect button. Professor 2026-09-17: once a configuration is
-    selected the runs present only that configuration, but it must be possible to
+    run buttons, with an Unselect button. Once a configuration is selected the runs
+    present only that configuration, but it must be possible to
     unselect it at any point of the process so later runs present all alternatives."""
     from app.pages.decision_execution import get_decision_config, clear_decision_config
     config = get_decision_config('rejected_transaction_defaults')
-    if not config:      # R13: only explicit "Use This Config" selections are stored
+    if not config:      # only explicit "Use This Config" selections are stored
         return
     params = config.get('params') or {}
     income_mode = config.get('income_mode', params.get('income_mode', 'Unknown'))
@@ -972,7 +971,7 @@ def render_rejected_transaction_defaults_tab():
 
     # ---- Four mechanism sub-tabs + the rank-aggregation sub-tab ----
     st.markdown('<h4 class="subsection-header">Sub-Decision Mechanisms</h4>', unsafe_allow_html=True)
-    # Larger bold sub-tab labels (professor 2026-09-17): bold markdown in the labels
+    # Larger bold sub-tab labels: bold markdown in the labels
     # plus the .st-key-rtd_subtabs font rule in app.components.get_css_styles().
     with st.container(key="rtd_subtabs"):
         sub_tabs = st.tabs([f"**{MECH_TITLES[m]}**" for m in MECHANISMS]
@@ -991,8 +990,8 @@ def render_rejected_transaction_defaults_tab():
             st.toast("Decision 4 settings reset to defaults", icon="🔄")
             st.rerun()
 
-    # (The "Running the whole decision" explanation was removed on the professor's
-    # 2026-09-17 request: explanations belong in the documentation.)
+    # (No "Running the whole decision" explanation here: explanations belong in
+    # the documentation.)
 
     # ---- Selected configuration ("Use This Config"): can be unselected here as well ----
     render_selected_config_notice()

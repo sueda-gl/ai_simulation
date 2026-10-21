@@ -1,6 +1,6 @@
 """
 Decision 4 (Rejected Transaction Defaults) configuration tab - UI text / structure
-tests for the professor's 2026-09 review round.
+tests for the review round that settled the tab's wording.
 
 The tab must:
   - bin Flexibility with the plain `Flexibility15_i` formula over AnchoredFlexibility
@@ -10,7 +10,7 @@ The tab must:
     in a table whose column titles render in black (HTML table, not st.dataframe);
   - print the five option explanations as regular black markdown, not gray captions;
   - carry no "Advanced: stochastic anchor" section and no aggregation enable checkbox;
-  - phrase the aggregation sub-tab with the professor's wording (per agent, the two
+  - phrase the aggregation sub-tab with the specified wording (per agent, the two
     rules, the plain-language Kendall-tau paragraph, Phase 1 / Phase 2) and offer the
     "Run Integrated Default List Only" button (key rtd_run_aggregation_btn).
 
@@ -84,7 +84,7 @@ def test_flexibility_binning_formula_has_no_z(tab):
 
 def test_anchored_flexibility_line_and_plain_sentence(tab):
     tex = _latex(tab)
-    # professor 2026-09-17: the calculated score is named CalculatedFlexibility_i
+    # the calculated score is named CalculatedFlexibility_i
     assert r"CalculatedFlexibility_i = \beta_4" in tex
     assert (r"AnchoredFlexibility_i = W_{OFlex} \times ObservedFlexibility_i"
             r" + W_{CFlex} \times CalculatedFlexibility_i"
@@ -92,7 +92,7 @@ def test_anchored_flexibility_line_and_plain_sentence(tab):
     assert r"\times Flexibility_i" not in tex
     md = _md(tab)
     assert "ObservedFlexibility is the observed flexibility variable stdactions" in md
-    # professor 2026-09-17: the standardization sentence follows the ObservedFlexibility
+    # the standardization sentence follows the ObservedFlexibility
     # sentence in the text itself (not in a tooltip)
     after = md.split("ObservedFlexibility is")[1][:600]
     assert ("research baseline and research specification modes. All variables are "
@@ -212,7 +212,7 @@ def test_no_advanced_stochastic_anchor_section(tab):
 # ---------------------------------------------------------------------------
 def test_aggregation_subtab_wording(tab):
     md = _md(tab)
-    # sub-tab labels are bold markdown (professor 2026-09-17: larger bold tab text)
+    # sub-tab labels are bold markdown (larger bold tab text)
     assert "6. Integrated Default List (Rank Aggregation)" in [
         str(t.label).strip('*') for t in tab.tabs]
     assert all(str(t.label).startswith("**") and str(t.label).endswith("**") for t in tab.tabs)
@@ -328,8 +328,8 @@ def test_aggregation_run_button_sets_element_flag():
 
 
 # ---------------------------------------------------------------------------
-# 7. "Running the whole decision" paragraph - REMOVED (professor 2026-09-17:
-#    explanations belong in the documentation, not on the simulation page)
+# 7. "Running the whole decision" paragraph - REMOVED (explanations belong in the
+#    documentation, not on the simulation page)
 # ---------------------------------------------------------------------------
 def test_running_the_whole_decision_paragraph_is_gone(tab):
     md = _md(tab)
@@ -342,7 +342,7 @@ def test_running_the_whole_decision_paragraph_is_gone(tab):
 # 7b. Intercept Override + Anchor Mix side by side, no Quick Summary-style clutter
 # ---------------------------------------------------------------------------
 def test_intercept_override_is_compact_and_beside_the_anchor_mix(tab):
-    """Professor 2026-09-17: the Anchor Mix slider and the Intercept Override were too
+    """The Anchor Mix slider and the Intercept Override were too
     wide - they now sit in two columns next to each other (Flexibility sub-tab), the
     intercept control stacked vertically without its old three-column layout."""
     md = _md(tab)
@@ -359,8 +359,8 @@ def test_intercept_override_is_compact_and_beside_the_anchor_mix(tab):
 
 # ---------------------------------------------------------------------------
 # 8. Intercept help text: β0 (Options List Length) on the RAW Tendency-to-Plan score,
-#    β1-β4 on the standardized score (owner ruling 2026-10-07: β0 stays on the doc's
-#    raw weighted_ttp scale, default 0)
+#    β1-β4 on the standardized score (β0 stays on the doc's raw weighted_ttp scale,
+#    default 0)
 # ---------------------------------------------------------------------------
 def test_intercept_help_text_is_standardized_scale(tab):
     help_text = str(tab.number_input(key='rtd_tab_intercept_ttp').help)

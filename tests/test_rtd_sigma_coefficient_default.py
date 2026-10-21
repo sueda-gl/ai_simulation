@@ -1,6 +1,6 @@
 """
-Decision 4's σ Coefficient defaults to 0.5 (owner ruling 2026-10-07, from the updated
-user manual; it was 1.0): the Uniformly coefficient and every per-budget-level
+Decision 4's σ Coefficient defaults to 0.5 (from the updated user manual; it was 1.0):
+the Uniformly coefficient and every per-budget-level
 coefficient in Quintiles mode. The value lives in config/decisions.yaml
 (``rejected_transaction_defaults.stochastic.mechanisms.*.scale_factor`` /
 ``quintile_scale_factors``); the tab's first draw and "Reset Decision 4 Settings to

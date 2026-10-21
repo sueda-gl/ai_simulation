@@ -208,7 +208,7 @@ def can_run_complete_simulation():
 
     if rtd_selected:
         if 'rejected_transaction_defaults' in configs:
-            # R13: every stored config is an explicit "Use This Config" selection.
+            # Every stored config is an explicit "Use This Config" selection.
             rc = configs['rejected_transaction_defaults']
             has_rtd_config = True
             rtd_saved_info = (f"{rc.get('population_mode', 'Unknown')} + "
@@ -368,7 +368,7 @@ def render_simulation_buttons(decision_name, selected_decisions):
         
         if not can_run:
             # The single-issue wording follows the ONE blocking issue's own type (the
-            # legacy block_type is the first issue's type; they agree, but the issue is
+            # block_type return value is the first issue's type; they agree, but the issue is
             # the source of truth). Each type has its own heading; the donation heading
             # is used for the donation block only, never as a catch-all.
             if len(blocking_issues) == 1:
@@ -591,7 +591,7 @@ def get_actual_default_value(decision_name, sim_params=None):
         # Priority 1: Check for pre-configured default from Overview tab
         pre_config_key = f"{decision_name}_default_selection"
         
-        # Priority 2: Check for post-simulation adjustments (legacy keys)
+        # Priority 2: Check for post-simulation adjustments (older keys; nothing writes them now)
         if decision_name == "rejected_transaction_defaults":
             post_sim_key = "rejected_transaction_defaults_option"
         elif decision_name == "rejected_transaction_option":
@@ -904,7 +904,7 @@ def run_combined_simulation(selected_decisions):
     if 'disclose_income' in saved_config_info:
         di_saved_mode = saved_config_info['disclose_income']
         st.info(f"📋 **Disclose Income** will use saved config: {di_saved_mode}")
-        # R28: the run does not write di_income_mode (or any other di_/dd_/rtd_ key)
+        # The run does not write di_income_mode (or any other di_/dd_/rtd_ key)
         # back into session state - the saved config carries the mode the run uses.
     elif 'disclose_income' in effective_selected_decisions:
         # Decision is selected but no saved config - show current mode
@@ -930,7 +930,7 @@ def run_combined_simulation(selected_decisions):
             # Store original selected decisions
             original_decisions = st.session_state.decision_params.selected_decisions.copy()
 
-            # R27: a successful run ends in st.rerun() (a BaseException), so the
+            # A successful run ends in st.rerun() (a BaseException), so the
             # restoration has to be handed to run_full_simulation() the same way
             # run_individual_decision() does it.
             st.session_state._pending_decisions_restore = {
@@ -1090,7 +1090,7 @@ def get_current_coefficients():
             'Q2': st.session_state.donation_coeff_q2,
             'Q3': st.session_state.donation_coeff_q3,
             'Q4': st.session_state.get('donation_coeff_q4', 0.0),
-            'Q5': st.session_state.get('donation_coeff_q5', st.session_state.get('donation_coeff_q45', 0.0))  # Support both Q5 and legacy Q4_Q5
+            'Q5': st.session_state.get('donation_coeff_q5', st.session_state.get('donation_coeff_q45', 0.0))  # Support both Q5 and the older Q4_Q5 name
         },
         'beta_income_linear': st.session_state.donation_coeff_linear,
         'beta_study': {

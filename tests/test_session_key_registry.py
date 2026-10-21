@@ -481,7 +481,7 @@ def test_write_only_keys_are_the_documented_ones(scan):
         "the write-but-never-read set moved.\n"
         f"  newly write-only: {sorted(observed - declared)}\n"
         f"  no longer write-only: {sorted(declared - observed)}\n"
-        "Update REGISTRY (write_only=) and docs/migration/session-state.md.")
+        "Update REGISTRY (write_only=) and docs/session-state.md.")
 
 
 def _seam_key_vocabulary():

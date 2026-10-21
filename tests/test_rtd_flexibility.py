@@ -2,7 +2,7 @@
 Validation tests for Decision 4, Section 5: the Flexibility mechanism.
 
 Ground truth: data/stata_d4_flexibility_verification.csv - a frozen extract of the
-professor's `Stata_File_Decision4_050926.dta` (280 participants) holding the raw
+reference Stata file `Stata_File_Decision4_050926.dta` (280 participants) holding the raw
 inputs, stdactions and every Flexibility column (Flexibility_calculated_ivw, its z,
 z_stdactionsP, anchored_flexibility, z_anchored_flexibility, min/max,
 Flexibility_combined15, choice1-5_flex_deterministic).
@@ -119,7 +119,7 @@ def results(flexgold, params, sim_config):
 # ---------------------------------------------------------------------------
 def test_constants_follow_the_document(params):
     """doc rev 040926-2 Section 5 / Stata_File_Decision4_050926.dta. The O/N/A values
-    the app corrected in the professor's 2026-09 review are now the document's and the
+    the app corrected ahead of doc rev 040926-2 are now the document's and the
     file's own values, so there is exactly ONE set of Flexibility coefficients."""
     adopted = {"extraversion": 0.0206, "openness": 0.0294118,
                "neuroticism": -0.04921357, "agreeable": 0.04339814,
@@ -195,7 +195,7 @@ def test_flexibility_segments_exact(flexgold, results):
 
 
 def test_adopted_coefficients_reproduce_the_dta_exactly(flexgold, params, sim_config):
-    """The coefficients the app corrected in the professor's 2026-09 review are the
+    """The coefficients the app corrected ahead of doc rev 040926-2 are the
     ones doc rev 040926-2 and the 050926 file now use: running the SHIPPED config
     against the file reproduces Flexibility_calculated_ivw to float32 tolerance and
     all 280 segments (the 8-segment gap against the 290826 file is gone)."""
@@ -219,7 +219,7 @@ def test_adopted_coefficients_reproduce_the_dta_exactly(flexgold, params, sim_co
 
 
 def test_flexibility_choice_lists_match_stata_columns(flexgold, results):
-    """2026-09-16 direction: segment s -> SEQ[5-s:] - the professor's instruction
+    """Segment direction: segment s -> SEQ[5-s:] - the specification's wording
     ("5 (Highest 20% of Cognitive Flexibility score segment) corresponds to 2>4>3>1>5,
     and (Lowest 20% ...) corresponds to 5 with option list length 1"). Doc rev 040926-2
     rewrote the `replace choice<p>_flex_deterministic` statements in this direction and
@@ -241,7 +241,7 @@ def test_flexibility_choice_lists_match_stata_columns(flexgold, results):
         assert r["rtd_flex_ranking"] == SEQ[5 - s:]
         assert len(r["rtd_flex_ranking"]) == s
         assert r["rtd_flex_ranking"] == stored_by_segment[s]   # DIRECT, not mirrored
-    # the professor's two anchor cases, straight out of the file
+    # the specification's two anchor cases, straight out of the file
     assert stored_by_segment[5] == [2, 4, 3, 1, 5]            # segment 5 -> full list
     assert stored_by_segment[1] == [5]                        # segment 1 -> Option 5
     firsts = pd.Series([r["rtd_flex_ranking"][0] for r in results]).value_counts().to_dict()

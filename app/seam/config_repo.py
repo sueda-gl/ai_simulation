@@ -2,7 +2,7 @@
 """
 Read-only access to ``config/decisions.yaml`` and ``config/simulation.yaml``.
 
-The app never writes these files again (ruling R11): the tabs keep their
+The app never writes these files: the tabs keep their
 overrides in session keys and the plan builder reads the file only for the
 values the session does not carry (the donation coefficient sets when a session
 was never initialised, the sigma constants, the adjustment shift default).
@@ -74,7 +74,7 @@ class DecisionsConfig:
         return float(stochastic["sigma_overall"])
 
     def donation_sigma_overall(self) -> float:
-        """donation_default.stochastic.sigma_overall (9.899547) - the ONE donation sigma (R12)."""
+        """donation_default.stochastic.sigma_overall (9.899547) - the ONE donation sigma constant (never a literal in app/)."""
         return self._sigma_overall("donation_default")
 
     def disclose_income_sigma_overall(self) -> float:
@@ -89,7 +89,7 @@ class DecisionsConfig:
         """
         Deep copy of the file's coefficient set for ``income_mode``
         ('categorical' / 'continuous'): the nested ``regression_coefficients``
-        block when the file has one, else the legacy ``regression`` block.
+        block when the file has one, else the older single ``regression`` block.
         """
         donation = self.decision("donation_default")
         regression_coeffs = donation.get("regression_coefficients") or {}
@@ -118,7 +118,8 @@ def rtd_sigma_coefficient_defaults(rtd_block: Mapping) -> Tuple[float, Dict[str,
     """
     Decision 4's research-default σ coefficients: ``(overall, {level: coefficient})``,
     read from ``rejected_transaction_defaults.stochastic.mechanisms.*.scale_factor`` /
-    ``quintile_scale_factors`` (owner ruling 2026-10-07: 0.5 everywhere; was 1.0).
+    ``quintile_scale_factors`` (0.5 for every element and budget level, per the
+    platform documentation, docs/reference/COOPECON AI Agent Documentation 2026-10-07.docx; previously 1.0).
 
     The file carries the coefficients per element, but the tab applies ONE
     decision-wide set to all five elements, so the five must agree - a file in
@@ -156,8 +157,8 @@ def read_yaml_file(path) -> dict:
 
     The Page-2 tabs read config/decisions.yaml (a ~60 ms parse) on every script
     run - fourteen times per rerun with Decisions 1-4 selected, ~80 % of a rerun
-    (Lavie 2026-10: rapid +/- clicks on a Decision 4 Override value froze the
-    page). The parse is cached per (path, mtime, size), so an edited file is
+    (rapid +/- clicks on a Decision 4 Override value froze the page). The
+    parse is cached per (path, mtime, size), so an edited file is
     re-read, and every call returns a DEEP COPY, so callers see exactly what a
     fresh load returned and may mutate it freely.
     """

@@ -5,11 +5,11 @@ Handles both single runs and Monte Carlo studies.
 
 Single runs go through the seam:
 
-    snapshot  = take_snapshot(st.session_state)          # read ONCE (R15)
+    snapshot  = take_snapshot(st.session_state)          # read ONCE per click
     plan      = build_run_plan(snapshot, config_repo)     # pure (app/seam/build_plan.py)
     messages  -> st.info / st.caption / st.success, in plan order
     results   = execute(plan)                             # engine only (app/seam/execute.py)
-    saved-config hashes re-checked (R14), then results / _run_metadata /
+    saved-config hashes re-checked, then results / _run_metadata /
     vendors / page are stored and the app reruns.
 
 This module is the only place that touches ``st``; the seam and the engine
@@ -121,7 +121,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
 
         # The SAME plan a single run builds (every Page-1 / Page-2 setting, each
         # decision's own income mode, saved configs) - Monte Carlo repeats one of its
-        # sub-runs with seed base_seed + i (app/seam/mc.py; Q-29 fixed 2026-10-07).
+        # sub-runs with seed base_seed + i (app/seam/mc.py).
         from app.state.saved_configs import get_simulation_seed_from_configs
         seed_resolution = get_simulation_seed_from_configs()
         pinned_config = seed_resolution[2] == 'configs'
@@ -133,7 +133,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             income_label = income_mode_arg.title()
         if mc_sub_run.population != pop_mode_arg:
             # a selected ("Use This Config") saved configuration pins the population
-            # of a complete run, exactly as in a single run (R14)
+            # of a complete run, exactly as in a single run (to reproduce the pinned run)
             pop_mode_arg = mc_sub_run.population
             pop_label = population_mode_name(pop_mode_arg).replace(' (synthetic)', '').replace(' ', '_')
         # ... and the agent count of every run (Page 1's only without a pinned config)
@@ -388,7 +388,8 @@ def _emit(message: UiMessage) -> None:
 
 
 def _run_metadata_dict(metadata: RunMetadata) -> dict:
-    """st.session_state._run_metadata - what was ACTUALLY run (R28)."""
+    """st.session_state._run_metadata - what was ACTUALLY run (the results page
+    describes the run that happened, not the next one being configured)."""
     return {
         'is_comparison': metadata.is_comparison,
         'result_keys': list(metadata.result_keys),
@@ -406,7 +407,8 @@ def _run_metadata_dict(metadata: RunMetadata) -> dict:
 
 
 def build_plan_from_session(seed_resolution=None) -> RunPlan:
-    """Snapshot the session ONCE and build the plan for this click (R15).
+    """Snapshot the session ONCE and build the plan for this click (one read per
+    click, so nothing the run writes can feed back into it).
 
     seed_resolution: (seed, n_agents, source) when the caller already resolved it
     (``get_simulation_seed_from_configs``); resolved here otherwise."""
@@ -429,8 +431,9 @@ def run_full_simulation():
     Run a single simulation: snapshot -> plan -> messages -> execute ->
     saved-config check -> store results and navigate to the results page.
 
-    The run never writes a session key before its results are stored (R15);
-    the population / income modes it used travel in _run_metadata (R28).
+    The run never writes a session key before its results are stored; the
+    population / income modes it used travel in _run_metadata, so the results
+    page describes the run that happened, not the next one being configured.
     """
     try:
         with st.spinner("🔄 Running simulation..."):
@@ -441,7 +444,7 @@ def run_full_simulation():
 
             results = execute(plan, config_repo=get_config_repo())
 
-            # R14: a pinned decision must reproduce the run the user selected
+            # A pinned decision must reproduce the run the user selected
             failed = verify_saved_expectations(plan.saved_expectations, results)
             if failed:
                 for expectation in failed:

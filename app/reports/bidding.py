@@ -1,14 +1,10 @@
 # app/reports/bidding.py
 """Pure builders behind the bid-value tables and Excel export.
 
-Moved verbatim out of `app/pages/results/visualizations/bidding_viz.py`: same
-rounding, same column order, same sheet names, same openpyxl formatting. The
-only changes are mechanical -- the vendors list and the timestamp configuration
-come in as arguments instead of being read from `st.session_state`, and the
-block that used to write straight into `st.download_button` now returns the
-xlsx bytes the page hands to it.
-
-Nothing in this module imports Streamlit or touches session state.
+The tables and workbook bytes `app/pages/results/visualizations/bidding_viz.py`
+renders and offers for download. The vendors list and the timestamp
+configuration come in as arguments; nothing in this module imports Streamlit or
+touches session state.
 """
 from datetime import datetime
 
@@ -18,8 +14,7 @@ import pandas as pd
 from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import apply_bid_price_formatting, to_xlsx_bytes
 
-# `apply_bid_price_formatting` is the `_apply_price_formatting_bid` that used to
-# live in bidding_viz.py, moved verbatim into app/reports/xlsx.py.
+# `apply_bid_price_formatting` lives in app/reports/xlsx.py; this is its older name.
 apply_price_formatting_bid = apply_bid_price_formatting
 
 

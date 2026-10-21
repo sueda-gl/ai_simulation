@@ -1,5 +1,5 @@
 """
-Lavie #8 (professor 2026-10): after "Use This Config" on a Decision 4 ELEMENT page, the
+After "Use This Config" on a Decision 4 ELEMENT page, the
 selected-configuration summary must not show list-length averages unrelated to that
 element. The summary keeps only what belongs to the element:
 

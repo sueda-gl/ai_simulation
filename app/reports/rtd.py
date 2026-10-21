@@ -3,14 +3,13 @@
 The workbook/frame builders behind the "rejected transaction defaults" MODEL run
 (Decision 4): the five sub-decision elements (Options List Length / Tendency to
 Plan, Loyalty, Willingness-to-Pay, Risk-Taking, Flexibility) and the Section-6
-rank aggregation's integrated default list.  Ported from the owner's September
-2026 `app/pages/results/visualizations/transaction_viz.py` (original repo,
-e973a99), which kept them next to the charts; the page now imports them back
-and keeps only the Streamlit rendering (charts, captions, download buttons).
+rank aggregation's integrated default list.  The results page
+(`app/pages/results/visualizations/transaction_viz.py`) imports them and keeps
+only the Streamlit rendering (charts, captions, download buttons).
 
 Nothing here imports Streamlit or reads session state: every input is passed in
 explicitly.  The `prepare_*` builders RAISE on a malformed frame; the page
-turns that back into the same inline `st.error(...)` the original showed.
+turns that back into an inline `st.error(...)`.
 """
 import math
 
@@ -36,9 +35,9 @@ RTD_ALL_ELEMENTS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
 # the continuous income specification, so a comparison layout renders them only once.
 RTD_INCOME_FREE_ELEMENTS = ('ttp', 'loyalty', 'flexibility')
 
-# Results-page subtitle of a single-element Decision 4 run (Lavie 2026-10: "below the
-# '4. Rejected Transaction Defaults' title, add a subtitle for the decision element to
-# which the results correspond, e.g. '4.1 Options List Length (Tendency to Plan)'").
+# Results-page subtitle of a single-element Decision 4 run: below the
+# '4. Rejected Transaction Defaults' title, a subtitle names the decision element to
+# which the results correspond, e.g. '4.1 Options List Length (Tendency to Plan)'.
 # Numbers and names are the Decision 4 tab's sub-tabs (MECH_TITLES / AGGREGATION_TITLE
 # in app/pages/decision_tabs/rejected_transaction.py), i.e. the document's order.
 RTD_ELEMENT_SUBTITLES = {
@@ -68,7 +67,7 @@ RTD_SUMMARY_METRICS = ('mean_choice_length', 'mean_default_list_length')
 
 def rtd_summary_metric_keys(element=None):
     """Which list-length averages belong on a Decision 4 configuration summary shown for
-    `element` (Lavie #8, professor 2026-10: drop the summary line unrelated to the page).
+    `element` (the summary line unrelated to the page is dropped).
 
     None (the whole decision was run)       -> both averages;
     'ttp' (Options List Length element)     -> the options list length only;
@@ -119,8 +118,8 @@ RTD_ELEMENT_INPUTS = {
 
 # Raw input column -> (model column holding the standardized value, Stata name).
 # These are the values the equations actually multiply, so every Decision 4 Excel
-# carries them next to their raw inputs (professor 2026-09: "we are missing all the
-# variables that are used in the calculation for all decision elements").
+# carries them next to their raw inputs (every variable used in the calculation of
+# every decision element must be in the Excel).
 RTD_INPUT_Z = {
     'ExtraversionBig5': ('rtd_z_extraversion', 'z_extraversionbig5'),
     'Agreeable': ('rtd_z_agreeable', 'z_agreeable'),
@@ -235,9 +234,8 @@ def prepare_rtd_element_export(df, mech):
 
 def prepare_rtd_integrated_export(df):
     """The 'Integrated Default List' sheet: ONE row per agent holding EVERY variable the
-    decision uses, grouped left to right (professor 2026-09: "In the integrated Excel
-    output we are missing all the variables that are used in the calculation for all
-    decision elements"):
+    decision uses, grouped left to right (the integrated Excel output must carry
+    every variable used in the calculation of every decision element):
 
       Agent ID -> raw inputs (traits, Education, income / allowance level, stdactions)
       -> z-scores -> 1 Options List Length -> 2 Loyalty -> 3 Willingness-to-Pay
@@ -396,8 +394,8 @@ def rtd_element_subset(sheets, active_element):
 # Chart data: score histograms (Stata's bin rule), allocation shares
 # ---------------------------------------------------------------------------
 
-# Upper bound on the histogram bin count (professor 2026-09-17: at the default 1,000
-# agents Stata's rule gives 29 bins, too fine to compare with the document's figures).
+# Upper bound on the histogram bin count (at the default 1,000 agents Stata's rule
+# gives 29 bins, too fine to compare with the document's figures).
 # 16 is exactly what Stata's default rule gives for the 280 participants, so the
 # document's histograms and the app's charts share the same bins at every N >= 280.
 RTD_MAX_BINS = 16
@@ -462,8 +460,8 @@ def rtd_stata_bins(series):
 # Score each element's distribution chart plots, per element:
 #   (deterministic score column, chart title,
 #    stochastic draw column, the draw's anchor column, x-axis title of the draw)
-# Deterministic charts plot the STANDARDIZED score of the ranking elements (professor
-# 2026-08: "present the standardized loyalty graph rather than the one before
+# Deterministic charts plot the STANDARDIZED score of the ranking elements (the
+# specification: "present the standardized loyalty graph rather than the one before
 # standardization") and weighted_ttp for the Options List Length (the document
 # defines no standardized TTP) - exactly the Stata figures (Research Baseline).
 # With the Normal(anchor, sigma) draw on (Research Specification / Copula), the
@@ -498,9 +496,8 @@ def rtd_score_chart_data(df, mech):
     When the element's scores were drawn, it shows each agent's DRAWN score - the
     value whose population min..max is re-cut into the segments (0-6 lengths) that the
     allocation chart, its table and the overview statistics count - so graph and
-    statistics describe the same values (Lavie 2026-10: the Research Specification
-    graphs were identical to the Research Baseline ones while the statistics were
-    not). An agent left undrawn inside a drawn run (Quintiles mode with a budget
+    statistics describe the same values (the Research Specification graphs used to
+    be identical to the Research Baseline ones while the statistics were not). An agent left undrawn inside a drawn run (Quintiles mode with a budget
     level's coefficient at 0) is plotted at its anchor, the value the population's
     draw range was computed with for it."""
     det_col, title, draw_col, anchor_col, draw_x_title = RTD_SCORE_CHARTS[mech]
@@ -513,8 +510,8 @@ def rtd_score_chart_data(df, mech):
 
 
 def rtd_score_stats_caption(series):
-    """Range line under each score chart - Min and Max only (professor 2026-09: mean,
-    SD and N dropped from the caption)."""
+    """Range line under each score chart - Min and Max only (mean, SD and N are
+    dropped from the caption)."""
     s = pd.Series(series).astype(float)
     return f"Min {s.min():.4f} · Max {s.max():.4f}"
 
@@ -535,8 +532,8 @@ def rtd_first_choice(df, col_key):
 
 def rtd_reversed_sequence(seq):
     """Allocation-chart category order: the element's priority sequence REVERSED, so the
-    least likely option sits on the left and the most likely on the right (professor
-    2026-09). Applied in every context - per-element, whole-decision and comparison."""
+    least likely option sits on the left and the most likely on the right.
+    Applied in every context - per-element, whole-decision and comparison."""
     return list(reversed(list(seq)))
 
 

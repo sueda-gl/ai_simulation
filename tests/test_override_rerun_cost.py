@@ -1,5 +1,5 @@
 """
-Lavie 2026-10: "When clicking a few times to change the Override value for any of the
+Reported problem: "When clicking a few times to change the Override value for any of the
 decision elements, the simulation page freezes/blanks for a few seconds."
 
 Three causes, three guards:

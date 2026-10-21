@@ -1,6 +1,6 @@
 # app/pages/results/run_context.py
 """
-What the results page knows about the run it is showing (ruling R28).
+What the results page knows about the run it is showing.
 
 The page decides its layout - which comparison grid, which sections, which
 frame feeds the agent details / export, which decisions were executed - from
@@ -12,7 +12,7 @@ Page-2 keys (``population_mode``, ``income_spec_mode``, ``di_income_mode``,
 which describe the NEXT run the user is configuring, not this one.
 
 Every run-shape question the results layer used to answer from those keys is a
-property here; the semantics are the ones the page had before R28:
+property here; the semantics are the ones the page had when it read those keys:
 
 * ``custom_decisions`` / ``default_decisions`` are the run's own lists (an
   individual run is ``custom == (decision,)`` with no defaults; a complete run
@@ -172,7 +172,8 @@ class RunContext:
 
     @property
     def num_decisions(self) -> int:
-        """The '- Decisions: N' line of the parameter summary (ruling R27)."""
+        """The '- Decisions: N' line of the parameter summary: the decisions this run
+        executed, not the live selection."""
         return len(self.custom_decisions) + len(self.default_decisions)
 
     def decision_income_label(self, decision: str) -> Optional[str]:

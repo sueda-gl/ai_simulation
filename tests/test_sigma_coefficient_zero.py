@@ -1,6 +1,6 @@
 """
 A σ coefficient of 0 is a legal value: with the noise tick box on it means σ = 0,
-i.e. no noise (owner ruling R6: "if the tick box is on but the slider is at 0 then
+i.e. no noise (the specification: "if the tick box is on but the slider is at 0 then
 sigma is zero").
 
 Disclose Income's tab snapped 0 back to 1.0 on every render ("treat 0.0 as never
@@ -8,7 +8,7 @@ intentionally set", plus a 0 -> 1.0 fallback for ``di_scale_factor``), and Discl
 Documents' tab had the same ``or 1.0`` fallbacks. They worked around the browser
 showing a slider's built-in 0 (the e51c3fc regression), which 5f2cac8 fixed properly
 (app/state/widgets.py). Removed 2026-10-07; the first-draw default stays the
-config's ``stochastic.scale_factor`` (0.1 for Disclose Income, R-DI01).
+config's ``stochastic.scale_factor`` (0.1 for Disclose Income).
 
 Driven through the browser model (tests/browser_sim.py): the value persists across
 reruns, a page switch and a tab hide / show, and a Disclose-Income-only run with
@@ -58,7 +58,7 @@ def test_sigma_coefficient_zero_persists(widget_key, state_key, tick_box):
     sim = _page2_research_specification()
     if tick_box:
         assert sim.shown(tick_box) is True
-    if widget_key == DI_COEFF:   # the first draw is still the config value (R-DI01)
+    if widget_key == DI_COEFF:   # the first draw is still the config value
         assert sim.shown(DI_COEFF) == pytest.approx(CONFIG["disclose_income"]["stochastic"]["scale_factor"])
 
     sim.set(widget_key, 0.0)

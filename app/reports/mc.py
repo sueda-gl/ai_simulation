@@ -1,9 +1,9 @@
 """Pure numerics and CSV building behind the Monte-Carlo results screen.
 
-Moved verbatim (B5) out of `app.components.show_monte_carlo_results`, which now
-only reads `st.session_state['mc_results']`, calls the functions here and hands
-the results to `st.metric` / `st.plotly_chart` / `st.dataframe` /
-`st.download_button`. Nothing in this module imports Streamlit.
+`app.components.show_monte_carlo_results` reads `st.session_state['mc_results']`,
+calls the functions here and hands the results to `st.metric` /
+`st.plotly_chart` / `st.dataframe` / `st.download_button`. Nothing in this
+module imports Streamlit.
 
 `mc_results` is the dict written by `app/pages/decision_execution.py` from
 `run_monte_carlo_study()`: `{'summary': DataFrame, 'detailed': DataFrame,

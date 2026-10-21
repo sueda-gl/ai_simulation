@@ -3,10 +3,9 @@
 Session-state readers for the timestamp handling shared by all Excel exports.
 
 The arithmetic itself lives in `app.reports.timestamps`, which is Streamlit-free
-and takes `base_time` / `duration_hours` / `periods` explicitly (B5). This module
+and takes `base_time` / `duration_hours` / `periods` explicitly. This module
 is the UI-side seam: it reads those three values out of `st.session_state` and
-delegates. Everything it exports keeps the signature and the behaviour it had
-before the split, so the pages can go on importing from here.
+delegates, keeping the signatures the pages import from here.
 
 USAGE:
     from app.utils.timestamp_utils import TimestampConverter

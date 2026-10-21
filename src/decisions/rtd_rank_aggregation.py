@@ -4,7 +4,7 @@ Decision 4, Section 6 - integrating the mechanism rankings into ONE default list
 
 Source: "Decision 4 - Rejected Transaction Defaults" design document, rev 040926-2,
 Section 6 "Integrating the model effects to predict rejected transaction defaults",
-plus the professor's earlier "Ranking Cascade Results (V1)" report (the 100,000-case
+plus the earlier "Ranking Cascade Results (V1)" report (the 100,000-case
 evaluation the document quotes) and "Reconciling Four Rankings into One" review.
 
 The mechanisms of Sections 2-5 each yield a priority list of the five rejected-

@@ -1,7 +1,7 @@
 """Regression tests: individual Decision 1 / Decision 2 runs with the
 "Continuous only" income specification must render results.
 
-Bug (professor report): in "Compare all" population mode, an individual
+Reported bug: in "Compare all" population mode, an individual
 disclose_income or disclose_documents run with "Continuous only" produced
 result keys copula_continuous / research_spec_continuous /
 research_baseline_continuous, but the results page resolved the income type

@@ -1,5 +1,5 @@
 """
-Owner ruling R-CYC (2026-10-07), as clarified by the owner the same day:
+Research population sampling, as the specification defines it:
 
 RESEARCH BASELINE takes the participants in their real (file) order, cycling - agent
 k (0-based) is participant k mod 280:

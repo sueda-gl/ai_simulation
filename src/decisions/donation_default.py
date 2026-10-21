@@ -11,7 +11,7 @@ from src.decisions.income_utils import get_actual_allowance, get_agent_income
 from src.utils.stochastic import get_stochastic_sigma, should_use_stochastic
 
 # ---------------------------------------------------------------------------
-# Methodology-document constants (ruling R-D3). config/decisions.yaml is what the engine
+# Methodology-document constants. config/decisions.yaml is what the engine
 # reads; these mirror it and are used only when a params dict lacks a key (direct calls).
 # Doc: "Donation_Rate_Decision_Methodology-2-1 250925.docx", sections 3, 5 and 6.
 # ---------------------------------------------------------------------------
@@ -57,11 +57,11 @@ def _is_missing(value) -> bool:
 def study_category_key(agent_state: dict, params: dict) -> str:
     """
     The agent's beta_study key (Grad2yr / UG3yr / Law5yr / Incoming) from the doc's
-    regressor i.studyprogramcategorycat (ruling R-D3).
+    regressor i.studyprogramcategorycat.
 
     Research agents carry `Study Program Category` and use it directly. Copula agents carry
     only `Study Program`; it is mapped through study_program.program_to_category. An
-    unknown programme or category raises (R4: errors raise, no silent reference category).
+    unknown programme or category raises (errors raise in every mode; no silent reference category).
     """
     sp_cfg = params.get('study_program') or {}
     category_keys = sp_cfg.get('category_keys') or STUDY_CATEGORY_KEYS
@@ -143,7 +143,7 @@ def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
     if study_category in beta_study:
         predicted += beta_study[study_category]
 
-    # Honesty-humility effect: the doc's coefficient is on the RAW score (ruling R-D3)
+    # Honesty-humility effect: the doc's coefficient is on the RAW score, not a z-score
     beta_hh = coeffs.get('beta_hh', doc['beta_hh'])
     predicted += beta_hh * hh_score
 
@@ -251,7 +251,7 @@ def donation_default(agent_state: dict, params: dict, rng: np.random.Generator, 
     Decision 3: Set up default donation rate.
 
     The ONE donation module for every population mode (copula, documentation,
-    baseline). Methodology document sections 3, 5 and 6 (ruling R-D3). Steps:
+    baseline). Methodology document sections 3, 5 and 6. Steps:
     1. Predicted prosocial from the regression (RAW honesty-humility score; study
        programme from Study Program Category)
     2. Scale observed and predicted to 0-100 with the 280-participant min/max

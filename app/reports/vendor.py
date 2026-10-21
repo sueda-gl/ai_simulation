@@ -1,16 +1,10 @@
 # app/reports/vendor.py
 """Pure builders behind the vendor-decision tables and Excel exports.
 
-Every function here was moved verbatim out of
-`app/pages/results/visualizations/vendor_viz.py`: same rounding, same column
-order, same sheet names, same openpyxl formatting. The only changes are
-mechanical -- values that used to be read from `st.session_state` (the pricing
-parameters, the vendors list, the configured price bounds) are now explicit
-arguments, and the blocks that used to write straight into `st.dataframe` /
-`st.download_button` now return the DataFrame rows / xlsx bytes the page hands
-to those widgets.
-
-Nothing in this module imports Streamlit or touches session state.
+The tables and workbook bytes `app/pages/results/visualizations/vendor_viz.py`
+renders and offers for download. The pricing parameters, the vendors list and
+the configured price bounds are explicit arguments; nothing in this module
+imports Streamlit or touches session state.
 """
 from datetime import datetime
 
@@ -22,8 +16,7 @@ from app.reports.timestamps import TimestampConverter
 from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
 
 
-# `apply_vendor_price_formatting` is the `_apply_price_formatting_vendor` that
-# used to live in vendor_viz.py, moved verbatim into app/reports/xlsx.py.
+# `apply_vendor_price_formatting` lives in app/reports/xlsx.py; this is its older name.
 apply_price_formatting_vendor = apply_vendor_price_formatting
 
 
@@ -302,7 +295,7 @@ def purchase_requests_xlsx(pr_df: pd.DataFrame) -> bytes:
 # vendor choice weights export
 # ---------------------------------------------------------------------------
 def build_vendor_choice_weights_export(df, decision_data):
-    """Agent-level vendor choice weights rows (moved verbatim from the page)."""
+    """Agent-level vendor choice weights rows."""
     export_data = []
 
     for idx, row in df.iterrows():

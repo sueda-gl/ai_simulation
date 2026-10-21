@@ -3,15 +3,14 @@
 Monte-Carlo runs on the SAME plan as a single run.  No Streamlit.
 
 A Monte-Carlo study is ``runs`` repetitions of one engine run, each with seed
-``base_seed + i``.  Before 2026-10-07 the subprocess that performs them
-(``scripts/run_mc_study.py`` -> ``scripts/run_simulation.py``) received only
-the population mode, the global income mode and the donation anchor weight on
-its command line, so every Page-2 tab setting (Decision 1/2/4 intercepts,
-income modes, sigma tick boxes, the donation coefficient set, the default
-decisions, the Page-1 parameters, ...) was silently replaced by the file's
-values (rulings-and-quirks Q-29).
+``base_seed + i``.  The subprocess that performs them
+(``scripts/run_mc_study.py`` -> ``scripts/run_simulation.py``) takes only the
+population mode, the global income mode and the donation anchor weight on its
+command line, which cannot carry the Page-2 tab settings (Decision 1/2/4
+intercepts, income modes, sigma tick boxes, the donation coefficient set, the
+default decisions, the Page-1 parameters, ...).
 
-Now the app builds the ordinary ``RunPlan`` from the session (the same
+So the app builds the ordinary ``RunPlan`` from the session (the same
 ``build_run_plan`` a single run uses), picks the one sub-run the study
 repeats, and hands it to the subprocess as a plan file.  The subprocess
 replays that sub-run through ``app.seam.execute.run_sub_run`` with only the
@@ -19,15 +18,16 @@ seed replaced - so ``runs = 1, base_seed = S`` gives exactly the per-agent
 results of a single run with seed ``S``.
 
 A selected ("Use This Config") saved configuration is honoured exactly as a
-single run honours it (owner ruling, 2026-10-07): the plan already carries the
-pinned agent count and - for a complete run - the pinned population mode
-(``build_plan.resolve_seed_and_n``, R14), and the app passes the sub-run's own
-``n_agents`` to the subprocess instead of Page 1's.  Only the seed differs:
-Monte Carlo deliberately varies it (``base_seed + i``).  In Research
-Specification the seed also draws the participants (a random subset below 280,
-a bootstrap above; ruling R-CYC as clarified 2026-10-07), so each repetition
-samples its own participants - the ones a single run with that seed takes - while
-Research Baseline (file order, cycling) and N = 280 keep the same agents.
+single run honours it: the plan already carries the pinned agent count and -
+for a complete run - the pinned population mode
+(``build_plan.resolve_seed_and_n``; a pinned decision must reproduce the run
+it was pinned from), and the app passes the sub-run's own ``n_agents`` to the
+subprocess instead of Page 1's.  Only the seed differs: Monte Carlo
+deliberately varies it (``base_seed + i``).  In Research Specification the
+seed also draws the participants (a random subset below 280, a bootstrap
+above), so each repetition samples its own participants - the ones a single
+run with that seed takes - while Research Baseline (file order, cycling) and
+N = 280 keep the same agents.
 
 The file is a pickle: the patches carry ``Replace`` markers and Python tuples
 that JSON would not round-trip exactly.  It is written by the app into

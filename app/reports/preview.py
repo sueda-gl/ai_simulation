@@ -1,8 +1,8 @@
 """Pure numerics behind the Page-1 income-distribution preview.
 
-Extracted verbatim (T3) from `SimulationParameters.sample_income_distribution`
-and `SimulationParameters.get_discount_qualification_rate` in `app/models.py`,
-which now delegate here. Nothing in this module imports Streamlit or reads
+`SimulationParameters.sample_income_distribution` and
+`SimulationParameters.get_discount_qualification_rate` in `app/models.py`
+delegate here. Nothing in this module imports Streamlit or reads
 session state: every input is passed in explicitly, so the preview numbers can
 be computed (and tested) outside a Streamlit script run.
 
@@ -16,8 +16,7 @@ from scipy import stats
 
 # The preview's own fixed seed. `discount_qualification_rate` uses it
 # unconditionally, ignoring whatever seed the histogram was drawn with -- a
-# long-standing quirk of the pre-extraction code, kept deliberately so the
-# rate on screen does not move.
+# long-standing quirk, kept deliberately so the rate on screen does not move.
 DEFAULT_PREVIEW_SEED = 42
 
 # The income-distribution fields the two functions below read. `distribution_kwargs`

@@ -13,8 +13,9 @@ A :class:`RunPlan` carries
 * ``messages``           - the st.info/caption/success texts the adapter shows,
                            in the order the legacy ``run_full_simulation`` showed them;
 * ``metadata``           - what was actually run (for the results page);
-* ``saved_expectations`` - the sha256 of each pinned decision's output columns
-                           (ruling R14): the complete run recomputes and compares.
+* ``saved_expectations`` - the sha256 of each pinned decision's output columns:
+                           the complete run recomputes and compares them and
+                           rejects the run with an explicit error if they differ.
 
 Decision-config patches
 -----------------------
@@ -22,8 +23,9 @@ Decision-config patches
 deep-merged onto that decision's block of the freshly loaded
 ``config/decisions.yaml`` dict (:func:`apply_patches`).  Plain nested dicts
 merge key by key; a value wrapped in :class:`Replace` replaces the whole
-subtree instead (ruling R10 needs this to drop the nested
-categorical/continuous coefficient blocks).
+subtree instead (the donation patch needs this: the flat coefficient set the
+Donation tab shows replaces the file's nested categorical/continuous blocks
+rather than merging into them).
 """
 
 import copy
@@ -101,7 +103,7 @@ def apply_patches(config: dict, patches: Mapping[str, Mapping]) -> dict:
 
 def hash_result_columns(result_df: Optional[pd.DataFrame], columns: Iterable[str]) -> Optional[str]:
     """
-    Deterministic sha256 over the given columns of a result DataFrame (ruling R14).
+    Deterministic sha256 over the given columns of a result DataFrame.
 
     Identical to ``app.state.saved_configs.hash_result_columns`` (the writer of
     ``result_sha256``): the digest covers the column names (in the given order)
@@ -181,7 +183,8 @@ class SubRun:
 
 @dataclass(frozen=True)
 class RunMetadata:
-    """What was actually run - stored as st.session_state._run_metadata (ruling R28)."""
+    """What was actually run - stored as st.session_state._run_metadata. The run
+    writes no mode keys back into the session; the results page reads this instead."""
     effective_population_mode: str
     effective_income_mode: str
     result_keys: Tuple[str, ...]
@@ -202,7 +205,7 @@ class RunMetadata:
 
 @dataclass(frozen=True)
 class SavedExpectation:
-    """A pinned decision's recorded output-column hash, checked after a complete run (R14)."""
+    """A pinned decision's recorded output-column hash, checked after a complete run."""
     decision: str
     result_key: str
     columns: Tuple[str, ...]

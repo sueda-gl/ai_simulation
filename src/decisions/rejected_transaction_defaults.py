@@ -1,263 +1,63 @@
 # src/decisions/rejected_transaction_defaults.py
 """
-Decision 4: Rejected Transaction Defaults - trait-based sub-decision mechanisms plus
-the Section-6 rank aggregation that integrates them into ONE default list per agent.
+Decision 4: Rejected Transaction Defaults - five trait-based sub-decisions plus the
+Section-6 rank aggregation that integrates them into ONE default list per agent.
 
-Source: "Decision 4 - Rejected Transaction Defaults" design document (latest revision
-040926-2; its Stata code is the operative specification except where the professor's
-written instructions supersede it, rank aggregation per its Section 6)
-+ professor's Stata file `Stata_File_Decision4_050926.dta` (280 participants, 233
-variables, the ground-truth arbiter wherever the document is ambiguous; frozen
-extract data/stata_d4_verification.csv).
+Sources: the "Decision 4 - Rejected Transaction Defaults" design document, rev
+040926-2 (its Stata code is the operative specification), and the reference Stata
+file `Stata_File_Decision4_050926.dta` (280 participants; frozen extracts
+data/stata_d4_verification.csv, data/stata_d4_flexibility_verification.csv). With
+every intercept at 0 the model reproduces that file 280/280 for every mechanism
+(tests/test_rejected_transaction_defaults.py). Coefficients: the constants below.
 
-Re-verified coefficient-by-coefficient against rev 040926-2 / the 050926 file on
-2026-09-16 (docs/d4_alignment_050926_2026-09-16.md): every score, z-score and
-population statistic reproduces the .dta to <= 8.1e-6 (float32 storage), all five
-segment/bin columns are 280/280, the 16-bin histograms (Stata's default bin rule,
-k = int(min(sqrt(N), 10*ln(N)/ln(10))) = 16 at N = 280 - Stata truncates; an earlier
-round() gave 17) of weighted_ttp /
-weighted_loyalty / z_WTP_calculated / z_RT_calculated_hs /
-z_Flexibility_calculated_ivw / z_anchored_flexibility / z_stdactionsP are
-bin-for-bin identical to the file, and the choice1..5 lists now match the stored
-columns DIRECTLY (the 050926 file adopted the flipped mapping direction; see the
-mapping note below). Intercepts are not in the .dta (beta = 0 reproduces it); their
-scales follow the document - see INTERCEPTS below.
+Sub-decisions (doc section in brackets; priority sequences in PRIORITY_SEQUENCES):
+  1. LIST LENGTH (Tendency to Plan) [1]: weighted_ttp over z-scored E/A/N/C plus
+     reducation (= Education - 1), min-max rescaled to 0-6 and floored -> 0-5
+     options (rtd_weighted_ttp, rtd_choice_length).
+  2-5. LOYALTY [2], WTP [3], RISK-TAKING [4] and FLEXIBILITY [5] rankings (WTP and
+     RT use z_income, SAMPLE SD like Stata's `egen std()`; the flexibility score is
+     anchored 0.25 * z_stdactions + 0.75 * z_Flexibility, where stdactions - the
+     participant's SD in actions per cycle over the eight experiment cycles - comes
+     from the reference .dta via data/stata_stdactions.csv and is a copula trait; an
+     agent without it gets a neutral anchor, rtd_flex_stdactions_missing). Each:
+     standardize (population `egen std`) -> min-max rescale -> floor into five
+     EQUAL-WIDTH segments 1..5 -> segment s receives the LAST s options of the
+     priority sequence, seq[5 - s:] (segment 5 = the full list, segment 1 = the last
+     option only; what the .dta's choice1..5 columns store) -> rtd_<loyalty|wtp|rt|flex>_ranking.
 
-MIGRATION PORT (2026-10-06): ported from the original repo's Sep-2026 commits onto
-the migration engine (src/engine/core.py) and independently re-verified against the
-.dta and the doc (280/280 for every mechanism and both income variants, see
-tests/test_rejected_transaction_defaults.py). Two deliberate differences from the
-Sep-2026 original: no `model_enabled` switch (ruling R23) and TTP beta0 on the raw
-composite scale the document specifies (the original had moved it to the
-standardized scale).
+CATEGORICAL INCOME (params['income_mode']): the income term of WTP / RT is replaced
+by the doc's per-allowance-level effects (CATEGORICAL_INCOME_EFFECTS), the
+personality part applied at slope 1 as the doc's cond() code does; z_agreeable is
+used for every level (the .dta's level-1 WTP branch still uses the raw score, so WTP
+categorical matches 279/280). The continuous sigma constants are reused.
 
-The decision is FIVE separate sub-decisions, each producing its own output per agent;
-the four ranking mechanisms' lists are then reconciled into one integrated default
-list by Kemeny-Young aggregation with the document's tie-breaking hierarchy (see
-rtd_rank_aggregation.py and the RANK AGGREGATION section below):
+INTERCEPTS (params['intercepts']), FIXED-CUTOFF semantics: population statistics and
+segment cutoffs come from the intercept-free scores; each agent's operative score
+then adds the intercept's raw-scale equivalent, so a nonzero beta visibly moves
+agents across the fixed boundaries. TTP beta0 is applied on the RAW weighted_ttp
+composite, the scale the document gives it (TTP_i = beta0 + ..., never
+standardized); beta1-beta3 on the standardized score (raw shift beta * sd0); beta4
+on the standardized calculated flexibility score before anchoring (shift
+0.75 * beta4). beta = 0 is bit-identical to the intercept-free pipeline.
 
-  1. LIST LENGTH (Tendency to Plan, TTP)  -> how many default options to pre-select, 0-5
-       weighted_ttp = -0.0152556564*z_E + 0.0177638642*z_A + 0.01959*z_N
-                      + 0.00901465*z_C + 0.0297*reducation        (doc section 1)
-       weighted_ttp06 = (6-0.0001) * minmax(weighted_ttp);  length = floor(weighted_ttp06)
-  2. LOYALTY ranking   -> priority sequence Option 3 > 1 > 4 > 5 > 2
-       bs_weighted_loyalty = -0.009828468*z_E + 0.01096706*z_O + 0.0123046*z_A
-       weighted_loyalty = std(bs_weighted_loyalty) [+ beta1]        (doc section 2,
-       rev 040926-2; the June equation 0.09/0.0273/0.0045 is superseded. The
-       Agreeableness weight typo that produced 0.03092465 - w_A printed as 0.67139
-       instead of 0.267139 - was corrected by the professor in rev 040926-2:
-       0.267139 * 0.04606063 = 0.0123046, and the 050926 file embeds it)
-  3. WILLINGNESS-TO-PAY ranking -> priority sequence Option 3 > 2 > 1 > 4 > 5
-       WTP = 0.078863062*z_E - 0.012326128*z_A + 0.698*z_income    (doc section 3 code,
-       Hunter & Schmidt pooling; the .dta still embeds -0.0123242131 for z_A - a
-       uniform 2e-4 relative scale, so every segment is identical. Doc rev 040926-2
-       revised the NARRATIVE WTP equation to 0.21784909*E - 0.03470828*A +
-       0.0363565*I, but its operative Stata line and the 050926 file are both
-       unchanged, so the code follows the Stata line - see the report)
-  4. RISK-TAKING ranking -> priority sequence Option 4 > 2 > 1 > 3 > 5
-       RT = 0.025942386297*z_E + 0.023699214948*z_O - 0.038734315188*z_A
-            - 0.037739440732*z_C - 0.025388697852*z_N + 0.006874197106*z_income
-       (Hunter & Schmidt pooling, doc section 4; .dta-exact)
-  5. FLEXIBILITY ranking -> priority sequence Option 2 > 4 > 3 > 1 > 5
-       (doc rev 040926-2 Section 5; pipeline verified 280/280 against
-        Stata_File_Decision4_050926.dta, frozen extract
-        data/stata_d4_flexibility_verification.csv)
-       Flexibility_calculated_ivw = 0.0206*z_E + 0.0294118*z_O - 0.04921357*z_N
-                                    + 0.04339814*z_A + 0.04811179*z_C     (IVW retained;
-            the arithmetically corrected O/N/A values the app has carried since the
-            professor's 2026-09 review were ADOPTED in rev 040926-2 and are what the
-            050926 file now embeds, so the former DTA_FLEX_COEFFS distinction is gone
-            and the file reproduces 280/280 with these coefficients)
-       z_Flexibility = std(Flexibility_calculated_ivw) [+ beta4]           (egen std, population)
-       anchored_flexibility = 0.25*z_stdactionsP + 0.75*z_Flexibility     (doc: observed
-            flexibility - the participant's SD in the number of actions per cycle over the
-            eight experiment cycle-weeks - gets a 25% weight; the doc's Stata line prints
-            "0.2$5*$z_stdactions", the .dta embeds 0.25. The 050926 file renamed the
-            variable z_stdactions -> z_stdactionsP; the values are unchanged,
-            = egen std(stdactions))
-       z_anchored_flexibility = std(anchored_flexibility);  Flexibility_combined15 =
-            floor(1 + (5-0.0001)*minmax(z_anchored_flexibility))  -> segments 1..5
-       stdactions comes from the
-       professor's Stata file (data/stata_stdactions.csv, merged by Participant ID; it is a
-       copula trait for synthetic populations). z_stdactions uses the frozen original-280
-       stats like the other traits; z_Flexibility and z_anchored use POPULATION stats
-       (egen std semantics) computed by compute_rtd_population_stats. The stochastic sigma
-       (doc rev 040926-2: sigma_overall = 0.3663568222*mean(stdactions) = 0.4346228732,
-       where 0.3663568222 = 6.5944228/18, the file's z_anchored range / 18) lives on the
-       z_anchored scale, so the
-       'continuous' anchor is z_anchored_flexibility (as for risk_taking); the doc-literal
-       'binned' anchor (Flexibility_combined15) is available via stochastic.anchor.
-       The .dta has no flexibility stochastic columns (no arbiter).
+STOCHASTIC LAYER: Normal(anchor, sigma) per mechanism, anchored on the continuous
+operative score (raw composite for ttp/wtp, population z for the others; the
+doc-literal binned anchor via stochastic.anchor = 'binned'), re-binned on the
+population min/max of the DRAWN values. sigma = (score range / 18) * mean(stdactions
+within allowance group), the doc's sigma tables (SIGMA_FACTORS / SIGMA_OVERALL and
+the two documented arithmetic slips there). Population statistics, the draws' min/max
+included, are computed after Pass 1 by compute_rtd_population_stats
+(src/engine/core.py), which replays each agent's decision RNG stream bit-for-bit.
 
-RANK AGGREGATION (doc rev 040926-2, Section 6; params['aggregation']):
-The ranking mechanisms' priority lists are integrated into one consensus ranking of
-the five options by Kemeny-Young aggregation (minimum total Kendall-tau distance,
-exhaustive search over the 120 permutations, equal weights) with the document's
-tie-breaking hierarchy - Schulze ordering when Kemeny returns several equally good
-orderings, then Copeland, then Spearman footrule, then a RANDOM order of the
-still-tied options (drawn from the agent's decision RNG AFTER the mechanisms' five
-standard normals, so every per-mechanism output is unchanged by the aggregation).
-Two output rules then apply: the list is truncated to the TTP choice length
-(rtd_choice_length) and everything after Option 5 is dropped. The result is the
-decision's main output column `rejected_transaction_defaults` (option codes) plus
-rtd_default_list / rtd_consensus_* diagnostics.
-  aggregation.enabled      (default True)
-  aggregation.mechanisms   ranking mechanisms to reconcile (default: every ranking
-                           mechanism the model computes - loyalty, wtp, risk_taking,
-                           flexibility - the document's four inputs)
-  aggregation.last_resort  'random' (doc) | 'lowest_option' (the V1 report's rule)
-Each element's OWN list is the TAIL of its priority sequence (segment s -> the last s
-options; this is what rtd_<element>_ranking holds and what the .dta's choice1..5
-columns store). The AGGREGATION, however, consumes each element's COMPLETE ranking of
-all five options - the priority sequence rotated to start at that segment's first
-choice (_complete_ranking_for_segment) - per doc Section 6: "four complete rankings of
-the five rejected transaction default options ... each depending on the participant's
-weighted factor score and the resulting first choice". The two output rules (length
-truncation and the Option-5 cut) apply to the INTEGRATED consensus list only, "Once the
-integrated ranking is formed" - a mechanism's own list may legitimately still contain
-options after Option 5 (e.g. Loyalty's segment-5 list 3 > 1 > 4 > 5 > 2 ends with
-Option 2).
-
-CATEGORICAL INCOME (params['income_mode'] = 'categorical'; default 'continuous'):
-Only WTP and Risk-Taking use income; TTP and Loyalty are identical in both modes.
-The categorical variant (doc rev 040926-2 Section 3 / Section 4 cond() code)
-replaces the continuous income term with fitted per-budget-level effects from an OLS
-of the full score on the income-free personality part plus i.totalallowance dummies
-(both regressions re-verified against the .dta, coefficients reproduce to <=1.2e-7):
-  score_cat = intercept + level_dummy(assignedallowancelevel) + personality_part
-where personality_part is the element's equation minus the income term applied at
-coefficient 1.0 - DOC-LITERAL: the doc's operative cond() code applies it at slope 1;
-the fitted slope on the personality part (0.5439353 WTP / 0.9991365 RT) is NOT
-applied (flagged to the professor separately).
-  WTP: intercept -0.691843; dummies +0.2671588/+0.5057716/+0.9411747/+1.822471
-       (rev 040926-2 cond() code; levels 2-5 = EUR 32/72/128/200; level 1 = EUR 12
-       gets the intercept only).
-       NOTE the .dta's weighted_WTP_categorical is STILL built with raw 'agreeable' in
-       the level-1 branch (rev 040926-2 fixed the last remaining "0.0123242128" typo in
-       that code line, so the doc now says z_agreeable in all five branches, consistent
-       with its own WTP_noincome construction, but the 050926 file was not regenerated);
-       z_agreeable is used for ALL levels here, which moves one of the 280 participants
-       across a segment boundary vs the file (279/280).
-  RT:  intercept -0.0068307; dummies +0.0026128/+0.0050555/+0.0092738/+0.0179812.
-Downstream (standardize -> min-max -> floor into 5 segments -> priority-sequence
-tail mapping -> optional stochastic layer) is IDENTICAL with the categorical score
-substituted (doc lines 1386/1435/2522: "replacing z_WTP_calculated with
-z_WTP_categorical"); min-max rescaling is invariant to standardization and additive
-intercepts, so binning the raw categorical score gives identical segments to binning
-its standardized version. The professor has NOT yet specified categorical-specific
-sigma values ("I have not checked that yet") - the continuous sigma config is reused
-unchanged.
-
-SEGMENT -> OPTION LIST MAPPING (flipped 2026-09-16 on the professor's written
-instruction; ADOPTED by doc rev 040926-2 and by Stata_File_Decision4_050926.dta, so
-the app and the arbiter now agree; see _ranking_for_segment):
-For each ranking mechanism the operative score is min-max rescaled into five
-EQUAL-WIDTH segments 1..5 (floor(1 + (5-0.0001)*u); note the document's "20% of
-observations" narrative describes quantiles but the Stata code and .dta implement
-equal-width bins, with e.g. 60% of participants in the lowest WTP bin) and segment s
-receives the LAST s options of the mechanism's priority sequence, seq[5 - s:]:
-  segment 5 (HIGHEST scores) -> all five options starting with the top option,
-  segment 1 (LOWEST scores)  -> only the last option (list length 1).
-Source: the professor's 2026-09-16 instruction - "under 'Cognitive Flexibility score
-segment' replace the order so that 5 (Highest 20% ...) corresponds to 2>4>3>1>5, and
-(Lowest 20% ...) corresponds to 5 with option list length 1. Correct all other
-decision elements based on the updated Decision 4 document" - which matches the
-document's prose ("the highest-Flexibility 20% segment, Flexibility_calculated15 ==
-5, takes Option 2 as its first choice"; identically for loyalty/WTP/risk-taking).
-Rev 040926-2 rewrote every `replace choice<p>_*` statement (deterministic AND
-stochastic, all four elements) in this direction and the 050926 file's stored
-choice1..5_* columns follow it, so the verification tests now assert the model's
-lists EQUAL the stored columns directly, NaN pattern included (280/280 per element).
-The superseded 290826 file embedded the opposite direction (segment 1 = full list).
-
-DTA-verified notes (Stata_File_Decision4_050926.dta):
-  - Loyalty: weighted_loyalty = std(bs_weighted_loyalty) is executed in the .dta
-    (range -3.1419842..3.9363203 = 7.0783045); the segments are affine-invariant so
-    the raw composite is binned here and the standardized score is reported/plotted.
-    The stored min_/max_weighted_loyalty columns are correct in this file (they were
-    swapped in the 290826 file).
-  - WTP: z_WTP_calculated = std(WTP_calculated) exactly, NO beta added. The .dta
-    embeds no intercepts anywhere; nonzero intercepts act through the FIXED-CUTOFF
-    semantics described below (beta = 0 reproduces the .dta pipeline bit-for-bit).
-  - WTP categorical: the .dta's level-1 branch still multiplies RAW `agreeable`
-    instead of z_agreeable (rev 040926-2 fixed the doc's code line but the file was
-    not regenerated); z_agreeable is used for ALL levels here, which moves one
-    participant across a segment boundary vs the file (279/280). RT categorical is
-    280/280.
-  - Stochastic layer: the 050926 file carries NO stochastic columns. The June file's
-    WTP draws (anchored on the RAW continuous WTP_calculated with ONE common sigma ~
-    0.4526575455) remain the only stochastic ground truth and are kept in the frozen
-    extract; every mechanism's stochastic anchor therefore defaults to its
-    CONTINUOUS operative score (raw composite for ttp/wtp, population z for
-    loyalty/risk_taking/flexibility whose sigmas are derived from the z ranges);
-    the doc-literal binned anchor remains available via stochastic.anchor = 'binned'.
-    NOTE the June file's stored choice*_WTP_calculated_stoc columns predate the
-    direction flip, so they carry the OLD mapping; the DRAW -> sWTP_calculated15
-    pipeline (which is what the test validates) is direction-independent.
-  - Sigma constants follow sigma = (range/18) * mean(stdactions-within-group) with the
-    documented values (rev 040926-2 tables, standardized scale). Rev 040926-2 fixed
-    the two long-standing inconsistencies: the RT sigma now INCLUDES the
-    *mean(stdactions) factor (0.332208167 * 1.1863376 = 0.39522204, quintile
-    multiplier 0.332208167 rather than the old 0.28), and the loyalty / flexibility
-    tables were recomputed from the 050926 file's own ranges. Every range the doc
-    quotes was re-checked against the .dta on 2026-09-16 and reproduces:
-    weighted_loyalty 7.0783043 (doc 7.0783045), z_RT 5.979747,
-    z_anchored_flexibility 6.594423 (doc 6.5944228), z_WTP 6.868057 (doc 6.868056).
-  - Flexibility needs each agent's `stdactions` (SD in the number of actions
-    per cycle over the eight experiment cycle-weeks). The experiment workbook has no
-    per-cycle counts, so it is taken from the professor's .dta (data/stata_stdactions.csv,
-    merged into the participant table by Participant ID in src/data/participants.py) and
-    is a COPULA TRAIT (config/trait_requirements.yaml) so synthetic populations carry
-    it with its correlations to the Big 5; an agent without it gets a neutral observed
-    anchor (z = 0, flagged in rtd_flex_stdactions_missing).
-
-INTERCEPTS (params['intercepts'][mechanism]) - FIXED-CUTOFF semantics, each intercept
-on the scale the document gives it:
-  * TTP beta0 on the RAW weighted_ttp composite. The doc writes TTP_i = beta0 +
-    (weighted sum of z-scored traits), defines beta0 without the "after
-    standardization" qualifier that beta1-beta4 carry, and its Stata code never
-    standardizes weighted_ttp (it is min-max rescaled straight to 0-6). MIGRATION
-    NOTE (2026-10-06): the Sep-2026 original moved beta0 to the standardized scale;
-    that is NOT what the document specifies, so the port keeps the raw scale (owner
-    ruling: "the beta must be applied on the scale the doc specifies").
-  * Loyalty beta1, WTP beta2, Risk-Taking beta3 on the STANDARDIZED score (doc:
-    `replace weighted_loyalty = std(bs) + beta1`, `replace z_WTP = z_WTP + beta2`,
-    `replace z_RT = z_RT + beta3`).
-  * Flexibility beta4 on the standardized CALCULATED score before anchoring (doc:
-    `replace z_Flexibility_calculated_ivw = ... + beta4`), i.e. it shifts the
-    anchored score by 0.75*beta4.
-All population statistics (min/max/mean/sd and the stochastic s_min/s_max) are
-computed on the BETA0-FREE scores, which freezes the segment cutoffs; each agent's
-operative score is then the beta0-free composite plus the intercept's raw-scale
-equivalent (beta itself for ttp; beta*sd0 for loyalty/wtp/risk_taking, so that
-(raw0 + beta*sd0 - mean0)/sd0 = z0 + beta; 0.75*beta4 for flexibility). The min-max
-rescaled value therefore shifts by beta_raw * (span - 0.0001) / (max0 - min0) and
-agents genuinely cross the fixed bin boundaries (clipped at the end bins). The
-stochastic anchor shifts by the same amount in its own units while s_min/s_max stay
-beta0-free, so the drawn values and their re-binning shift consistently. beta = 0
-reproduces the intercept-free outputs bit-for-bit. (Previously the intercepts were
-added BEFORE the population min/max was taken, which made them provably inert:
-min-max rescaling cancels a uniform shift.)
-
-Population-level statistics: `egen min/max/std` are POPULATION operations, so the
-engine (src/engine/core.py, Engine._compute_population_stats) calls
-compute_rtd_population_stats() after Pass 1 (mirroring the
-disclose-decisions' continuous-stats hooks). For the stochastic variants the bins
-depend on the min/max of the DRAWN values across the whole population, so the hook
-replicates each agent's decision RNG stream (default_rng(agent_base_seed +
-decision_index*1000), first five standard normals, flexibility last so the first
-four are unchanged from the four-mechanism version) bit-for-bit; the per-agent
-function then reproduces its own draw from the rng it is handed. A parity test
-asserts the replication.
-
-Verified against the .dta (tests/test_rejected_transaction_defaults.py): all five
-deterministic mechanisms reproduce Stata_File_Decision4_050926.dta 280/280 exactly
-(float32 tolerance), including the choice1..5 columns and their per-segment NaN
-pattern, and the June WTP stochastic mapping keyed on sWTP_calculated15.
-
-NAMING: the model's own output key stays `rtd_z_stdactions` (the app's column name);
-it is the .dta's `z_stdactionsP` (renamed from `z_stdactions` in the 050926 file,
-same values).
+RANK AGGREGATION (doc Section 6; params['aggregation']): the four rankings' COMPLETE
+orderings (the priority sequence rotated to the segment's first choice) are
+integrated by Kemeny-Young (120 permutations, equal weights); ties go to Schulze,
+then Copeland, then Spearman footrule, then a random order from the agent's decision
+RNG after the five normals. Only the integrated list is then truncated to
+rtd_choice_length and cut after Option 5 (forgo). Output: `rejected_transaction_defaults`
+(option codes), rtd_default_list and the rtd_consensus_* diagnostics (renamed
+rtd_integrated_* in every export). The observed-flexibility z-score is emitted as
+`rtd_z_stdactions` (the .dta's `z_stdactionsP`).
 """
 
 import numpy as np
@@ -278,8 +78,8 @@ OPTION_CODES = {
 }
 
 # Priority sequences (highest-construct option first), verified against the .dta:
-# segment s (1..5) receives the LAST s options, sequence[5-s:] (professor's 2026-09-16
-# instruction / the document's prose; see _ranking_for_segment).
+# segment s (1..5) receives the LAST s options, sequence[5-s:] (the document's prose
+# and its rev 040926-2 Stata code; see _ranking_for_segment).
 PRIORITY_SEQUENCES = {
     "loyalty": [3, 1, 4, 5, 2],       # doc line 609
     "wtp": [3, 2, 1, 4, 5],           # doc line 752/1343
@@ -317,12 +117,12 @@ RT_COEFFS = {                        # Hunter & Schmidt pooling (doc line 2436)
     "income": 0.006874197106,
 }
 FLEX_COEFFS = {                      # IVW pooling (doc rev 040926-2 Section 5 final equation)
-    "extraversion": 0.0206,          # O/N/A: the arithmetically corrected values adopted in
-    "openness": 0.0294118,           # the professor's 2026-09 review; rev 040926-2 wrote them
-    "neuroticism": -0.04921357,      # into the document and Stata_File_Decision4_050926.dta
-    "agreeable": 0.04339814,         # embeds them (Flexibility_calculated_ivw reproduces to
-    "conscientiousness": 0.04811179, # <=1e-7, segments 280/280). The former DTA_FLEX_COEFFS
-}                                    # (0.0293241 / -0.053781925 / 0.04921357) are obsolete.
+    "extraversion": 0.0206,          # O/N/A: the arithmetically corrected values that rev
+    "openness": 0.0294118,           # 040926-2 wrote into the document and that
+    "neuroticism": -0.04921357,      # Stata_File_Decision4_050926.dta embeds
+    "agreeable": 0.04339814,         # (Flexibility_calculated_ivw reproduces to <=1e-7,
+    "conscientiousness": 0.04811179, # segments 280/280). The earlier values 0.0293241 /
+}                                    # -0.053781925 / 0.04921357 are obsolete.
 # anchored_flexibility = observed_weight*z_stdactions + calculated_weight*z_Flexibility
 # (doc: "we start by giving the observed flexibility a weight of 25%"; .dta-verified).
 FLEX_ANCHOR_WEIGHTS = {"observed": 0.25, "calculated": 0.75}
@@ -348,7 +148,7 @@ CATEGORICAL_INCOME_EFFECTS = {
 }
 
 # Fallback z-scoring stats (frozen original-280 mean/SD, matching config/decisions.yaml
-# and Stata `egen std` on the professor's file).
+# and Stata `egen std` on the reference .dta).
 DEFAULT_Z_SCORING = {
     "ExtraversionBig5": {"mean": 3.557857, "sd": 0.6989565},
     "Agreeable": {"mean": 3.546071, "sd": 0.3732712},
@@ -407,8 +207,7 @@ SIGMA_OVERALL = {
 # TWO ARITHMETIC SLIPS inside rev 040926-2's own sigma tables. Both are followed
 # DOC-LITERALLY (the document's printed tables are the operative spec) and pinned by
 # tests/test_rejected_transaction_defaults.py::
-# test_sigma_tables_internal_consistency_and_the_two_doc_slips; both are flagged to the
-# professor in docs/d4_alignment_050926_2026-09-16.md:
+# test_sigma_tables_internal_consistency_and_the_two_doc_slips:
 #   (a) RISK-TAKING overall. The doc writes "0.332208167 x 1.1863376 = 0.39522204";
 #       that product is 0.39411104, so the printed result is 1.1e-3 (0.28%) too high.
 #       The five RT quintile entries are consistent with the factor.
@@ -508,7 +307,7 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
 
     # z_income: prefer the Decision-4 population stats computed with SAMPLE SD (ddof=1,
     # Stata `egen std` semantics) by compute_rtd_population_stats; fall back to the
-    # engine's shared income_stats (also sample SD since ruling R-SD) when the hook has not run.
+    # engine's shared income_stats (also sample SD) when the hook has not run.
     income = agent_state.get("income", None)
     sim = simulation_config or {}
     income_stats = (sim.get("rtd_population_stats", {}) or {}).get("income") \
@@ -620,8 +419,7 @@ def _segment(value: float, mechanism: str, vmin: float, vmax: float) -> int:
 def _ranking_for_segment(mechanism: str, segment: int) -> List[int]:
     """Segment s (1..5) -> the LAST s options of the mechanism's priority sequence.
 
-    DOCUMENT-PROSE direction (professor's written instruction of 2026-09-16, which the
-    document's own prose states - e.g. Section 5: "the highest-Flexibility 20% segment,
+    DOCUMENT-PROSE direction (what the document's own prose states - e.g. Section 5: "the highest-Flexibility 20% segment,
     Flexibility_calculated15 == 5, takes Option 2 as its first choice"):
 
         segment 5 (HIGHEST construct scores) -> the FULL sequence, top option first
@@ -670,7 +468,7 @@ def _complete_ranking_for_segment(mechanism: str, segment: int) -> List[int]:
     unlisted options tied at the bottom. That left most option pairs with a zero
     pairwise margin, so Kemeny, Schulze, Copeland and the footrule could not separate
     them and 61.8% of the 280 participants reached the random last resort (the
-    professor's "close to 50% of the rankings are resolved randomly"). Feeding the
+    review's remark that "close to 50% of the rankings are resolved randomly"). Feeding the
     document's complete rankings drops that to 33.2%, close to the document's own
     100,000-case figure of 26.3%.
 
@@ -697,9 +495,9 @@ def _intercept_raw_shift(mechanism: str, intercept: float, pop_m: Dict,
     the document's scale: Section 1 writes TTP_i = beta0 + (-0.0152556564*E_i + ...)
     over z-scored traits, defines beta0 without the "after standardization" qualifier
     that beta1-beta4 carry, and the Stata code rescales the raw weighted_ttp to 0-6
-    without ever standardizing it. (The Sep-2026 original repo moved beta0 to the
-    standardized scale, beta0*sd0; the migration port follows the document instead -
-    owner ruling of 2026-10-06. Note the raw composite spans only ~0.21 on the 280
+    without ever standardizing it. (An earlier version had moved beta0 to the
+    standardized scale, beta0*sd0; the intercept is applied on the scale the document
+    specifies. Note the raw composite spans only ~0.21 on the 280
     participants, so beta0 = 0.05 moves weighted_ttp06 by ~+1.43; beta0 = 0, the
     Stata value, reproduces the .dta exactly.)
 
@@ -823,8 +621,8 @@ def compute_rtd_population_stats(agents_df, all_incomes: List[float], params: Di
     matching _draw_noise() in the per-agent function.
     """
     # Decision-4-specific income standardization stats: SAMPLE SD (ddof=1), matching
-    # Stata `egen z_net_income = std(income)`. (Since ruling R-SD the engine's shared
-    # income_stats uses the same sample SD; Decision 4 keeps its own hook regardless.)
+    # Stata `egen z_net_income = std(income)`. (The engine's shared income_stats uses
+    # the same sample SD; Decision 4 keeps its own hook regardless.)
     inc = np.asarray([x for x in all_incomes if x is not None], dtype=float)
     if len(inc) > 1 and float(inc.std(ddof=1)) > 0:
         rtd_income_stats = {"mean": float(inc.mean()), "sd": float(inc.std(ddof=1))}
@@ -961,8 +759,9 @@ def _aggregate_mechanism_rankings(out: Dict[str, Any], params: Dict, rng) -> Non
     out["rtd_consensus_last_resort"] = agg["last_resort"]
 
 
-# Lavie #14 (professor 2026-10): user-facing outputs say "integrated", never "consensus".
-# The model keeps its internal rtd_consensus_* column names (R14 hashes, tests, the
+# User-facing outputs say "integrated", never "consensus".
+# The model keeps its internal rtd_consensus_* column names (saved-configuration
+# hashes, tests, the
 # Stata-parity checks read them); every export / on-screen table renames them with
 # integrated_column_name / rename_consensus_columns.
 INTERNAL_AGGREGATION_PREFIX = "rtd_consensus_"
@@ -1022,7 +821,7 @@ def rejected_transaction_defaults(agent_state: Dict[str, Any], params: Dict[str,
     pop_context = kwargs.get("pop_context", "documentation")
 
     # The trait model runs whenever the decision is selected; there is no separate
-    # 'model_enabled' switch (owner ruling R23).
+    # 'model_enabled' switch (the former flag was always True and gated nothing).
     if "rejected_transaction_defaults" in sim.get("default_decisions_list", []):
         template = _resolve_default_template(sim, rng)
         return {"rejected_transaction_defaults": template}

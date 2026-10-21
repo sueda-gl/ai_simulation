@@ -1,6 +1,6 @@
 """
 No "created with a default value but also had its value set via the Session State
-API" warning on Page 1 or Page 2 (Q-41, fixed 2026-10-07).
+API" warning on Page 1 or Page 2.
 
 Streamlit prints that warning when a widget gets a `value=` / `index=` default AND its
 key was written through st.session_state earlier in the same script run - which is

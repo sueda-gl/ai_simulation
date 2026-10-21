@@ -1,5 +1,5 @@
 """
-Lavie 2026-10: "When running decision elements only, below the '4. Rejected Transaction
+Requirement: "When running decision elements only, below the '4. Rejected Transaction
 Defaults' title, add a subtitle for the decision element to which the results
 correspond, e.g., in the results for Option List Length, add '4.1 Options List Length
 (Tendency to Plan)' subtitle. Same for other decision elements."

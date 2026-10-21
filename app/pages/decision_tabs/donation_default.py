@@ -35,7 +35,8 @@ def research_defaults():
     config/decisions.yaml (read-only): the single source of truth for "Reset Config
     to Defaults" - it used to write its own hard-coded copies of these numbers.
 
-    Not reset by it (deliberately, Q-44): the σ coefficient and tick boxes."""
+    Not reset by it (deliberately; the tabs' reset buttons differ in scope): the σ
+    coefficient and tick boxes."""
     block = read_yaml_file(CONFIG_PATH)['donation_default']
     stochastic = block.get('stochastic', {})
     default_scale = float(stochastic.get('scale_factor', 1.0))
@@ -1199,7 +1200,7 @@ def render_adjustment_override_section():
             # Seed the widget key only when absent (after navigation); the live widget
             # value otherwise wins, and no rerun-dependent `value=` is passed, so the
             # widget id stays stable (the +/- buttons used to jump back one step under
-            # fast clicks - professor 2026-09-17).
+            # fast clicks).
             if 'override_adjustment_shift' not in st.session_state:
                 st.session_state.override_adjustment_shift = float(
                     st.session_state.adjustment_override_values.get('shift_value', research_default))

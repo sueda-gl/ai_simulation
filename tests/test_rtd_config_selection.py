@@ -101,7 +101,7 @@ def test_apptest_select_display_apply_and_clear():
     select_btn = at.button(key=f'rtd_inline_select_{result_key}')
     assert select_btn is not None
     assert "4. Rejected Transaction Defaults" not in _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
-    # professor 2026-09-17: no "Quick Summary" caption next to the button
+    # no "Quick Summary" caption next to the button
     captions = [str(c.value) for c in at.caption]
     assert not any(c.startswith("📊 Quick Summary") for c in captions)
     # no "Run Complete Simulation" offer before a configuration is selected
@@ -126,7 +126,7 @@ def test_apptest_select_display_apply_and_clear():
     assert 'mean_choice_length' in cfg['metrics'] and 'first_option_shares' in cfg['metrics']
     assert abs(cfg['metrics']['mean_choice_length'] - results[result_key]['rtd_choice_length'].mean()) < 1e-9
     # button replaced by the selected marker, which is itself an Unselect button
-    # (professor 2026-09-17: unselecting must be possible at any point); Page 2 display present
+    # (unselecting must be possible at any point); Page 2 display present
     assert f'rtd_inline_select_{result_key}' not in [b.key for b in at.button]   # replaced by the marker
     unselect_btn = at.button(key=f'rtd_inline_unselect_{result_key}')
     assert unselect_btn is not None and "✅ Selected" in str(unselect_btn.label)

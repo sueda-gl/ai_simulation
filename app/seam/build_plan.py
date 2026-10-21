@@ -2,29 +2,37 @@
 """
 Pure plan builder: SessionSnapshot + DecisionsConfig -> RunPlan.
 
-This is the former ``app/simulation.py`` resolution logic (seed / agent count,
-the DI-only / DD-only / RTD-only / donation-only / combined branches, the
-Compare-all and Compare-both result keys and sub-run order, every st.info /
-caption / success text) plus the six ``_apply_*`` mappings rewritten as pure
-patch functions.  It reads ONLY the snapshot and the config repo, writes
+It resolves the seed and agent count, the DI-only / DD-only / RTD-only /
+donation-only / combined branches, the Compare-all and Compare-both result
+keys and sub-run order, every st.info / caption / success text, and the
+per-decision patch functions that map the tabs' settings onto the engine's
+configuration.  It reads ONLY the snapshot and the config repo, writes
 nothing, and never imports Streamlit.
 
-Rulings applied on top of the verbatim port (each marked inline):
-  R10  the Donation tab's flat coefficient set (donation_coeff_*_{cat,cont}
-       session keys, loaded from the file) is what the engine runs - the
-       nested categorical/continuous blocks are replaced, never merged onto.
-  R11  intercepts / adjustment shift come from session keys, never the file.
-  R12  donation sigma_value = config sigma_overall x the coefficient slider.
-  R13  auto-implied saved configs do not exist (any lingering one is ignored).
-  R14  an explicit saved config pins seed, n, population and that decision's
-       parameters; its recorded output-column hash becomes a SavedExpectation
-       that the complete run re-checks.
-  R15  no session writes; settings are read once from the snapshot.
-  R17  a saved Disclose Documents config is applied exactly like a saved
-       Disclose Income config (same precedence).
-  R18  di_/dd_/rtd_sigma_enabled default to True when the key is absent.
-  R28  the DI-only / DD-only / RTD-only branches no longer rewrite
-       income_spec_mode; the effective modes travel in RunMetadata.
+Rules the builder follows (each noted inline where it applies):
+  * The Donation tab's flat coefficient set (donation_coeff_*_{cat,cont}
+    session keys, loaded from the file) is what the engine runs - the nested
+    categorical/continuous blocks are replaced, never merged onto.
+  * Intercepts and the adjustment shift come from session keys, never from
+    the file: the app never rewrites a configuration file.
+  * Donation sigma_value = the file's one sigma_overall constant x the
+    coefficient slider; no sigma constant is spelled as a literal in app/.
+  * Auto-implied saved configs do not exist; only an explicit "Use This
+    Config" pins anything (a lingering implied record is ignored).
+  * An explicit saved config pins seed, n, population and that decision's
+    parameters, because a pinned decision must reproduce the run it was
+    pinned from; its recorded output-column hash becomes a SavedExpectation
+    that the complete run re-checks.
+  * No session writes; settings are read once from the snapshot, so nothing
+    the run writes can feed back into it.
+  * A saved Disclose Documents config is applied exactly like a saved
+    Disclose Income config (same precedence).
+  * di_/dd_/rtd_sigma_enabled default to True when the key is absent: an
+    absent key means the tab's own default, never "off", so navigation
+    history cannot change the numbers.
+  * The DI-only / DD-only / RTD-only branches never rewrite
+    income_spec_mode; the modes a run used travel in RunMetadata, so a run
+    cannot change the mode shown on Page 2.
 """
 
 import copy
@@ -149,8 +157,9 @@ def get_population_mode_from_result_key(result_key: Optional[str]) -> Optional[s
 
 def explicit_saved_configs(snapshot: Mapping) -> Dict[str, dict]:
     """
-    The saved-config store minus any auto-implied entry (R13: those no longer
-    exist; one left over in an old session is ignored, never applied).
+    The saved-config store minus any auto-implied entry (those no longer
+    exist - only an explicit "Use This Config" creates a saved config; one
+    left over in an old session is ignored, never applied).
     """
     configs = snapshot.get("selected_decision_configs") or {}
     return {
@@ -464,9 +473,10 @@ def build_purchasing_limits(snapshot: Mapping) -> Optional[dict]:
 
 def session_donation_coefficient_set(snapshot: Mapping, income_mode: str) -> Optional[dict]:
     """
-    R10: the flat coefficient set the Donation tab shows for ``income_mode``,
-    read from the donation_coeff_*_{cat,cont} session keys (populated from the
-    file by app.models.load_coefficient_set).  None when any key is missing.
+    The flat coefficient set the Donation tab shows for ``income_mode`` - the
+    set the engine runs - read from the donation_coeff_*_{cat,cont} session
+    keys (populated from the file by app.models.load_coefficient_set).  None
+    when any key is missing.
     """
     suffix = "cont" if income_mode == "continuous" else "cat"
 
@@ -491,14 +501,14 @@ def session_donation_coefficient_set(snapshot: Mapping, income_mode: str) -> Opt
 def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
                          pop_mode: str, inc_mode: str) -> dict:
     """
-    Decision 3 patch (the former ``_apply_donation_config`` +
-    ``apply_selected_donation_config``, without their session writes).
+    Decision 3 patch.
 
     A saved donation config pins the income mode, the anchor weights and the
-    stochastic toggles/coefficient it recorded (R14); the coefficient set is the
-    tab's set for that mode (R10); sigma_value is the config's sigma_overall x
-    the coefficient (R12); adjustment.shift_value comes from the
-    donation_adjustment_shift session key (R11).
+    stochastic toggles/coefficient it recorded (a pinned decision must
+    reproduce the run it was pinned from); the coefficient set is the tab's
+    set for that mode; sigma_value is the file's one sigma_overall constant x
+    the coefficient; adjustment.shift_value comes from the
+    donation_adjustment_shift session key, never from the file.
     """
     saved = explicit_saved_configs(snapshot).get("donation_default")
 
@@ -509,13 +519,13 @@ def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
     else:
         actual_inc_mode = normalize_income_mode(inc_mode)
 
-    # R10: the flat set for the run's income mode, WITHOUT the nested blocks
+    # The flat set for the run's income mode, WITHOUT the nested blocks (replaced, not merged)
     coefficients = session_donation_coefficient_set(snapshot, actual_inc_mode)
     if coefficients is None:
         coefficients = config_repo.donation_coefficient_set(actual_inc_mode)
     coefficients["income_mode"] = actual_inc_mode
 
-    # Stochastic toggles: live tab values, pinned by the saved record when present (R14)
+    # Stochastic toggles: live tab values, pinned by the saved record when present
     saved_stochastic = ((saved or {}).get("stochastic_params") or {}).get("stochastic") or {}
     sigma_in_copula = saved_stochastic.get("sigma_in_copula", snapshot.get("sigma_in_copula", False))
     sigma_in_research = saved_stochastic.get("sigma_in_research", snapshot.get("sigma_in_research", True))
@@ -529,7 +539,7 @@ def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
         # Research mode with sigma disabled - set to 0
         stochastic["sigma_value"] = 0.0
     else:
-        # R12: one sigma constant - the config's sigma_overall times the coefficient slider
+        # One sigma constant - the config's sigma_overall times the coefficient slider
         stochastic["sigma_value"] = donation_sigma_overall(config_repo) * float(sigma_coefficient)
 
     if "donation_sigma_strategy" in snapshot:
@@ -552,7 +562,7 @@ def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
         "anchor_weights": anchor_weights,
     }
 
-    # R11: the adjustment shift lives in session, the file is never rewritten
+    # The adjustment shift lives in session; the file is never rewritten
     shift = snapshot.get("donation_adjustment_shift")
     if shift is not None:
         patch["adjustment"] = {"shift_value": float(shift)}
@@ -587,8 +597,8 @@ def _three_way_stochastic(pop_mode: str, sigma_enabled: bool, sigma_in_copula: b
 def build_disclose_income_patch(snapshot: Mapping, config_repo: DecisionsConfig,
                                 pop_mode: str, inc_mode: Optional[str] = None) -> dict:
     """
-    Decision 1 patch.  Priority: saved config (R14) > explicit inc_mode
-    (Compare both) > session state.
+    Decision 1 patch.  Priority: saved config (it pins what the pinned run
+    used) > explicit inc_mode (Compare both) > session state.
     """
     saved = explicit_saved_configs(snapshot).get("disclose_income")
     if saved is not None:
@@ -615,7 +625,7 @@ def _saved_disclose_income_patch(snapshot: Mapping, config_repo: DecisionsConfig
         anchor_weights["prosocial_weight"] = saved_anchors["prosocial_weight"]
     patch["anchor_weights"] = anchor_weights
 
-    # Stochastic on/off from the CURRENT tab toggles (R18: absent key = the tab's default, on)
+    # Stochastic on/off from the CURRENT tab toggles (absent key = the tab's default, on - never "off")
     stochastic = _three_way_stochastic(
         pop_mode,
         sigma_enabled=snapshot.get("di_sigma_enabled", True),
@@ -653,7 +663,7 @@ def _session_disclose_income_patch(snapshot: Mapping, config_repo: DecisionsConf
         anchor_weights["prosocial_weight"] = snapshot["di_wpb"]
     patch["anchor_weights"] = anchor_weights
 
-    sigma_enabled = snapshot.get("di_sigma_enabled", True)  # R18
+    sigma_enabled = snapshot.get("di_sigma_enabled", True)  # absent key = the tab's default (on)
     sigma_in_copula = snapshot.get("di_sigma_in_copula", False)
     stochastic = _three_way_stochastic(
         pop_mode, sigma_enabled, sigma_in_copula, disclose_income_sigma_sentinel(config_repo))
@@ -669,9 +679,9 @@ def _session_disclose_income_patch(snapshot: Mapping, config_repo: DecisionsConf
 def build_disclose_documents_patch(snapshot: Mapping, config_repo: DecisionsConfig,
                                    pop_mode: str, inc_mode: Optional[str] = None) -> dict:
     """
-    Decision 2 patch.  R17: a saved Disclose Documents config is applied with
-    the saved-Disclose-Income precedence; otherwise explicit inc_mode (Compare
-    both) > session state, as before.
+    Decision 2 patch.  A saved Disclose Documents config is applied exactly
+    like a saved Disclose Income config (same precedence); otherwise explicit
+    inc_mode (Compare both) > session state.
     """
     saved = explicit_saved_configs(snapshot).get("disclose_documents")
     if saved is not None:
@@ -689,7 +699,7 @@ def _saved_disclose_documents_patch(snapshot: Mapping, config_repo: DecisionsCon
 
     stochastic = _three_way_stochastic(
         pop_mode,
-        sigma_enabled=snapshot.get("dd_sigma_enabled", True),   # R18
+        sigma_enabled=snapshot.get("dd_sigma_enabled", True),   # absent key = the tab's default (on)
         sigma_in_copula=snapshot.get("dd_sigma_in_copula", False),
         sentinel=disclose_documents_sigma_sentinel(config_repo),
     )
@@ -712,13 +722,13 @@ def _session_disclose_documents_patch(snapshot: Mapping, config_repo: DecisionsC
         else:
             patch["income_mode"] = session_mode
 
-    # Optional intercept override (R11: from the tab's session key)
+    # Optional intercept override from the tab's session key (never from the file)
     if "dd_intercept" in snapshot:
         patch["intercept"] = snapshot["dd_intercept"]
 
     stochastic = _three_way_stochastic(
         pop_mode,
-        sigma_enabled=snapshot.get("dd_sigma_enabled", True),   # R18
+        sigma_enabled=snapshot.get("dd_sigma_enabled", True),   # absent key = the tab's default (on)
         sigma_in_copula=snapshot.get("dd_sigma_in_copula", False),
         sentinel=disclose_documents_sigma_sentinel(config_repo),
     )
@@ -738,7 +748,7 @@ def build_rejected_transaction_patch(snapshot: Mapping, config_repo: DecisionsCo
     are fixed in config/decisions.yaml.  MODEL settings, by precedence:
 
     * a saved configuration ("Use This Config" on an individual Decision-4
-      run, R14) - applied when the run is NOT an individual Decision-4 run
+      run) - applied when the run is NOT an individual Decision-4 run
       (inc_mode is None, i.e. combined / complete simulations): its income
       mode (top-level, from the selected result cell, over params.income_mode),
       per-element intercepts, Flexibility anchor mix and rank-aggregation flag
@@ -752,7 +762,8 @@ def build_rejected_transaction_patch(snapshot: Mapping, config_repo: DecisionsCo
       rtd_aggregation_enabled.
 
     The stochastic toggles and settings always follow the CURRENT tab: the
-    three-way enable rule (rtd_sigma_enabled defaults True, R18); sigma
+    three-way enable rule (rtd_sigma_enabled defaults True when absent - the
+    tab's own default, never "off"); sigma
     strategy / scale / quintiles are decision-wide and replicated to each
     mechanism.  (The September 2026 tab removed the per-element stochastic
     anchor control, so no ``anchor`` is sent; the model keeps its default.)
@@ -914,8 +925,9 @@ def _saved_config_income_mode(decision_name: str, config: Mapping) -> Optional[s
 
 def build_saved_expectations(configs: Mapping[str, Mapping], sub_runs: Sequence[SubRun]) -> Tuple[SavedExpectation, ...]:
     """
-    R14: one expectation per explicit saved config that recorded its output
-    columns and hash, bound to the sub-run whose income mode matches the saved
+    One expectation per explicit saved config that recorded its output
+    columns and hash (a pinned decision must reproduce the run it was pinned
+    from), bound to the sub-run whose income mode matches the saved
     run (the first sub-run when none does).
     """
     if not sub_runs:
@@ -1020,7 +1032,8 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
     dd_saved = saved_configs.get("disclose_documents")
 
     if single_decision == ["disclose_income"]:
-        # Running ONLY disclose_income - use its specific mode (R28: no income_spec_mode write)
+        # Running ONLY disclose_income - use its specific mode (income_spec_mode is never
+        # written back: the run must not change the mode shown on Page 2)
         effective_income_mode = snap.get("di_income_mode", "Categorical only")
         caption(f"🎯 Using Disclose Income specific mode: {effective_income_mode}")
     elif single_decision == ["disclose_documents"]:
@@ -1076,7 +1089,7 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
         if effective_income_mode is None:
             effective_income_mode = snap.get("income_spec_mode", "categorical only")
 
-        # Population mode for THIS run: a saved config pins it (R14) - the user's
+        # Population mode for THIS run: a saved config pins it (to reproduce the pinned run) - the user's
         # population_mode is read, never changed.
         effective_pop_mode = None
         rtd_saved = saved_configs.get("rejected_transaction_defaults")
@@ -1138,12 +1151,14 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
         if pop_type == "copula":
             info("🎲 Using synthetic agents from copula")
         elif pop_type in ("documentation", "baseline"):
-            # Ruling R-CYC: Specification random (seeded), Baseline file order cycling
+            # Research Specification samples the participants randomly (seeded by the run
+            # seed); Research Baseline takes them in file order, cycling
             info(research_population_text(n_agents, random_sample=(pop_type == "documentation")))
         for inc_mode in income_modes_for(effective_income_mode):
             sub_runs.append(make_sub_run(inc_mode, pop_type, inc_mode))
 
-    # R14: only a complete run re-checks the pinned decisions' output hashes
+    # Only a complete run re-checks the pinned decisions' output hashes (a pinned
+    # decision must reproduce the run it was pinned from)
     saved_expectations: Tuple[SavedExpectation, ...] = ()
     if execution_single_decision is None:
         saved_expectations = build_saved_expectations(saved_configs, sub_runs)

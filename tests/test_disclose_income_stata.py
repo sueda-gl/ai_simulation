@@ -1,22 +1,22 @@
 """
-Validation tests for Decision 1: Disclose Income against the professor's CORRECTED Stata run.
+Validation tests for Decision 1: Disclose Income against the CORRECTED reference Stata run.
 
 Reference data: "Decision 1 - Disclosure of Income 110226_Final.docx" and its data file
 "Stata_File_Decision 1_Updated.dta" (280 participants). The corrected columns are
 disclose_categorical (167 Y), disclose_cont (169 Y) and fs_deterministic_*; the old error
 model kept in the *_err columns is NOT the reference.
 
-Owner ruling (R-D1, superseded 2026-10-07): the model uses exactly the owner's September values,
-i.e. Andrei's constants from "Decision 1 - Disclosure of Income 110226_Final_Andrei_Fix_Issue.docx"
-(Extraversion 0.00680238, level intercepts 0.0089007 ... -0.0145324, composite SDs 0.025040462 /
-0.7984211971). Andrei applied the Extraversion weight typo fix 641.15 -> 645.15; the professor's
-.dta does not, so the two runs differ slightly. These tests DOCUMENT that known, accepted
-difference: with beta0 = 0.1, continuous matches 280/280, categorical matches 279/280 with the
-single mismatch participant 848 (a near-threshold case), and the fs scores agree within
-FS_TOL_ANDREI. The app default beta0 stays 0.75.
+The model uses exactly the constants of the Decision 1 document of 11 Feb 2026 (revision
+110226_Final, with the corrected Extraversion weight): Extraversion 0.00680238, level
+intercepts 0.0089007 ... -0.0145324, composite SDs 0.025040462 / 0.7984211971. That document
+applies the Extraversion weight typo fix 641.15 -> 645.15; the reference .dta does not, so the
+two runs differ slightly. These tests DOCUMENT that known, accepted difference: with beta0 = 0.1,
+continuous matches 280/280, categorical matches 279/280 with the single mismatch participant 848
+(a near-threshold case), and the fs scores agree within FS_TOL_ANDREI. The app default beta0
+stays 0.75.
 
 The corrected Stata columns are frozen in data/stata_d1_verification.csv so the test runs
-without the professor's file; if the .dta is present locally we also check the frozen CSV
+without the reference .dta; if the .dta is present locally we also check the frozen CSV
 still equals it.
 """
 import os
@@ -31,14 +31,14 @@ from src.decisions.disclose_income_stochastic import (
 )
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SURVEY = os.path.join(REPO, "Student Survey Results - Period 1.xlsx")
-EXPERIMENT = os.path.join(REPO, "Student Experiment Results - Period 1-2.xlsx")
+SURVEY = os.path.join(REPO, "data", "Student Survey Results - Period 1.xlsx")
+EXPERIMENT = os.path.join(REPO, "data", "Student Experiment Results - Period 1-2.xlsx")
 FROZEN = os.path.join(REPO, "data", "stata_d1_verification.csv")
 PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 1_Updated.dta"
 
-STATA_BETA0 = 0.1        # `gen beta0 = 0.1` in the professor's corrected Stata code
-APP_DEFAULT_BETA0 = 0.75  # the app's research default (unchanged by ruling R-D1)
-# Measured max |fs_model - fs_stata| with the September/Andrei constants: 0.003414 (categorical)
+STATA_BETA0 = 0.1        # `gen beta0 = 0.1` in the corrected reference Stata code
+APP_DEFAULT_BETA0 = 0.75  # the app's research default (kept)
+# Measured max |fs_model - fs_stata| with the 11 Feb 2026 document's constants: 0.003414 (categorical)
 # and 0.003373 (continuous), both at participant 838. The bound sits just above that.
 FS_TOL_ANDREI = 3.5e-3
 KNOWN_CATEGORICAL_MISMATCHES = [848]  # model Y (fs +0.00046) vs Stata N (fs -0.00022)
@@ -54,7 +54,7 @@ FROZEN_COLS = [
 
 
 def _load_stata():
-    """Prefer the frozen CSV extract; fall back to the professor's .dta."""
+    """Prefer the frozen CSV extract; fall back to the reference .dta."""
     if os.path.exists(FROZEN):
         return pd.read_csv(FROZEN, float_precision="round_trip")
     if os.path.exists(PROF_DTA):
@@ -98,7 +98,7 @@ def _run(merged, di_params, income_mode):
     params["income_mode"] = income_mode
     params.setdefault("stochastic", {})["sigma_value"] = 0.0
 
-    # the professor's own income realization; SD with ddof=1 like Stata `egen std()`
+    # the reference file's own income realization; SD with ddof=1 like Stata `egen std()`
     inc = merged["income"].astype(float).values
     sim_config = {
         "income_median": float(np.median(inc)),
@@ -120,7 +120,7 @@ def _run(merged, di_params, income_mode):
 
 
 def test_categorical_matches_stata_except_known_848(merged, di_params):
-    """Known, accepted difference (R-D1 superseded): 279/280, the one mismatch is participant 848."""
+    """Known, accepted difference: 279/280, the one mismatch is participant 848."""
     decision, fs, high = _run(merged, di_params, "Categorical only")
     ref = merged["disclose_categorical"].astype(int).values
     mismatched = merged["Participant ID"].values[decision != ref].tolist()
@@ -144,8 +144,8 @@ def test_continuous_matches_stata_280_of_280(merged, di_params):
 
 
 def test_composite_sds_are_september_values(stata, di_params):
-    """The fixed composite SDs are the owner's September (Andrei) values, not Stata's `egen std()`
-    of the professor's .dta (0.0250386349 / 0.7971466830) -- the documented R-D1 difference."""
+    """The fixed composite SDs are the 11 Feb 2026 document's values, not Stata's `egen std()`
+    of the reference .dta (0.0250386349 / 0.7971466830) -- the documented, accepted difference."""
     cz = di_params["composite_z_scoring"]
     assert cz["weighted_disclosure_categorical"]["sd"] == SEPTEMBER_SD_CATEGORICAL
     assert cz["anchored_pb"]["sd"] == SEPTEMBER_SD_ANCHORED_PB
@@ -157,14 +157,14 @@ def test_composite_sds_are_september_values(stata, di_params):
 
 
 def test_september_constants(di_params):
-    """Owner ruling: Decision 1 uses exactly the September (Andrei) constants."""
+    """Decision 1 uses exactly the constants of the 11 Feb 2026 document."""
     assert di_params["equation2_coefficients"]["extraversion"] == 0.00680238
     assert [di_params["categorical_intercepts"][f"level_{k}"] for k in range(1, 6)] == [
         0.0089007, 0.0055352, 0.0023109, -0.0032216, -0.0145324]
 
 
 def test_shipped_default_intercept_unchanged(di_params):
-    """Ruling R-D1: matching Stata is done by setting beta0 = 0.1; the app default stays 0.75."""
+    """Matching Stata is done by setting beta0 = 0.1; the app default stays 0.75."""
     assert di_params["intercept"] == APP_DEFAULT_BETA0
 
 

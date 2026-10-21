@@ -9,7 +9,7 @@ two-period consumption of community donations (sospeso) and private transfers, n
 ``disclose_documents.stochastic`` (``sigma_overall`` + ``sigma_quintile``).
 
 This module RECONSTRUCTS that variable bit-for-bit from the two raw per-period experiment files,
-reproducing the professor's ``consumedtransferssospeso2periods`` column in
+reproducing the reference Stata file's ``consumedtransferssospeso2periods`` column in
 ``Stata_File_Decision 2_260326 - Final.dta`` (280/280 participants), and derives the sigma
 constants from it. Run it to verify ``decisions.yaml`` is faithful, or import ``derive_dd_sigma``
 to recompute from raw data.
@@ -27,9 +27,9 @@ Reconstruction recipe:
     inactive in Period 2 contribute 0), NOT by Participant ID. The Period 2 export's
     ``Participant ID`` column is offset relative to its data rows, so joining the two periods by
     Participant ID produces 89/280 per-participant mismatches (the total, 351, is unchanged — the
-    same 269 values are simply attributed to adjacent participants). The professor's Stata merge
-    matched by position, so we replicate the positional merge to reproduce his validated
-    ``disclosedoc_*`` output. See ``notes.md`` for the full forensic trail.
+    same 269 values are simply attributed to adjacent participants). The reference Stata
+    procedure merged by position, so the positional merge is replicated to reproduce the
+    validated ``disclosedoc_*`` output.
 
 Note: the repo's combined ``Student Experiment Results - Period 1-2.xlsx`` only carries Period-1
 consumption (its consume columns sum to 268, identical to the standalone Period 1 file). The true
@@ -50,7 +50,7 @@ SOSPESO_COL = "Number of Sospeso Concumed"   # original (mis)spelling in the exp
 TRANSFER_COL = "Number of Transfers Consumed"
 LEVEL_COL = "Assigned Allowance Level"
 
-# Known-good targets from the professor's Stata_File_Decision 2_260326 - Final.dta, for self-check.
+# Known-good targets from the reference Stata file Stata_File_Decision 2_260326 - Final.dta, for self-check.
 GOLD = {"sum": 351, "max": 13, "nonzero": 125, "sigma_overall": 0.1606568355}
 
 
@@ -69,7 +69,7 @@ def _consumed(df: pd.DataFrame) -> np.ndarray:
 
 
 def reconstruct_consumed_2periods(period1_df: pd.DataFrame, period2_df: pd.DataFrame) -> np.ndarray:
-    """Reconstruct the professor's ``consumedtransferssospeso2periods`` (one int per participant).
+    """Reconstruct the reference ``consumedtransferssospeso2periods`` variable (one int per participant).
 
     Period 2 is aligned by ROW POSITION, not by Participant ID — see the module docstring's
     PARTICIPANT-ID MERGE CAVEAT. ``period1_df`` defines the master order.

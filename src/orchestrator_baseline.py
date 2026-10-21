@@ -11,7 +11,7 @@ class OrchestratorBaseline(Engine):
     component (``pop_context='baseline'``; donation_default sigma forced to 0).
 
     When no ``agents_df`` is supplied, the agents are the 280 participants in file
-    order, cycling (agent k = participant k mod 280; ruling R-CYC).
+    order, cycling (agent k = participant k mod 280); see src/engine/sampling.py.
     """
 
     def __init__(self):

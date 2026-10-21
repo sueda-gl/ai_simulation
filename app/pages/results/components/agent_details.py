@@ -38,7 +38,7 @@ def render_individual_agent_details(df):
         for col in df.columns:
             if col not in ['Assigned Allowance Level', 'Group_experiment', 'Honesty_Humility', 
                           'Study Program', 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}']:
-                # Lavie #14: Decision 4 columns are shown as rtd_integrated_*
+                # Decision 4 columns are shown as rtd_integrated_* ("integrated", not "consensus")
                 decision_data[integrated_column_name(col)] = agent_data[col]
 
         decision_df = pd.DataFrame(list(decision_data.items()), columns=['Decision', 'Value'])

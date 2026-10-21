@@ -577,7 +577,7 @@ def render_selected_donation_config_display():
     st.markdown("#### 3. Donation Default")
     
     # Main configuration display
-    # Use donation_income_mode (primary) with fallback to income_spec_mode (legacy)
+    # Use donation_income_mode (primary) with fallback to income_spec_mode (older records)
     donation_income_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'unknown'))
     
     with st.container():
@@ -758,7 +758,7 @@ def render_selected_rejected_transaction_config_display():
 
     config = get_decision_config('rejected_transaction_defaults')
 
-    # R13: only explicit "Use This Config" selections are stored.
+    # Only explicit "Use This Config" selections are stored.
     if config is None:
         return
 
@@ -780,7 +780,7 @@ def render_selected_rejected_transaction_config_display():
         with col2:
             st.metric("Income Mode", income_mode)
         with col3:
-            # Lavie #8: only the average that belongs to the element the configuration
+            # Only the average that belongs to the element the configuration
             # was selected from (both for a whole-decision run, none for Loyalty / WTP /
             # Risk-Taking / Flexibility)
             if 'mean_choice_length' in shown:

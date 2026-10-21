@@ -250,7 +250,7 @@ def render_rejected_transaction_config_selection_ui(results_dict, ctx=None):
     if not has_rtd_results:
         return
 
-    # R28: the run's own decision lists, not the live widgets
+    # the run's own decision lists, not the live widgets
     if not ctx.is_individual_run('rejected_transaction_defaults'):
         return
 
@@ -267,7 +267,7 @@ def render_rejected_transaction_config_selection_ui(results_dict, ctx=None):
             st.success(f"✅ **Selected Rejected Transaction Defaults Configuration**: "
                        f"{population_mode} + {income_mode}")
             metrics = config.get('metrics', {}) or {}
-            # Lavie #8: only the average that belongs to the element on this page
+            # only the average that belongs to the element on this page
             shown = rtd_summary_metric_keys(rtd_page_element())
             col1, col2, col3 = st.columns([2, 2, 1])
             with col1:
@@ -469,7 +469,7 @@ def render_complete_simulation_section():
                     income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
                     population_mode = config.get('population_mode', 'Unknown')
                     rtd_metrics = config.get('metrics', {}) or {}
-                    shown = rtd_summary_metric_keys(rtd_page_element())   # Lavie #8
+                    shown = rtd_summary_metric_keys(rtd_page_element())   # this page's element only
                     mean_len = rtd_metrics.get('mean_choice_length')
                     mean_default = rtd_metrics.get('mean_default_list_length')
                     if mean_len is not None and 'mean_choice_length' in shown:

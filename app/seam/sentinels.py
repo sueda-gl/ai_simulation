@@ -1,15 +1,15 @@
 # app/seam/sentinels.py
 """
 The sigma constants the seam hands to the engine - read from
-``config/decisions.yaml``, never spelled as literals in ``app/`` (ruling R12).
+``config/decisions.yaml``, never spelled as literals in ``app/`` (one source, so
+the app and the engine cannot carry two different values).
 
 * donation_default: ``sigma_value = donation_sigma_overall() * sigma_coefficient``
   is the actual sigma the engine draws with (overall / continuous strategy).
 * disclose_income / disclose_documents: ``sigma_value`` is only an ENABLE
   sentinel (the engine gates on ``sigma_value > 0`` in Research Specification
   mode and takes the magnitude from its own ``sigma_overall * scale_factor``);
-  the seam writes the file's ``sigma_overall`` there, exactly the value the
-  legacy code wrote as a literal.
+  the seam writes the file's ``sigma_overall`` there.
 * rejected_transaction_defaults: ``RTD_SIGMA_ENABLE`` (1.0) is a pure enable
   sentinel; each mechanism's sigma lives in the config.
 """

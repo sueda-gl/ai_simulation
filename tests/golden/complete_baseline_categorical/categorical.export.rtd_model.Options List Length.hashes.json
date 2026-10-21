@@ -1,0 +1,18 @@
+{
+ "Agent ID": "c66f0a70047f58e47703a6aadc2838f6f4abbb66646752b528ccbf98488c6a7c",
+ "Agreeable": "9f527820ffddd890def5e11c11a243a452ebc345886062c6e374b94877dd114c",
+ "ConscientiousnessBig5": "9a18bd339d5bcc54ebd50debcc2cb296caf10edc2ed6dfb2f65389fa484c9903",
+ "Education": "212ba63b4c6dbbd6ab42c90ba65c515345a401bb1b86bfc3e261597a62ad9bda",
+ "ExtraversionBig5": "8fe6baed6a878fb8cfbf0b22ce59f32586e65e9ced7501cd448437718f1b9645",
+ "NeuroticismBig5": "0626fb2b4268feef66debe2a70a0d2a1e40bacd9edb36494e3be1c6e957c290d",
+ "choice_length": "d7af9cf615a33cf36c81bf2a7c929d3a72e6af9229e27badffa6df41bde221c3",
+ "choice_length_deterministic": "d7af9cf615a33cf36c81bf2a7c929d3a72e6af9229e27badffa6df41bde221c3",
+ "reducation": "4edf36cc8fb322a6d8f36033546c76f16d255aa3af2996310f75b2a95668b145",
+ "sigma_used_ttp": "7b6436b0c98f62380866d9432c2af0ee08ce16a171bda6951aecd95ee1307d61",
+ "weighted_ttp": "593e179f21aead5a6c97d62c4e1ec91de1a05bc43fffb90c6e974a6fc8acd929",
+ "weighted_ttp06": "6e8e8c93b2870ff29f8cee89324b7542d50208e25a77cfa95b7dde013cfde81c",
+ "z_agreeable": "d551929286183cc84b76570737d0771b2062fe0353910866d4ee9d1966f256d7",
+ "z_conscientiousnessbig5": "0f99a71da162aeeb1d69f1b0d4be750555f8c36ed7784bf7ef0462b5823a0039",
+ "z_extraversionbig5": "0b0cb7993d56180ee70e67203a08a4657ae0e12d7d436a2d64781e3566b1777d",
+ "z_neuroticismbig5": "7f870c33eac25456f99373c471f0600179722d3cde4ba7d240328db268482b25"
+}

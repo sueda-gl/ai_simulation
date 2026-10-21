@@ -1,6 +1,6 @@
 """
 Page 1 "Reset to Default Values" puts EVERY Page-1 setting back to exactly what a
-fresh session shows (owner ruling Q-39, 2026-10-07).
+fresh session shows.
 
 Until then the reset wrote its own list of values, which disagreed with the first
 draw (Duration per Period 8 vs 1, Price Grid 9 vs 11, discount threshold 20000 vs
@@ -25,7 +25,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from browser_sim import BrowserSim
-from test_no_widget_default_warning import offenders  # noqa: F401  (fixture: Q-41 warning spy)
+from test_no_widget_default_warning import offenders  # noqa: F401  (fixture: the widget-default warning spy)
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_FILE = str(ROOT / "app_enhanced_new.py")
@@ -182,7 +182,7 @@ def test_reset_restores_exactly_what_a_fresh_session_shows(offenders):
         assert got["session"] == want["session"], f"{view}: {got['session']} vs {want['session']}"
     assert len(actual) == len(expected)
 
-    # the values the owner named, as a fresh session shows them
+    # the specified values, as a fresh session shows them
     first = expected[0]["widgets"]
     assert first["duration_hours_input"] == 1
     assert first["price_grid_input"] == 11

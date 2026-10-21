@@ -240,7 +240,7 @@ def _ensure_actual_allowance(agent_state: dict) -> None:
 
     'actual_allowance' is a deterministic mapping, independent of the income draw, so
     it must exist whenever income does - including when income was pre-attached to the
-    agent (Research Baseline / Research Specification use the professor's income).
+    agent (Research Baseline / Research Specification carry the fixed reference income).
     Silently does nothing when the level is missing; the caller that actually needs a
     level (the generation path) raises instead.
     """
@@ -267,7 +267,7 @@ def get_agent_income(agent_state: dict, simulation_config: dict, rng: np.random.
     1. If 'income' already exists in agent_state, return it (cached) - but still make
        sure 'actual_allowance' is derived from 'Assigned Allowance Level', since the
        cached income may have been supplied by the caller rather than generated here
-       (Research Baseline / Research Specification carry the professor's fixed income
+       (Research Baseline / Research Specification carry the fixed reference income
        on every original participant; see src/data/participants.py)
     2. Otherwise, generate BOTH 'income' and 'actual_allowance' from the agent's
        'Assigned Allowance Level' and cache them in agent_state

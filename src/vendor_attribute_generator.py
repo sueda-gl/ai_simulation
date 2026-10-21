@@ -25,7 +25,7 @@ def generate_vendor_attributes(num_vendors: int, vendor_prices: List[float],
     """
     Generate vendor attributes for vendor selection.
     
-    According to professor's specification:
+    According to the specification:
     - Price: Randomized within [price_min, price_max] if provided, otherwise use vendor_prices
     - Quality: Random integer in [1, 5] per vendor
     - Sustainability: Random integer in [1, 5] per vendor

@@ -14,8 +14,8 @@ from app.reports import mc as mc_report
 
 
 # Per-element runs of the four RANKING elements have no meaningful headline metric:
-# the professor asked (2026-09) to drop the "Mean <element> score" metric entirely, so
-# those runs show the agent count alone.
+# there is deliberately no "Mean <element> score" metric, so those runs show the
+# agent count alone.
 _RTD_NO_HEADLINE_ELEMENTS = ('loyalty', 'wtp', 'risk_taking', 'flexibility')
 
 
@@ -45,7 +45,8 @@ def rtd_overview_metric(df):
         -> average options list length (the caller adds its min/max).
 
     Whether the run was an individual Decision 4 run comes from the run's own
-    decision lists (R28: RunContext), the element from the rtd_run_element flag.
+    decision lists (RunContext, which describes the run that happened), the
+    element from the rtd_run_element flag.
     """
     from app.pages.results.run_context import RunContext
 
@@ -76,8 +77,8 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     
     # Disclose-Documents-only run: the disclose_income column is present solely to drive the
     # eligibility gate, so none of its metrics/graphs/analysis should appear on the Disclose
-    # Documents results page (per professor feedback). Detected via the DD-only run flag
-    # (the run's own custom-decision list, R28).
+    # Documents results page. Detected via the DD-only run flag (the run's own
+    # custom-decision list, i.e. what actually ran).
     from app.pages.results.run_context import RunContext
     is_dd_focus = RunContext.from_session().custom_decisions == ('disclose_documents',)
     
@@ -86,7 +87,7 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         st.caption(f"📊 Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
 
     # Headline decision drives the metric layout. "Traits Available" / "Decisions Computed"
-    # removed per professor feedback. Priority mirrors the old headline metric:
+    # are deliberately not shown. Priority mirrors the old headline metric:
     # donation > income > documents; is_dd_focus forces the documents layout on DD-only runs.
     donation_col = 'donation_default'
     has_donation = donation_col in df.columns
@@ -98,13 +99,13 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         # Decision 4 (Rejected Transaction Defaults) model run: no donation /
         # disclosure metrics exist - show the D4-relevant headline metrics instead.
         # The metric depends on the run shape (see rtd_overview_metric): a per-element
-        # run of a RANKING element shows no element metric at all (professor 2026-09).
+        # run of a RANKING element shows no element metric at all.
         label, value = rtd_overview_metric(df)
         if label is None:
             st.metric("Total Agents", f"{len(df):,}")
         elif label == "Avg. Options List Length":
             # Options List Length element / whole-decision run: min and max Options
-            # List Length shown next to the average (professor 2026-08 request).
+            # List Length shown next to the average.
             lengths = df['rtd_choice_length'].astype(int)
             col1, col2, col3, col4 = st.columns([1, 1.2, 1, 1])
             col1.metric("Total Agents", f"{len(df):,}")
@@ -695,14 +696,14 @@ def render_rejected_transaction_selection_button(result_key, result_df):
 
     is_selected = is_decision_config_selected('rejected_transaction_defaults', result_key)
     st.markdown("---")
-    # No "Quick Summary" caption here (professor 2026-09-17: it was unrelated to the
-    # element presented, e.g. list lengths under the Flexibility results).
+    # No "Quick Summary" caption here (it was unrelated to the element presented,
+    # e.g. list lengths under the Flexibility results).
     _, col2 = st.columns([2, 1])
 
     with col2:
         if is_selected:
-            # The selection can be undone right here (professor 2026-09-17: it must be
-            # possible to unselect at any point so later runs present all alternatives).
+            # The selection can be undone right here (it must be possible to unselect
+            # at any point so later runs present all alternatives).
             if st.button("✅ Selected - click to unselect", key=f"rtd_inline_unselect_{result_key}",
                          use_container_width=True,
                          help="This configuration is selected for combined simulations. Click to "
@@ -719,7 +720,7 @@ def render_rejected_transaction_selection_button(result_key, result_df):
                 extra_data = {'income_mode': details['income_mode'],
                               'population_mode': details['population_mode'],
                               # the element this run showed (None = whole decision), so
-                              # its summary lists only that element's metric (Lavie #8)
+                              # its summary lists only that element's metric
                               'run_element': rtd_page_element()}
                 success, config, error_info = save_decision_config(
                     'rejected_transaction_defaults', result_key, result_df, params, metrics, extra_data

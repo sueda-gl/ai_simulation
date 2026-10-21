@@ -82,7 +82,7 @@ def _calculate_preferred_vendor(agent_state: dict, simulation_config: dict, rng)
     
     # Calculate composite score for ALL vendors
     # Get configured price bounds for consistent normalization.
-    # R8 (register row Q-10): the bounds are the Page-1 values in
+    # The bounds are the Page-1 values in
     # simulation_config['simulation'] -- the same ones src/engine/vendors.py
     # draws the vendor prices from and the reports normalise with
     # (app/reports/agent_level.py, transaction_level.py, vendor.py). They used
@@ -417,7 +417,7 @@ def purchasing_quantity(agent_state: dict, params: dict, rng: np.random.Generato
         income_category = None
     
     # STEP 4: Get purchasing limit based on CUSTOMER TYPE
-    # According to professor's specification:
+    # According to the specification:
     # - Discount customers: Use Category 1 limit (lowest income)
     # - Regular customers: Use Category N limit (highest income) - they don't have income categories
     # - Fixed customers: Use their actual income category limit

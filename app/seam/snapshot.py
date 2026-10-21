@@ -1,6 +1,6 @@
 # app/seam/snapshot.py
 """
-A frozen copy of the session state, taken ONCE per click (ruling R15).
+A frozen copy of the session state, taken ONCE per click.
 
 The plan builder reads only from a :class:`SessionSnapshot`; it never sees
 ``st.session_state`` itself, so a run cannot observe a value that another part

@@ -48,7 +48,7 @@ def research_default_config():
 
     The single source of truth for both the first draw
     (``initialize_disclose_income_session_state``) and "Reset Config to Defaults"
-    - e.g. the σ coefficient ``stochastic.scale_factor: 0.1`` (R-DI01, Q-59).
+    - e.g. the σ coefficient ``stochastic.scale_factor: 0.1`` (the intended default).
     The reset used to apply a hard-coded dict on top of the file, which set the σ
     coefficient to 1.0 while the first draw showed 0.1.
     """
@@ -195,8 +195,8 @@ def render_di_sigma_controls(mode_suffix: str):
         coeff_storage_key = f'di_sigma_coefficient_{mode_suffix}'
 
         # The slider starts from di_scale_factor, which the tab initialiser seeds
-        # from the config's stochastic.scale_factor (0.1, R-DI01). 0.0 is a legal,
-        # persisted value: tick box on + coefficient 0 -> sigma 0, no noise (R6).
+        # from the config's stochastic.scale_factor (0.1, the intended default). 0.0 is
+        # a legal, persisted value: tick box on + coefficient 0 -> sigma 0, no noise.
         # (The 0 -> 1.0 snaps that used to sit here worked around the browser
         # showing a slider's built-in 0, fixed properly in 5f2cac8.)
         scale_fallback = st.session_state.di_scale_factor
@@ -589,7 +589,7 @@ def render_categorical_di_formula(config):
     
     wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
     
-    # Show full expanded formula (per professor's specification - no separate "direct effects" line)
+    # Show full expanded formula (per the Decision 1 document - no separate "direct effects" line)
     st.latex(f"""
     DiscloseIncome_i = \\beta_{{income\\_q}}[quintile_i] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00680238 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
@@ -619,7 +619,7 @@ def render_continuous_di_formula(config):
     wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
     beta0 = config.get('intercept', 0.75)
     
-    # Show full expanded formula only (per professor's specification)
+    # Show full expanded formula only (per the Decision 1 document)
     st.latex(f"""
     DiscloseIncome_i = [\\beta_0 = {beta0}] + [1 - W_{{PB}} = {1-wpb:.2f}] \\times [0.00680238 \\times z_{{E_i}} + 0.0173732 \\times z_{{N_i}} + 0.0163905 \\times z_{{HH_i}} - 0.008988 \\times z_{{I_i}}] + [W_{{PB}} = {wpb:.2f}] \\times (PB_i \\times I_{{high}})
     """)
@@ -696,8 +696,7 @@ def render_intercept_override_section(config):
             # Seed the widget key ONLY when it is absent (after navigation); otherwise the
             # live widget value wins. No rerun-dependent `value=` is passed below, so the
             # widget id stays stable - re-seeding on every rerun plus a changing default
-            # made the +/- buttons jump back one step under fast clicks (professor
-            # 2026-09-17, "General comment").
+            # made the +/- buttons jump back one step under fast clicks.
             if 'di_override_intercept' not in st.session_state:
                 st.session_state.di_override_intercept = float(
                     st.session_state.di_intercept_override_values.get('intercept', current_config_value))
@@ -796,7 +795,7 @@ def reset_to_defaults():
     apply_pending_reset). Clearing / re-seeding the di_* widget keys here would
     happen AFTER those widgets were already instantiated in this run - a
     Streamlit anti-pattern that leaves widgets whose element id no longer has a
-    session-state entry (professor 2026-09-17: values jumped back after a reset).
+    session-state entry (values jumped back after a reset).
     """
     try:
         # The configuration file is read-only: the defaults are read from it (the
@@ -847,8 +846,8 @@ def reset_intercept_to_default():
     st.session_state.di_intercept = default_intercept
     if 'di_intercept_override_values' in st.session_state:
         st.session_state.di_intercept_override_values['intercept'] = default_intercept
-    # The override input is seeded only while its key is absent (September 2026
-    # stable-widget fix), so drop the key: the rerun that follows re-seeds it from
+    # The override input is seeded only while its key is absent (stable widget id
+    # under fast clicks), so drop the key: the rerun that follows re-seeds it from
     # the value just stored instead of keeping the old number on screen.
     if 'di_override_intercept' in st.session_state:
         del st.session_state['di_override_intercept']

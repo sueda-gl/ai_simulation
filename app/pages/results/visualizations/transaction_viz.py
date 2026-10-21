@@ -407,7 +407,7 @@ _RTD_MECHS = [
 # Decision 4 run shapes
 # ---------------------------------------------------------------------------
 # The Decision 4 tab offers six Run buttons, and the results page shows a different
-# set of sections for each (professor's 2026-09 display specification):
+# set of sections for each (the Decision 4 display specification):
 #   'element'     - one of the five per-element buttons: ONLY that element's section
 #                   and its Excel;
 #   'whole'       - "Run Rejected Transaction Defaults Only": all five element
@@ -424,7 +424,7 @@ _RTD_COMBINED_MARKERS = ('donation_default', 'disclose_income', 'disclose_docume
 def _rtd_is_individual_run():
     """True when the page shows an INDIVIDUAL Decision 4 run (Decision 4 is the only
     custom decision and nothing else ran with defaults) - from the run's own decision
-    lists (R28), never from the live Page-2 widgets."""
+    lists, never from the live Page-2 widgets."""
     from app.pages.results.run_context import RunContext
     return RunContext.from_session().is_individual_run('rejected_transaction_defaults')
 
@@ -479,7 +479,7 @@ def _rtd_sections_for_shape(df, shape, element):
 
 
 # The five option explanations printed under every allocation chart - ONE LINE PER
-# OPTION in black regular body text (professor 2026-09: the previous single caption,
+# OPTION in black regular body text (the previous single caption,
 # which packed two options per line, read as if only Options 1, 3 and 5 existed).
 _RTD_OPTION_LINES = (
     "Option 1: higher price category, same vendor",
@@ -510,7 +510,7 @@ def _rtd_density_hist(series, title, x_title, chart_key):
     the maximum in an (absent) bin k and silently DROPS it, whereas Stata - and
     rtd_stata_bins / np.histogram - close the last bin on the right.
 
-    The y-axis is DENSITY, Stata's `histogram` default (owner ruling 2026-10): bar
+    The y-axis is DENSITY, Stata's `histogram` default (per the specification): bar
     height = proportion of agents in the bin / bin width, so the bar AREAS sum to 1 and
     the chart looks identical to the Stata graph. The hover shows both the density and
     the % of agents in the bin. The series mean is marked with a vertical red line."""
@@ -554,7 +554,7 @@ def _rtd_drawn_caption(drawn, binned_into):
 
 
 def _rtd_score_stats_caption(series):
-    """Range line under each score chart (Min and Max only - professor 2026-09)."""
+    """Range line under each score chart (Min and Max only)."""
     st.caption(rtd_score_stats_caption(series))
 
 
@@ -607,10 +607,10 @@ def _rtd_element_download(df, mech, label, chart_suffix):
 def _rtd_selected_config_key(results_dict):
     """The result_key of a SAVED Decision 4 configuration ("Use This Config") that is
     present in results_dict, or None. Once a configuration has been selected the
-    comparison layout presents ONLY that configuration (professor 2026-09)."""
+    comparison layout presents ONLY that configuration."""
     from app.pages.decision_execution import get_decision_config
     config = get_decision_config('rejected_transaction_defaults')
-    if not config:      # R13: only explicit selections are stored
+    if not config:      # only explicit "Use This Config" selections are stored
         return None
     key = config.get('result_key')
     if key in results_dict and hasattr(results_dict[key], 'columns'):
@@ -637,12 +637,12 @@ def render_rtd_comparison_results(results_dict, decision_name):
     then a row of per-population-mode overview cells, then the detailed sections for
     the SAME population-mode columns underneath.
 
-    Two rules on top of that (professor 2026-09):
+    Two rules on top of that:
     - the income-FREE elements (Options List Length, Loyalty, Flexibility) are
       identical under both income specifications, so when both treatments are present
       they are rendered ONCE, above the treatment groups, with ONE income-neutral
-      overview row per population mode above them (professor 2026-09-17: the
-      overview must sit above the graphs); only Willingness-to-Pay, Risk-Taking and
+      overview row per population mode above them (the overview must sit above
+      the graphs); only Willingness-to-Pay, Risk-Taking and
       the integrated results repeat per treatment;
     - once a configuration has been selected with "Use This Config", ONLY that
       configuration's results are shown and the alternatives are hidden.
@@ -661,7 +661,7 @@ def render_rtd_comparison_results(results_dict, decision_name):
     # the other decisions' analyses (donation rate, disclose income, ...) inside the
     # Decision 4 section. Such frames get the Decision 4 headline metric only.
     combined_frame = any(_rtd_is_combined_frame(results_dict[k]) for k in keys)
-    # R28: the population mode THIS run used (the plain Compare-both keys carry none)
+    # the population mode THIS run used (the plain Compare-both keys carry none)
     run_population_mode = RunContext.from_session().effective_population_mode or 'Population'
 
     mode_labels = {
@@ -756,7 +756,7 @@ def render_rtd_comparison_results(results_dict, decision_name):
             if mode not in seen:
                 seen.add(mode)
                 shared_keys.append(key)
-        # Simulation overview ABOVE the graphs (professor 2026-09-17), once per
+        # Simulation overview ABOVE the graphs, once per
         # population mode: the overview of these runs (Total Agents and the Options
         # List Length metrics) carries no income term, so ONE income-neutral row here
         # replaces the per-treatment overview rows further down.
@@ -857,7 +857,7 @@ def _render_rtd_model_results(df, decision_name, chart_suffix='', compact=False,
                               sections=None, selection_button=True):
     """Model-run results for Decision 4.
 
-    What is rendered follows the RUN SHAPE (professor's 2026-09 display specification,
+    What is rendered follows the RUN SHAPE (the Decision 4 display specification,
     see the run-shape comment above):
 
     - per-element run      -> that element's section + its Excel;
@@ -931,7 +931,7 @@ def _render_rtd_ttp_section(df, decision_name, chart_suffix, element_section, do
 
     def _alloc_chart():
         counts = df['rtd_choice_length'].astype(int).value_counts()
-        # Bars ALWAYS in natural 0..5 order (professor 2026-08: "always start with 0 and
+        # Bars ALWAYS in natural 0..5 order (the specification: "always start with 0 and
         # end with 5, presenting bars in order rather than from low to high").
         lengths = list(range(0, 6))
         fractions = [counts.get(l, 0) / n for l in lengths]
@@ -1002,8 +1002,8 @@ def _render_rtd_integrated_section(df, decision_name, chart_suffix, element_sect
       'aggregation' - the length chart + table, the first-option chart + table, the
                       aggregation's tie statistics, and the integrated Excel;
       'combined'    - the length chart + table and the first-option chart + table, plus
-                      the same workbook as the whole-decision run (professor
-                      2026-09-17: the complete simulation's Decision 4 Excel was missing).
+                      the same workbook as the whole-decision run (the complete
+                      simulation's Decision 4 Excel used to be missing).
     """
     if 'rtd_default_list' not in df.columns:
         st.info("The rank aggregation is disabled on the Decision 4 tab, so no integrated "
@@ -1063,7 +1063,7 @@ def _render_rtd_integrated_section(df, decision_name, chart_suffix, element_sect
                 f"rtd_dl_aggregation{chart_suffix}")
     elif mode in ('whole', 'combined'):
         # The complete simulation offers the SAME Decision 4 workbook as the
-        # whole-decision run (professor 2026-09-17).
+        # whole-decision run.
         st.markdown("---")
         st.markdown("**📥 Download Decision 4 Model Results**")
         _rtd_excel_download(

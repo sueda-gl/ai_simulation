@@ -1,14 +1,13 @@
 """Pure timestamp arithmetic behind every export's period / timestamp columns.
 
-Moved verbatim (B5) out of `app/utils/timestamp_utils.py`, which now keeps only
-the three *session readers* (`get_simulation_base_time`, `get_duration_hours`,
-`get_periods`) and delegates the arithmetic here. Nothing in this module imports
-Streamlit or reads session state: `base_time`, `duration_hours` and `periods`
-are always passed in explicitly, so the exact strings and period numbers an
-export writes can be computed (and tested) outside a Streamlit script run.
+`app/utils/timestamp_utils.py` keeps the three *session readers*
+(`get_simulation_base_time`, `get_duration_hours`, `get_periods`) and delegates
+the arithmetic here. Nothing in this module imports Streamlit or reads session
+state: `base_time`, `duration_hours` and `periods` are always passed in
+explicitly, so the exact strings and period numbers an export writes can be
+computed (and tested) outside a Streamlit script run.
 
-Behaviour is unchanged, including the two long-standing conventions the owner
-deferred and asked to be carried over as they are:
+Two long-standing conventions are deliberately kept as they are:
 
 * the base time is *today's midnight* (`midnight_of(datetime.now())`), so a
   re-export on a later day moves every timestamp string; and

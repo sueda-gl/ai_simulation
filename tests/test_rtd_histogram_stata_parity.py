@@ -120,7 +120,7 @@ def test_left_closed_bins_and_max_in_last_bin():
 
 def test_app_chart_draws_the_document_figure(d4, monkeypatch):
     """The Decision 4 score chart draws exactly the document's 16 bars on a DENSITY
-    axis like Stata's default (owner ruling 2026-10): y = count / (N * width), the bar
+    axis like Stata's default: y = count / (N * width), the bar
     areas sum to 1, axis title "Density", the maximum included; the hover shows the
     density and the % of agents; the red mean line stays."""
     import app.pages.results.visualizations.transaction_viz as viz

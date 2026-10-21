@@ -52,7 +52,7 @@ def _is_compare_all_mode(results_dict):
 def render_export_section(df, results_dict=None, using_selected_config=False):
     """Render the export/download section (simplified)"""
     from app.pages.results.run_context import RunContext
-    ctx = RunContext.from_session()  # the run's own shape (R28)
+    ctx = RunContext.from_session()  # the run's own shape, not the live widgets
     # Drop the bookkeeping columns before any processing. Exact column-name
     # matching, so 'disclose_income' is never caught by an 'income' substring.
     columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'enriched_requests_count']
@@ -269,7 +269,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             
             else:
                 # SINGLE CONFIG: Simple export with just one configuration
-                # (Decision 4 columns say "integrated", not "consensus" - Lavie #14)
+                # (Decision 4 columns say "integrated", not "consensus")
                 df_export = rename_consensus_columns(df.copy())
                 
                 # Rename agent_id to 'Agent ID' for clarity
@@ -547,7 +547,7 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
         from app.reports.rtd import RTD_AGGREGATION_ELEMENT, RTD_ELEMENT_SHEETS
         active_element = _rtd_active_element()
         # Once a configuration has been selected with "Use This Config" the export
-        # covers ONLY that configuration (professor 2026-09), mirroring the results
+        # covers ONLY that configuration, mirroring the results
         # display (transaction_viz.render_rtd_comparison_results).
         selected_key = _rtd_selected_config_key(results_dict or {})
         if selected_key is not None:

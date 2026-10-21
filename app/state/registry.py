@@ -9,7 +9,7 @@ a doc build or a reviewer can read it without starting a session.
 ``tests/test_session_key_registry.py`` walks ``app/`` with ``ast`` and holds the
 code against this file in both directions: a key the code touches must have an
 entry, and an entry no code touches must go.
-``docs/migration/session-state.md`` explains the four persistence layers the
+``docs/session-state.md`` explains the four persistence layers the
 ``category`` field names and lists the keys that are written but never read.
 
 Conventions for ``default``:
@@ -61,7 +61,8 @@ DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key")
 
 #: ``[k for k in st.session_state.keys() if k.startswith(<prefix>)]`` - the
 #: whole-decision resets, and the per-category purchasing limits Page 1's reset
-#: drops (Q-39).  Every key beginning with one of these is deleted.
+#: drops (a reset restores exactly what a fresh session shows).  Every key
+#: beginning with one of these is deleted.
 PREFIX_DELETE_PREFIXES = ("dd_", "di_", "rtd_", "purchasing_limit_")
 
 
@@ -170,7 +171,7 @@ _NAVIGATION = (
          "navigation",
          notes="True once the current run reached end_script_run(); after a run that "
                "a newer interaction stopped early, the next run MERGES its render log "
-               "into the previous one instead of replacing it (Lavie 2026-10)."),
+               "into the previous one instead of replacing it."),
 )
 
 
@@ -189,10 +190,10 @@ _PAGE1_WIDGETS = _rows((
     ("single_vendor_price_input", "<sim_params.market_price>"),
     ("single_vendor_products_input", "<sim_params.vendor_products_avg>"),
     ("vendor_price_min_input", "<sim_params.vendor_price_min>",
-     "R8: these bounds are the vendor-scoring reference everywhere -- the results "
-     "page, the exports and, since 2026-09-04, the engine "
-     "(src/decisions/purchasing_quantity.py reads them via get_simulation_param); "
-     "market_price is the reference price (register row Q-10)"),
+     "these bounds are the vendor-scoring reference everywhere -- the results "
+     "page, the exports and the engine "
+     "(src/decisions/purchasing_quantity.py reads them via get_simulation_param) -- "
+     "so the three cannot disagree; market_price is the reference price"),
     ("vendor_price_max_input", "<sim_params.vendor_price_max>"),
     ("market_price_input", "<sim_params.market_price>"),
     ("vendor_products_min_input", "<sim_params.vendor_products_min>"),
@@ -240,7 +241,7 @@ _PAGE1_INLINE_WIDGETS = _rows((
     ("dagum_max_text_input", WIDGET),
     ("reset_page1_defaults", WIDGET,
      "button; on_click puts sim_params, the Page-1 session values and every Page-1 "
-     "widget key back to what a fresh session shows (Q-39)"),
+     "widget key back to what a fresh session shows"),
 ), P1_INLINE, "page1-widget", is_widget=True)
 
 _PAGE1_MIRRORS = (
@@ -258,7 +259,8 @@ _PAGE1_MIRRORS = (
     _row("population_mode", "Copula (synthetic)", MODELS_DEFAULTS, "page1-mirror",
          engine_input=True,
          notes="'Copula (synthetic)' | 'Research documentation' | 'Research baseline' "
-               "| 'Compare all'; a saved config's population_mode overrides it (R14)."),
+               "| 'Compare all'; a saved config's population_mode overrides it (to "
+               "reproduce the pinned run)."),
     _row("show_individual_agents", False, MODELS_DEFAULTS, "page1-mirror"),
     _row("nfic_manually_set", False, P1_INIT, "page1-mirror",
          notes="True once the user typed a fixed-category count, so the auto-derived "
@@ -278,18 +280,19 @@ _PAGE2_MIRRORS = (
     _row("income_spec_mode", "categorical only", MODELS_DEFAULTS, "page2-mirror",
          engine_input=True,
          notes="'categorical only' | 'continuous only' | 'Compare both'; mirrors "
-               "page2_tab_income_spec_mode.  R28: a DI/DD/RTD-only run no longer "
-               "rewrites it - the effective mode travels in RunMetadata."),
+               "page2_tab_income_spec_mode.  A DI/DD/RTD-only run never rewrites it "
+               "- the effective mode travels in RunMetadata, so a run cannot change "
+               "the mode shown on Page 2."),
     _row("sigma_in_copula", False, MODELS_DEFAULTS, "page2-mirror", engine_input=True,
          notes="donation sigma inside the copula; mirrors tab_sigma_in_copula."),
     _row("sigma_in_research", True, MODELS_DEFAULTS, "page2-mirror", engine_input=True,
          notes="donation sigma in the documentation population; mirrors "
                "tab_sigma_in_research."),
     _row("sigma_coefficient", 1.0, MODELS_DEFAULTS, "page2-mirror", engine_input=True,
-         notes="R12: sigma_value = the one sigma constant x this coefficient."),
+         notes="sigma_value = the one sigma constant x this coefficient."),
     _row("sigma_value_ui", 9.8995, P2_INIT, "page2-mirror",
          notes="display-only product of the sigma constant and the coefficient; "
-               "R12 means the seam recomputes it rather than reading it."),
+               "the seam recomputes it from the one constant rather than reading it."),
     _row("anchor_observed_weight", 0.75, MODELS_DEFAULTS, "page2-mirror",
          engine_input=True,
          notes="donation anchor split; mirrors tab_anchor_weight."),
@@ -300,13 +303,13 @@ _PAGE2_MIRRORS = (
          DON_INIT, "page2-mirror", engine_input=True),
     _row("donation_adjustment_shift", 0.0, DON_YAML, "page2-mirror",
          engine_input=True, write_only=True,
-         notes="R11: the shift comes from this key, never from the file.  Nothing "
+         notes="the shift comes from this key, never from the file.  Nothing "
                "in app/ reads it back - only the seam does, from the snapshot."),
     _row("donation_coeff_{name}", "<config/decisions.yaml regression_coefficients>",
          DON_YAML, "page2-mirror",
          notes="the flat display set the Donation tab edits (intercept, hh, linear, "
-               "midsub, nosub, fullsub, q1..q5, the legacy q45, incoming, law, ug, "
-               "grad).  R10: the engine runs the _cat / _cont set below, so this "
+               "midsub, nosub, fullsub, q1..q5, the older q45, incoming, law, ug, "
+               "grad).  The engine runs the _cat / _cont set below, so this "
                "one is UI state."),
     _row("donation_coeff_intercept", "<config/decisions.yaml intercept>", DON_YAML,
          "page2-mirror",
@@ -315,12 +318,12 @@ _PAGE2_MIRRORS = (
     _row("donation_coeff_{name}_{mode_suffix}",
          "<config/decisions.yaml regression_coefficients.{categorical,continuous}>",
          "models.load_coefficient_set", "page2-mirror", engine_input=True,
-         notes="R10: suffix 'cat' / 'cont'; this is the set the seam hands the "
+         notes="suffix 'cat' / 'cont'; this is the set the seam hands the "
                "engine (build_plan._donation_coefficients)."),
     _row("intercept_override_values", "<{} until an intercept is typed>",
          "decision_tabs.donation_default.render_intercept_override_section",
          "page2-mirror",
-         notes="R11: the typed categorical / continuous intercepts, kept in session "
+         notes="the typed categorical / continuous intercepts, kept in session "
                "instead of written back to the file."),
     _row("adjustment_override_values", "<{} until a shift is typed>",
          "decision_tabs.donation_default.render_adjustment_override_section",
@@ -344,7 +347,7 @@ _DI_MIRRORS = _rows((
     ("di_wopb", "<anchor_weights.observed_prosocial, else 0.25>"),
     ("di_wpb", "<anchor_weights.prosocial_weight, else 0.50>"),
     ("di_income_mode", "<config income_mode, else 'categorical'>"),
-    ("di_sigma_enabled", True, "R18: the tab default is ON, so an absent key must read True too"),
+    ("di_sigma_enabled", True, "the tab default is ON, so an absent key must read True too"),
     ("di_sigma_in_copula", False),
     ("di_sigma_strategy", "<stochastic.sigma_strategy, else 'overall'>"),
     ("di_scale_factor", "<stochastic.scale_factor, else 1.0>"),
@@ -354,7 +357,7 @@ _DI_MIRRORS = _rows((
 _DD_MIRRORS = _rows((
     ("dd_intercept", "<config/decisions.yaml intercept, else the research default>"),
     ("dd_income_mode", "<config income_mode, else 'Categorical only'>"),
-    ("dd_sigma_enabled", True, "R18"),
+    ("dd_sigma_enabled", True, "the tab default is ON, so an absent key must read True too"),
     ("dd_sigma_in_copula", False),
     ("dd_sigma_strategy", "<stochastic.sigma_strategy, else 'overall'>"),
     ("dd_scale_factor", "<stochastic.scale_factor, else 1.0>"),
@@ -365,7 +368,7 @@ _RTD_MIRRORS = _rows((
     ("rtd_income_mode", "Continuous only"),
     ("rtd_sigma_strategy", "overall", "decision-wide: one strategy for all five mechanisms"),
     ("rtd_scale_factor", "<config stochastic.mechanisms.*.scale_factor (0.5), else 1.0>",
-     "decision-wide; owner ruling 2026-10-07 (was 1.0)"),
+     "decision-wide; 0.5 per the platform documentation (previously 1.0)"),
     ("rtd_quintile_scale_factors", "<config stochastic.mechanisms.*.quintile_scale_factors (all 0.5)>"),
     ("rtd_intercept_{mech}", "<config intercepts[mech], else 0.0>",
      "mech in ttp / loyalty / wtp / risk_taking / flexibility"),
@@ -373,7 +376,8 @@ _RTD_MIRRORS = _rows((
      "Flexibility Anchor Mix W_OFlex (September 2026); W_CFlex = 1 - W_OFlex"),
     ("rtd_aggregation_enabled", True,
      "Section-6 rank aggregation; always on - no widget renders it (September 2026)"),
-    ("rtd_sigma_enabled", True, "R18; also read by the saved-config store (get_current_rejected_transaction_params)"),
+    ("rtd_sigma_enabled", True, "the tab default is ON, so an absent key must read True too; "
+     "also read by the saved-config store (get_current_rejected_transaction_params)"),
     ("rtd_sigma_in_copula", False, "also read by the saved-config store"),
 ), RTD_INIT, "page2-mirror", engine_input=True)
 
@@ -392,8 +396,8 @@ _RTD_DISPLAY = (
 #: ``clear_input_field_cache()`` deletes sixteen ``donation_coeff_*_input`` keys
 #: whenever the income mode changes, but no widget binds them any more - the
 #: coefficient number inputs were removed - so the list only ever finds them
-#: absent.  Left exactly as it is; a removal candidate for the owner, see
-#: docs/migration/session-state.md.
+#: absent.  Left exactly as it is; a removal candidate, see
+#: docs/session-state.md.
 _LEGACY_COEFF_INPUTS = (
     _row("donation_coeff_{name}_input", "<never written>",
          "nothing - a stale cache-clearing list", "page2-widget",
@@ -405,7 +409,7 @@ _DONATION_WIDGETS = _rows((
     ("tab_sigma_in_copula", "<sigma_in_copula, else False>"),
     ("tab_sigma_in_research", "<sigma_in_research, else True>"),
     ("tab_sigma_coefficient_{mode_suffix}", "<sigma_coefficient, else 1.0>",
-     "mode_suffix is always 'stochastic'; R12 multiplies the one sigma constant by this slider"),
+     "mode_suffix is always 'stochastic'; the seam multiplies the one sigma constant by this slider"),
     ("tab_anchor_weight", "<anchor_observed_weight, else 0.75>"),
     ("donation_tab_sigma_strategy_{mode_suffix}", "<donation_sigma_strategy>"),
     ("donation_tab_sigma_q{level}_{mode_suffix}", "<donation_quintile_scale_factors[level]>"),
@@ -516,9 +520,10 @@ _TAB_PERSISTENCE = (
 _SAVED_CONFIG = (
     _row("selected_decision_configs", {}, "state.saved_configs.get_selected_decision_configs",
          "saved-config", engine_input=True,
-         notes="R13: only explicit 'Use This Config' selections.  R14: each entry "
+         notes="only explicit 'Use This Config' selections.  Each entry "
                "pins seed, agent count, population mode, that decision's parameters "
-               "and the sha256 of the columns it produced.  R17: a saved Disclose "
+               "and the sha256 of the columns it produced, so a pinned decision "
+               "reproduces the run it was pinned from.  A saved Disclose "
                "Documents config is applied exactly like a Disclose Income one."),
     _row("custom_coefficients", "<{} until an individual donation run>",
          "decision_execution.run_individual_decision", "saved-config",
@@ -570,7 +575,7 @@ _RESULTS = (
          notes="{'summary', 'detailed', 'log'} from the Monte-Carlo subprocess."),
     _row("_run_metadata", "<RunMetadata as a dict>", "simulation.run_full_simulation",
          "results",
-         notes="R28: the results page reads the run's real population / income mode "
+         notes="the results page reads the run's real population / income mode "
                "from here, so the chart titles cannot drift from what ran."),
     _row("vendors", "<df.attrs['vendors'] of the first result>",
          "simulation.run_full_simulation", "results"),
@@ -603,7 +608,7 @@ _RESULT_WIDGETS = _rows((
     ("rtd_export_section_download", WIDGET),
     ("vendor_choice_weights_chart", WIDGET),
     ("show_all_proximity_matrix", WIDGET),
-), "the results renderers (R30: they never write settings)", "results",
+), "the results renderers (they never write settings)", "results",
     is_widget=True)
 
 
@@ -653,7 +658,7 @@ _DEFAULTS = (
                "the seam names."),
     _row("rejected_transaction_defaults_option", "<never written>",
          "nothing - read-only fallback", "defaults", engine_input=True,
-         notes="the legacy post-simulation key for decision 4's radio; the seam "
+         notes="the older post-simulation key for decision 4's radio; the seam "
                "and get_actual_default_value both still look for it first."),
     _row("rejected_transaction_option_selection", "<never written>",
          "nothing - read-only fallback", "defaults", engine_input=True,

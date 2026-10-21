@@ -2,10 +2,10 @@
 """Keyed widgets whose value lives in ``st.session_state`` - drawn so the BROWSER
 shows that value too.
 
-Why this module exists (2026-10-07, regression from e51c3fc)
------------------------------------------------------------
+Why this module exists
+----------------------
 The pages keep each widget's value in its session-state key and pass no
-``value=`` / ``index=`` (Q-41: passing both a default and a key written through
+``value=`` / ``index=`` (passing both a default and a key written through
 the Session State API makes Streamlit print "The widget with key ... was created
 with a default value but also had its value set via the Session State API").
 
@@ -25,8 +25,8 @@ Concretely: ``initialize_page2_widget_keys`` seeds ``tab_anchor_weight = 0.75``
 on the first Page-2 run, when the Donation tab is not drawn yet; one rerun later
 "Select All Decisions" draws the slider, the key already exists so nobody writes
 it again, the browser shows 0 and the next run takes ``anchor_observed_weight =
-0.0``. Before e51c3fc every one of these widgets passed ``value=<the key's
-value>``, which made ``default`` right (and the warning appear).
+0.0``. Passing ``value=<the key's value>`` as well would make ``default``
+right - and bring the warning back.
 
 The fix
 -------
@@ -43,15 +43,14 @@ widget already:
 
 A widget drawn in the previous run with the same arguments is left alone: the
 browser holds exactly that value, and re-pushing it on every rerun is what made
-the +/- buttons of number inputs jump back a step under fast clicks (professor,
-2026-09-17).
+the +/- buttons of number inputs jump back a step under fast clicks.
 
 ``begin_script_run()`` must be called once at the top of every script run (the
 entry point does it); it rotates the per-run render log the rule above reads.
 ``end_script_run()`` must be called as the run's LAST statement.
 
-Interrupted runs (Lavie 2026-10: rapid +/- clicks on a Decision 4 Override value
-made the value jump)
+Interrupted runs (rapid +/- clicks on a Decision 4 Override value made the
+value jump)
 ---------------------------------------------------------------------------------
 A click while a run is still going makes Streamlit stop that run early and start
 a new one. The browser then keeps every element of the last COMPLETED run (shown

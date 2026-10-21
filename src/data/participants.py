@@ -3,28 +3,27 @@
 Lazy, cached access to the 280-participant master dataset.
 
 This module is the single place that reads the two Excel workbooks and merges
-them.  It reproduces exactly what ``src/validate_traits.py`` and
-``src/build_master_traits.py`` do today, with two differences that are required
-by the migration and that cannot change any number:
+them.  It reproduces exactly what the former ``src/validate_traits.py`` and
+``src/build_master_traits.py`` did, with two differences that cannot change any
+number:
 
 * nothing happens at import time — the Excel files are read on the first call
   to :func:`merged` (or :func:`original_data`) and cached afterwards;
 * the "missing columns" check raises instead of printing and calling
   ``sys.exit(1)``.
 
-Two per-participant columns from the professor's Stata files are merged in by
-``Participant ID`` (ported 2026-10-06 from the original repo's Sep-2026 change to
-``src/validate_traits.py``, which this module replaces):
+Two per-participant columns from the reference Stata files are merged in by
+``Participant ID``:
 
 * ``stdactions`` (``data/stata_stdactions.csv``) - the SD in the number of actions
   per cycle over the eight experiment cycle-weeks. The experiment workbook only
   carries per-participant totals, so the value comes from
   ``Stata_File_Decision4_050926.dta``. It is a trait (Decision 4 Flexibility,
   ``config/trait_requirements.yaml``) and therefore also a copula column.
-* ``income`` (``data/stata_incomes.csv``) - the professor's ONE fixed continuous
-  income per participant, identical across his Decision 1 / 2 / 4 Stata files.
+* ``income`` (``data/stata_incomes.csv``) - the ONE fixed continuous income per
+  participant, identical across the reference Decision 1 / 2 / 4 Stata files.
   :func:`original_data` carries it next to the traits, so the Research modes find
-  it already cached in ``get_agent_income()`` and reproduce his files instead of
+  it already cached in ``get_agent_income()`` and reproduce those files instead of
   drawing a fresh income. Copula agents have no Participant ID and keep the
   Page-1 generated income.
 
@@ -49,9 +48,9 @@ _ROOT = Path(__file__).resolve().parents[2]
 SURVEY_PATH = _ROOT / "data" / "Student Survey Results - Period 1.xlsx"
 EXPERIMENT_PATH = _ROOT / "data" / "Student Experiment Results - Period 1-2.xlsx"
 REQ_PATH = _ROOT / "config" / "trait_requirements.yaml"
-# Per-participant SD in actions per cycle (Decision 4 Flexibility; professor's .dta).
+# Per-participant SD in actions per cycle (Decision 4 Flexibility; Stata_File_Decision4_050926.dta).
 STDACTIONS_PATH = _ROOT / "data" / "stata_stdactions.csv"
-# The professor's fixed per-participant continuous income (Decision 1 / 2 / 4 .dta).
+# The fixed per-participant continuous income of the reference Decision 1 / 2 / 4 .dta files.
 INCOMES_PATH = _ROOT / "data" / "stata_incomes.csv"
 
 # Caches (populated on first use)
@@ -125,7 +124,7 @@ def merged() -> pd.DataFrame:
 
 def original_data() -> pd.DataFrame:
     """
-    The master traits for the 280 participants, plus the professor's fixed ``income``
+    The master traits for the 280 participants, plus the reference files' fixed ``income``
     column when it is available, ``dropna``-ed on the TRAIT columns only — identical to
     the Sep-2026 original's ``merged[traits + ['income']].copy().dropna(subset=traits)``
     in OrchestratorBaseline / OrchestratorDocMode, so the 280-participant selection

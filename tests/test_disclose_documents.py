@@ -1,15 +1,15 @@
 """
 Validation tests for Decision 2: Disclose Documents.
 
-The deterministic privacy-calculus model is validated against the professor's CORRECTED
+The deterministic privacy-calculus model is validated against the CORRECTED reference
 Stata Decision 2 results (two document coefficient errors fixed + intercept beta0 = -0.75):
 - CATEGORICAL: 76/280 = 27.14% disclosure (every per-allowance-level cell).
 - CONTINUOUS:  63/280 = 22.50% disclosure, using the FROZEN income realization
-  (data/stata_incomes.csv == the professor's `income` column). Continuous income is a
+  (data/stata_incomes.csv == the reference file's `income` column). Continuous income is a
   fresh random draw at simulation time, so it is only reproducible bit-for-bit against
   the frozen income (see notes.md).
 
-If the professor's corrected `.dta` is present locally, we also assert the model matches his
+If the corrected reference `.dta` is present locally, we also assert the model matches its
 `disclosedoc_cont` / `disclosedoc_categorical` columns participant-by-participant.
 """
 import os
@@ -24,12 +24,12 @@ from src.decisions.disclose_documents_stochastic import (
 )
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SURVEY = os.path.join(REPO, "Student Survey Results - Period 1.xlsx")
-EXPERIMENT = os.path.join(REPO, "Student Experiment Results - Period 1-2.xlsx")
+SURVEY = os.path.join(REPO, "data", "Student Survey Results - Period 1.xlsx")
+EXPERIMENT = os.path.join(REPO, "data", "Student Experiment Results - Period 1-2.xlsx")
 FROZEN_INCOME = os.path.join(REPO, "data", "stata_incomes.csv")
 PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 2_260626 - CORRECTED.dta"
 
-# Document / professor gold targets (CORRECTED model: fixed coeffs + beta0 = -0.75)
+# Document / reference gold targets (CORRECTED model: fixed coeffs + beta0 = -0.75)
 DOC_CATEGORICAL = {12: 89.47, 32: 39.34, 72: 1.92, 128: 0.0, 200: 0.0}
 DOC_CONTINUOUS = {12: 78.95, 32: 27.87, 72: 1.92, 128: 0.0, 200: 0.0}
 
@@ -106,7 +106,7 @@ def test_continuous_reproduces_professor_table_with_frozen_income(merged, dd_par
 
 @pytest.mark.skipif(not os.path.exists(PROF_DTA), reason="professor's Decision 2 .dta not present")
 def test_matches_professor_dta_columns(merged, dd_params):
-    """Model matches the professor's disclosedoc_cont / disclosedoc_categorical 280/280."""
+    """Model matches the reference .dta's disclosedoc_cont / disclosedoc_categorical 280/280."""
     p = pd.read_stata(PROF_DTA)
 
     # categorical
@@ -117,7 +117,7 @@ def test_matches_professor_dta_columns(merged, dd_params):
     ])
     assert int((cat == p["disclosedoc_categorical"].astype(int).values).sum()) == 280
 
-    # continuous (professor's own income column)
+    # continuous (the reference file's own income column)
     params_cont = copy.deepcopy(dd_params); params_cont["income_mode"] = "continuous"
     inc = p["income"].astype(float).values
     sim_config = {"income_stats": {"mean": float(np.mean(inc)), "sd": float(np.std(inc, ddof=1))}}

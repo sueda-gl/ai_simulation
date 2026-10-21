@@ -23,8 +23,8 @@ Two things are covered here.
    tabs' reset buttons, so a reader could land inside a non-atomic write. The
    September 2026 original closed that window with a retrying reader and an
    atomic writer (app.models.read_yaml_config / write_yaml_config). In the
-   migrated app the window does not exist: the app never writes the file
-   (ruling R11), so instead of porting the reader/writer the last tests pin
+   current app the window does not exist: the app never writes the file,
+   so instead of porting the reader/writer the last tests pin
    down that no UI action - every reset button included - changes the file,
    and that no YAML writer exists under app/.
 
@@ -82,7 +82,7 @@ STOCHASTIC_SLIDERS = [
 @pytest.fixture(autouse=True, scope="module")
 def preserve_decisions_yaml():
     """Safety net: never leave config/decisions.yaml changed (the app does not write
-    it - R11 - and test_no_ui_action_writes_the_config_file asserts that)."""
+    it, and test_no_ui_action_writes_the_config_file asserts that)."""
     original = DECISIONS_YAML.read_bytes()
     try:
         yield
@@ -109,7 +109,7 @@ def page2(decisions=None):
 
 
 def assert_intact(at, note, decisions=None):
-    """The three invariants the professor's glitch violates."""
+    """The three invariants the reported glitch violates."""
     decisions = list(DECISIONS if decisions is None else decisions)
     assert not at.exception, (
         f"{note}: script raised "
@@ -220,7 +220,7 @@ def test_per_quintile_sliders_keep_the_session():
 
 
 # ---------------------------------------------------------------------------
-# 2. the same toggles after the navigation / mode changes the professor uses
+# 2. the same toggles after the navigation / mode changes a user makes
 # ---------------------------------------------------------------------------
 def test_toggle_survives_a_page1_round_trip():
     at = page2()
@@ -338,7 +338,7 @@ def test_toggle_then_change_the_decision_selection():
 
 
 # ---------------------------------------------------------------------------
-# 3. the config-file race: in the migrated app the file is never written (R11)
+# 3. the config-file race: in the current app the file is never written
 # ---------------------------------------------------------------------------
 def test_no_ui_action_writes_the_config_file():
     """Every reset button, plus a round of stochastic toggles: config/decisions.yaml
@@ -358,7 +358,7 @@ def test_no_ui_action_writes_the_config_file():
 
 
 def test_no_yaml_writer_under_app():
-    """R11: nothing under app/ dumps YAML (the September atomic writer is not needed)."""
+    """Nothing under app/ dumps YAML (the September atomic writer is not needed)."""
     offenders = [str(p.relative_to(REPO_ROOT)) for p in (REPO_ROOT / "app").rglob("*.py")
                  if "yaml.dump" in p.read_text() or "safe_dump" in p.read_text()]
     assert not offenders, offenders

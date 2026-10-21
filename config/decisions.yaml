@@ -76,7 +76,7 @@ donation_default:
       '5': 1.0
     in_copula: false
     raw_output: false
-  # NOT READ by the engine (ruling R-D3). The final 0-1 rescale is the methodology doc's
+  # NOT READ by the engine. The final 0-1 rescale is the methodology doc's
   # section 6 step 4: score_k = max(draw_k, 0) / max_j max(draw_j, 0), the population
   # MAXIMUM of the floored draws (src/engine/core.py, Pass-1 hook). The doc's "99%" sentence
   # is a prose summary that its own formula and Stata steps do not use, so percentile_max
@@ -89,7 +89,7 @@ donation_default:
     - 1
     income_mode: categorical
     beta_income_linear: 0.0256
-  # Doc section 5 rescaling (ruling R-D3): s100 = (x - min) / (max - min) with the min/max of
+  # Doc section 5 rescaling: s100 = (x - min) / (max - min) with the min/max of
   # the 280 participants, fixed here like every other 280-sample statistic the app uses.
   # predicted_range = r(min) / r(max) of `predict predprosocial` after each final regression
   # (re-computed from Stata_File_Decision 1_Updated.dta by experiments/d3_doc_reference.py).
@@ -98,7 +98,7 @@ donation_default:
     predicted_range:
       categorical: [-0.5084039942, 8.5422410303]
       continuous: [-1.2783853173, 8.7549317689]
-  # Doc regressor i.studyprogramcategorycat (ruling R-D3). Agents with a `Study Program
+  # Doc regressor i.studyprogramcategorycat. Agents with a `Study Program
   # Category` trait (Research modes) use it directly; copula agents carry only `Study
   # Program`, which maps to exactly one category in the 280-participant data.
   study_program:
@@ -145,7 +145,7 @@ disclose_income:
     honesty_humility: 0.0295482
     religious: 0.0677157
   equation2_coefficients:
-    extraversion: 0.00680238        # owner ruling 2026-10-07: September/Andrei values (Andrei_Fix_Issue doc)
+    extraversion: 0.00680238        # Decision 1 document of 11 Feb 2026 (110226, corrected Extraversion weight)
     neuroticism: 0.0173732
     honesty_humility: 0.0163905
     income: -0.008988
@@ -223,7 +223,7 @@ disclose_documents:
     neuroticism: -0.024781455105683    # CORRECTED (was -0.022306825775166)
     agreeable: -0.016923520441338      # CORRECTED (was -0.016604320441445)
     personal_incentive: 0.14735467793568
-  intercept: -0.75                     # professor's updated default (was -0.5)
+  intercept: -0.75                     # the Decision 2 document's updated default (was -0.5)
   income_mode: Categorical only
   z_scoring:
     ExtraversionBig5:
@@ -250,7 +250,7 @@ disclose_documents:
       sd: 0.15115619105427494   # CORRECTED coeffs; fallback only, recomputed at runtime (was 0.1509454399)
   # sigma derived from consumedtransferssospeso2periods (two-period sospeso + transfer consumption).
   # Reconstruct/verify these constants from the raw experiment files: `python -m src.build_dd_sigma`.
-  # NOTE: Period 2 is merged by ROW POSITION, not Participant ID — see notes.md / build_dd_sigma.py.
+  # NOTE: Period 2 is merged by ROW POSITION, not Participant ID — see src/build_dd_sigma.py.
   stochastic:
     sigma_strategy: overall
     sigma_overall: 0.1606568355
@@ -327,9 +327,9 @@ rejected_transaction_defaults:
       neuroticism: -0.025388697852
       income: 0.006874197106
     flexibility:               # IVW pooling (doc rev 040926-2 Section 5); priority 2 > 4 > 3 > 1 > 5
-      extraversion: 0.0206     # O/N/A: the arithmetically corrected values adopted in the
-      openness: 0.0294118      # professor's 2026-09 review; rev 040926-2 wrote them into the
-      neuroticism: -0.04921357 # document and Stata_File_Decision4_050926.dta now embeds them
+      extraversion: 0.0206     # O/N/A: the arithmetically corrected values that rev 040926-2
+      openness: 0.0294118      # wrote into the document and that
+      neuroticism: -0.04921357 # Stata_File_Decision4_050926.dta embeds
       agreeable: 0.04339814    # (the old literals 0.0293241 / -0.053781925 / 0.04921357 are
       conscientiousness: 0.04811179   # obsolete - the file reproduces 280/280 with these)
   # Income mode: 'continuous' (default, .dta-verified) or 'categorical'.
@@ -352,8 +352,8 @@ rejected_transaction_defaults:
       level_5: 0.0179812
   # Segment s (1..5) receives the tail seq[5-s:]: segment 5 (highest scores) gets the full
   # list starting with the top option, segment 1 (lowest) only the last option, list length 1.
-  # The professor instructed this direction on 2026-09-16; doc rev 040926-2 rewrote every
-  # `replace choice<p>_*` statement accordingly and Stata_File_Decision4_050926.dta's stored
+  # Doc rev 040926-2 rewrote every `replace choice<p>_*` statement in this direction
+  # and Stata_File_Decision4_050926.dta's stored
   # choice1..5_* columns now equal these lists exactly (280/280 for every mechanism).
   priority_sequences:
     loyalty: [3, 1, 4, 5, 2]
@@ -365,9 +365,9 @@ rejected_transaction_defaults:
   # beta1 (loyalty, on the standardized weighted_loyalty = std(bs)), beta2 (WTP, on
   # the standardized score), beta3 (risk_taking, on the standardized score), beta4
   # (flexibility, on the standardized CALCULATED score before the 25/75 anchoring).
-  # App defaults: all five 0. TTP beta0 = 0 as in the owner's September 2026 version
-  # (owner ruling 2026-10-07; it was 0.05 - the doc's stated default - from 2026-08
-  # until the professor's 2026-09-17 review), still applied on the RAW composite; the
+  # App defaults: all five 0. TTP beta0 = 0 (the doc's stated default is 0.05, but on the
+  # RAW composite, whose span over the 280 is only ~0.21, that lengthened every list by
+  # ~1.43 positions; 0 reproduces the Stata file), still applied on the RAW composite; the
   # other four are doc placeholders 'XXX'. The Stata
   # file embeds no intercept: with ALL FIVE set to 0 the model reproduces
   # Stata_File_Decision4_050926.dta 280/280. FIXED-CUTOFF semantics: the
@@ -414,16 +414,17 @@ rejected_transaction_defaults:
   # (the doc's earlier "(6.494119/18)" numerator typo is gone); wtp 0.4526575455 =
   # 0.3815586667*1.186338 from the range 6.868056 (supersedes the rev-280826 0.45265807275
   # derived from 6.868064; 1.2e-6 relative).
-  # TWO ARITHMETIC SLIPS inside rev 040926-2's own tables, followed DOC-LITERALLY and
-  # flagged to the professor: (a) risk_taking sigma_overall - the doc prints
+  # TWO ARITHMETIC SLIPS inside rev 040926-2's own tables, followed DOC-LITERALLY:
+  # (a) risk_taking sigma_overall - the doc prints
   # "0.332208167 x 1.1863376 = 0.39522204" but that product is 0.39411104 (result 1.1e-3
   # too high; the RT quintile column IS consistent with the factor); (b) the loyalty
   # sigma_quintile column - the doc's factor 0.393239139 and Total row agree, but all
   # five per-allowance entries are the previous revision's column (factor 0.357334167)
   # multiplied once more by 1.0228235, implying 0.365489783. TTP / WTP / Flexibility are
-  # internally consistent throughout. See docs/d4_alignment_050926_2026-09-16.md.
+  # internally consistent throughout.
   # sigma coefficient defaults (scale_factor / quintile_scale_factors): 0.5 for every element and
-  # every budget level - owner ruling 2026-10-07 (updated user manual; was 1.0). The tab applies
+  # every budget level, as the platform documentation specifies (docs/reference/COOPECON AI
+  # Agent Documentation 2026-10-07.docx, Decision 4; was 1.0). The tab applies
   # ONE decision-wide coefficient set, so the five elements must carry the same values.
   stochastic:
     sigma_value: 0             # >0 enables draws in Research Specification mode

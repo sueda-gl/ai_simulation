@@ -6,8 +6,8 @@ rejected_transaction_defaults().
 Spec: "Decision 4 - Rejected Transaction Defaults" rev 040926-2, Section 6 -
 Kemeny-Young consensus (minimum total Kendall-tau distance over the 120 orderings,
 equal weights) with the tie-break hierarchy Schulze -> Copeland -> footrule -> random,
-then truncation to the TTP choice length and at Option 5. The professor's "Ranking
-Cascade Results (V1)" report gives the reference stage shares over 100,000 random
+then truncation to the TTP choice length and at Option 5. The reference report "Ranking
+Cascade Results (V1)" gives the reference stage shares over 100,000 random
 complete-ranking cases (Kemeny alone 7.7%, Schulze 0.0%, Copeland 43.3%, Footrule
 22.7%, last resort 26.3%; final ranking Kemeny-optimal in 99.93%). Section 6 is
 UNCHANGED in rev 040926-2; the inputs it reconciles moved, because rev 040926-2
@@ -238,7 +238,7 @@ def test_integrate_default_list_combines_both_steps():
 
 
 # ---------------------------------------------------------------------------
-# Hand-checked cases (migration port, 2026-10-06). Each expected value below was
+# Hand-checked cases. Each expected value below was
 # worked out by hand from the doc's Section 6 text, independently of the module.
 # ---------------------------------------------------------------------------
 def test_hand_case_three_against_one_is_a_unique_kemeny_ranking():
@@ -320,7 +320,7 @@ def gold():
 def params():
     with open(DECISIONS_YAML) as f:
         cfg = yaml.safe_load(f)
-    # no 'model_enabled' switch (ruling R23): the model runs whenever selected
+    # no 'model_enabled' switch: the model runs whenever selected
     return dict(cfg["rejected_transaction_defaults"])
 
 
@@ -452,7 +452,7 @@ def test_default_template_path_ignores_aggregation(gold, params, sim_config):
 
 
 # ---------------------------------------------------------------------------
-# Section-6 inputs are COMPLETE rankings (professor 2026-09-17)
+# Section-6 inputs are COMPLETE rankings
 # ---------------------------------------------------------------------------
 def test_complete_ranking_for_segment_rotates_the_priority_sequence():
     """Doc Section 6: the aggregation reconciles "four complete rankings of the five
@@ -492,7 +492,7 @@ def test_aggregation_is_fed_complete_rankings_not_the_element_lists(gold, params
 
 
 def test_complete_rankings_cut_the_random_last_resort(gold, params, sim_config):
-    """The professor's "close to 50% resolved randomly" came from feeding the aggregation
+    """The reported "close to 50% resolved randomly" came from feeding the aggregation
     the TRUNCATED element lists: most option pairs then have a zero pairwise margin and no
     method can separate them. With the document's complete rankings the random share falls
     to roughly a third, near the document's own 100,000-case figure of 26.3%."""

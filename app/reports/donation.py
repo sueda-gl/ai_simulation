@@ -1,22 +1,17 @@
 # app/reports/donation.py
 """Pure builders behind the donation results exports (Decisions 3 and 13).
 
-Everything here was moved VERBATIM out of
-`app/pages/results/visualizations/donation_viz.py`: same rounding, same column
-order, same sheet names, same openpyxl number formats. The only edits are the
-ones the report-module convention asks for:
-
-* `st.session_state.vendors` became the explicit `vendors` argument of
-  :func:`build_donation_transaction_export`;
-* the base time / period duration / period count its `TimestampConverter` used
-  to read out of session state are explicit arguments, so this module stays
-  Streamlit-free and builds the (pure) converter itself;
-* the `st.*` calls were replaced by return values.
+The sheet frames and workbook bytes behind
+`app/pages/results/visualizations/donation_viz.py`. The vendor list is the
+explicit `vendors` argument of :func:`build_donation_transaction_export`, and
+the base time / period duration / period count of its `TimestampConverter` are
+explicit arguments, so this module stays Streamlit-free and builds the (pure)
+converter itself.
 
 No Streamlit, no session state: pandas / numpy / openpyxl only.
 
 The workbook plumbing (`to_xlsx_bytes`) and the donation number formatter
-live in `app/reports/xlsx.py` (B1); this module imports them rather than
+live in `app/reports/xlsx.py`; this module imports them rather than
 keeping its own copy.
 """
 from datetime import datetime
@@ -136,9 +131,9 @@ def build_donation_transaction_export(
     misleading. The donation rate (percentage) is the meaningful decision output.
 
     `vendors` is the vendor list the page reads off session state; `base_time`,
-    `duration_hours` and `periods` are the three session values the page's
-    `TimestampConverter` used to read for itself (`get_simulation_base_time()`,
-    `get_duration_hours()`, `get_periods()`), so the converter can be built here.
+    `duration_hours` and `periods` are the three session values the page reads with
+    `get_simulation_base_time()`, `get_duration_hours()` and `get_periods()`, so
+    the converter can be built here.
     """
     transaction_records = []
 
@@ -157,11 +152,11 @@ def build_donation_transaction_export(
                 vendor_lookup[vendor_id] = vendor
                 vendor_lookup[str(vendor_id)] = vendor
 
-    # Calculate standard prices (legacy fallback using market_price)
+    # Customer Price rule (COOPECON AI Agent Documentation 2026-10-07): Purchase Now =
+    # (1 + price_range) x (1 + platform_markup) x vendor_price, Bid = the bid value,
+    # Fixed / Discount = N/A. The market price is the fallback when no vendor is named.
     baseline_price = (1 + platform_markup) * market_price
-    pn_price = (1 + price_range) * baseline_price  # PN price = max bid price
-    discount_price = market_price * 0.7  # Assume 30% discount
-    fixed_price = market_price  # Fixed price = market price
+    pn_price = (1 + price_range) * baseline_price
 
     for idx, row in df.iterrows():
         # Get agent information
@@ -254,23 +249,18 @@ def build_donation_transaction_export(
                 elif str(lookup_key) in vendor_lookup:
                     vendor_price = vendor_lookup[str(lookup_key)].get('price')
 
-            # Recalculate PN price based on actual vendor price if available
-            current_pn_price = pn_price  # Default to market-based
-            current_fixed_price = fixed_price
-            current_discount_price = discount_price
-
+            # PN price from the vendor's own price when the request names a vendor
+            current_pn_price = pn_price  # market-price fallback
             if vendor_price is not None:
                 v_baseline = (1 + platform_markup) * vendor_price
                 current_pn_price = (1 + price_range) * v_baseline
-                current_fixed_price = vendor_price
-                current_discount_price = vendor_price * 0.7
 
             if platform_price == 'DISCOUNT' or customer_type.lower() == 'discount':
                 purchase_request_type = 'Discount'
-                customer_price = current_discount_price
+                customer_price = np.nan  # set by the platform algorithm; exported as N/A
             elif platform_price == 'FIXED' or customer_type.lower() == 'fixed':
                 purchase_request_type = 'Fixed'
-                customer_price = current_fixed_price
+                customer_price = np.nan  # set by the platform algorithm; exported as N/A
             elif platform_price == 'PN':
                 purchase_request_type = 'PN'
                 customer_price = current_pn_price

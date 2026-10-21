@@ -3,7 +3,7 @@
 The single simulation engine.
 
 One two-pass loop (the body of the former src/orchestrator.py:69-272) serves every
-population mode; the per-mode differences that survived the owner rulings live in
+population mode; the per-mode differences that remain live in
 :class:`src.engine.profile.ModeProfile`.
 
 RNG scheme (unchanged, parity-critical):
@@ -145,8 +145,8 @@ class Engine:
             return agents_df
 
         if agents_df is None:
-            # Research modes (ruling R-CYC, owner clarification 2026-10-07): Specification
-            # random from default_rng(seed), Baseline file order cycling - the app's rule
+            # Research modes: Specification random from default_rng(seed), Baseline file
+            # order cycling - the same rule as the app (src/engine/sampling.py)
             return sample_participants_internal(self.original_data, n_agents, seed,
                                                 self.profile.random_sample)
         return agents_df
@@ -217,7 +217,7 @@ class Engine:
                 self.simulation_config['dd_cont_stats'] = dd_cont_stats
                 log(f"Computed continuous DD stats: mean={dd_cont_stats['mean']:.6f}, sd={dd_cont_stats['sd']:.6f}")
 
-        # Decision 3 population maximum (ruling R-D3): the methodology doc's section 6
+        # Decision 3 population maximum: the methodology doc's section 6
         # step 4 rescales every agent's floored draw by the population maximum,
         # score_k = max(draw_k, 0) / max_j max(draw_j, 0), in every mode. The maximum must
         # be known before Pass 2, because Decisions 6 and 13 read donation_default inside
@@ -317,8 +317,9 @@ class Engine:
 
         self.simulation_config['income_median'] = float(np.median(all_incomes))
         # Income SD is the SAMPLE SD (ddof=1), matching Stata `egen z_net_income = std(income)`
-        # used for the continuous-income z-scores of Decisions 1 and 2 (owner ruling R-SD,
-        # 2026-09-04). Guarded like compute_rtd_population_stats: with fewer than two
+        # used for the continuous-income z-scores of Decisions 1 and 2 (the reference
+        # Decision 2 .dta's z_net_income is the sample-SD z-score). Guarded like
+        # compute_rtd_population_stats: with fewer than two
         # incomes fall back to the population formula (0.0 for a single agent).
         self.simulation_config['income_stats'] = {
             'mean': float(np.mean(all_incomes)),

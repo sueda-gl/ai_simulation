@@ -1,5 +1,5 @@
 """
-Monte-Carlo uses exactly the run plan of a single run (app/seam/mc.py, Q-29 fixed).
+Monte-Carlo uses exactly the run plan of a single run (app/seam/mc.py).
 
 Before 2026-10-07 the Monte-Carlo subprocess received only population / income /
 anchor weight on its command line, so every Page-2 tab setting (Decision 4's
@@ -199,8 +199,8 @@ def test_app_monte_carlo_passes_the_single_run_plan(monkeypatch):
 
 
 def test_mc_repetitions_resample_research_specification(single_run):
-    """Owner clarification of R-CYC (2026-10-07): Research Specification samples the
-    participants randomly from the run seed. Repetition i of a study (seed base_seed + i)
+    """Research Specification samples the participants randomly from the run seed.
+    Repetition i of a study (seed base_seed + i)
     therefore draws its own random subset - the one a single run with that seed draws -
     while repetition base_seed reproduces the single run's agents (test above)."""
     from app.seam.execute import sample_agents

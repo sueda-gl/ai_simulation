@@ -1,5 +1,5 @@
 """
-Lavie 2026-10: "For the Options List Length results, the graph for Tendency to Plan
+Reported problem: "For the Options List Length results, the graph for Tendency to Plan
 score for Research Spec is identical to that for Research Baseline even though the
 statistics are different. This problem occurs for all the other decision elements as
 well."

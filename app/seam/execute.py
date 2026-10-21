@@ -2,11 +2,11 @@
 """
 Run a RunPlan against the engine.  No Streamlit anywhere in here.
 
-Per sub-run (exactly what the former mode runners did, in the same order):
+Per sub-run, in this order:
   1. sample the agents - copula: TraitEngine().sample(n, seed);
      research: load_original_participants(n, seed, random_sample) - Specification
-     random (seeded), Baseline the 280 in file order, cycling (R-CYC, clarified)
-  2. build Engine(PROFILES[population]) (a fresh yaml load, as each Orchestrator() was)
+     random (seeded by the run seed), Baseline the 280 in file order, cycling
+  2. build Engine(PROFILES[population]) (a fresh yaml load per sub-run)
   3. replace its decisions dict with a deep copy of the loaded file + the plan's patches
   4. simulation_config['simulation'] <- simulation_params; random_decisions /
      default_decisions <- the SAME decision_settings object; purchasing_limits
@@ -36,8 +36,8 @@ def sample_agents(population: str, n_agents: int, seed: int) -> pd.DataFrame:
     if population == "copula":
         return TraitEngine().sample(n_agents, seed)
     if population in ("documentation", "baseline"):
-        # Ruling R-CYC (owner clarification 2026-10-07): Research Specification samples
-        # randomly from default_rng(seed); Research Baseline cycles in file order
+        # Research Specification samples randomly from default_rng(seed); Research
+        # Baseline cycles through the participants in file order
         return load_original_participants(n_agents, seed,
                                           random_sample=(population == "documentation"))
     raise ValueError(f"Unknown population {population!r}")
@@ -49,9 +49,8 @@ def configure_engine(engine: Engine, sub_run: SubRun, config_repo: DecisionsConf
     Apply one sub-run's patches and simulation settings to a fresh Engine.
 
     ``custom_decisions`` (the run's metadata.custom_decisions) is written to
-    simulation_config['custom_decisions'] exactly as the legacy
-    _apply_decision_settings wrote st.session_state.custom_decisions; None
-    leaves the key alone.
+    simulation_config['custom_decisions'] so it travels into
+    df.attrs['simulation_config']; None leaves the key alone.
     """
     engine.config = apply_patches(config_repo.fresh_decisions_dict(), sub_run.decision_config_patches)
 
@@ -67,8 +66,8 @@ def configure_engine(engine: Engine, sub_run: SubRun, config_repo: DecisionsConf
     if sub_run.purchasing_limits is not None:
         simulation_config["purchasing_limits"] = sub_run.purchasing_limits
 
-    # Pass information about custom vs default decisions (df.attrs parity with
-    # the legacy runner: custom_decisions is written before default_decisions_list)
+    # Pass information about custom vs default decisions (custom_decisions is written
+    # before default_decisions_list so the key order in df.attrs['simulation_config'] is stable)
     if custom_decisions is not None:
         simulation_config["custom_decisions"] = list(custom_decisions)
 
@@ -104,8 +103,9 @@ def execute(plan: RunPlan, config_repo: Optional[DecisionsConfig] = None) -> Dic
 def verify_saved_expectations(expectations: Sequence[SavedExpectation],
                               results: Dict[str, pd.DataFrame]) -> Tuple[SavedExpectation, ...]:
     """
-    R14: recompute each pinned decision's output-column hash on the run's result
-    and return the expectations that were NOT reproduced.  An expectation whose
+    Recompute each pinned decision's output-column hash on the run's result
+    and return the expectations that were NOT reproduced (a pinned decision
+    must reproduce the run it was pinned from).  An expectation whose
     result key or columns are absent from the results cannot be checked and is
     not reported.
     """

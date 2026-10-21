@@ -1,7 +1,7 @@
 """
 UI / plumbing tests for the Decision 4 results display and exports.
 
-Covers the professor's 2026-09 display specification:
+Covers the Decision 4 display specification:
 
 - score histograms use Stata's DEFAULT bin rule, k = int(min(sqrt(N), 10*ln(N)/ln(10)))
   (truncated, capped at 16) equal-width bins spanning min..max, y-axis DENSITY like
@@ -75,10 +75,10 @@ def rtd_frame_cat():
 def test_density_hist_uses_stata_default_bins_and_probability_normalisation(monkeypatch):
     """Stata's default rule - k = int(min(sqrt(N), 10*ln(N)/ln(10))) equal-width bins
     spanning min..max - CAPPED at 16, the rule's value for the 280 participants
-    (professor 2026-09-17: 30 bins at 1,000 agents were too fine to compare with the
+    (30 bins at 1,000 agents were too fine to compare with the
     document's figures), so N = 500 (rule: 22) and N = 1000 (rule: 29) draw 16 bins;
-    N = 280 -> 16 either way. The y-axis is DENSITY, Stata's histogram default (owner
-    ruling 2026-10): height = count / (N * width), so the bar AREAS sum to 1.
+    N = 280 -> 16 either way. The y-axis is DENSITY, Stata's histogram default:
+    height = count / (N * width), so the bar AREAS sum to 1.
 
     Stata-parity of the bin counts themselves lives in
     tests/test_rtd_histogram_stata_parity.py."""
@@ -226,7 +226,7 @@ INTEGRATED_SHEET_COLUMNS = [
 
 def test_whole_decision_workbook_sheets_and_columns(rtd_frame):
     sheets = _prepare_rtd_model_export(rtd_frame)
-    # professor 2026-09: ONE merged integrated sheet first (the old separate
+    # ONE merged integrated sheet first (the old separate
     # 'All Elements' sheet is gone), then one self-contained sheet per element
     assert list(sheets.keys()) == ['Integrated Default List', 'Options List Length',
                                    'Loyalty', 'Willingness-to-Pay', 'Risk-Taking',

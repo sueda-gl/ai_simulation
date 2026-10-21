@@ -10,7 +10,7 @@ donation_default:
   - Honesty_Humility                        # continuous variable (hh in regression)
   - Assigned Allowance Level                # allocated income variable from experiment
   - Study Program                           # study program indicator (copula agents: mapped to its category)
-  - Study Program Category                  # doc regressor i.studyprogramcategorycat (ruling R-D3).
+  - Study Program Category                  # doc regressor i.studyprogramcategorycat.
                                             # Not in the fitted copula (config/trait_model.pkl); copula
                                             # agents derive it from Study Program via
                                             # decisions.yaml donation_default.study_program.program_to_category.
@@ -41,7 +41,7 @@ disclose_documents:
   # Income/allowance handled via Assigned Allowance Level (categorical) or the generated
   # `income` (continuous). NOTE: Total Allowance is DERIVED from Assigned Allowance Level
   # (not sampled), and the stochastic sigma is a fixed config constant (not a per-agent
-  # trait) - so no extra copula columns are required. See notes.md.
+  # trait) - so no extra copula columns are required.
   - ExtraversionBig5
   - NeuroticismBig5
   - Agreeable
@@ -54,7 +54,7 @@ rejected_transaction_defaults:
   # + continuous income (runtime-generated from Assigned Allowance Level, like the
   # disclose_* decisions) + stdactions (observed SD in the number of actions per
   # cycle over the eight experiment cycle-weeks; 25% anchor of the Cognitive
-  # Flexibility score, doc Section 5; sourced from the professor's Stata file via
+  # Flexibility score, doc Section 5; sourced from Stata_File_Decision4_050926.dta via
   # data/stata_stdactions.csv because the experiment workbook has no per-cycle counts).
   # NOTE: adding a trait requires retraining the copula (scripts/train_copula.py) -
   # synthetic populations change for ALL decisions (ConscientiousnessBig5/Education

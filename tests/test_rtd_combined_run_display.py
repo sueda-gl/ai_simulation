@@ -1,7 +1,7 @@
 """
 Complete (combined) simulation with Decision 4 as the customised decision.
 
-Per the professor's 2026-09 display specification the Decision 4 section of such a run
+Per the display specification, the Decision 4 section of such a run
 shows ONLY the integrated results - the "% of agents with default list length" chart
 with its table and the "% of first integrated default option" chart with its table and
 the option explanations. No element sections, no descriptive paragraph, no tie
@@ -11,13 +11,13 @@ in the run's agent-level Excel.
 It must also never show the other decisions' analyses (donation rate, disclose income,
 ...) or the comparison scaffolding - even when a comparison setting ("Compare both"
 income spec from the Decision 4 tab, or "Compare all" population mode) is still active
-in the session from an earlier individual run. Regression for the professor's
-screenshot (2026-09-04): the Decision 4 section of a complete run rendered "Categorical
+in the session from an earlier individual run. Regression for a reported
+screenshot: the Decision 4 section of a complete run rendered "Categorical
 Income Treatment" + "Simulation Overview (Categorical)" + "Donation Rate Analysis".
 
-Ported from the original repo (e973a99) to the migrated layout: the participants come
-from src.engine.sampling (the app path, Q-30), the agent-level frame from
-app.reports.build_agent_level_dataframe, and the run shape from _run_metadata (R28).
+Ported from the original repo (e973a99) to the current layout: the participants come
+from src.engine.sampling (the app path), the agent-level frame from
+app.reports.build_agent_level_dataframe, and the run shape from _run_metadata.
 """
 
 
@@ -42,7 +42,7 @@ def _combined_run_script():
         st.session_state.custom_decisions = ['rejected_transaction_defaults']
         st.session_state.default_decisions = [d for d in ALL_DECISIONS
                                               if d != 'rejected_transaction_defaults']
-        # R28: what the run actually used (a complete run is single-mode)
+        # what the run actually used (a complete run is single-mode)
         st.session_state._run_metadata = {
             'effective_population_mode': 'Research Baseline',
             'effective_income_mode': 'categorical only',
@@ -103,7 +103,7 @@ def test_combined_run_decision4_section_shows_integrated_results_only():
     assert "Simulation Overview (Categorical)" not in text
     assert "Donation Rate Analysis" not in text
     assert "Disclose Income Analysis" not in text
-    # professor 2026-09-17: the complete simulation offers the same Decision 4 workbook
+    # the complete simulation offers the same Decision 4 workbook
     # as the whole-decision run
     labels = [str(e.label) for e in at.get("download_button")]
     assert labels.count("📊 Download Decision 4 Excel (all elements)") == 1
@@ -142,5 +142,5 @@ def test_combined_agent_level_export_carries_every_decision4_variable():
                 'rtd_integrated_settled_by', 'rtd_integrated_truncated_by',
                 'rtd_default_list_length'):
         assert col in columns, col
-    # "integrated", never "consensus" (professor 2026-09-17; Lavie #14)
+    # "integrated", never "consensus"
     assert not any('consensus' in c.lower() for c in columns)

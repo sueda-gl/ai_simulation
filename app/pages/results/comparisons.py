@@ -2,7 +2,8 @@
 """
 Comparison functions for different simulation modes.
 
-The grids are shaped by the run that produced the results (ruling R28): the
+The grids are shaped by the run that produced the results, not by the live
+mode keys: the
 RunContext says whether the run compared both income specifications, and which
 single income type its keys carry.
 """

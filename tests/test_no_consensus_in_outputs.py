@@ -1,5 +1,5 @@
 """
-Lavie #14 (professor 2026-10): user-facing outputs say "integrated", never "consensus".
+User-facing outputs say "integrated", never "consensus".
 
 The engine keeps its internal rtd_consensus_* model columns; every export and on-screen
 table renames them to rtd_integrated_*:

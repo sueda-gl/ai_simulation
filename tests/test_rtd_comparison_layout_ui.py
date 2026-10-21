@@ -91,7 +91,7 @@ ALL_SECTIONS = ("1️⃣ Options List Length (Tendency to Plan)",
                 "4️⃣ Risk-Taking Ranking",
                 "5️⃣ Flexibility Ranking")
 # Elements whose equations carry no income term: rendered ONCE when both income
-# treatments are on the page (professor 2026-09).
+# treatments are on the page.
 INCOME_FREE_SECTIONS = ("1️⃣ Options List Length (Tendency to Plan)",
                         "2️⃣ Loyalty Ranking",
                         "5️⃣ Flexibility Ranking")
@@ -148,7 +148,7 @@ def _assert_interleaved_two_groups(texts, first_detail_marker):
 
 def _assert_shared_overview_layout(texts, first_detail_marker):
     """Layout when the income-free elements are shared (whole-decision run, both
-    income treatments), professor 2026-09-17 - the overview sits ABOVE the graphs:
+    income treatments) - the overview sits ABOVE the graphs:
     Decision Results header < custom-parameters banner < ONE income-neutral overview
     row (per population mode) < Income-Independent Elements < Categorical title
     < categorical details < Continuous title < continuous details."""
@@ -219,7 +219,7 @@ def test_apptest_compare_all_compare_both_interleaved():
     for other in ALL_SECTIONS:
         if other != WTP_SECTION:
             assert other not in joined
-    # professor 2026-09: a ranking element's run has NO element headline metric
+    # a ranking element's run has NO element headline metric
     metric_labels = [m.label for m in at.metric]
     assert "Mean Willingness-to-Pay score" not in metric_labels
     assert "Avg. Options List Length" not in metric_labels
@@ -231,11 +231,11 @@ def test_apptest_compare_all_compare_both_interleaved():
     assert at.session_state['rtd_run_element'] is None
 
     texts = _ordered_texts(at)
-    # whole-decision run (professor 2026-09): every element section, then the
+    # whole-decision run: every element section, then the
     # integrated first-option chart, per result-key column - except the income-free
     # elements, which are identical under both income specifications and therefore
     # render ONCE per population mode above the treatment groups, with the overview
-    # row above them (professor 2026-09-17: overview above the graphs).
+    # row above them (overview above the graphs).
     joined = _assert_shared_overview_layout(texts, INTEGRATED_SECTION)
     assert _count(texts, INTEGRATED_SECTION) == 6  # one per result-key column
     idx_shared = _first_index(texts, "Income-Independent Elements")
@@ -403,7 +403,7 @@ def test_apptest_selected_config_hides_the_other_configurations():
 
 # ---------------------------------------------------------------------------
 # (e) Income-free per-element run under both income treatments: overview above
-#     the graphs (professor 2026-09-17)
+#     the graphs
 # ---------------------------------------------------------------------------
 def test_apptest_income_free_element_run_overview_above_graphs():
     """A per-element run of an income-free element (Flexibility) with Compare-both

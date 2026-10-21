@@ -1,13 +1,13 @@
 """
-Decision 3 (Default Donation Rate) against the methodology document (ruling R-D3).
+Decision 3 (Default Donation Rate) against the methodology document.
 
 Reference: "Donation_Rate_Decision_Methodology-2-1 250925.docx". The document is the ground
 truth; it has no .dta of its own, so its Stata commands (sections 3 and 5) and its section 6
-step 4 formula are re-implemented on the professor's 280-participant raw data
+step 4 formula are re-implemented on the reference Stata file's 280-participant raw data
 (Stata_File_Decision 1_Updated.dta) by experiments/d3_doc_reference.py and frozen in
 data/d3_doc_reference.csv (doc_final = score_k / 100 at sigma = 0).
 
-Owner ruling: the app keeps its defaults (adjustment shift -4.0, sigma coefficient 1.0), but
+The app keeps its defaults (adjustment shift -4.0, sigma coefficient 1.0), but
 with the document's parameters (shift 0, sigma 0 for the deterministic run) the engine must
 reproduce the document participant by participant, in both income modes.
 """
@@ -95,7 +95,7 @@ def doc_final(reference, mode, pids):
 # --------------------------------------------------------------------- reference integrity
 
 def test_frozen_reference_matches_the_doc_reimplementation():
-    """If the professor's .dta is present, the frozen CSV is exactly what the script derives."""
+    """If the reference .dta is present, the frozen CSV is exactly what the script derives."""
     if not os.path.exists(PROF_DTA):
         pytest.skip("professor's Stata_File_Decision 1_Updated.dta not present")
     import importlib.util
@@ -126,7 +126,7 @@ def test_config_coefficients_equal_the_doc(config, mode):
     assert config["regression_coefficients"][mode] == DOC_REPORTED[mode]
     for key, value in DOC_COEFFICIENTS[mode].items():  # module fallbacks mirror the doc too
         assert value == DOC_REPORTED[mode][key]
-    if mode == "categorical":  # the legacy flat block carries the categorical set
+    if mode == "categorical":  # the older flat block carries the categorical set
         legacy = config["regression"]
         for key in ("intercept", "beta_group", "beta_study", "beta_hh"):
             assert legacy[key] == DOC_REPORTED[mode][key]
@@ -142,7 +142,7 @@ def test_predicted_range_is_the_280_sample_min_max(config, reference, mode):
 
 
 def test_shipped_defaults_unchanged(config):
-    """Owner ruling R-D3: the app defaults stay; only bugs were fixed."""
+    """The app defaults stay; only bugs were fixed."""
     from app.seam import build_plan as bp
     from app.seam.config_repo import get_config_repo
     assert config["adjustment"]["shift_value"] == -4.0
@@ -242,7 +242,7 @@ def test_noise_gate_and_population_rescale(participants):
     assert np.abs(noisy - det).max() > 1e-3
     assert engine.simulation_config["donation_population_max"] > 0
 
-    # Research Baseline never adds noise (R5/R6), whatever sigma_value says
+    # Research Baseline never adds noise, whatever sigma_value says
     base, _ = run_engine("baseline", agents, "categorical", shift=0.0, sigma_value=sigma)
     assert np.abs(base - det).max() < 1e-12
 

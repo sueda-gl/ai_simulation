@@ -27,18 +27,16 @@ from app.pages.results.run_context import RunContext
 
 
 def _income_mode_suffix():
-    """Title suffix of the raw DI/DD histograms - the RUN's income mode (ruling R28).
+    """Title suffix of the raw DI/DD histograms - the RUN's income mode.
 
-    The three-way test below is the one the screen has always used, character for
-    character; only its INPUT changed.  It used to read the live
-    ``di_income_mode`` / ``dd_income_mode`` tab keys, which describe the NEXT run
-    the user is configuring, so a continuous run was captioned "(Categorical)"
-    whenever the tab still sat on its default.  It now reads the executed run's
-    own effective income mode off the run metadata (``RunContext``).
+    Reads the executed run's effective income mode off the run metadata
+    (``RunContext``), never the live ``di_income_mode`` / ``dd_income_mode`` tab
+    keys, which describe the NEXT run the user is configuring (a continuous run
+    would otherwise be captioned "(Categorical)" while the tab sat on its default).
 
-    Keeping the original branch - rather than collapsing it to a two-way
-    categorical/continuous test - matters for a "Compare both" run: that string
-    contains neither word, so the title carries NO suffix, exactly as before.
+    The three-way test - rather than a two-way categorical/continuous test -
+    matters for a "Compare both" run: that string contains neither word, so the
+    title carries NO suffix.
     """
     income_mode = RunContext.from_session().effective_income_mode
     if 'categorical' in str(income_mode).lower():

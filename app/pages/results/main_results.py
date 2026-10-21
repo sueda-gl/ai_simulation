@@ -4,8 +4,8 @@ Main results page rendering for the Enhanced AI Agent Simulation.
 
 Layout decisions (which grid, which sections, which frame feeds the export)
 come from the run that produced the results - ``RunContext`` over
-``st.session_state._run_metadata`` and the result frames (ruling R28) - never
-from the live Page-1 / Page-2 mode keys.
+``st.session_state._run_metadata`` and the result frames - never from the live
+Page-1 / Page-2 mode keys, which describe the run being configured.
 """
 import streamlit as st
 import pandas as pd
@@ -134,8 +134,8 @@ def render_rtd_compare_both_note(decision_name, ctx):
 
 
 def render_rtd_element_subtitle(decision_name, decision_number):
-    """Subtitle under the Decision 4 title when only ONE element was run (Lavie
-    2026-10), e.g. '4.1 Options List Length (Tendency to Plan)' - the element's
+    """Subtitle under the Decision 4 title when only ONE element was run,
+    e.g. '4.1 Options List Length (Tendency to Plan)' - the element's
     sub-tab number and name. Same heading class as the decision title (no extra
     weight or size); nothing for whole-decision or complete runs."""
     if decision_name != 'rejected_transaction_defaults':
@@ -238,7 +238,7 @@ def _render_overview_section(results_dict, ctx, has_explicit_donation_config):
                 st.metric("Avg Donation Rate", f"{df[donation_col].mean():.2%}")
             elif 'rtd_choice_length' in df.columns:
                 # Decision 4 model run: run-shape-aware headline metric (a per-element
-                # run of a ranking element has none - professor 2026-09)
+                # run of a ranking element has none)
                 from app.components import rtd_overview_metric
                 rtd_label, rtd_value = rtd_overview_metric(df)
                 if rtd_label:
@@ -265,7 +265,8 @@ def _render_overview_section(results_dict, ctx, has_explicit_donation_config):
 def render_single_run_results():
     """Render single run simulation results"""
 
-    # What was actually run (R28): modes, result keys, custom / default decisions
+    # What was actually run (not the live widgets): modes, result keys, custom /
+    # default decisions
     ctx = RunContext.from_session()
 
     # Show saved configuration info if donation_default has an explicitly saved config
@@ -311,8 +312,8 @@ def render_single_run_results():
 
     # Individual Decision 4 layout depends on the run shape:
     # - SINGLE-MODE runs (one result key): SUMMARY-FIRST - the overview renders at the
-    #   TOP of the page, before the detailed per-element sections (professor feedback:
-    #   the summary was landing at the end of a long page).
+    #   TOP of the page, before the detailed per-element sections (the summary used
+    #   to land at the end of a long page).
     # - COMPARISON runs (multiple result keys / Compare-all keys): the summary must be
     #   INTERLEAVED per income treatment (title -> overview row -> detail row), which
     #   render_rtd_comparison_results does inside the Decision Results section - so no
@@ -448,7 +449,7 @@ def render_single_run_results():
             st.write(f"- {st.session_state.sim_params.income_avg_type.title()}: ${st.session_state.sim_params.income_avg:.0f}")
             st.write(f"- Discount Threshold: ${st.session_state.sim_params.discount_income_threshold:.0f}")
             st.write(f"- Agents: {st.session_state.n_agents}")
-            # R27: the number of decisions THIS run executed (custom + default)
+            # the number of decisions THIS run executed (custom + default)
             st.write(f"- Decisions: {ctx.num_decisions}")
 
 

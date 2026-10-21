@@ -5,15 +5,15 @@ Two kinds of checks:
 
 1. Pure plan tests: dict snapshots go in, and the result keys, sub-run order,
    messages (verbatim), decisions_to_run, default_decisions_list and the
-   R14 expectations come out as specified.
+   saved-configuration expectations come out as specified.
 
 2. Parity with the pre-seam mapping code: the six ``_apply_*`` functions of
-   the last pre-migration ``app/simulation.py`` (commit 80ee344, extracted with
+   the original ``app/simulation.py`` (commit 80ee344, extracted with
    ``git show`` and executed against a stub ``st.session_state``) are run on a
    fake orchestrator, and the seam's patches - applied to a fresh copy of
    config/decisions.yaml - must produce the same decision blocks, except for
-   exactly the deltas the step's rulings prescribe (R10 flat coefficient set,
-   R12 sigma constant, R18 sigma_enabled default, no dead keys).
+   exactly the deltas the specification prescribes (flat coefficient set,
+   one sigma constant, sigma_enabled default on, no dead keys).
 """
 import copy
 import re
@@ -38,8 +38,8 @@ from app.seam.execute import configure_engine, execute, verify_saved_expectation
 from app.seam.snapshot import SessionSnapshot, take_snapshot
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-LEGACY_COMMIT = "80ee344"          # last pre-migration app/simulation.py
-# The owner's September 2026 work in the original repo (Decision 4: Flexibility element,
+LEGACY_COMMIT = "80ee344"          # original app/simulation.py before the port
+# The September 2026 work in the original repo (Decision 4: Flexibility element,
 # Section-6 rank aggregation, "Use This Config"). Decision 4's mapping is checked
 # against THIS version of app/simulation.py; every other mapping against LEGACY_COMMIT.
 SEPTEMBER_COMMIT = "e973a99"
@@ -83,7 +83,7 @@ def _donation_keys(repo):
 
 
 def _unsuffixed_donation_keys(repo, mode):
-    """The unsuffixed donation_coeff_* keys (what the legacy get_current_coefficients read)."""
+    """The unsuffixed donation_coeff_* keys (what the original get_current_coefficients read)."""
     suffix = "cont" if mode == "continuous" else "cat"
     return {k[:-len(suffix) - 1]: v for k, v in _donation_keys(repo).items() if k.endswith("_" + suffix)}
 
@@ -140,7 +140,7 @@ def defaults_message(plan):
     return next(m for m in plan.messages if m.kind == "success" and m.text.startswith("🎲"))
 
 
-# ------------------------------------------------------------------ legacy extraction
+# ---------------------------------------------------------- original-code extraction
 
 class _StubSessionState:
     """Attribute + item access over a dict, like st.session_state."""
@@ -186,7 +186,7 @@ _IMPORT_RE = re.compile(r"^(\s*)from app\.(?:pages\.decision_execution|models) i
 
 @pytest.fixture(scope="module")
 def legacy(default_values):
-    """The pre-migration mapping functions, bound to a stub session state."""
+    """The original mapping functions, bound to a stub session state."""
     import ast
 
     def functions_at(commit, names):
@@ -211,7 +211,7 @@ def legacy(default_values):
     legacy_chunks.update(functions_at(SEPTEMBER_COMMIT, _SEPTEMBER_FUNCTIONS))
     chunks = [legacy_chunks[name] for name in _LEGACY_FUNCTIONS]
     code = "\n\n".join(chunks)
-    # the runtime switch removed in step 1 (owner ruling R23)
+    # the runtime switch removed in step 1 (the model runs whenever the decision is selected)
     code = "\n".join(l for l in code.splitlines() if "model_enabled" not in l)
     # lazy UI imports -> stubs bound to the stub session state
     code = _IMPORT_RE.sub(lambda m: f"{m.group(1)}{m.group(2)} = _stubs[{m.group(2)!r}]", code)
@@ -254,7 +254,7 @@ def legacy(default_values):
 
 
 def legacy_orchestrator_config(legacy, repo, state, pop_mode, inc_mode, single_decision, force_di_default=False):
-    """Run the legacy runner's apply sequence on a fake orchestrator; return (config, simulation_config)."""
+    """Run the original runner's apply sequence on a fake orchestrator; return (config, simulation_config)."""
     st_state = dict(state)
     if force_di_default:
         st_state["_dd_standalone_force_di_default"] = True
@@ -277,17 +277,18 @@ def seam_engine_config(repo, sub_run, custom_decisions=None):
 
 
 def assert_donation_parity(legacy_block, new_block, repo, expected_coefficient):
-    """The donation block must match the legacy one except for R10 / R12 / the dead keys."""
+    """The donation block must match the original one except for the flat coefficient set,
+    the sigma constant and the dead keys."""
     legacy_rc = legacy_block["regression_coefficients"]
     new_rc = new_block["regression_coefficients"]
     mode = new_rc["income_mode"]
     assert mode == legacy_rc["income_mode"]
     assert new_block["regression"]["income_mode"] == legacy_block["regression"]["income_mode"]
-    # R10: the nested blocks are gone; the flat set equals the file's block for the mode
+    # the nested blocks are gone; the flat set equals the file's block for the mode
     assert "categorical" not in new_rc and "continuous" not in new_rc
     for key, value in legacy_rc[mode].items():
         assert new_rc[key] == value, key
-    # R12: sigma_value = sigma_overall x coefficient, not 9.8995 x coefficient
+    # sigma_value = sigma_overall x coefficient, not 9.8995 x coefficient
     legacy_stoch = dict(legacy_block["stochastic"])
     new_stoch = dict(new_block["stochastic"])
     if legacy_stoch["sigma_value"] != 0.0:
@@ -305,7 +306,7 @@ def assert_full_parity(legacy, repo, state, sub_run, single_decision, force_di_d
                        expected_coefficient=1.0):
     legacy_cfg, legacy_sim = legacy_orchestrator_config(
         legacy, repo, state, sub_run.population, sub_run.income_mode, single_decision, force_di_default)
-    # the legacy runner wrote custom_decisions only when both session keys existed
+    # the original runner wrote custom_decisions only when both session keys existed
     custom = (tuple(state["custom_decisions"])
               if "custom_decisions" in state and "default_decisions" in state else None)
     new_cfg, new_sim = seam_engine_config(repo, sub_run, custom_decisions=custom)
@@ -403,7 +404,7 @@ def test_compare_all_single_income_and_research_messages(repo, default_values):
     plan = plan_for(repo, default_values, base_state(repo, population_mode="Research Specification",
                                                      income_spec_mode="Compare both"))
     assert plan.result_keys == ("categorical", "continuous")
-    # Ruling R-CYC as clarified 2026-10-07: Research Specification bootstraps above 280
+    # Research Specification bootstraps above 280
     assert texts(plan)[-1] == ("info", "📊 Using original 280 participants: the 1000 agents are a "
                                        "bootstrap sample with replacement (seeded by the run seed)")
     assert all(s.population == "documentation" for s in plan.sub_runs)
@@ -538,12 +539,12 @@ def test_saved_disclose_documents_config_pins_population_and_drives_dd(repo, def
                        selected_decision_configs={"disclose_documents": dd_cfg}, dd_income_mode="Continuous only")
     plan = plan_for(repo, default_values, state)
     (sub,) = plan.sub_runs
-    assert sub.population == "baseline"      # R14: pinned from the result key
+    assert sub.population == "baseline"      # pinned from the result key
     assert plan.result_keys == ("continuous",)   # DD does not pin the effective income mode
     assert ("caption", "🔄 Running with saved population mode: Research Baseline") in texts(plan)
     assert ("caption", "  ✓ Disclose Documents") in texts(plan)
     dd_patch = sub.decision_config_patches["disclose_documents"]
-    # R17: saved precedence - saved mode + intercept, live stochastic toggles, unconditional strategy copy
+    # saved precedence - saved mode + intercept, live stochastic toggles, unconditional strategy copy
     assert dd_patch["income_mode"] == "categorical"
     assert dd_patch["intercept"] == -0.2
     assert dd_patch["stochastic"] == {"sigma_value": 0.0, "in_copula": False, "sigma_strategy": "overall",
@@ -651,7 +652,7 @@ def test_verify_saved_expectations():
     assert verify_saved_expectations((good, bad, missing_key, missing_col), {"categorical": df}) == (bad,)
 
 
-# ==================================================================== legacy parity
+# ============================================================ original-code parity
 
 @pytest.mark.parametrize("pop_mode", ["copula", "documentation", "baseline"])
 @pytest.mark.parametrize("inc_mode", ["categorical", "continuous"])
@@ -752,7 +753,7 @@ def test_default_settings_message_matches_legacy_builder(legacy, repo, default_v
 # =============================================================== engine end-to-end
 
 def test_execute_reproduces_a_pinned_individual_run(repo, default_values):
-    """R14 in practice: an individual DI run pinned by 'Use This Config' is reproduced bit-for-bit
+    """A pinned configuration in practice: an individual DI run pinned by 'Use This Config' is reproduced bit-for-bit
     by the complete run (same seed / agents / decision RNG), so no error is raised."""
     n = 12
     state = base_state(repo, selected=["disclose_income"], population_mode="Research Baseline", n_agents=n)

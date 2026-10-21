@@ -1,16 +1,11 @@
 # app/reports/purchasing.py
 """Pure builders behind the purchasing-decision tables and Excel exports.
 
-Every function here was moved verbatim out of
-`app/pages/results/visualizations/purchasing_viz.py`: same rounding, same
-column order, same sheet names, same `pd.cut` binning. The only changes are
-mechanical -- the simulation parameters (`periods`, `duration_hours`) and the
-timestamp anchoring the export strings are now explicit arguments instead of
-`st.session_state` reads, and the blocks that used to write straight into
-`st.dataframe` / `st.download_button` now return the DataFrame / xlsx bytes the
-page hands to those widgets.
-
-Nothing in this module imports Streamlit or touches session state.
+The tables and workbook bytes `app/pages/results/visualizations/purchasing_viz.py`
+renders and offers for download (`pd.cut` binning included). The simulation
+parameters (`periods`, `duration_hours`) and the timestamp anchoring the export
+strings are explicit arguments; nothing in this module imports Streamlit or
+touches session state.
 """
 from collections import Counter
 

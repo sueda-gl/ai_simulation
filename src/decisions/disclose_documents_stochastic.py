@@ -23,7 +23,7 @@ Then standardize the composite and threshold at 0:
     disclose if dd_deterministic > 0   (after an optional Normal(dd, sigma) draw)
 
 CATEGORICAL income: drop the income term; instead add a per-allowance-level intercept
-(from the professor's regression on inverse allowance).
+(from the Decision 2 document's regression on inverse allowance).
 
 CONTINUOUS income: picont = max_income - income. Because z(picont) = -z(income) exactly
 (the max cancels in standardization), continuous mode reuses the orchestrator's runtime
@@ -44,13 +44,13 @@ from src.decisions.income_utils import (
 )
 
 # ---------------------------------------------------------------------------
-# Constants verified against the professor's Stata Decision 2 file
+# Constants verified against the reference Stata file (Stata_File_Decision 2_260626 - CORRECTED.dta)
 # ---------------------------------------------------------------------------
 B_EXTRA = 0.015584630336545     # z_E coefficient (document line 404/428)
 B_NEURO = -0.024781455105683    # z_N coefficient (CORRECTED reduced-form: fixes PC-weight + Neuroticism-decimal doc errors; was -0.022306825775166)
 B_AGREE = -0.016923520441338    # z_A coefficient (CORRECTED reduced-form: fixes PC-weight doc error; was -0.016604320441445)
 B_PI = 0.14735467793568         # z_picont (Personal Incentive) coefficient
-BETA0 = -0.75                   # final intercept (betadd0; professor's updated default, was -0.5)
+BETA0 = -0.75                   # final intercept (betadd0; the Decision 2 document's updated default, was -0.5)
 
 # ---------------------------------------------------------------------------
 # MEDIATOR path coefficients (document Formulas 2 & 3, Bansal et al. 2016 SEM).
@@ -68,7 +68,7 @@ TR_AGREE = 0.0762  # Agreeableness -> Trust            (Sobel-calculated path)
 TR_NEURO = -0.0204 # Neuroticism   -> Trust            (Sobel-calculated path)
 
 # Per-allowance-LEVEL categorical intercepts (added to the trait composite before
-# standardization). Verified vs professor: weighted_dd_categorical - trait_terms by level.
+# standardization). Verified against the reference .dta: weighted_dd_categorical - trait_terms by level.
 #   level 1 (TA 12) +0.1464773 ; level 2 (TA 32) +0.0902694 ; level 3 (TA 72) +0.0384204
 #   level 4 (TA 128) -0.0522756 ; level 5 (TA 200) -0.2393718
 CATEGORICAL_INTERCEPTS = {
@@ -80,7 +80,7 @@ CATEGORICAL_INTERCEPTS = {
 }
 
 # Composite SDs (egen std over original 280; used to standardize the composite).
-# Categorical: matches the professor's .dta exactly and is used directly.
+# Categorical: matches the reference .dta exactly and is used directly.
 # Continuous: this is only a FALLBACK — the orchestrators always recompute the population SD at
 # runtime via compute_continuous_dd_stats and inject it as simulation_config['dd_cont_stats'],
 # so this value is overridden before any agent is scored. Recomputed for the CORRECTED
@@ -121,7 +121,7 @@ def compute_dd_score(
     """
     Compute the deterministic DD score for an agent (UNGATED, no stochastic draw).
 
-    This is the pure privacy-calculus model used for validation against the professor's
+    This is the pure privacy-calculus model used for validation against the reference .dta's
     `dd_deterministic_*` / `disclosedoc_*` columns. The income mode is read from
     params['income_mode'] ('Categorical only' by default).
 

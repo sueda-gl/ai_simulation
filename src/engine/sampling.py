@@ -3,7 +3,7 @@
 Participant selection for the Research modes (Research Specification and Research
 Baseline).
 
-Owner ruling R-CYC (2026-10-07), as clarified by the owner the same day:
+The sampling rule:
 
 * RESEARCH BASELINE takes the 280 original participants in their real (file) order,
   cycling - no random numbers:
@@ -35,10 +35,9 @@ keeps its own RNG streams (base seed from ``rng_pass1`` by agent index), so repe
 participants (Specification bootstrap, Baseline cycles) get different noise.
 
 History: before e0d3d97 the app did the Specification rule above, while the CLI
-fallback drew from the setup RNG (after the vendor draws) and permuted Specification at
-N = 280, and bootstrapped Baseline above 280; e0d3d97 (R-CYC) made BOTH modes cyclic;
-the owner's clarification restored random sampling for Research Specification only
-(rulings Q-30 / Q-65 in docs/migration/rulings-and-quirks.md).
+fallback drew from the setup RNG (after the vendor draws), permuted Specification at
+N = 280 and bootstrapped Baseline above 280; e0d3d97 made BOTH modes cyclic; the
+rule above then restored random sampling for Research Specification only.
 """
 
 import numpy as np

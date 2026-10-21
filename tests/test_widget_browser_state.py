@@ -4,7 +4,7 @@ e51c3fc, fixed 2026-10-07).
 
 e51c3fc removed ``value=`` / ``index=`` from ~37 widgets whose value lives in a
 session-state key (to silence Streamlit's "created with a default value but also had
-its value set via the Session State API" warning, Q-41). Streamlit sends a key's
+its value set via the Session State API" warning). Streamlit sends a key's
 value to the browser only in the run in which the key is written through
 ``st.session_state``; a key seeded in an EARLIER run (or kept from one) reaches a
 browser that draws the widget for the first time only as the element's ``default=``
@@ -26,7 +26,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from browser_sim import BrowserSim
-from test_no_widget_default_warning import offenders  # noqa: F401  (fixture: Q-41 warning spy)
+from test_no_widget_default_warning import offenders  # noqa: F401  (fixture: the widget-default warning spy)
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_FILE = str(ROOT / "app_enhanced_new.py")
@@ -149,7 +149,7 @@ def test_user_values_survive_tab_and_page_switches(offenders):
 
 
 def test_page1_reset_restores_the_defaults(offenders):
-    """Q-39: the September reset raised StreamlitAPIException at its first widget-key
+    """The original reset raised StreamlitAPIException at its first widget-key
     write; as an on_click callback it resets everything, to the values a fresh session
     shows (tests/test_page1_reset_defaults.py checks every widget)."""
     sim = _start()
@@ -262,8 +262,8 @@ def test_no_stateful_widget_falls_back_to_its_builtin_default(monkeypatch, offen
 
 def test_a_steady_rerun_pushes_nothing_new():
     """A widget the browser already shows with the same arguments is NOT re-written:
-    re-pushing on every rerun made number-input +/- clicks jump back a step
-    (professor, 2026-09-17). The render-log signatures must therefore be stable."""
+    re-pushing on every rerun made number-input +/- clicks jump back a step.
+    The render-log signatures must therefore be stable."""
     sim = _start()
     sim.run()
     _to_page2(sim)
