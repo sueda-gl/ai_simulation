@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 from src.contract.plan import RunRequest
 from app.simulation import run_full_simulation, run_monte_carlo_study
-from app.models import ALL_DECISIONS
+from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
 
 # The 13 decisions' default values and default descriptions are pure contract
 # data (src/contract/defaults.py). Re-exported here because the screens, the
@@ -305,6 +305,90 @@ def can_run_complete_simulation():
 
 #: The decision a blocking issue names (by its block_type) on the results page, in
 #: its warnings and in its disabled button's help.
+def current_donation_configuration():
+    """The donation configuration the CURRENT Page-1 / Donation Default settings imply.
+
+    This is what the Overview donation card shows when nothing has been pinned
+    into ``selected_decision_configs``. Returns None when the current settings do
+    not imply exactly one donation configuration (no donation_default selected,
+    or a Compare mode), which is when the card was not shown either.
+    """
+    selected_decisions = []
+    if (hasattr(st.session_state, 'decision_params')
+            and hasattr(st.session_state.decision_params, 'selected_decisions')):
+        selected_decisions = st.session_state.decision_params.selected_decisions or []
+
+    if 'donation_default' not in selected_decisions:
+        return None
+
+    population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+    # The gate's own lookup, so the Overview card never picks up a global
+    # income_spec_mode that a disclose_income run contaminated.
+    donation_income_mode = donation_income_mode_from_settings()
+
+    is_compare_mode = (
+        population_mode == "Compare all"
+        or 'compare' in str(donation_income_mode).lower()
+        or 'both' in str(donation_income_mode).lower()
+    )
+    if is_compare_mode:
+        return None
+
+    # Only one configuration may be implied, otherwise the user has to pick one.
+    # Note: using *_ to handle the 5th return value (blocking_issues list)
+    can_run, reason, config_count, block_type, *_ = can_run_complete_simulation()
+    if config_count != 1:
+        return None
+
+    # Try to get current coefficient values (may fail if not loaded yet)
+    try:
+        coefficients = get_current_coefficients()
+    except Exception:
+        # Fallback: create minimal coefficients structure
+        coefficients = {
+            'intercept': 0.0,
+            'beta_group': {'MidSub': 0.0, 'NoSub': 0.0, 'FullSub': 0.0},
+            'beta_income_q': {'Q1': 0.0, 'Q2': 0.0, 'Q3': 0.0, 'Q4': 0.0, 'Q5': 0.0},
+            'beta_income_linear': 0.0,
+            'beta_study': {'Incoming': 0.0, 'Law5yr': 0.0, 'UG3yr': 0.0, 'Grad2yr': 0.0},
+            'beta_hh': 0.0
+        }
+
+    # Try to get current stochastic parameters
+    try:
+        stochastic_params = get_current_stochastic_params()
+    except Exception:
+        # Fallback: create minimal stochastic structure
+        stochastic_params = {
+            'stochastic': {
+                'sigma_value': DONATION_SIGMA_OVERALL,
+                'sigma_coefficient': 1.0,
+                'sigma_in_copula': False,
+                'sigma_in_research': True
+            },
+            'anchor_weights': {
+                'observed': 0.75,
+                'predicted': 0.25
+            }
+        }
+
+    return {
+        'population_mode': population_mode,
+        'donation_income_mode': donation_income_mode,
+        # DEPRECATED alias the implied record carried; Decision 13's default block
+        # ("Value synced from: ...") reads it
+        'income_spec_mode': donation_income_mode,
+        'coefficients': coefficients,
+        'stochastic_params': stochastic_params,
+        # No simulation has run: the linked final_donation_rate value is the
+        # current default (what the implied record recorded at implication time)
+        'metrics': {
+            'mean_donation': st.session_state.get('final_donation_rate_default_value', 0.10),
+        },
+        'total_agents': st.session_state.get('n_agents', 1000)
+    }
+
+
 GATE_BLOCK_TYPE_TITLES = {
     "disclose_income": "Disclose Income",
     "donation_config": "Donation Default",

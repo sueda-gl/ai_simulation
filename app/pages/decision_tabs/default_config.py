@@ -6,7 +6,7 @@ These parameters apply to decisions that are NOT selected for custom configurati
 import streamlit as st
 from app.state.widgets import stateful
 from app.state.saved_configs import get_decision_config
-from app.pages.decision_execution import DEFAULT_DECISION_VALUES, format_decision_title
+from app.pages.decision_execution import DEFAULT_DECISION_VALUES, format_decision_title, current_donation_configuration
 
 
 def save_to_persistent_storage(key):
@@ -388,7 +388,6 @@ def _linked_donation_config():
     config = get_decision_config('donation_default')
     if config is not None:
         return config
-    from app.pages.page2_decisions import current_donation_configuration
     return current_donation_configuration()
 
 

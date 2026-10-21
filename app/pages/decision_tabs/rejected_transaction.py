@@ -27,11 +27,12 @@ The model coefficients and sigma constants are fixed (dta-verified); the tab exp
 the income specification (categorical / continuous / compare both; WTP and
 Risk-Taking are the only income-using elements) and the stochastic settings per
 mechanism (sigma strategy and x0-2 coefficient).
-Persistence follows the disclose_documents triple-layer pattern: canonical rtd_*
-read keys + rtd_tab_* widget keys + a tab-persistence dict.
+Persistence follows the tabs' triple-layer pattern (app/pages/decision_tabs/_tab_state.py):
+canonical rtd_* read keys + rtd_tab_* widget keys + a tab-persistence dict.
 """
 import streamlit as st
 from app.state.widgets import stateful
+from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent, seed_if_changed
 from app.seam.config_repo import rtd_sigma_coefficient_defaults
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 import pandas as pd
@@ -133,40 +134,6 @@ def initialize_rtd_session_state():
 
     if 'rtd_quintile_scale_factors' not in st.session_state:
         st.session_state.rtd_quintile_scale_factors = dict(default_quintile_scales)
-
-
-def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
-    """Seed a widget key before the widget renders and return its current value.
-
-    The LIVE widget value (st.session_state[widget_key]) always wins. The persistence
-    dict / default only seed the key when it is absent, i.e. after Streamlit culled the
-    widget on another page. Rewriting the key on every rerun (the previous behaviour)
-    forced the backend to push its value to the browser each rerun, which - together
-    with a rerun-dependent `value=` default - made the +/- buttons of the intercept
-    inputs jump back one step under fast clicks."""
-    if widget_key in st.session_state:
-        return st.session_state[widget_key]
-    if storage_dict and storage_key in storage_dict:
-        value = storage_dict[storage_key]
-    else:
-        value = default_value
-    st.session_state[widget_key] = value
-    return value
-
-
-def _seed_widget_value(widget_key, value):
-    """Overwrite a seeded widget key ONLY when the normalised value differs (an
-    unconditional assignment marks the key as changed and re-pushes it each rerun)."""
-    if st.session_state.get(widget_key) != value:
-        st.session_state[widget_key] = value
-
-
-def save_to_rtd_storage(widget_key, storage_key):
-    """Save a widget value to the Decision 4 tab persistence dict."""
-    if 'rejected_transaction_tab_persistence' not in st.session_state:
-        st.session_state.rejected_transaction_tab_persistence = {}
-    if widget_key in st.session_state:
-        st.session_state.rejected_transaction_tab_persistence[storage_key] = st.session_state[widget_key]
 
 
 def _render_black_table(df, full_width=False):
@@ -334,16 +301,16 @@ def render_flex_anchor_mix(config):
     default_w = float((config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
     widget_key = 'rtd_tab_flex_observed_weight'
     storage_key = 'rtd_flex_observed_weight'
-    current = restore_widget_from_storage(
-        widget_key, st.session_state.rejected_transaction_tab_persistence,
-        storage_key, st.session_state.get(storage_key, default_w))
+    current = restore(
+        widget_key, 'rejected_transaction_tab_persistence',
+        storage_key, st.session_state.get(storage_key, default_w), widget_first=True)
 
     def on_change():
         st.session_state['rtd_flex_observed_weight'] = float(
             st.session_state['rtd_tab_flex_observed_weight'])
-        save_to_rtd_storage('rtd_tab_flex_observed_weight', 'rtd_flex_observed_weight')
+        save('rtd_tab_flex_observed_weight', 'rejected_transaction_tab_persistence', 'rtd_flex_observed_weight')
 
-    _seed_widget_value(widget_key, float(current))
+    seed_if_changed(widget_key, float(current))
     w_obs = stateful(st.slider,
         "W_OFlex: Observed vs Calculated flexibility weight",
         min_value=0.0, max_value=1.0, step=0.01,
@@ -473,15 +440,15 @@ def render_decision_sigma_controls(config):
     strategy_storage_key = 'rtd_sigma_strategy'
     current_strategy = st.session_state.get(strategy_storage_key, 'overall')
 
-    strategy_val = restore_widget_from_storage(
-        strategy_widget_key, st.session_state.rejected_transaction_tab_persistence,
-        strategy_storage_key, current_strategy)
+    strategy_val = restore(
+        strategy_widget_key, 'rejected_transaction_tab_persistence',
+        strategy_storage_key, current_strategy, widget_first=True)
     strategy_val = 'quintile' if 'quintile' in str(strategy_val).lower() else 'overall'
-    _seed_widget_value(strategy_widget_key, strategy_val)
+    seed_if_changed(strategy_widget_key, strategy_val)
 
     def on_strategy_change():
         st.session_state.rtd_sigma_strategy = st.session_state.rtd_tab_sigma_strategy
-        save_to_rtd_storage('rtd_tab_sigma_strategy', 'rtd_sigma_strategy')
+        save('rtd_tab_sigma_strategy', 'rejected_transaction_tab_persistence', 'rtd_sigma_strategy')
 
     sigma_strategy = stateful(st.radio,
         "Apply σ uniformly or per budget level?",
@@ -499,18 +466,18 @@ def render_decision_sigma_controls(config):
         scale_fallback = st.session_state.get('rtd_scale_factor',
                                               rtd_sigma_coefficient_defaults(config)[0])
 
-        coeff_val = restore_widget_from_storage(
-            coeff_widget_key, st.session_state.rejected_transaction_tab_persistence,
-            coeff_storage_key, scale_fallback)
+        coeff_val = restore(
+            coeff_widget_key, 'rejected_transaction_tab_persistence',
+            coeff_storage_key, scale_fallback, widget_first=True)
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
-        _seed_widget_value(coeff_widget_key, coeff_val)
+        seed_if_changed(coeff_widget_key, coeff_val)
 
         sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, step=0.01,
             help="Coefficient to multiply each element's base σ. Applies to all elements "
                  "of the decision. Final σ per element = base σ × coefficient.",
             key=coeff_widget_key,
-            on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_coefficient', 'rtd_sigma_coefficient'),
+            on_change=lambda: save('rtd_tab_sigma_coefficient', 'rejected_transaction_tab_persistence', 'rtd_sigma_coefficient'),
         )
         st.session_state.rtd_scale_factor = sigma_coefficient
         for m in MECHANISMS:
@@ -532,17 +499,17 @@ def render_decision_sigma_controls(config):
             level_scale = max(0.0, min(float(current_scales.get(level, default_scale)), 2.0))
             storage_key = f'rtd_sigma_quintile_{level}'
             widget_key = f'rtd_tab_sigma_q{level}'
-            q_val = restore_widget_from_storage(
-                widget_key, st.session_state.rejected_transaction_tab_persistence,
-                storage_key, level_scale)
+            q_val = restore(
+                widget_key, 'rejected_transaction_tab_persistence',
+                storage_key, level_scale, widget_first=True)
             q_val = max(0.0, min(float(q_val), 2.0))
-            _seed_widget_value(widget_key, q_val)
+            seed_if_changed(widget_key, q_val)
 
             q_coeff = stateful(st.slider,
                 f"{LEVEL_LABELS[level]}", min_value=0.0, max_value=2.0, step=0.01,
                 key=widget_key,
-                on_change=lambda l=level: save_to_rtd_storage(
-                    f'rtd_tab_sigma_q{l}', f'rtd_sigma_quintile_{l}'),
+                on_change=lambda l=level: save(
+                    f'rtd_tab_sigma_q{l}', 'rejected_transaction_tab_persistence', f'rtd_sigma_quintile_{l}'),
             )
             quintile_coefficients[level] = q_coeff
         st.session_state.rtd_quintile_scale_factors = quintile_coefficients
@@ -581,20 +548,20 @@ def render_intercept_control(config, mech):
     st.markdown("**Intercept Override**")
     widget_key = f'rtd_tab_intercept_{mech}'
     storage_key = f'rtd_intercept_{mech}'
-    current = restore_widget_from_storage(
-        widget_key, st.session_state.rejected_transaction_tab_persistence,
-        storage_key, st.session_state.get(storage_key, research_default))
+    current = restore(
+        widget_key, 'rejected_transaction_tab_persistence',
+        storage_key, st.session_state.get(storage_key, research_default), widget_first=True)
 
     def on_change(m=mech):
         st.session_state[f'rtd_intercept_{m}'] = st.session_state[f'rtd_tab_intercept_{m}']
-        save_to_rtd_storage(f'rtd_tab_intercept_{m}', f'rtd_intercept_{m}')
+        save(f'rtd_tab_intercept_{m}', 'rejected_transaction_tab_persistence', f'rtd_intercept_{m}')
 
     # Narrow, vertically stacked control (a full-width intercept override was too
     # wide); the caller places it in the left of two columns. No `value=`
     # argument: the seeded session-state key carries the value, so the widget id is
     # stable across reruns (a rerun-dependent default would re-create the widget on
-    # every click, see restore_widget_from_storage).
-    _seed_widget_value(widget_key, float(current))
+    # every click, see _tab_state.restore).
+    seed_if_changed(widget_key, float(current))
     st.markdown(f"Research Default ({symbol}): **{research_default:.4f}**")
     st.markdown("**Override Value**")
     lo, hi, step = INTERCEPT_RANGES.get(mech, (-5.0, 5.0, 0.01))
@@ -882,17 +849,17 @@ def render_rejected_transaction_defaults_tab():
         st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
 
         mode_options = ["Categorical only", "Continuous only", "Compare both"]
-        if "rtd_tab_income_mode" not in st.session_state:
-            current_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
-            st.session_state.rtd_tab_income_mode = current_mode if current_mode in mode_options else "Continuous only"
+        current_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
+        seed_if_absent('rtd_tab_income_mode',
+                       current_mode if current_mode in mode_options else "Continuous only")
 
         def on_rtd_income_mode_change():
             st.session_state.rtd_income_mode = st.session_state.rtd_tab_income_mode
-            save_to_rtd_storage('rtd_tab_income_mode', 'rtd_income_mode')
+            save('rtd_tab_income_mode', 'rejected_transaction_tab_persistence', 'rtd_income_mode')
 
-        income_val = restore_widget_from_storage(
-            'rtd_tab_income_mode', st.session_state.rejected_transaction_tab_persistence,
-            'rtd_income_mode', 'Continuous only')
+        income_val = restore(
+            'rtd_tab_income_mode', 'rejected_transaction_tab_persistence',
+            'rtd_income_mode', 'Continuous only', widget_first=True)
         if income_val not in mode_options:
             income_val = next((o for o in mode_options if str(income_val).lower() == o.lower()),
                               "Continuous only")
@@ -923,27 +890,27 @@ def render_rejected_transaction_defaults_tab():
                     "stochastic settings for Copula / Research Specification runs.")
 
         st.markdown("**Copula Mode:**")
-        copula_val = restore_widget_from_storage(
-            'rtd_tab_sigma_in_copula', st.session_state.rejected_transaction_tab_persistence,
-            'rtd_sigma_in_copula', False)
-        _seed_widget_value('rtd_tab_sigma_in_copula', bool(copula_val))
+        copula_val = restore(
+            'rtd_tab_sigma_in_copula', 'rejected_transaction_tab_persistence',
+            'rtd_sigma_in_copula', False, widget_first=True)
+        seed_if_changed('rtd_tab_sigma_in_copula', bool(copula_val))
         sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="rtd_tab_sigma_in_copula",
-            on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_in_copula', 'rtd_sigma_in_copula'))
+            on_change=lambda: save('rtd_tab_sigma_in_copula', 'rejected_transaction_tab_persistence', 'rtd_sigma_in_copula'))
         st.session_state.rtd_sigma_in_copula = sigma_in_copula
 
         st.markdown("**Research Specification Mode:**")
-        res_val = restore_widget_from_storage(
-            'rtd_tab_sigma_enabled', st.session_state.rejected_transaction_tab_persistence,
-            'rtd_sigma_enabled', True)
-        _seed_widget_value('rtd_tab_sigma_enabled', bool(res_val))
+        res_val = restore(
+            'rtd_tab_sigma_enabled', 'rejected_transaction_tab_persistence',
+            'rtd_sigma_enabled', True, widget_first=True)
+        seed_if_changed('rtd_tab_sigma_enabled', bool(res_val))
         sigma_enabled = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="rtd_tab_sigma_enabled",
-            on_change=lambda: save_to_rtd_storage('rtd_tab_sigma_enabled', 'rtd_sigma_enabled'))
+            on_change=lambda: save('rtd_tab_sigma_enabled', 'rejected_transaction_tab_persistence', 'rtd_sigma_enabled'))
         st.session_state.rtd_sigma_enabled = sigma_enabled
 
         st.markdown("Research Baseline always uses anchor values only (deterministic).")

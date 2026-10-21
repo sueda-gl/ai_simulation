@@ -7,7 +7,8 @@ Uses a two-stage mediation model when specified (research spec mode).
 """
 import streamlit as st
 from app.state.widgets import stateful
-from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
+from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
+from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file, get_config_repo
 import pandas as pd
 
 
@@ -22,11 +23,6 @@ def load_disclose_income_config():
 
 def _load_base_sigma_overall():
     """Read the base sigma from the configuration file (read-only)."""
-    try:
-        from app.seam.config_repo import get_config_repo
-    except ImportError:
-        config = read_yaml_file(CONFIG_PATH)
-        return float(config['disclose_income']['stochastic']['sigma_overall'])
     return float(get_config_repo().disclose_income_sigma_overall())
 
 
@@ -94,34 +90,7 @@ def initialize_disclose_income_session_state():
         st.session_state.di_sigma_in_copula = False
 
     # Initialize canonical widget key for copula stochastic checkbox
-    if 'di_tab_sigma_in_copula' not in st.session_state:
-        st.session_state.di_tab_sigma_in_copula = st.session_state.get('di_sigma_in_copula', False)
-
-
-def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
-    """Restore a widget key from storage dictionary before widget renders."""
-    # Priority 1: Use value from storage dict
-    if storage_dict and storage_key in storage_dict:
-        val = storage_dict[storage_key]
-        st.session_state[widget_key] = val
-        return val
-
-    # Priority 2: Use existing session state value if present
-    if widget_key in st.session_state:
-        return st.session_state[widget_key]
-
-    # Priority 3: Use default value
-    st.session_state[widget_key] = default_value
-    return default_value
-
-
-def save_to_disclose_income_storage(widget_key, storage_key):
-    """Save a widget value to disclose income storage."""
-    if "disclose_income_tab_persistence" not in st.session_state:
-        st.session_state.disclose_income_tab_persistence = {}
-
-    if widget_key in st.session_state:
-        st.session_state.disclose_income_tab_persistence[storage_key] = st.session_state[widget_key]
+    seed_if_absent('di_tab_sigma_in_copula', st.session_state.get('di_sigma_in_copula', False))
 
 
 def render_di_sigma_controls(mode_suffix: str):
@@ -155,23 +124,17 @@ def render_di_sigma_controls(mode_suffix: str):
     strategy_storage_key = f'di_sigma_strategy_{mode_suffix}'
     current_strategy = st.session_state.get('di_sigma_strategy', 'overall')
 
-    strategy_val = restore_widget_from_storage(
-        strategy_widget_key,
-        st.session_state.disclose_income_tab_persistence,
+    restore(
+        strategy_widget_key, 'disclose_income_tab_persistence',
         strategy_storage_key,
-        current_strategy
+        current_strategy,
+        widget_first=False
     )
-
-    # Normalize strategy value
-    if 'quintile' in str(strategy_val).lower():
-        strategy_val = 'quintile'
-    else:
-        strategy_val = 'overall'
 
     def on_strategy_change():
         """Handle sigma strategy changes."""
         new_strategy = st.session_state[strategy_widget_key]
-        save_to_disclose_income_storage(strategy_widget_key, strategy_storage_key)
+        save(strategy_widget_key, 'disclose_income_tab_persistence', strategy_storage_key)
         st.session_state.di_sigma_strategy = new_strategy
 
     sigma_strategy = stateful(st.radio,
@@ -200,15 +163,12 @@ def render_di_sigma_controls(mode_suffix: str):
         # showing a slider's built-in 0, fixed properly in 5f2cac8.)
         scale_fallback = st.session_state.di_scale_factor
 
-        coeff_val = restore_widget_from_storage(
-            coeff_widget_key,
-            st.session_state.disclose_income_tab_persistence,
+        restore(
+            coeff_widget_key, 'disclose_income_tab_persistence',
             coeff_storage_key,
-            scale_fallback
+            scale_fallback,
+            widget_first=False
         )
-
-        # Clamp value to valid range [0, 2]
-        coeff_val = max(0.0, min(float(coeff_val), 2.0))
 
         sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)",
@@ -217,7 +177,7 @@ def render_di_sigma_controls(mode_suffix: str):
             step=0.01,
             help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
             key=coeff_widget_key,
-            on_change=lambda: save_to_disclose_income_storage(coeff_widget_key, coeff_storage_key)
+            on_change=lambda: save(coeff_widget_key, 'disclose_income_tab_persistence', coeff_storage_key)
         )
         st.session_state.di_scale_factor = sigma_coefficient
 
@@ -258,13 +218,12 @@ def render_di_sigma_controls(mode_suffix: str):
             storage_key = f'di_sigma_quintile_{level}_{mode_suffix}'
             widget_key = f'di_tab_sigma_q{level}_{mode_suffix}'
 
-            q_val = restore_widget_from_storage(
-                widget_key,
-                st.session_state.disclose_income_tab_persistence,
+            restore(
+                widget_key, 'disclose_income_tab_persistence',
                 storage_key,
-                level_scale
+                level_scale,
+                widget_first=False
             )
-            q_val = max(0.0, min(float(q_val), 2.0))
 
             base_sigma = BASE_SIGMAS[level]
 
@@ -276,8 +235,8 @@ def render_di_sigma_controls(mode_suffix: str):
                     max_value=2.0,
                     step=0.01,
                     key=widget_key,
-                    on_change=lambda l=level: save_to_disclose_income_storage(
-                        f'di_tab_sigma_q{l}_{mode_suffix}', f'di_sigma_quintile_{l}_{mode_suffix}'
+                    on_change=lambda l=level: save(
+                        f'di_tab_sigma_q{l}_{mode_suffix}', 'disclose_income_tab_persistence', f'di_sigma_quintile_{l}_{mode_suffix}'
                     )
                 )
             with col_result:
@@ -335,16 +294,16 @@ def render_disclose_income_tab():
             """Handle income spec mode changes for disclose income."""
             new_mode = st.session_state.di_tab_income_mode
             st.session_state.di_income_mode = new_mode
-            save_to_disclose_income_storage('di_tab_income_mode', 'income_mode')
+            save('di_tab_income_mode', 'disclose_income_tab_persistence', 'income_mode')
             from app.pages.decision_execution import clear_decision_config
             clear_decision_config('disclose_income')
 
         # Restore income mode from storage
-        income_val = restore_widget_from_storage(
-            'di_tab_income_mode',
-            st.session_state.disclose_income_tab_persistence,
+        income_val = restore(
+            'di_tab_income_mode', 'disclose_income_tab_persistence',
             'income_mode',
-            'Categorical only'
+            'Categorical only',
+            widget_first=False
         )
 
         # Ensure value is valid (handling case sensitivity)
@@ -392,33 +351,33 @@ def render_disclose_income_tab():
 
         # --- Copula sigma checkbox (always visible) ---
         st.markdown("**Copula Mode:**")
-        copula_val = restore_widget_from_storage(
-            'di_tab_sigma_in_copula',
-            st.session_state.disclose_income_tab_persistence,
+        restore(
+            'di_tab_sigma_in_copula', 'disclose_income_tab_persistence',
             'di_sigma_in_copula',
-            False
+            False,
+            widget_first=False
         )
         sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="di_tab_sigma_in_copula",
-            on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_in_copula', 'di_sigma_in_copula')
+            on_change=lambda: save('di_tab_sigma_in_copula', 'disclose_income_tab_persistence', 'di_sigma_in_copula')
         )
         st.session_state.di_sigma_in_copula = sigma_in_copula
 
         # --- Research Specification sigma checkbox (always visible) ---
         st.markdown("**Research Specification Mode:**")
-        res_val = restore_widget_from_storage(
-            'di_tab_sigma_enabled',
-            st.session_state.disclose_income_tab_persistence,
+        restore(
+            'di_tab_sigma_enabled', 'disclose_income_tab_persistence',
             'sigma_enabled',
-            True
+            True,
+            widget_first=False
         )
         sigma_enabled = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="di_tab_sigma_enabled",
-            on_change=lambda: save_to_disclose_income_storage('di_tab_sigma_enabled', 'sigma_enabled')
+            on_change=lambda: save('di_tab_sigma_enabled', 'disclose_income_tab_persistence', 'sigma_enabled')
         )
         st.session_state.di_sigma_enabled = sigma_enabled
 
@@ -438,11 +397,11 @@ def render_disclose_income_tab():
         current_wpb = anchor_weights.get('prosocial_weight', 0.50)
 
         # Restore WOPB from storage
-        wopb_val = restore_widget_from_storage(
-            'di_wopb_widget',
-            st.session_state.disclose_income_tab_persistence,
+        restore(
+            'di_wopb_widget', 'disclose_income_tab_persistence',
             'wopb',
-            current_wopb
+            current_wopb,
+            widget_first=False
         )
 
         # WOPB - Weight for observed vs calculated prosocial behavior
@@ -453,17 +412,17 @@ def render_disclose_income_tab():
             step=0.01,
             help="anchored_PB = WOPB×Observed_PB + (1-WOPB×Calculated_PB based on Honesty-Humility, Agreeableness, Openness, and Religiosity); Default: 0.25",
             key="di_wopb_widget",
-            on_change=lambda: save_to_disclose_income_storage('di_wopb_widget', 'wopb')
+            on_change=lambda: save('di_wopb_widget', 'disclose_income_tab_persistence', 'wopb')
         )
         st.markdown(f"Observed prosocial behavior weight: {new_wopb:.2f}")
         st.session_state.di_wopb = new_wopb
 
         # Restore WPB from storage
-        wpb_val = restore_widget_from_storage(
-            'di_wpb_widget',
-            st.session_state.disclose_income_tab_persistence,
+        restore(
+            'di_wpb_widget', 'disclose_income_tab_persistence',
             'wpb',
-            current_wpb
+            current_wpb,
+            widget_first=False
         )
 
         # WPB - Weight for prosocial effect in disclosure equation
@@ -474,7 +433,7 @@ def render_disclose_income_tab():
             step=0.01,
             help="DI = β0+(1-WPB)×(Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness) + WPB×(Prosocial Behavior×Income_High); Default: 0.5",
             key="di_wpb_widget",
-            on_change=lambda: save_to_disclose_income_storage('di_wpb_widget', 'wpb')
+            on_change=lambda: save('di_wpb_widget', 'disclose_income_tab_persistence', 'wpb')
         )
         st.markdown(f"Prosocial behavior weight: {new_wpb:.2f}")
         st.session_state.di_wpb = new_wpb
@@ -696,9 +655,8 @@ def render_intercept_override_section(config):
             # live widget value wins. No rerun-dependent `value=` is passed below, so the
             # widget id stays stable - re-seeding on every rerun plus a changing default
             # made the +/- buttons jump back one step under fast clicks.
-            if 'di_override_intercept' not in st.session_state:
-                st.session_state.di_override_intercept = float(
-                    st.session_state.di_intercept_override_values.get('intercept', current_config_value))
+            seed_if_absent('di_override_intercept', float(
+                st.session_state.di_intercept_override_values.get('intercept', current_config_value)))
 
             new_intercept = stateful(st.number_input,
                 "Baseline disclosure tendency",
@@ -796,14 +754,6 @@ def reset_to_defaults():
     Streamlit anti-pattern that leaves widgets whose element id no longer has a
     session-state entry (values jumped back after a reset).
     """
-    try:
-        # The configuration file is read-only: the defaults are read from it (the
-        # values the first draw seeded), never written to it.
-        research_default_config()
-    except Exception as e:
-        st.error(f"Error saving configuration: {e}")
-        return False
-
     st.session_state[DI_RESET_PENDING_KEY] = True
     return True
 

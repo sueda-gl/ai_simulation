@@ -5,8 +5,10 @@ Donation Default decision tab configuration.
 # Force rebuild timestamp: 2025-10-01
 import streamlit as st
 from app.state.widgets import stateful
+from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
 import pandas as pd
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
+from app.seam.sentinels import donation_sigma_overall
 from app.pages.decision_execution import run_individual_decision
 from app.models import load_donation_coefficients_from_yaml
 
@@ -16,11 +18,6 @@ CONFIG_PATH = DEFAULT_DECISIONS_PATH  # the shared constant (src/config.py)
 
 def _load_base_sigma_overall():
     """Read the donation base sigma from the configuration file (read-only)."""
-    try:
-        from app.seam.sentinels import donation_sigma_overall
-    except ImportError:
-        config = read_yaml_file(CONFIG_PATH)
-        return float(config['donation_default']['stochastic']['sigma_overall'])
     return float(donation_sigma_overall())
 
 
@@ -77,28 +74,6 @@ def get_coefficient(name, mode_suffix=None):
     return st.session_state[key]
 
 
-def restore_widget_from_storage(widget_key, storage_dict, storage_key, default_value):
-    """Restore a widget key from storage dictionary before widget renders.
-    
-    This ensures widget keys persist across navigation by:
-    1. Checking storage dict for the value
-    2. Restoring to session state so widget finds it
-    """
-    # Priority 1: Use value from storage dict
-    if storage_dict and storage_key in storage_dict:
-        val = storage_dict[storage_key]
-        st.session_state[widget_key] = val
-        return val
-    
-    # Priority 2: Use existing session state value if present
-    if widget_key in st.session_state:
-        return st.session_state[widget_key]
-    
-    # Priority 3: Use default value
-    st.session_state[widget_key] = default_value
-    return default_value
-
-
 def initialize_donation_widget_keys():
     """Initialize widget keys for donation_default tab to preserve values across navigation"""
 
@@ -107,18 +82,12 @@ def initialize_donation_widget_keys():
         st.session_state.donation_tab_persistence = {}
 
     # Initialize canonical checkbox widget keys (one set, mode-independent)
-    if "tab_sigma_in_copula" not in st.session_state:
-        st.session_state.tab_sigma_in_copula = st.session_state.get('sigma_in_copula', False)
-
-    if "tab_sigma_in_research" not in st.session_state:
-        st.session_state.tab_sigma_in_research = st.session_state.get('sigma_in_research', True)
+    seed_if_absent("tab_sigma_in_copula", st.session_state.get('sigma_in_copula', False))
+    seed_if_absent("tab_sigma_in_research", st.session_state.get('sigma_in_research', True))
 
     # Initialize canonical slider widget key (unified across all modes)
-    if "tab_sigma_coefficient_stochastic" not in st.session_state:
-        st.session_state.tab_sigma_coefficient_stochastic = st.session_state.get('sigma_coefficient', 1.0)
-
-    if "tab_anchor_weight" not in st.session_state:
-        st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
+    seed_if_absent("tab_sigma_coefficient_stochastic", st.session_state.get('sigma_coefficient', 1.0))
+    seed_if_absent("tab_anchor_weight", st.session_state.get('anchor_observed_weight', 0.75))
 
     # Initialize sigma strategy (overall vs quintile)
     if "donation_sigma_strategy" not in st.session_state:
@@ -128,20 +97,6 @@ def initialize_donation_widget_keys():
     if "donation_quintile_scale_factors" not in st.session_state:
         st.session_state.donation_quintile_scale_factors = dict(
             research_defaults()['quintile_scale_factors'])
-
-
-def save_to_donation_storage(widget_key, storage_key):
-    """Save a widget value to donation storage.
-
-    Args:
-        widget_key: The session state key of the widget
-        storage_key: The key to use in the storage dictionary
-    """
-    if "donation_tab_persistence" not in st.session_state:
-        st.session_state.donation_tab_persistence = {}
-
-    if widget_key in st.session_state:
-        st.session_state.donation_tab_persistence[storage_key] = st.session_state[widget_key]
 
 
 def render_donation_sigma_controls(mode_suffix: str):
@@ -173,23 +128,17 @@ def render_donation_sigma_controls(mode_suffix: str):
     strategy_storage_key = f'sigma_strategy_{mode_suffix}'
     current_strategy = st.session_state.get('donation_sigma_strategy', 'overall')
 
-    strategy_val = restore_widget_from_storage(
-        strategy_widget_key,
-        st.session_state.donation_tab_persistence,
+    restore(
+        strategy_widget_key, 'donation_tab_persistence',
         strategy_storage_key,
-        current_strategy
+        current_strategy,
+        widget_first=False
     )
-
-    # Normalize strategy value
-    if 'quintile' in str(strategy_val).lower():
-        strategy_val = 'quintile'
-    else:
-        strategy_val = 'overall'
 
     def on_strategy_change():
         """Handle sigma strategy changes."""
         new_strategy = st.session_state[strategy_widget_key]
-        save_to_donation_storage(strategy_widget_key, strategy_storage_key)
+        save(strategy_widget_key, 'donation_tab_persistence', strategy_storage_key)
         st.session_state.donation_sigma_strategy = new_strategy
 
     sigma_strategy = stateful(st.radio,
@@ -212,15 +161,12 @@ def render_donation_sigma_controls(mode_suffix: str):
         coeff_widget_key = f'tab_sigma_coefficient_{mode_suffix}'
         coeff_storage_key = f'sigma_coefficient_{mode_suffix}'
 
-        coeff_val = restore_widget_from_storage(
-            coeff_widget_key,
-            st.session_state.donation_tab_persistence,
+        restore(
+            coeff_widget_key, 'donation_tab_persistence',
             coeff_storage_key,
-            1.0
+            1.0,
+            widget_first=False
         )
-
-        # Clamp value to valid range [0, 2]
-        coeff_val = max(0.0, min(float(coeff_val), 2.0))
 
         sigma_coefficient = stateful(st.slider,
             "σ Coefficient (multiplier)",
@@ -229,7 +175,7 @@ def render_donation_sigma_controls(mode_suffix: str):
             step=0.01,
             help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
             key=coeff_widget_key,
-            on_change=lambda: save_to_donation_storage(coeff_widget_key, coeff_storage_key)
+            on_change=lambda: save(coeff_widget_key, 'donation_tab_persistence', coeff_storage_key)
         )
         st.session_state.sigma_coefficient = sigma_coefficient
 
@@ -267,13 +213,12 @@ def render_donation_sigma_controls(mode_suffix: str):
             storage_key = f'donation_sigma_quintile_{level}_{mode_suffix}'
             widget_key = f'donation_tab_sigma_q{level}_{mode_suffix}'
 
-            q_val = restore_widget_from_storage(
-                widget_key,
-                st.session_state.donation_tab_persistence,
+            restore(
+                widget_key, 'donation_tab_persistence',
                 storage_key,
-                current_scale
+                current_scale,
+                widget_first=False
             )
-            q_val = max(0.0, min(float(q_val), 2.0))
 
             base_sigma = BASE_SIGMAS[level]
 
@@ -285,7 +230,7 @@ def render_donation_sigma_controls(mode_suffix: str):
                     max_value=2.0,
                     step=0.01,
                     key=widget_key,
-                    on_change=lambda l=level, wk=widget_key, sk=storage_key: save_to_donation_storage(wk, sk)
+                    on_change=lambda l=level, wk=widget_key, sk=storage_key: save(wk, 'donation_tab_persistence', sk)
                 )
             with col_result:
                 effective = base_sigma * q_coeff
@@ -369,18 +314,18 @@ def render_donation_default_tab():
         def on_income_spec_mode_change():
             """Handle income spec mode changes"""
             setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
-            save_to_donation_storage('page2_tab_income_spec_mode', 'income_spec_mode')
+            save('page2_tab_income_spec_mode', 'donation_tab_persistence', 'income_spec_mode')
             reload_coefficients_for_income_mode()
             clear_input_field_cache()
             from app.pages.decision_execution import clear_decision_config
             clear_decision_config('donation_default')
 
         # Restore income spec mode
-        income_val = restore_widget_from_storage(
-            'page2_tab_income_spec_mode',
-            st.session_state.donation_tab_persistence,
+        income_val = restore(
+            'page2_tab_income_spec_mode', 'donation_tab_persistence',
             'income_spec_mode',
-            'categorical only'
+            'categorical only',
+            widget_first=False
         )
 
         # Ensure index matches logic if needed, but for radio string value is enough if in options
@@ -408,33 +353,33 @@ def render_donation_default_tab():
 
         # --- Copula sigma checkbox (always visible) ---
         st.markdown("**Copula Mode:**")
-        copula_val = restore_widget_from_storage(
-            'tab_sigma_in_copula',
-            st.session_state.donation_tab_persistence,
+        restore(
+            'tab_sigma_in_copula', 'donation_tab_persistence',
             'sigma_in_copula',
-            False
+            False,
+            widget_first=False
         )
         sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
             help="When enabled, Copula mode will also use the stochastic component",
             key="tab_sigma_in_copula",
-            on_change=lambda: save_to_donation_storage('tab_sigma_in_copula', 'sigma_in_copula')
+            on_change=lambda: save('tab_sigma_in_copula', 'donation_tab_persistence', 'sigma_in_copula')
         )
         st.session_state.sigma_in_copula = sigma_in_copula
 
         # --- Research Specification sigma checkbox (always visible) ---
         st.markdown("**Research Specification Mode:**")
-        res_val = restore_widget_from_storage(
-            'tab_sigma_in_research',
-            st.session_state.donation_tab_persistence,
+        restore(
+            'tab_sigma_in_research', 'donation_tab_persistence',
             'sigma_in_research',
-            True
+            True,
+            widget_first=False
         )
         sigma_in_research = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
             help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
             key="tab_sigma_in_research",
-            on_change=lambda: save_to_donation_storage('tab_sigma_in_research', 'sigma_in_research')
+            on_change=lambda: save('tab_sigma_in_research', 'donation_tab_persistence', 'sigma_in_research')
         )
         st.session_state.sigma_in_research = sigma_in_research
 
@@ -450,11 +395,11 @@ def render_donation_default_tab():
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
 
         # Restore anchor weight
-        anchor_val = restore_widget_from_storage(
-            'tab_anchor_weight',
-            st.session_state.donation_tab_persistence,
+        restore(
+            'tab_anchor_weight', 'donation_tab_persistence',
             'anchor_weight',
-            0.75
+            0.75,
+            widget_first=False
         )
 
         anchor_observed_weight = stateful(st.slider,
@@ -464,7 +409,7 @@ def render_donation_default_tab():
             step=0.01,
             help="Anchor = w × Observed + (1-w) × Predicted",
             key="tab_anchor_weight",
-            on_change=lambda: save_to_donation_storage('tab_anchor_weight', 'anchor_weight')
+            on_change=lambda: save('tab_anchor_weight', 'donation_tab_persistence', 'anchor_weight')
         )
         st.session_state.anchor_observed_weight = anchor_observed_weight
         st.markdown(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
@@ -531,8 +476,62 @@ def render_categorical_formula():
     """Render categorical income specification formula"""
     
     # Get current coefficient values FROM YAML ONLY
-    intercept = get_coefficient('intercept', 'cat')
-    hh_coeff = get_coefficient('hh', 'cat')
+    _render_categorical_formula(
+        intercept=get_coefficient('intercept', 'cat'),
+        hh_coeff=get_coefficient('hh', 'cat'),
+        group=[
+            st.session_state.get('donation_coeff_midsub', 0.856140306694656),
+            st.session_state.get('donation_coeff_nosub', -0.926633374153906),
+            st.session_state.get('donation_coeff_fullsub', 0.0)
+        ],
+        study=[
+            st.session_state.get('donation_coeff_incoming', -6.920193024391676),
+            st.session_state.get('donation_coeff_law', -2.081331674770856),
+            st.session_state.get('donation_coeff_ug', -2.139093511519692),
+            st.session_state.get('donation_coeff_grad', 0.0)
+        ],
+        income_labels=['Q1 (Level 1)', 'Q2 (Level 2)', 'Q3 (Level 3)', 'Q4_Q5 (Levels 4-5, ref)'],
+        income=[
+            st.session_state.get('donation_coeff_q1', -0.520290427509808),
+            st.session_state.get('donation_coeff_q2', 3.754612744416796),
+            st.session_state.get('donation_coeff_q3', 4.001714810873598),
+            st.session_state.get('donation_coeff_q45', 0.0)
+        ],
+    )
+
+
+def render_categorical_formula_specific():
+    """Render categorical income specification formula with categorical-specific coefficients"""
+    
+    # Get categorical-specific coefficient values FROM YAML ONLY
+    _render_categorical_formula(
+        intercept=get_coefficient('intercept', 'cat'),
+        hh_coeff=get_coefficient('hh', 'cat'),
+        group=[
+            get_coefficient('midsub', 'cat'),
+            get_coefficient('nosub', 'cat'),
+            get_coefficient('fullsub', 'cat')
+        ],
+        study=[
+            get_coefficient('incoming', 'cat'),
+            get_coefficient('law', 'cat'),
+            get_coefficient('ug', 'cat'),
+            get_coefficient('grad', 'cat')
+        ],
+        income_labels=['Q1 (Level 12, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
+        income=[
+            get_coefficient('q1', 'cat'),
+            get_coefficient('q2', 'cat'),
+            get_coefficient('q3', 'cat'),
+            get_coefficient('q4', 'cat'),
+            get_coefficient('q5', 'cat')
+        ],
+    )
+
+
+def _render_categorical_formula(intercept, hh_coeff, group, study, income_labels, income):
+    """The categorical formula display, from the coefficient values the caller
+    looked up (the flat display set, or the categorical-specific set)."""
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -550,56 +549,87 @@ def render_categorical_formula():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**👥 Group Effects (β_group):**")
-        group_data = {
-            'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Intercept': [
-                st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-                st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-                st.session_state.get('donation_coeff_fullsub', 0.0)
-            ]
-        }
-        group_df = pd.DataFrame(group_data)
-        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(group_df, hide_index=True, use_container_width=True)
-        
-        st.markdown("**🎓 Study Programme Effects (β_study):**")
-        study_data = {
-            'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Intercept': [
-                st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-                st.session_state.get('donation_coeff_law', -2.081331674770856),
-                st.session_state.get('donation_coeff_ug', -2.139093511519692),
-                st.session_state.get('donation_coeff_grad', 0.0)
-            ]
-        }
-        study_df = pd.DataFrame(study_data)
-        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(study_df, hide_index=True, use_container_width=True)
+        _render_group_and_study_tables(group, study)
     
     with col2:
         st.markdown("**💰 Income Quintile Effects (β_income_q):**")
         income_data = {
-            'Quintile': ['Q1 (Level 1)', 'Q2 (Level 2)', 'Q3 (Level 3)', 'Q4_Q5 (Levels 4-5, ref)'],
-            'Intercept': [
-                st.session_state.get('donation_coeff_q1', -0.520290427509808),
-                st.session_state.get('donation_coeff_q2', 3.754612744416796),
-                st.session_state.get('donation_coeff_q3', 4.001714810873598),
-                st.session_state.get('donation_coeff_q45', 0.0)
-            ]
+            'Quintile': income_labels,
+            'Intercept': income
         }
         income_df = pd.DataFrame(income_data)
         income_df['Intercept'] = income_df['Intercept'].map('{:.6f}'.format)
         st.dataframe(income_df, hide_index=True, use_container_width=True)
 
 
+def _render_group_and_study_tables(group, study):
+    """The β_group and β_study lookup tables (the left column of both formulas)."""
+    st.markdown("**👥 Group Effects (β_group):**")
+    group_data = {
+        'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
+        'Intercept': group
+    }
+    group_df = pd.DataFrame(group_data)
+    group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
+    st.dataframe(group_df, hide_index=True, use_container_width=True)
+    
+    st.markdown("**🎓 Study Programme Effects (β_study):**")
+    study_data = {
+        'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
+        'Intercept': study
+    }
+    study_df = pd.DataFrame(study_data)
+    study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
+    st.dataframe(study_df, hide_index=True, use_container_width=True)
+
+
 def render_continuous_formula():
     """Render continuous income specification formula"""
     
     # Get current coefficient values FROM YAML ONLY
-    intercept = get_coefficient('intercept', 'cont')
-    hh_coeff = get_coefficient('hh', 'cont')
-    linear_coeff = get_coefficient('linear', 'cont')
+    _render_continuous_formula(
+        intercept=get_coefficient('intercept', 'cont'),
+        hh_coeff=get_coefficient('hh', 'cont'),
+        linear_coeff=get_coefficient('linear', 'cont'),
+        group=[
+            st.session_state.get('donation_coeff_midsub', 0.856140306694656),
+            st.session_state.get('donation_coeff_nosub', -0.926633374153906),
+            st.session_state.get('donation_coeff_fullsub', 0.0)
+        ],
+        study=[
+            st.session_state.get('donation_coeff_incoming', -6.920193024391676),
+            st.session_state.get('donation_coeff_law', -2.081331674770856),
+            st.session_state.get('donation_coeff_ug', -2.139093511519692),
+            st.session_state.get('donation_coeff_grad', 0.0)
+        ],
+    )
+
+
+def render_continuous_formula_specific():
+    """Render continuous income specification formula with continuous-specific coefficients"""
+    
+    # Get continuous-specific coefficient values FROM YAML ONLY
+    _render_continuous_formula(
+        intercept=get_coefficient('intercept', 'cont'),
+        hh_coeff=get_coefficient('hh', 'cont'),
+        linear_coeff=get_coefficient('linear', 'cont'),
+        group=[
+            get_coefficient('midsub', 'cont'),
+            get_coefficient('nosub', 'cont'),
+            get_coefficient('fullsub', 'cont')
+        ],
+        study=[
+            get_coefficient('incoming', 'cont'),
+            get_coefficient('law', 'cont'),
+            get_coefficient('ug', 'cont'),
+            get_coefficient('grad', 'cont')
+        ],
+    )
+
+
+def _render_continuous_formula(intercept, hh_coeff, linear_coeff, group, study):
+    """The continuous formula display, from the coefficient values the caller
+    looked up (the flat display set, or the continuous-specific set)."""
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -617,32 +647,7 @@ def render_continuous_formula():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**👥 Group Effects (β_group):**")
-        group_data = {
-            'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Intercept': [
-                st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-                st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-                st.session_state.get('donation_coeff_fullsub', 0.0)
-            ]
-        }
-        group_df = pd.DataFrame(group_data)
-        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(group_df, hide_index=True, use_container_width=True)
-        
-        st.markdown("**🎓 Study Programme Effects (β_study):**")
-        study_data = {
-            'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Intercept': [
-                st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-                st.session_state.get('donation_coeff_law', -2.081331674770856),
-                st.session_state.get('donation_coeff_ug', -2.139093511519692),
-                st.session_state.get('donation_coeff_grad', 0.0)
-            ]
-        }
-        study_df = pd.DataFrame(study_data)
-        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(study_df, hide_index=True, use_container_width=True)
+        _render_group_and_study_tables(group, study)
     
     with col2:
         st.markdown("**📈 Linear Income Effect (β_linear):**")
@@ -781,148 +786,6 @@ def clear_input_field_cache():
             del st.session_state[key]
 
 
-def render_categorical_formula_specific():
-    """Render categorical income specification formula with categorical-specific coefficients"""
-    
-    # Get categorical-specific coefficient values FROM YAML ONLY
-    intercept = get_coefficient('intercept', 'cat')
-    hh_coeff = get_coefficient('hh', 'cat')
-    
-    # Symbolic formula
-    st.markdown("**📐 Symbolic Formula:**")
-    st.latex(r"""
-    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{income\_q}[quintile_i] + \beta_{study}[study_i] + \beta_{hh} \times HH\_raw_i
-    """)
-    
-    # Numerical formula with current values
-    st.markdown("**🔢 With Current Coefficient Values:**")
-    st.latex(f"""
-    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + \\beta_{{income\\_q}}[quintile_i] + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_raw_i
-    """)
-    
-    # Show coefficient lookup tables
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**👥 Group Effects (β_group):**")
-        group_data = {
-            'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Intercept': [
-                get_coefficient('midsub', 'cat'),
-                get_coefficient('nosub', 'cat'),
-                get_coefficient('fullsub', 'cat')
-            ]
-        }
-        group_df = pd.DataFrame(group_data)
-        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(group_df, hide_index=True, use_container_width=True)
-        
-        st.markdown("**🎓 Study Programme Effects (β_study):**")
-        study_data = {
-            'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Intercept': [
-                get_coefficient('incoming', 'cat'),
-                get_coefficient('law', 'cat'),
-                get_coefficient('ug', 'cat'),
-                get_coefficient('grad', 'cat')
-            ]
-        }
-        study_df = pd.DataFrame(study_data)
-        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(study_df, hide_index=True, use_container_width=True)
-    
-    with col2:
-        st.markdown("**💰 Income Quintile Effects (β_income_q):**")
-        income_data = {
-            'Quintile': ['Q1 (Level 12, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
-            'Intercept': [
-                get_coefficient('q1', 'cat'),
-                get_coefficient('q2', 'cat'),
-                get_coefficient('q3', 'cat'),
-                get_coefficient('q4', 'cat'),
-                get_coefficient('q5', 'cat')
-            ]
-        }
-        income_df = pd.DataFrame(income_data)
-        income_df['Intercept'] = income_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(income_df, hide_index=True, use_container_width=True)
-
-
-def render_continuous_formula_specific():
-    """Render continuous income specification formula with continuous-specific coefficients"""
-    
-    # Get continuous-specific coefficient values FROM YAML ONLY
-    intercept = get_coefficient('intercept', 'cont')
-    hh_coeff = get_coefficient('hh', 'cont')
-    linear_coeff = get_coefficient('linear', 'cont')
-    
-    # Symbolic formula
-    st.markdown("**📐 Symbolic Formula:**")
-    st.latex(r"""
-    \hat{y}_i = \beta_0 + \beta_{group}[group_i] + \beta_{linear} \times income\_level_i + \beta_{study}[study_i] + \beta_{hh} \times HH\_raw_i
-    """)
-    
-    # Numerical formula with current values
-    st.markdown("**🔢 With Current Coefficient Values:**")
-    st.latex(f"""
-    \\hat{{y}}_i = {intercept:.6f} + \\beta_{{group}}[group_i] + {linear_coeff:.6f} \\times income\\_level_i + \\beta_{{study}}[study_i] + {hh_coeff:.6f} \\times HH\\_raw_i
-    """)
-    
-    # Show coefficient lookup tables and linear effect
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**👥 Group Effects (β_group):**")
-        group_data = {
-            'Group': ['MidSub', 'NoSub', 'FullSub (ref)'],
-            'Intercept': [
-                get_coefficient('midsub', 'cont'),
-                get_coefficient('nosub', 'cont'),
-                get_coefficient('fullsub', 'cont')
-            ]
-        }
-        group_df = pd.DataFrame(group_data)
-        group_df['Intercept'] = group_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(group_df, hide_index=True, use_container_width=True)
-        
-        st.markdown("**🎓 Study Programme Effects (β_study):**")
-        study_data = {
-            'Programme': ['Incoming', 'Law5yr', 'UG3yr', 'Grad2yr (ref)'],
-            'Intercept': [
-                get_coefficient('incoming', 'cont'),
-                get_coefficient('law', 'cont'),
-                get_coefficient('ug', 'cont'),
-                get_coefficient('grad', 'cont')
-            ]
-        }
-        study_df = pd.DataFrame(study_data)
-        study_df['Intercept'] = study_df['Intercept'].map('{:.6f}'.format)
-        st.dataframe(study_df, hide_index=True, use_container_width=True)
-    
-    with col2:
-        st.markdown("**📈 Linear Income Effect (β_linear):**")
-        st.markdown("Effect = β_linear × actual_allowance_amount")
-        
-        # Show linear effect for actual allowance amounts (not level numbers)
-        allowance_mapping = {1: 12, 2: 32, 3: 72, 4: 128, 5: 200}
-        linear_data = {
-            'Income Level': ['1 (€12)', '2 (€32)', '3 (€72)', '4 (€128)', '5 (€200)'],
-            'Effect': [
-                f"{linear_coeff * allowance_mapping[1]:.6f}",
-                f"{linear_coeff * allowance_mapping[2]:.6f}",
-                f"{linear_coeff * allowance_mapping[3]:.6f}",
-                f"{linear_coeff * allowance_mapping[4]:.6f}",
-                f"{linear_coeff * allowance_mapping[5]:.6f}"
-            ]
-        }
-        linear_df = pd.DataFrame(linear_data)
-        st.dataframe(linear_df, hide_index=True, use_container_width=True)
-        
-        # Show total range effect using actual allowances
-        total_range = linear_coeff * (200 - 12)  # from €12 to €200
-        st.metric("Total Range Effect (€12→€200)", f"{total_range:.6f}")
-
-
 def render_intercept_override_section():
     """Render the intercept override section with ability to modify default coefficient values"""
     
@@ -939,8 +802,7 @@ def render_intercept_override_section():
         st.session_state.intercept_override_values = {}
     
     # Initialize override values if not present
-    if 'intercept_override_values' not in st.session_state:
-        st.session_state.intercept_override_values = {}
+    _intercept_overrides()
     
     # Get current income mode to determine which intercepts to show
     income_mode = st.session_state.get('income_spec_mode', 'categorical only')
@@ -968,11 +830,11 @@ def render_intercept_override_section():
                 # Show both categorical and continuous
                 
                 # Restore categorical widget key
-                cat_val = restore_widget_from_storage(
-                    'override_categorical_intercept',
-                    st.session_state.intercept_override_values,
+                restore(
+                    'override_categorical_intercept', 'intercept_override_values',
                     'categorical',
-                    current_yaml_values['categorical']
+                    current_yaml_values['categorical'],
+                    widget_first=False
                 )
                 
                 new_cat_intercept = stateful(st.number_input,
@@ -981,16 +843,16 @@ def render_intercept_override_section():
                     format="%.6f",
                     help="Override value for categorical income specification",
                     key="override_categorical_intercept",
-                    on_change=lambda: auto_save_intercept('categorical', st.session_state.override_categorical_intercept)
+                    on_change=lambda: INTERCEPT_OVERRIDE.auto_save('categorical', st.session_state.override_categorical_intercept)
                 )
                 st.session_state.intercept_override_values['categorical'] = new_cat_intercept
                 
                 # Restore continuous widget key
-                cont_val = restore_widget_from_storage(
-                    'override_continuous_intercept',
-                    st.session_state.intercept_override_values,
+                restore(
+                    'override_continuous_intercept', 'intercept_override_values',
                     'continuous',
-                    current_yaml_values['continuous']
+                    current_yaml_values['continuous'],
+                    widget_first=False
                 )
                 
                 new_cont_intercept = stateful(st.number_input,
@@ -999,7 +861,7 @@ def render_intercept_override_section():
                     format="%.6f",
                     help="Override value for continuous income specification",
                     key="override_continuous_intercept",
-                    on_change=lambda: auto_save_intercept('continuous', st.session_state.override_continuous_intercept)
+                    on_change=lambda: INTERCEPT_OVERRIDE.auto_save('continuous', st.session_state.override_continuous_intercept)
                 )
                 st.session_state.intercept_override_values['continuous'] = new_cont_intercept
                     
@@ -1007,11 +869,11 @@ def render_intercept_override_section():
                 # Show only continuous
                 
                 # Restore continuous widget key
-                cont_val = restore_widget_from_storage(
-                    'override_continuous_intercept',
-                    st.session_state.intercept_override_values,
+                restore(
+                    'override_continuous_intercept', 'intercept_override_values',
                     'continuous',
-                    current_yaml_values['continuous']
+                    current_yaml_values['continuous'],
+                    widget_first=False
                 )
                 
                 new_cont_intercept = stateful(st.number_input,
@@ -1020,7 +882,7 @@ def render_intercept_override_section():
                     format="%.6f", 
                     help="Override value for continuous income specification",
                     key="override_continuous_intercept",
-                    on_change=lambda: auto_save_intercept('continuous', st.session_state.override_continuous_intercept)
+                    on_change=lambda: INTERCEPT_OVERRIDE.auto_save('continuous', st.session_state.override_continuous_intercept)
                 )
                 st.session_state.intercept_override_values['continuous'] = new_cont_intercept
                 
@@ -1028,11 +890,11 @@ def render_intercept_override_section():
                 # Show only categorical (default)
                 
                 # Restore categorical widget key
-                cat_val = restore_widget_from_storage(
-                    'override_categorical_intercept',
-                    st.session_state.intercept_override_values,
+                restore(
+                    'override_categorical_intercept', 'intercept_override_values',
                     'categorical',
-                    current_yaml_values['categorical']
+                    current_yaml_values['categorical'],
+                    widget_first=False
                 )
                 
                 new_cat_intercept = stateful(st.number_input,
@@ -1041,7 +903,7 @@ def render_intercept_override_section():
                     format="%.6f",
                     help="Override value for categorical income specification", 
                     key="override_categorical_intercept",
-                    on_change=lambda: auto_save_intercept('categorical', st.session_state.override_categorical_intercept)
+                    on_change=lambda: INTERCEPT_OVERRIDE.auto_save('categorical', st.session_state.override_categorical_intercept)
                 )
                 st.session_state.intercept_override_values['categorical'] = new_cat_intercept
         
@@ -1072,11 +934,7 @@ def render_intercept_override_section():
 
 def get_current_yaml_intercepts():
     """Get current intercept values from configuration file"""
-    import yaml
-    
-    config_path = CONFIG_PATH
-    
-    config = read_yaml_file(config_path)
+    config = read_yaml_file(CONFIG_PATH)
     
     regression_coeffs = config['donation_default']['regression_coefficients']
     
@@ -1131,37 +989,58 @@ def apply_intercept_overrides(override_values):
         return False
 
 
-def reset_intercepts_to_defaults():
-    """Restore the configuration file's intercept values into session state"""
-    try:
-        research_defaults = get_current_yaml_intercepts()
-    except Exception as e:
-        st.error(f"Error updating configuration file: {e}")
-        return False
-    
-    return apply_intercept_overrides(research_defaults)
+class OverrideField:
+    """One override section's session-state plumbing - the intercept and the
+    adjustment sections share it: the dict of typed override values, the
+    configuration file's defaults, the apply step and the auto-save toasts."""
 
+    def __init__(self, overrides, read_defaults, apply, saved_message, failed_message, icon):
+        self.overrides = overrides            # () -> the override-values dict (created if absent)
+        self.read_defaults = read_defaults    # () -> {field: file value}
+        self.apply = apply                    # ({field: value}) -> bool
+        self.saved_message = saved_message    # (field, value) -> toast text
+        self.failed_message = failed_message  # (field) -> toast text
+        self.icon = icon
 
-def auto_save_intercept(intercept_type, new_value):
-    """Auto-save intercept changes to session state"""
-    try:
-        # Update the override values
-        if 'intercept_override_values' not in st.session_state:
-            st.session_state.intercept_override_values = {}
+    def reset_to_defaults(self):
+        """Restore the configuration file's values into session state"""
+        try:
+            research_defaults = self.read_defaults()
+        except Exception as e:
+            st.error(f"Error updating configuration file: {e}")
+            return False
         
-        st.session_state.intercept_override_values[intercept_type] = new_value
-        
-        # Save to session state immediately (the configuration file is read-only)
-        success = apply_intercept_overrides({intercept_type: new_value})
-        
-        if success:
-            # Show a brief success message
-            st.toast(f"✅ {intercept_type.title()} intercept auto-saved: {new_value:.6f}", icon="💾")
-        else:
-            st.toast(f"❌ Failed to save {intercept_type} intercept", icon="⚠️")
+        return self.apply(research_defaults)
+
+    def auto_save(self, field, new_value):
+        """Auto-save a typed override to session state"""
+        try:
+            # Update the override values
+            self.overrides()[field] = new_value
             
-    except Exception as e:
-        st.toast(f"❌ Auto-save error: {str(e)}", icon="⚠️")
+            # Save to session state immediately (the configuration file is read-only)
+            success = self.apply({field: new_value})
+            
+            if success:
+                # Show a brief success message
+                st.toast(self.saved_message(field, new_value), icon=self.icon)
+            else:
+                st.toast(self.failed_message(field), icon="⚠️")
+                
+        except Exception as e:
+            st.toast(f"❌ Auto-save error: {str(e)}", icon="⚠️")
+
+
+def _intercept_overrides():
+    if 'intercept_override_values' not in st.session_state:
+        st.session_state.intercept_override_values = {}
+    return st.session_state.intercept_override_values
+
+
+def _adjustment_overrides():
+    if 'adjustment_override_values' not in st.session_state:
+        st.session_state.adjustment_override_values = {}
+    return st.session_state.adjustment_override_values
 
 
 def render_adjustment_override_section():
@@ -1177,13 +1056,9 @@ def render_adjustment_override_section():
         st.session_state.adjustment_override_values = {}
     
     # Initialize adjustment values if not present
-    if 'adjustment_override_values' not in st.session_state:
-        st.session_state.adjustment_override_values = {}
+    _adjustment_overrides()
     
-    # Show current YAML values for reference
     try:
-        current_yaml_values = get_current_yaml_adjustment()
-        
         # Use 3 columns: Research Default, Override Value, Impact Preview
         col1, col2, col3 = st.columns(3)
         
@@ -1199,9 +1074,8 @@ def render_adjustment_override_section():
             # value otherwise wins, and no rerun-dependent `value=` is passed, so the
             # widget id stays stable (the +/- buttons used to jump back one step under
             # fast clicks).
-            if 'override_adjustment_shift' not in st.session_state:
-                st.session_state.override_adjustment_shift = float(
-                    st.session_state.adjustment_override_values.get('shift_value', research_default))
+            seed_if_absent('override_adjustment_shift', float(
+                st.session_state.adjustment_override_values.get('shift_value', research_default)))
 
             # Adjustment input field
             new_adjustment = stateful(st.number_input,
@@ -1210,7 +1084,7 @@ def render_adjustment_override_section():
                 format="%.3f",
                 help="Shift the distribution up (positive) or down (negative) on 0-100 scale before stochastic component",
                 key="override_adjustment_shift",
-                on_change=lambda: auto_save_adjustment('shift_value', st.session_state.override_adjustment_shift)
+                on_change=lambda: ADJUSTMENT_OVERRIDE.auto_save('shift_value', st.session_state.override_adjustment_shift)
             )
             st.session_state.adjustment_override_values['shift_value'] = new_adjustment
         
@@ -1238,7 +1112,7 @@ def render_actions_and_management_section():
         st.markdown("**🔄 Reset Intercept**")
         if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
             # Reset to the research default values held in the configuration file
-            success = reset_intercepts_to_defaults()
+            success = INTERCEPT_OVERRIDE.reset_to_defaults()
             if success:
                 # Set flag to reset widgets on next rerun (before widgets render)
                 st.session_state._reset_intercept_flag = True
@@ -1264,9 +1138,9 @@ def render_actions_and_management_section():
         st.markdown("**🔄 Reset All**")
         if st.button("Reset Config to Defaults", type="secondary", use_container_width=True, help="Reset entire page to research defaults (intercepts, adjustment, sliders, radio buttons)", key="reset_config_btn"):
             # Reset intercepts to research defaults
-            success_intercept = reset_intercepts_to_defaults()
+            success_intercept = INTERCEPT_OVERRIDE.reset_to_defaults()
             # Reset adjustment to research default (-4.0)
-            success_adjustment = reset_adjustment_to_defaults()
+            success_adjustment = ADJUSTMENT_OVERRIDE.reset_to_defaults()
             
             if success_intercept and success_adjustment:
                 # Set flag to reset ALL widgets on next rerun (before widgets render)
@@ -1279,11 +1153,7 @@ def render_actions_and_management_section():
 
 def get_current_yaml_adjustment():
     """Get current adjustment values from configuration file"""
-    import yaml
-    
-    config_path = CONFIG_PATH
-    
-    config = read_yaml_file(config_path)
+    config = read_yaml_file(CONFIG_PATH)
     
     adjustment_params = config['donation_default'].get('adjustment', {})
     
@@ -1305,34 +1175,20 @@ def apply_adjustment_overrides(override_values):
         return False
 
 
-def reset_adjustment_to_defaults():
-    """Restore the configuration file's adjustment shift into session state"""
-    try:
-        research_defaults = get_current_yaml_adjustment()
-    except Exception as e:
-        st.error(f"Error updating configuration file: {e}")
-        return False
-    
-    return apply_adjustment_overrides(research_defaults)
+INTERCEPT_OVERRIDE = OverrideField(
+    overrides=_intercept_overrides,
+    read_defaults=get_current_yaml_intercepts,
+    apply=apply_intercept_overrides,
+    saved_message=lambda intercept_type, new_value: f"✅ {intercept_type.title()} intercept auto-saved: {new_value:.6f}",
+    failed_message=lambda intercept_type: f"❌ Failed to save {intercept_type} intercept",
+    icon="💾",
+)
 
-
-def auto_save_adjustment(adjustment_type, new_value):
-    """Auto-save adjustment changes to session state"""
-    try:
-        # Update the override values
-        if 'adjustment_override_values' not in st.session_state:
-            st.session_state.adjustment_override_values = {}
-        
-        st.session_state.adjustment_override_values[adjustment_type] = new_value
-        
-        # Save to session state immediately (the configuration file is read-only)
-        success = apply_adjustment_overrides({adjustment_type: new_value})
-        
-        if success:
-            # Show a brief success message
-            st.toast(f"✅ {adjustment_type.replace('_', ' ').title()} auto-saved: {new_value:.3f}", icon="📊")
-        else:
-            st.toast(f"❌ Failed to save {adjustment_type}", icon="⚠️")
-            
-    except Exception as e:
-        st.toast(f"❌ Auto-save error: {str(e)}", icon="⚠️")
+ADJUSTMENT_OVERRIDE = OverrideField(
+    overrides=_adjustment_overrides,
+    read_defaults=get_current_yaml_adjustment,
+    apply=apply_adjustment_overrides,
+    saved_message=lambda adjustment_type, new_value: f"✅ {adjustment_type.replace('_', ' ').title()} auto-saved: {new_value:.3f}",
+    failed_message=lambda adjustment_type: f"❌ Failed to save {adjustment_type}",
+    icon="📊",
+)

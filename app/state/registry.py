@@ -57,7 +57,13 @@ CATEGORIES = (
 #: ``chart_key``  - the plotly key built by the shared chart helpers
 #:                  (``donation_hist_*`` / ``*_pie_*`` / ``*_raw_hist_*`` and the
 #:                  Decision-4 density charts).
-DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key")
+#: ``widget_key`` / ``storage_dict_name`` - the parameters of the decision tabs'
+#:                  shared persistence helpers (``decision_tabs._tab_state``:
+#:                  ``restore`` / ``save`` / ``seed_if_absent`` / ``seed_if_changed``);
+#:                  the widget key and the ``*_tab_persistence`` dict (or
+#:                  ``intercept_override_values``) they read and write.  Every
+#:                  caller still binds the widget key literally (``key=``).
+DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key", "widget_key", "storage_dict_name")
 
 #: ``[k for k in st.session_state.keys() if k.startswith(<prefix>)]`` - the
 #: whole-decision resets, and the per-category purchasing limits Page 1's reset
