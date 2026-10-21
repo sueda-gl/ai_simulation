@@ -138,11 +138,11 @@ Take "🚀 Run Complete Simulation" on Page 2.
         |
         v
   run_combined_simulation()                     app/pages/decision_execution.py
-    records in session state which decisions run with custom settings and which
-    with defaults, then calls
+    builds a RunRequest (which decisions run, which with custom settings, which
+    with defaults), records the custom/default lists for the results page, then calls
         |
         v
-  run_full_simulation()                         app/simulation.py
+  run_full_simulation(request)                  app/simulation.py
         |
         |-- take_snapshot(st.session_state)     app/seam/snapshot.py     (read ONCE)
         |-- build_run_plan(snapshot, config)    app/seam/build_plan.py   (pure)
@@ -176,8 +176,9 @@ results dictionary; "Compare all × Compare both" produces six sub-runs in a fix
 
 **The runner writes nothing until the results exist.** The only session writes inside
 `run_full_simulation` happen after `execute` returns, so a failed run leaves the
-session as it was. The buttons that call it do record the custom/default decision
-lists first; that is how the plan builder learns them.
+session as it was. The buttons hand the runner a `RunRequest` (src/contract/plan.py)
+saying which decisions run and which use defaults; the plan builder reads the
+request, never a swapped selection.
 
 The other Run buttons (per-tab "Run X Only", per-tab "Run Complete", the Results-page
 "Run Complete") all funnel into the same `run_full_simulation()`.

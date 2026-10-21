@@ -287,33 +287,6 @@ def render_rejected_transaction_config_selection_ui(results_dict, ctx=None):
         render_complete_simulation_section()
 
 
-def extract_configuration_details_from_key(result_key):
-    """Extract short display details from result key for UI"""
-    
-    # Population mode short names
-    if 'copula' in result_key:
-        population_short = "Copula"
-    elif 'research_spec' in result_key or 'documentation' in result_key:
-        population_short = "Research Spec"
-    elif 'baseline' in result_key:
-        population_short = "Baseline"
-    else:
-        population_short = "Single Mode"
-    
-    # Income mode short names
-    if 'categorical' in result_key:
-        income_short = "Categorical"
-    elif 'continuous' in result_key:
-        income_short = "Continuous"
-    else:
-        income_short = "Single Mode"
-    
-    return {
-        'population_short': population_short,
-        'income_short': income_short
-    }
-
-
 def render_complete_simulation_section():
     """Render the complete simulation section with Run button after configuration selection"""
     

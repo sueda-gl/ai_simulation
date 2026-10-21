@@ -4,8 +4,9 @@ Decision execution functions for running individual and combined simulations.
 """
 import streamlit as st
 import pandas as pd
-from app.simulation import run_full_simulation
-from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
+from src.contract.plan import RunRequest
+from app.simulation import run_full_simulation, run_monte_carlo_study
+from app.models import ALL_DECISIONS
 
 # The 13 decisions' default values and default descriptions are pure contract
 # data (src/contract/defaults.py). Re-exported here because the screens, the
@@ -16,44 +17,31 @@ from src.contract.defaults import (  # noqa: F401
 )
 
 # The saved-decision-configuration store lives in app/state/saved_configs.py.
-# Re-exported here so every existing caller keeps importing it from this module.
+# The names a page or a test still imports from this module are re-exported
+# here; new code imports them from app.state.saved_configs.
 from app.state.saved_configs import (  # noqa: F401
-    extract_disclose_income_configuration_details,
-    get_current_disclose_income_params,
-    calculate_disclose_income_metrics,
-    extract_disclose_documents_configuration_details,
-    get_current_disclose_documents_params,
-    calculate_disclose_documents_metrics,
-    RTD_CONFIG_MECHANISMS,
-    extract_rejected_transaction_configuration_details,
-    get_current_rejected_transaction_params,
-    calculate_rejected_transaction_metrics,
-    get_selected_decision_configs,
-    validate_seed_consistency,
-    get_decision_result_columns,
-    hash_result_columns,
-    save_decision_config,
-    get_decision_config,
-    has_decision_config,
-    is_decision_config_selected,
     clear_decision_config,
-    get_simulation_seed_from_configs,
-    get_all_saved_config_summary,
+    clear_selected_configuration,
+    format_result_name,
+    get_current_coefficients,
+    get_current_stochastic_params,
+    get_decision_config,
+    get_selected_decision_configs,
+    has_decision_config,
+    save_selected_configuration,
 )
 
 
 def format_decision_title(decision_name, include_number=False):
     """Format decision name for display, with special handling for specific decisions
-    
+
     Args:
         decision_name: The decision name to format
         include_number: If True, prepend decision number (e.g., "1. Decision Name")
-    
+
     Returns:
         Formatted decision title string
     """
-    from app.models import ALL_DECISIONS
-    
     # Get decision number from ALL_DECISIONS
     decision_number = None
     if include_number and decision_name in ALL_DECISIONS:
@@ -546,7 +534,6 @@ def get_actual_default_value(decision_name, sim_params=None):
     3. Hard-coded default from DEFAULT_DECISION_VALUES
     """
     import random
-    import streamlit as st
     
     base_value = DEFAULT_DECISION_VALUES.get(decision_name)
     
@@ -693,50 +680,29 @@ def run_individual_decision(decision_name):
     """
     with st.spinner(f"Running {decision_name} simulation..."):
         try:
-            # Store original state values to restore later
-            original_decisions = st.session_state.decision_params.selected_decisions.copy()
-            original_custom_decisions = getattr(st.session_state, 'custom_decisions', [])
-            original_default_decisions = getattr(st.session_state, 'default_decisions', [])
-            
-            # FIX: Store in session state for restoration after st.rerun()
-            # This is needed because run_full_simulation() may call st.rerun()
-            # BEFORE this function's restoration code can execute
-            # NOTE: Only store selected_decisions - custom_decisions/default_decisions should
-            # reflect the current run (needed for should_enable_selection())
-            st.session_state._pending_decisions_restore = {
-                'selected_decisions': original_decisions
-            }
-            
             # Clear any saved configuration to allow fresh run with current tab settings
             if decision_name in ("donation_default", "disclose_income", "disclose_documents"):
                 if has_decision_config(decision_name):
                     st.info(f"🔄 Clearing saved {decision_name} configuration - will use current tab settings")
                     clear_decision_config(decision_name)
-            
-            # Modify selected decisions for simulation
-            st.session_state.decision_params.selected_decisions = [decision_name]
-            
-            # If this is donation_default, collect and apply coefficient parameters
-            if decision_name == "donation_default":
-                # Collect regression coefficients from YAML-loaded session state
-                coeffs = get_current_coefficients()
-                coeffs['income_mode'] = st.session_state.get('income_spec_mode', 'categorical')
-                
-                # Store the coefficients in decision_params for the simulation
-                if not hasattr(st.session_state, 'custom_coefficients'):
-                    st.session_state.custom_coefficients = {}
-                st.session_state.custom_coefficients['donation_default'] = coeffs
-            
-            # Set state variables correctly for individual runs
-            # This ensures the results display shows only the executed decision
+
+            # Record which decisions this run executes with custom parameters: the
+            # results page (and the tests) read these two keys after the run.
             st.session_state.custom_decisions = [decision_name]  # Only this decision was run with custom parameters
             st.session_state.default_decisions = []  # No decisions used default values (since only one was run)
-            
+
+            # The run request: only this decision runs; the Page-2 selection is
+            # not touched (the plan builder reads the request, not the session).
+            request = RunRequest(
+                decisions_to_run=(decision_name,),
+                custom_decisions=(decision_name,),
+                default_decisions=(),
+            )
+
             # Run simulation - check if Monte Carlo or Single Run mode
             if st.session_state.sim_params.simulation_mode == "Monte-Carlo Study":
                 # Run Monte Carlo study
-                from app.simulation import run_monte_carlo_study
-                mc_summary, mc_detailed, output_log = run_monte_carlo_study()
+                mc_summary, mc_detailed, output_log = run_monte_carlo_study(request)
                 if mc_summary is not None:
                     st.session_state.mc_results = {
                         'summary': mc_summary,
@@ -760,41 +726,21 @@ def run_individual_decision(decision_name):
                     # Navigate to results page
                     st.session_state.page = 'results'
                     st.info("🔄 Redirecting to Results page to view full Monte Carlo analysis...")
-                    
-                    # FIX: Restore ONLY selected_decisions BEFORE rerun
-                    # Do NOT restore custom_decisions/default_decisions - they should reflect the current run
-                    # (needed for should_enable_selection() to show "Use This Config" button)
-                    st.session_state.decision_params.selected_decisions = original_decisions
-                    # Clean up the pending restore flag
-                    if hasattr(st.session_state, '_pending_decisions_restore'):
-                        del st.session_state._pending_decisions_restore
-                    
+
                     st.rerun()
                 else:
                     st.error("❌ Monte Carlo simulation returned no results")
             else:
-                # Run single simulation.
-                # A successful run ends in st.rerun(), which raises a BaseException,
-                # so nothing below runs on the success path - the state restoration
-                # happens through _pending_decisions_restore instead.
-                run_full_simulation()
+                # Run single simulation.  A successful run ends in st.rerun()
+                # (a BaseException), so nothing below runs on the success path.
+                run_full_simulation(request)
 
             # Only reached when the run did not redirect: Monte Carlo returned no
             # results, or run_full_simulation() handled an error itself.
-            # Restore ONLY selected_decisions - keep custom_decisions/default_decisions
-            # as-is because they're needed for should_enable_selection() to show the
-            # "Use This Config" button.
-            st.session_state.decision_params.selected_decisions = original_decisions
-            if hasattr(st.session_state, '_pending_decisions_restore'):
-                del st.session_state._pending_decisions_restore
+            # custom_decisions / default_decisions stay: they describe this run.
 
         except Exception as e:
-            # Restore selected_decisions on exception to ensure state is consistent
-            st.session_state.decision_params.selected_decisions = original_decisions
-            # Do NOT restore custom_decisions and default_decisions
-            if hasattr(st.session_state, '_pending_decisions_restore'):
-                del st.session_state._pending_decisions_restore
-            
+            # custom_decisions / default_decisions are not restored
             st.error(f"❌ Error running {decision_name}: {str(e)}")
             import traceback
             st.text(traceback.format_exc())
@@ -927,29 +873,24 @@ def run_combined_simulation(selected_decisions):
     
     with st.spinner(spinner_msg):
         try:
-            # Store original selected decisions
-            original_decisions = st.session_state.decision_params.selected_decisions.copy()
-
-            # A successful run ends in st.rerun() (a BaseException), so the
-            # restoration has to be handed to run_full_simulation() the same way
-            # run_individual_decision() does it.
-            st.session_state._pending_decisions_restore = {
-                'selected_decisions': original_decisions
-            }
-
-            # Set to run ALL decisions (this ensures complete simulation)
-            st.session_state.decision_params.selected_decisions = ALL_DECISIONS
-
-            # Store metadata about which decisions use custom vs default parameters
+            # Store metadata about which decisions use custom vs default parameters:
+            # the results page (and the tests) read these two keys after the run.
             # FIX: Use effective_selected_decisions which includes decisions with saved configs
             st.session_state.custom_decisions = effective_selected_decisions
             st.session_state.default_decisions = unselected_decisions
-            
+
+            # The run request: ALL decisions run (a complete simulation); the
+            # Page-2 selection is not touched (the plan builder reads the request).
+            request = RunRequest(
+                decisions_to_run=tuple(ALL_DECISIONS),
+                custom_decisions=tuple(effective_selected_decisions),
+                default_decisions=tuple(unselected_decisions),
+            )
+
             # Run simulation with all decisions - check if Monte Carlo or Single Run mode
             if st.session_state.sim_params.simulation_mode == "Monte-Carlo Study":
                 # Run Monte Carlo study
-                from app.simulation import run_monte_carlo_study
-                mc_summary, mc_detailed, output_log = run_monte_carlo_study()
+                mc_summary, mc_detailed, output_log = run_monte_carlo_study(request)
                 if mc_summary is not None:
                     st.session_state.mc_results = {
                         'summary': mc_summary,
@@ -965,205 +906,20 @@ def run_combined_simulation(selected_decisions):
                     # Navigate to results page
                     st.session_state.page = 'results'
                     st.info("🔄 Redirecting to Results page to view full Monte Carlo analysis...")
-                    
-                    # Restore state before rerun
-                    st.session_state.decision_params.selected_decisions = original_decisions
-                    if hasattr(st.session_state, '_pending_decisions_restore'):
-                        del st.session_state._pending_decisions_restore
 
                     st.rerun()
                 else:
                     st.error("❌ Monte Carlo simulation returned no results")
             else:
-                # Run single simulation.
-                # A successful run ends in st.rerun(), which raises a BaseException,
-                # so nothing below runs on the success path - the restoration happens
-                # through _pending_decisions_restore instead.
-                run_full_simulation()
+                # Run single simulation.  A successful run ends in st.rerun()
+                # (a BaseException), so nothing below runs on the success path.
+                run_full_simulation(request)
 
             # Only reached when the run did not redirect: Monte Carlo returned no
             # results, or run_full_simulation() handled an error itself.
-            st.session_state.decision_params.selected_decisions = original_decisions
-            if hasattr(st.session_state, '_pending_decisions_restore'):
-                del st.session_state._pending_decisions_restore
 
         except Exception as e:
             st.error(f"❌ Error running complete simulation: {str(e)}")
             import traceback
             st.text(traceback.format_exc())
 
-
-# ==================== CONFIGURATION SELECTION SYSTEM ====================
-# NOTE: These functions are kept for backwards compatibility.
-# New code should use the unified save_decision_config() function from the
-# UNIFIED DECISION CONFIGURATION SYSTEM section below.
-
-def save_selected_configuration(result_key, result_df):
-    """
-    Save the selected donation configuration for later use in combined simulations.
-    
-    DEPRECATED: This is a wrapper for backwards compatibility.
-    New code should use: save_decision_config('donation_default', result_key, result_df, params, metrics, extra_data)
-    """
-    # Extract configuration details from the result key
-    config_details = extract_configuration_details(result_key)
-    
-    # Get current coefficient values from session state
-    coefficients = get_current_coefficients()
-    
-    # Get current stochastic parameters
-    stochastic_params = get_current_stochastic_params()
-    
-    # Calculate key metrics from the result
-    metrics = calculate_result_metrics(result_df)
-    
-    # Build params dict for unified system
-    params = {
-        'coefficients': coefficients,
-        'stochastic_params': stochastic_params,
-        'income_mode': config_details['income_spec_mode']
-    }
-    
-    extra_data = {
-        'population_mode': config_details['population_mode'],
-        'income_spec_mode': config_details['income_spec_mode']
-    }
-    
-    # Use unified save function
-    success, config, error_info = save_decision_config(
-        'donation_default', result_key, result_df, params, metrics, extra_data
-    )
-    
-    return config
-
-
-def extract_configuration_details(result_key):
-    """Extract population and income mode from result key"""
-    
-    # Population mode detection
-    if 'copula' in result_key:
-        population_mode = 'Copula (synthetic)'
-    elif 'research_spec' in result_key or 'documentation' in result_key:
-        population_mode = 'Research Specification'
-    elif 'baseline' in result_key:
-        population_mode = 'Research Baseline'
-    else:
-        # For single-mode results, use current session state
-        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
-    
-    # Income mode detection
-    if 'categorical' in result_key:
-        income_spec_mode = 'categorical only'
-    elif 'continuous' in result_key:
-        income_spec_mode = 'continuous only'
-    else:
-        # For single-mode results, use current session state
-        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
-    
-    return {
-        'population_mode': population_mode,
-        'income_spec_mode': income_spec_mode
-    }
-
-
-def get_current_coefficients():
-    """Collect all current coefficient values from session state
-    
-    IMPORTANT: Ensures coefficients are loaded from YAML first.
-    YAML is the SINGLE source of truth - no fallback values.
-    """
-    # Ensure coefficients are loaded from YAML
-    from app.models import load_donation_coefficients_from_yaml
-    if 'donation_coeff_intercept' not in st.session_state:
-        load_donation_coefficients_from_yaml()
-    
-    # Return coefficients from session state - NO FALLBACK VALUES
-    return {
-        'intercept': st.session_state.donation_coeff_intercept,
-        'beta_group': {
-            'MidSub': st.session_state.donation_coeff_midsub,
-            'NoSub': st.session_state.donation_coeff_nosub,
-            'FullSub': st.session_state.donation_coeff_fullsub
-        },
-        'beta_income_q': {
-            'Q1': st.session_state.donation_coeff_q1,
-            'Q2': st.session_state.donation_coeff_q2,
-            'Q3': st.session_state.donation_coeff_q3,
-            'Q4': st.session_state.get('donation_coeff_q4', 0.0),
-            'Q5': st.session_state.get('donation_coeff_q5', st.session_state.get('donation_coeff_q45', 0.0))  # Support both Q5 and the older Q4_Q5 name
-        },
-        'beta_income_linear': st.session_state.donation_coeff_linear,
-        'beta_study': {
-            'Incoming': st.session_state.donation_coeff_incoming,
-            'Law5yr': st.session_state.donation_coeff_law,
-            'UG3yr': st.session_state.donation_coeff_ug,
-            'Grad2yr': st.session_state.donation_coeff_grad
-        },
-        'beta_hh': st.session_state.donation_coeff_hh
-    }
-
-
-def get_current_stochastic_params():
-    """Collect current stochastic parameters from session state"""
-    return {
-        'stochastic': {
-            'sigma_value': st.session_state.get('sigma_value_ui', DONATION_SIGMA_OVERALL),
-            'sigma_coefficient': st.session_state.get('sigma_coefficient', 1.0),
-            'sigma_in_copula': st.session_state.get('sigma_in_copula', False),
-            'sigma_in_research': st.session_state.get('sigma_in_research', True)
-        },
-        'anchor_weights': {
-            'observed': st.session_state.get('anchor_observed_weight', 0.75),
-            'predicted': 1 - st.session_state.get('anchor_observed_weight', 0.75)
-        }
-    }
-
-
-def calculate_result_metrics(result_df):
-    """Calculate key metrics from result DataFrame - always uses truncated donation_default"""
-    
-    # Always use truncated donation_default for consistency
-    donation_col = 'donation_default'
-    
-    metrics = {
-        'mean_donation': result_df[donation_col].mean(),
-        'std_donation': result_df[donation_col].std(),
-        'median_donation': result_df[donation_col].median(),
-        'min_donation': result_df[donation_col].min(),
-        'max_donation': result_df[donation_col].max(),
-        'q25_donation': result_df[donation_col].quantile(0.25),
-        'q75_donation': result_df[donation_col].quantile(0.75),
-        'donation_column_used': donation_col
-    }
-    
-    return metrics
-
-
-def format_result_name(result_key):
-    """Format result key into human-readable name"""
-    
-    name_mapping = {
-        'copula_categorical': '🔬 Copula + Categorical Income',
-        'copula_continuous': '🔬 Copula + Continuous Income',
-        'research_spec_categorical': '📊 Research Spec + Categorical Income',
-        'research_spec_continuous': '📊 Research Spec + Continuous Income',
-        'research_baseline_categorical': '📈 Research Baseline + Categorical Income',
-        'research_baseline_continuous': '📈 Research Baseline + Continuous Income',
-        'categorical': '💰 Categorical Income Mode',
-        'continuous': '📈 Continuous Income Mode',
-        'copula': '🔬 Copula Population',
-        'documentation': '📊 Research Specification',
-        'baseline': '📈 Research Baseline'
-    }
-    
-    return name_mapping.get(result_key, f"📊 {result_key.replace('_', ' ').title()}")
-
-
-def is_configuration_selected(result_key):
-    """Check if a specific donation_default configuration is currently selected."""
-    return is_decision_config_selected('donation_default', result_key)
-
-
-def clear_selected_configuration():
-    """Clear the currently selected donation_default configuration."""
-    clear_decision_config('donation_default')

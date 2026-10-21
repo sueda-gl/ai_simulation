@@ -6,8 +6,8 @@ decision result.  It pins the seed, the agent count, the population mode and
 that decision's parameters so a later complete simulation reproduces the run
 the user looked at.
 
-``app/pages/decision_execution.py`` re-exports every function here, so
-callers may import them from either module.
+``app/pages/decision_execution.py`` re-exports the functions here that a page
+or a test still imports from it, so those callers keep working.
 """
 
 import streamlit as st
@@ -15,7 +15,179 @@ from datetime import datetime
 
 from src.contract.plan import hash_result_columns  # noqa: F401 - the writer and the checker share it
 from app.seam.config_repo import get_config_repo
+from app.models import DONATION_SIGMA_OVERALL, load_donation_coefficients_from_yaml
 
+
+# ==================== DONATION DEFAULT (Decision 3) CONFIG SELECTION ====================
+# The donation triplet (details / params / metrics) plus the donation-only
+# wrappers over the unified store below.
+
+def save_selected_configuration(result_key, result_df):
+    """
+    Save the selected donation configuration for later use in combined simulations.
+
+    DEPRECATED: This is a wrapper for backwards compatibility.
+    New code should use: save_decision_config('donation_default', result_key, result_df, params, metrics, extra_data)
+    """
+    # Extract configuration details from the result key
+    config_details = extract_configuration_details(result_key)
+
+    # Get current coefficient values from session state
+    coefficients = get_current_coefficients()
+
+    # Get current stochastic parameters
+    stochastic_params = get_current_stochastic_params()
+
+    # Calculate key metrics from the result
+    metrics = calculate_result_metrics(result_df)
+
+    # Build params dict for unified system
+    params = {
+        'coefficients': coefficients,
+        'stochastic_params': stochastic_params,
+        'income_mode': config_details['income_spec_mode']
+    }
+
+    extra_data = {
+        'population_mode': config_details['population_mode'],
+        'income_spec_mode': config_details['income_spec_mode']
+    }
+
+    # Use unified save function
+    success, config, error_info = save_decision_config(
+        'donation_default', result_key, result_df, params, metrics, extra_data
+    )
+
+    return config
+
+
+def extract_configuration_details(result_key):
+    """Extract population and income mode from result key"""
+
+    # Population mode detection
+    if 'copula' in result_key:
+        population_mode = 'Copula (synthetic)'
+    elif 'research_spec' in result_key or 'documentation' in result_key:
+        population_mode = 'Research Specification'
+    elif 'baseline' in result_key:
+        population_mode = 'Research Baseline'
+    else:
+        # For single-mode results, use current session state
+        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+
+    # Income mode detection
+    if 'categorical' in result_key:
+        income_spec_mode = 'categorical only'
+    elif 'continuous' in result_key:
+        income_spec_mode = 'continuous only'
+    else:
+        # For single-mode results, use current session state
+        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
+
+    return {
+        'population_mode': population_mode,
+        'income_spec_mode': income_spec_mode
+    }
+
+
+def get_current_coefficients():
+    """Collect all current coefficient values from session state
+
+    IMPORTANT: Ensures coefficients are loaded from YAML first.
+    YAML is the SINGLE source of truth - no fallback values.
+    """
+    # Ensure coefficients are loaded from YAML
+    if 'donation_coeff_intercept' not in st.session_state:
+        load_donation_coefficients_from_yaml()
+
+    # Return coefficients from session state - NO FALLBACK VALUES
+    return {
+        'intercept': st.session_state.donation_coeff_intercept,
+        'beta_group': {
+            'MidSub': st.session_state.donation_coeff_midsub,
+            'NoSub': st.session_state.donation_coeff_nosub,
+            'FullSub': st.session_state.donation_coeff_fullsub
+        },
+        'beta_income_q': {
+            'Q1': st.session_state.donation_coeff_q1,
+            'Q2': st.session_state.donation_coeff_q2,
+            'Q3': st.session_state.donation_coeff_q3,
+            'Q4': st.session_state.get('donation_coeff_q4', 0.0),
+            'Q5': st.session_state.get('donation_coeff_q5', st.session_state.get('donation_coeff_q45', 0.0))  # Support both Q5 and the older Q4_Q5 name
+        },
+        'beta_income_linear': st.session_state.donation_coeff_linear,
+        'beta_study': {
+            'Incoming': st.session_state.donation_coeff_incoming,
+            'Law5yr': st.session_state.donation_coeff_law,
+            'UG3yr': st.session_state.donation_coeff_ug,
+            'Grad2yr': st.session_state.donation_coeff_grad
+        },
+        'beta_hh': st.session_state.donation_coeff_hh
+    }
+
+
+def get_current_stochastic_params():
+    """Collect current stochastic parameters from session state"""
+    return {
+        'stochastic': {
+            'sigma_value': st.session_state.get('sigma_value_ui', DONATION_SIGMA_OVERALL),
+            'sigma_coefficient': st.session_state.get('sigma_coefficient', 1.0),
+            'sigma_in_copula': st.session_state.get('sigma_in_copula', False),
+            'sigma_in_research': st.session_state.get('sigma_in_research', True)
+        },
+        'anchor_weights': {
+            'observed': st.session_state.get('anchor_observed_weight', 0.75),
+            'predicted': 1 - st.session_state.get('anchor_observed_weight', 0.75)
+        }
+    }
+
+
+def calculate_result_metrics(result_df):
+    """Calculate key metrics from result DataFrame - always uses truncated donation_default"""
+
+    # Always use truncated donation_default for consistency
+    donation_col = 'donation_default'
+
+    metrics = {
+        'mean_donation': result_df[donation_col].mean(),
+        'std_donation': result_df[donation_col].std(),
+        'median_donation': result_df[donation_col].median(),
+        'min_donation': result_df[donation_col].min(),
+        'max_donation': result_df[donation_col].max(),
+        'q25_donation': result_df[donation_col].quantile(0.25),
+        'q75_donation': result_df[donation_col].quantile(0.75),
+        'donation_column_used': donation_col
+    }
+
+    return metrics
+
+
+def format_result_name(result_key):
+    """Format result key into human-readable name"""
+
+    name_mapping = {
+        'copula_categorical': '🔬 Copula + Categorical Income',
+        'copula_continuous': '🔬 Copula + Continuous Income',
+        'research_spec_categorical': '📊 Research Spec + Categorical Income',
+        'research_spec_continuous': '📊 Research Spec + Continuous Income',
+        'research_baseline_categorical': '📈 Research Baseline + Categorical Income',
+        'research_baseline_continuous': '📈 Research Baseline + Continuous Income',
+        'categorical': '💰 Categorical Income Mode',
+        'continuous': '📈 Continuous Income Mode',
+        'copula': '🔬 Copula Population',
+        'documentation': '📊 Research Specification',
+        'baseline': '📈 Research Baseline'
+    }
+
+    return name_mapping.get(result_key, f"📊 {result_key.replace('_', ' ').title()}")
+
+
+def clear_selected_configuration():
+    """Clear the currently selected donation_default configuration."""
+    clear_decision_config('donation_default')
+
+
+# ==================== DISCLOSE INCOME (Decision 1) CONFIG SELECTION ====================
 
 def extract_disclose_income_configuration_details(result_key):
     """Extract income mode from result key for disclose income"""
@@ -171,9 +343,6 @@ RTD_CONFIG_MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
 def extract_rejected_transaction_configuration_details(result_key):
     """Income mode and population mode of a Decision 4 result cell from its result key
     ('categorical'/'continuous' single-mode keys, 'copula_continuous' etc. Compare-all keys)."""
-    # Imported lazily: extract_configuration_details still lives in the page
-    # module, which imports this one.
-    from app.pages.decision_execution import extract_configuration_details
     key = str(result_key or '').lower()
     if 'categorical' in key:
         income_mode = 'Categorical only'
@@ -401,9 +570,6 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     # population_mode is stored
     if decision_name in ('disclose_income', 'disclose_documents', 'rejected_transaction_defaults') \
             and 'population_mode' not in config:
-        # Imported lazily: extract_configuration_details still lives in the page
-        # module, which imports this one.
-        from app.pages.decision_execution import extract_configuration_details
         config_details = extract_configuration_details(result_key)
         config['population_mode'] = config_details['population_mode']
 
@@ -520,28 +686,5 @@ def get_simulation_seed_from_configs():
         seed = st.session_state.get('base_seed_input', st.session_state.get('base_seed', 42))
     
     n_agents = st.session_state.get('n_agents', 1000)
-    
+
     return (seed, n_agents, 'session_state')
-
-
-def get_all_saved_config_summary():
-    """
-    Get a summary of all saved decision configs.
-    
-    Returns:
-        list of dicts: Summary info for each saved config
-    """
-    configs = get_selected_decision_configs()
-    summaries = []
-    
-    for decision_name, config in configs.items():
-        summaries.append({
-            'decision_name': decision_name,
-            'result_key': config.get('result_key', 'unknown'),
-            'original_seed': config.get('original_seed'),
-            'original_n_agents': config.get('original_n_agents'),
-            'selected_timestamp': config.get('selected_timestamp'),
-            'source': config.get('source')
-        })
-    
-    return summaries

@@ -7,7 +7,8 @@ import copy
 import streamlit as st
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
-from app.seam.config_repo import DEFAULT_DECISIONS_PATH, DEFAULT_SIMULATION_PATH, read_yaml_file
+from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
+from src.engine.core import DECISION_ORDER
 import numpy as np
 from app.seam.sentinels import donation_sigma_overall
 from app.reports import preview
@@ -43,9 +44,8 @@ class SimulationParameters:
     # Vendor configuration
     vendor_config_mode: str = "random"  # ✅ Generate randomly as specified
     
-    # Random vendor generation parameters
-    vendor_price_min: float = 50.0  # ✅ As specified
-    vendor_price_max: float = 150.0  # ✅ As specified
+    # Random vendor generation parameters (vendor_price_min / vendor_price_max
+    # are declared once, under "Market parameters" above)
     vendor_products_min: int = 50  # ✅ As specified
     vendor_products_max: int = 150  # ✅ As specified
     vendor_products_avg: int = 100  # ✅ As specified
@@ -160,9 +160,6 @@ SESSION_DEFAULTS = {
     'n_runs': 10,
     'base_seed': 42,
     'show_individual_agents': False,
-    'save_results': True,  # NOTE: Feature disabled in UI but kept for backward compatibility
-    'simulation_running': False,
-    'individual_results': {}  # New: store individual decision results
 }
 
 
@@ -170,7 +167,6 @@ SESSION_DEFAULTS = {
 class DecisionParameters:
     """Decision-specific parameters (Page 2)"""
     selected_decisions: List[str] = field(default_factory=list)
-    decision_configs: Dict[str, Dict] = field(default_factory=dict)
 
 
 def initialize_session_state():
@@ -183,52 +179,10 @@ def initialize_session_state():
     # Initialize donation coefficient variables from YAML config
     if 'donation_coeff_intercept' not in st.session_state:
         load_donation_coefficients_from_yaml()
-    else:
-        # Migrate old session state objects by adding missing attributes
-        sim_params = st.session_state.sim_params
-        
-        # Add lognormal parameters if missing
-        if not hasattr(sim_params, 'lognormal_mu'):
-            sim_params.lognormal_mu = 10.0
-        if not hasattr(sim_params, 'lognormal_min'):
-            sim_params.lognormal_min = 0.0
-        if not hasattr(sim_params, 'lognormal_max'):
-            sim_params.lognormal_max = None
-            
-        # Add Generalised Gamma parameters if missing
-        if not hasattr(sim_params, 'gg_k'):
-            sim_params.gg_k = 1.5
-        if not hasattr(sim_params, 'gg_c'):
-            sim_params.gg_c = 2.0
-        if not hasattr(sim_params, 'gg_lambda'):
-            sim_params.gg_lambda = 20000.0
-        if not hasattr(sim_params, 'gg_min'):
-            sim_params.gg_min = 0.0
-        if not hasattr(sim_params, 'gg_max'):
-            sim_params.gg_max = None
-            
-        # Add Dagum parameters if missing
-        if not hasattr(sim_params, 'dagum_a'):
-            sim_params.dagum_a = 2.0
-        if not hasattr(sim_params, 'dagum_p'):
-            sim_params.dagum_p = 1.5
-        if not hasattr(sim_params, 'dagum_b'):
-            sim_params.dagum_b = 25000.0
-        if not hasattr(sim_params, 'dagum_min'):
-            sim_params.dagum_min = 0.0
-        if not hasattr(sim_params, 'dagum_max'):
-            sim_params.dagum_max = None
-            
-        # Migrate old income distribution types to new ones
-        if hasattr(sim_params, 'income_distribution'):
-            if sim_params.income_distribution == 'pareto':
-                sim_params.income_distribution = 'dagum'  # Migrate Pareto to Dagum
-            elif sim_params.income_distribution == 'weibull':
-                sim_params.income_distribution = 'generalised_gamma'  # Migrate Weibull to GG
 
-        # Nothing rewrites vendor_price_min/max, market_price or
-        # vendor_products_min/max here: a single vendor runs at exactly the Page-1
-        # average price / average products the user typed.
+    # Nothing rewrites sim_params here: it is always a fresh SimulationParameters
+    # (every field present), and a single vendor runs at exactly the Page-1
+    # average price / average products the user typed.
 
     if 'decision_params' not in st.session_state:
         st.session_state.decision_params = DecisionParameters()
@@ -286,11 +240,6 @@ def load_donation_coefficients_from_yaml():
     st.session_state.donation_coeff_intercept = coeffs['intercept']
     st.session_state.donation_coeff_hh = coeffs['beta_hh']
     st.session_state.donation_coeff_linear = coeffs.get('beta_income_linear', 0.0)  # Only linear can default to 0
-    
-    # Debug: Print what we're loading
-    print(f"[DEBUG] Loading coefficients for mode: {st.session_state.get('income_spec_mode', 'unknown')}")
-    print(f"[DEBUG] Selected coeffs intercept: {coeffs['intercept']}")
-    print(f"[DEBUG] Selected coeffs linear: {coeffs.get('beta_income_linear', 'NOT FOUND')}")
     
     # Group coefficients
     beta_group = coeffs['beta_group']
@@ -369,36 +318,9 @@ def get_decision_global_parameters(selected_decisions: List[str]) -> set:
         return set()
 
 
-def get_all_global_parameters() -> set:
-    """Get all possible global parameters from simulation.yaml"""
-    try:
-        simulation_path = DEFAULT_SIMULATION_PATH
-        simulation_config = read_yaml_file(simulation_path)
-        
-        return set(simulation_config.get('simulation', {}).keys())
-    except Exception as e:
-        print(f"Error reading simulation parameters: {e}")
-        return set()
-
-
-# All available decisions list
-# NOTE: This order matches the chronological execution order in orchestrators
-# Decisions execute in this sequence (1-13)
-ALL_DECISIONS = [
-    "disclose_income",               # 1
-    "disclose_documents",            # 2
-    "donation_default",              # 3
-    "rejected_transaction_defaults", # 4
-    "vendor_choice_weights",         # 5
-    "purchasing_quantity",           # 6
-    "purchasing_frequency",          # 7
-    "vendor_selection",              # 8
-    "purchase_vs_bid",               # 9 (deprecated - kept for backward compatibility)
-    "bid_value",                     # 10 (deprecated - kept for backward compatibility)
-    "rejected_transaction_option",   # 11
-    "rejected_bid_value",            # 12
-    "final_donation_rate"            # 13
-]
+# All available decisions, in execution order (1-13): the engine's single
+# decision order (src/engine/core.py), re-exported as the list the screens use.
+ALL_DECISIONS = list(DECISION_ORDER)
 
 
 def initialize_default_decision_parameters():
@@ -408,9 +330,8 @@ def initialize_default_decision_parameters():
     This ensures parameter values persist across reruns even when widgets are not rendered.
     CRITICAL: This prevents state loss when decisions are selected/unselected.
     """
-    # Import here to avoid circular dependency
-    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
-    
+    from src.contract.defaults import DEFAULT_DECISION_VALUES
+
     for decision_name, default_value in DEFAULT_DECISION_VALUES.items():
         if isinstance(default_value, dict):
             decision_type = default_value.get("type")
@@ -452,9 +373,6 @@ def initialize_default_decision_parameters():
             key = f"{decision_name}_default_value"
             if key not in st.session_state:
                 st.session_state[key] = default_value
-    
-    # Mark as initialized (kept for debugging, but logic now allows re-checking)
-    st.session_state._default_params_initialized = True
 
 
 

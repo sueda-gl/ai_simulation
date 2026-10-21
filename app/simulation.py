@@ -31,12 +31,11 @@ from typing import Dict, List, Optional, Tuple, Union
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.contract.plan import RunMetadata, RunPlan, UiMessage, deep_merge_patch
+from src.contract.plan import RunMetadata, RunPlan, RunRequest, UiMessage, deep_merge_patch
 from app.models import ALL_DECISIONS
 from app.seam.build_plan import (
     build_rejected_transaction_patch,
     build_run_plan,
-    collect_decision_settings as _collect_decision_settings,
     get_pop_type,
     get_population_mode_from_result_key,
 )
@@ -72,9 +71,19 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: st
     deep_merge_patch(orchestrator.config['rejected_transaction_defaults'], patch)
 
 
-def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[str]]:
-    """Run Monte-Carlo study and return results."""
+def run_monte_carlo_study(request: Optional[RunRequest] = None) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame], Optional[str]]:
+    """Run Monte-Carlo study and return results.
+
+    ``request`` is the click's RunRequest (the run buttons hand it over); the
+    decisions it names drive the plan and the ``--decision`` arguments.  Without
+    one, the session's decision_params.selected_decisions is used as before."""
     try:
+        # The decisions this study runs (the same list the plan is built from)
+        if request is not None:
+            selected_decisions = list(request.decisions_to_run)
+        else:
+            selected_decisions = st.session_state.decision_params.selected_decisions
+
         # Check if we're in comparison mode
         is_pop_comparison = st.session_state.population_mode == "Compare all"
         is_income_comparison = st.session_state.get('income_spec_mode', 'categorical only') == "Compare both"
@@ -125,7 +134,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         from app.state.saved_configs import get_simulation_seed_from_configs
         seed_resolution = get_simulation_seed_from_configs()
         pinned_config = seed_resolution[2] == 'configs'
-        plan = build_plan_from_session(seed_resolution)
+        plan = build_plan_from_session(seed_resolution, request)
         mc_sub_run = select_mc_sub_run(plan, pop_mode_arg, income_mode_arg)
         if mc_sub_run.income_mode != income_mode_arg:
             # e.g. a decision-only run whose tab chose its own income mode
@@ -179,9 +188,9 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
         ]
         
         # Handle multiple decisions for Monte Carlo
-        if len(st.session_state.decision_params.selected_decisions) < len(ALL_DECISIONS):
+        if len(selected_decisions) < len(ALL_DECISIONS):
             # Pass each selected decision as a separate argument
-            for decision in st.session_state.decision_params.selected_decisions:
+            for decision in selected_decisions:
                 cmd.extend(['--decision', decision])
         
         # Change to project directory to ensure scripts can be found
@@ -194,7 +203,7 @@ def run_monte_carlo_study() -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFra
             st.caption(f"Python executable: {sys.executable}")
             st.caption(f"Population mode: {st.session_state.population_mode} → {pop_mode_arg}")
             st.caption(f"Income mode: {st.session_state.get('income_spec_mode', 'categorical only')} → {income_mode_arg}")
-            st.caption(f"Selected decisions: {st.session_state.decision_params.selected_decisions}")
+            st.caption(f"Selected decisions: {selected_decisions}")
             st.caption(f"Number of runs: {st.session_state.n_runs}")
             st.caption(f"Agents per run: {n_agents}")
         
@@ -406,13 +415,15 @@ def _run_metadata_dict(metadata: RunMetadata) -> dict:
     }
 
 
-def build_plan_from_session(seed_resolution=None) -> RunPlan:
+def build_plan_from_session(seed_resolution=None, request: Optional[RunRequest] = None) -> RunPlan:
     """Snapshot the session ONCE and build the plan for this click (one read per
     click, so nothing the run writes can feed back into it).
 
     seed_resolution: (seed, n_agents, source) when the caller already resolved it
-    (``get_simulation_seed_from_configs``); resolved here otherwise."""
-    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
+    (``get_simulation_seed_from_configs``); resolved here otherwise.
+    request: the click's RunRequest (which decisions run, custom and default
+    lists); without one the builder reads those from the snapshot."""
+    from src.contract.defaults import DEFAULT_DECISION_VALUES
     from app.state.saved_configs import get_simulation_seed_from_configs
 
     snapshot = take_snapshot(st.session_state)
@@ -423,21 +434,23 @@ def build_plan_from_session(seed_resolution=None) -> RunPlan:
         get_config_repo(),
         default_decision_values=DEFAULT_DECISION_VALUES,
         seed_resolution=seed_resolution,
+        request=request,
     )
 
 
-def run_full_simulation():
+def run_full_simulation(request: Optional[RunRequest] = None):
     """
     Run a single simulation: snapshot -> plan -> messages -> execute ->
     saved-config check -> store results and navigate to the results page.
 
-    The run never writes a session key before its results are stored; the
-    population / income modes it used travel in _run_metadata, so the results
-    page describes the run that happened, not the next one being configured.
+    ``request`` is the click's RunRequest (built by the run buttons).  The run
+    never writes a session key before its results are stored; the population /
+    income modes it used travel in _run_metadata, so the results page describes
+    the run that happened, not the next one being configured.
     """
     try:
         with st.spinner("🔄 Running simulation..."):
-            plan = build_plan_from_session()
+            plan = build_plan_from_session(request=request)
 
             for message in plan.messages:
                 _emit(message)
@@ -466,14 +479,6 @@ def run_full_simulation():
                     st.session_state.vendors = df.attrs['vendors']
                     break
 
-            # Restore ONLY selected_decisions BEFORE st.rerun() if there's a pending
-            # restoration (set by run_individual_decision / run_combined_simulation).
-            # custom_decisions / default_decisions stay: they describe THIS run.
-            if hasattr(st.session_state, '_pending_decisions_restore'):
-                restore_data = st.session_state._pending_decisions_restore
-                st.session_state.decision_params.selected_decisions = restore_data['selected_decisions']
-                del st.session_state._pending_decisions_restore
-
             st.session_state.page = 'results'
             st.rerun()
 
@@ -481,14 +486,3 @@ def run_full_simulation():
         st.error(f"❌ Simulation failed: {str(e)}")
         import traceback
         st.text(traceback.format_exc())
-
-
-def collect_decision_settings():
-    """Collect current default decision settings from session state (probabilities, selections, etc.)
-
-    Delegates to the seam (app.seam.build_plan.collect_decision_settings) on a
-    snapshot of the session state; the registry of defaults still lives in
-    app.pages.decision_execution.DEFAULT_DECISION_VALUES.
-    """
-    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
-    return _collect_decision_settings(take_snapshot(st.session_state), DEFAULT_DECISION_VALUES)

@@ -5,7 +5,8 @@ These parameters apply to decisions that are NOT selected for custom configurati
 """
 import streamlit as st
 from app.state.widgets import stateful
-from app.pages.decision_execution import DEFAULT_DECISION_VALUES
+from app.state.saved_configs import get_decision_config
+from app.pages.decision_execution import DEFAULT_DECISION_VALUES, format_decision_title
 
 
 def save_to_persistent_storage(key):
@@ -84,25 +85,9 @@ def render_default_decisions_config(selected_decisions, all_decisions):
 
 def render_decision_default_config(decision_name):
     """Render configuration UI for a specific default decision"""
-    from app.models import ALL_DECISIONS
-    
-    # Get decision number
-    decision_number = ALL_DECISIONS.index(decision_name) + 1 if decision_name in ALL_DECISIONS else None
-    
-    # Special handling for purchase_vs_bid to show "Purchase Now" instead of "Purchase"
-    if decision_name == "purchase_vs_bid":
-        decision_title = "Purchase Now Vs Bid"
-    elif decision_name == "purchasing_quantity":
-        decision_title = "Purchase Request Quantity"
-    elif decision_name == "purchasing_frequency":
-        decision_title = "Purchase Request Frequency"
-    else:
-        decision_title = decision_name.replace('_', ' ').title()
-    
-    # Add number prefix
-    if decision_number is not None:
-        decision_title = f"{decision_number}. {decision_title}"
-    
+    # Numbered title ("3. Donation Default"), the one helper every screen uses
+    decision_title = format_decision_title(decision_name, include_number=True)
+
     default_value = DEFAULT_DECISION_VALUES.get(decision_name)
     
     st.markdown(f"**🎯 {decision_title}**")
@@ -400,7 +385,6 @@ def _linked_donation_config():
     configuration the live settings imply - donation_default selected for
     customization, a single population / income mode.  None when neither exists.
     """
-    from app.pages.decision_execution import get_decision_config
     config = get_decision_config('donation_default')
     if config is not None:
         return config

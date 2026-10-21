@@ -22,7 +22,6 @@ from app.pages.results.details import (
 from app.pages.decision_execution import (
     save_selected_configuration,
     format_result_name,
-    is_configuration_selected,
     clear_selected_configuration,
     DEFAULT_DECISION_VALUES,
     DEFAULT_DECISION_DESCRIPTIONS,

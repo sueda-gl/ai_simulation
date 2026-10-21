@@ -205,6 +205,18 @@ class RunMetadata:
 
 
 @dataclass(frozen=True)
+class RunRequest:
+    """What the button that started a run asked for: the decisions to run, the
+    ones running with the tabs' custom settings and the ones left on their
+    default branch.  Built by the run buttons and handed to the plan builder in
+    place of the session's ``decision_params.selected_decisions`` /
+    ``custom_decisions`` / ``default_decisions`` keys."""
+    decisions_to_run: Tuple[str, ...]
+    custom_decisions: Tuple[str, ...]
+    default_decisions: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class SavedExpectation:
     """A pinned decision's recorded output-column hash, checked after a complete run."""
     decision: str
@@ -232,6 +244,7 @@ __all__ = [
     "Replace",
     "RunMetadata",
     "RunPlan",
+    "RunRequest",
     "SavedExpectation",
     "SubRun",
     "UiMessage",

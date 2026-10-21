@@ -334,8 +334,9 @@ _PAGE2_MIRRORS = (
          "decision_tabs.disclose_documents.render_intercept_override", "page2-mirror"),
     _row("decision_params", "<DecisionParameters()>", MODELS_INIT, "page2-mirror",
          engine_input=True,
-         notes="only .selected_decisions is used; a run swaps it and restores it "
-               "through _pending_decisions_restore."),
+         notes="only .selected_decisions is used.  The run buttons hand the seam a "
+               "RunRequest instead of swapping it; the seam reads it only when no "
+               "request is given (tests building a plan from a bare session)."),
     _row("page2_manual_selections", "<the current decision multiselect>",
          "page2_decisions.render_page2", "page2-mirror"),
     _row("page2_select_all_state", False, "page2_decisions.render_page2",
@@ -525,9 +526,6 @@ _SAVED_CONFIG = (
                "and the sha256 of the columns it produced, so a pinned decision "
                "reproduces the run it was pinned from.  A saved Disclose "
                "Documents config is applied exactly like a Disclose Income one."),
-    _row("custom_coefficients", "<{} until an individual donation run>",
-         "decision_execution.run_individual_decision", "saved-config",
-         notes="the donation coefficient set the last individual run used."),
 )
 
 
@@ -544,10 +542,6 @@ _RUN_FLAGS = (
     _row("default_decisions", "<the decisions left on their default branch>",
          "decision_execution.run_individual_decision / run_combined_simulation",
          "run-flag", engine_input=True),
-    _row("_pending_decisions_restore", "<{'selected_decisions': [...]} >",
-         "decision_execution.run_individual_decision", "run-flag",
-         notes="run_full_simulation reruns before the caller can restore "
-               "decision_params, so the original selection is parked here."),
     _row("_reset_intercept_flag", True,
          "decision_tabs.donation_default.reset_intercepts_to_defaults", "run-flag",
          notes="one-rerun flag so the number_input picks the reset value up."),
@@ -556,11 +550,6 @@ _RUN_FLAGS = (
     _row("_reset_config_to_defaults_flag", True,
          "decision_tabs.donation_default.render_actions_and_management_section",
          "run-flag"),
-    _row("simulation_running", False, MODELS_DEFAULTS, "run-flag", write_only=True,
-         notes="seeded and never read - removal candidate."),
-    _row("save_results", True, MODELS_DEFAULTS, "run-flag", write_only=True,
-         notes="the disabled save-to-disk feature; seeded and never read - "
-               "removal candidate."),
 )
 
 
@@ -579,8 +568,6 @@ _RESULTS = (
                "from here, so the chart titles cannot drift from what ran."),
     _row("vendors", "<df.attrs['vendors'] of the first result>",
          "simulation.run_full_simulation", "results"),
-    _row("individual_results", {}, MODELS_DEFAULTS, "results", write_only=True,
-         notes="seeded and never read - removal candidate."),
 )
 
 _RESULT_WIDGETS = _rows((
@@ -621,8 +608,6 @@ _DEFAULTS = (
          "defaults", engine_input=True,
          notes="the shadow store: it outlives a widget key that Page 2 never "
                "rendered, and the seam consults it before the session key."),
-    _row("_default_params_initialized", True, MODELS_DECISIONS, "defaults",
-         write_only=True, notes="debug marker; nothing reads it - removal candidate."),
     _row("{decision_name}_default_probability_y", "<DEFAULT_DECISION_VALUES probability_y, else 0.5>",
          MODELS_DECISIONS, "defaults", engine_input=True, is_widget=True,
          notes="random_probability decisions."),

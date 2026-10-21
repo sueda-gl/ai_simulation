@@ -274,8 +274,8 @@ def render_seed_mismatch_error(decision_name, error_info):
         decision_name: Name of the decision being saved (e.g., 'disclose_income')
         error_info: Dict with keys: new_seed, new_n_agents, existing_seed, existing_n_agents, conflicting_decision
     """
-    from app.pages.decision_execution import clear_decision_config
-    
+    from app.state.saved_configs import clear_decision_config
+
     conflicting = error_info['conflicting_decision']
     conflicting_title = conflicting.replace('_', ' ').title()
     decision_title = decision_name.replace('_', ' ').title()
@@ -311,7 +311,7 @@ def render_inline_selection_button(result_key, result_df):
     """Render selection button directly under the chart (for donation_default)"""
     
     # Import here to avoid circular imports
-    from app.pages.decision_execution import (
+    from app.state.saved_configs import (
         save_decision_config,
         is_decision_config_selected,
         get_current_coefficients,
@@ -514,7 +514,7 @@ def render_disclose_income_selection_button(result_key, result_df):
     """Render selection button for disclose income configuration"""
     
     # Import here to avoid circular imports
-    from app.pages.decision_execution import (
+    from app.state.saved_configs import (
         save_decision_config,
         is_decision_config_selected,
         get_current_disclose_income_params,
@@ -649,7 +649,7 @@ def show_disclose_documents_rate_analysis(df, title_suffix="", result_key=None, 
 
 def render_disclose_documents_selection_button(result_key, result_df):
     """Render the 'Use This Config' selection button for a disclose documents cell."""
-    from app.pages.decision_execution import (
+    from app.state.saved_configs import (
         save_decision_config,
         is_decision_config_selected,
         get_current_disclose_documents_params,
@@ -685,7 +685,7 @@ def render_disclose_documents_selection_button(result_key, result_df):
 def render_rejected_transaction_selection_button(result_key, result_df):
     """Render the 'Use This Config' selection button for a Decision 4 (Rejected
     Transaction Defaults) result cell - mirrors render_disclose_income_selection_button."""
-    from app.pages.decision_execution import (
+    from app.state.saved_configs import (
         save_decision_config,
         clear_decision_config,
         is_decision_config_selected,

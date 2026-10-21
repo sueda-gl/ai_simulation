@@ -10,7 +10,7 @@ from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, get_decision_config, clear_decision_config, get_current_coefficients, get_current_stochastic_params
+from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, get_decision_config, clear_decision_config, get_current_coefficients, get_current_stochastic_params, format_decision_title
 
 
 def initialize_page2_widget_keys():
@@ -143,37 +143,6 @@ def initialize_page2_widget_keys():
             value_key = f"{decision_name}_default_value"
             if value_key not in st.session_state:
                 st.session_state[value_key] = default_value
-
-
-def format_decision_title(decision_name, include_number=False):
-    """Format decision name for display, with special handling for specific decisions
-    
-    Args:
-        decision_name: The decision name to format
-        include_number: If True, prepend decision number (e.g., "1. Decision Name")
-    
-    Returns:
-        Formatted decision title string
-    """
-    # Get decision number from ALL_DECISIONS
-    decision_number = None
-    if include_number and decision_name in ALL_DECISIONS:
-        decision_number = ALL_DECISIONS.index(decision_name) + 1
-    
-    # Format the title
-    if decision_name == "purchase_vs_bid":
-        title = "Purchase Now Vs Bid"
-    elif decision_name == "purchasing_quantity":
-        title = "Purchase Request Quantity"
-    elif decision_name == "purchasing_frequency":
-        title = "Purchase Request Frequency"
-    else:
-        title = decision_name.replace('_', ' ').title()
-    
-    # Add number prefix if requested
-    if decision_number is not None:
-        return f"{decision_number}. {title}"
-    return title
 
 
 def render_overview_tab(selected_decisions):

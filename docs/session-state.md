@@ -181,8 +181,8 @@ that are not settings at all:
 | Category | What it holds | Examples |
 |---|---|---|
 | `navigation` | which screen renders | `page` |
-| `saved-config` | the "Use This Config" pins | `selected_decision_configs`, `custom_coefficients` |
-| `run-flag` | what the click that started a run recorded | `custom_decisions`, `default_decisions`, `_pending_decisions_restore` |
+| `saved-config` | the "Use This Config" pins | `selected_decision_configs` |
+| `run-flag` | what the click that started a run recorded (the run itself travels as a `RunRequest`, not through session state) | `custom_decisions`, `default_decisions` |
 | `results` | run output, and the chart / download widgets that show it | `simulation_results`, `mc_results`, `vendors`, `_run_metadata` |
 
 `selected_decision_configs` deserves its own note: one entry per decision the user
@@ -240,17 +240,7 @@ screen says so.
 
 ## 5. Written but never read
 
-Four keys are written and never read back. They cost nothing and are removal
-candidates.
-
-| Key | Written by | Why it looks dead |
-|---|---|---|
-| `save_results` | `models.SESSION_DEFAULTS` (seeded by `initialize_session_state`) | the "save results to disk" feature was disabled in the UI; nothing consults the flag |
-| `simulation_running` | same | a spinner flag from an older version of the run button |
-| `individual_results` | same | seeded to `{}`; the per-decision results live in `simulation_results` |
-| `_default_params_initialized` | `models.initialize_default_decision_parameters` | a debug marker; the logic no longer branches on it |
-
-One more key is written and never read **inside `app/`** but is not a candidate,
+One key is written and never read **inside `app/`** but is not a removal candidate,
 because the seam reads it from the snapshot: `donation_adjustment_shift`. The
 registry marks it `write_only=True, engine_input=True`, which is exactly that
 situation.

@@ -50,6 +50,7 @@ from src.contract.plan import (
     Replace,
     RunMetadata,
     RunPlan,
+    RunRequest,
     SavedExpectation,
     SubRun,
     UiMessage,
@@ -1005,9 +1006,13 @@ class RunFacts:
     population: Optional[str]                        # internal population type; None for Compare all
 
 
-def _effective_decisions(snapshot: Mapping) -> Tuple[Tuple[str, ...], Optional[Tuple[str, ...]]]:
-    """(selected, single_decision): single_decision is None when every decision is selected."""
-    selected = tuple(_selected_decisions(snapshot))
+def _effective_decisions(snapshot: Mapping,
+                         request: Optional[RunRequest] = None) -> Tuple[Tuple[str, ...], Optional[Tuple[str, ...]]]:
+    """(selected, single_decision): single_decision is None when every decision is selected.
+
+    The decisions come from the RunRequest when the click handed one over,
+    otherwise from the snapshot's decision_params.selected_decisions."""
+    selected = tuple(request.decisions_to_run) if request is not None else tuple(_selected_decisions(snapshot))
     return selected, (None if len(selected) == len(ALL_DECISIONS) else selected)
 
 
@@ -1091,8 +1096,12 @@ def _resolve_modes(snapshot: Mapping, saved_configs: Mapping[str, dict],
 
 
 def resolve_run_facts(snapshot: Mapping, default_decision_values: Mapping,
-                      seed_resolution: Optional[Tuple[Any, Any, str]] = None) -> RunFacts:
-    """Everything the plan needs, read once from the snapshot (no text yet)."""
+                      seed_resolution: Optional[Tuple[Any, Any, str]] = None,
+                      request: Optional[RunRequest] = None) -> RunFacts:
+    """Everything the plan needs, read once from the snapshot (no text yet).
+
+    ``request`` (the click's RunRequest) supplies the decision lists when
+    given; otherwise they are read from the snapshot's session keys."""
     # Seed / n_agents from the explicit saved configs (if any) or the session
     if seed_resolution is not None:
         seed, n_agents, source = seed_resolution
@@ -1100,12 +1109,15 @@ def resolve_run_facts(snapshot: Mapping, default_decision_values: Mapping,
         seed, n_agents, source = resolve_seed_and_n(snapshot)
 
     saved_configs = explicit_saved_configs(snapshot)
-    selected_decisions, single_decision = _effective_decisions(snapshot)
+    selected_decisions, single_decision = _effective_decisions(snapshot, request)
     decision_settings = collect_decision_settings(snapshot, default_decision_values)
     modes = _resolve_modes(snapshot, saved_configs, single_decision)
 
     # Default-decision list handed to the engine (the force-DI-default rule lives here)
-    default_decisions_list = list(snapshot.get("default_decisions", []) or [])
+    if request is not None:
+        default_decisions_list = list(request.default_decisions)
+    else:
+        default_decisions_list = list(snapshot.get("default_decisions", []) or [])
     if modes["force_di_default"] and "disclose_income" not in default_decisions_list:
         default_decisions_list.append("disclose_income")
 
@@ -1252,8 +1264,10 @@ def enumerate_sub_runs(snapshot: Mapping, config_repo: DecisionsConfig, facts: R
 # -------------------------------------------------------------- the metadata
 
 def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFacts,
-                   sub_runs: Sequence[SubRun]) -> RunMetadata:
-    """What was actually run, for the results page."""
+                   sub_runs: Sequence[SubRun], request: Optional[RunRequest] = None) -> RunMetadata:
+    """What was actually run, for the results page.  The custom / default
+    decision lists come from the click's RunRequest when given, otherwise from
+    the snapshot's custom_decisions / default_decisions keys."""
     # What each income-dependent decision actually ran with (the result keys follow the
     # run's income mode; Decision 4 in a combined run follows its own tab instead).
     decision_income_modes = {sub_run.result_key: sub_run_decision_income_modes(sub_run, config_repo)
@@ -1270,8 +1284,10 @@ def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFa
         effective_population_mode=facts.effective_population_mode,
         effective_income_mode=facts.effective_income_mode,
         result_keys=tuple(sub_run.result_key for sub_run in sub_runs),
-        custom_decisions=tuple(snapshot.get("custom_decisions", []) or []),
-        default_decisions=tuple(snapshot.get("default_decisions", []) or []),
+        custom_decisions=(tuple(request.custom_decisions) if request is not None
+                          else tuple(snapshot.get("custom_decisions", []) or [])),
+        default_decisions=(tuple(request.default_decisions) if request is not None
+                           else tuple(snapshot.get("default_decisions", []) or [])),
         seed=facts.seed,
         n_agents=facts.n_agents,
         is_comparison=len(sub_runs) > 1,
@@ -1284,7 +1300,8 @@ def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFa
 
 def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
                    default_decision_values: Optional[Mapping] = None,
-                   seed_resolution: Optional[Tuple[Any, Any, str]] = None) -> RunPlan:
+                   seed_resolution: Optional[Tuple[Any, Any, str]] = None,
+                   request: Optional[RunRequest] = None) -> RunPlan:
     """
     Turn one click into a RunPlan: facts first, then the sub-runs, the
     metadata and the messages.
@@ -1296,12 +1313,16 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
     seed_resolution        : (seed, n_agents, source) as returned by
                              app.state.saved_configs.get_simulation_seed_from_configs;
                              when omitted the same rule is applied to the snapshot
+    request                : the click's RunRequest (decisions to run, custom and
+                             default lists); when omitted those three come from the
+                             snapshot's decision_params.selected_decisions,
+                             custom_decisions and default_decisions
     """
     snap: SessionSnapshot = take_snapshot(snapshot)
     if default_decision_values is None:
         default_decision_values = DEFAULT_DECISION_VALUES
 
-    facts = resolve_run_facts(snap, default_decision_values, seed_resolution)
+    facts = resolve_run_facts(snap, default_decision_values, seed_resolution, request)
     sub_runs = enumerate_sub_runs(snap, config_repo, facts)
 
     # Only a complete run re-checks the pinned decisions' output hashes (a pinned
@@ -1313,7 +1334,7 @@ def build_run_plan(snapshot: Any, config_repo: DecisionsConfig, *,
     return RunPlan(
         sub_runs=sub_runs,
         messages=messages_for(facts),
-        metadata=build_metadata(snap, config_repo, facts, sub_runs),
+        metadata=build_metadata(snap, config_repo, facts, sub_runs, request),
         saved_expectations=saved_expectations,
     )
 
