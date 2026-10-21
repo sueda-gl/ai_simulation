@@ -71,8 +71,9 @@ The dashboard is a three-page flow:
 2. **Page 2 — Decisions.** Enable and configure the individual decisions
    (disclose income, disclose documents, donation default, purchasing, vendor
    selection, bidding, …), including their stochastic components and the income
-   mode (categorical allowance levels vs. continuous income, set on the Donation
-   Default tab), then run the simulation.
+   mode (categorical allowance levels vs. continuous income, set on each modelled
+   decision's own tab: Disclose Income, Disclose Documents, Donation Default and
+   Rejected Transaction Defaults), then run the simulation.
 3. **Results.** Summary tables, visualizations, comparisons across population
    modes, and Excel/CSV export of per-agent results.
 
@@ -100,10 +101,9 @@ python scripts/run_mc_study.py --agents 10000 --runs 500 --base-seed 1
 ```
 
 Results land in `outputs/` (git-ignored) as timestamped parquet/CSV files, e.g.
-`simulation_seed42_agents1000_all_20260805_120000.parquet`. (Single runs from
-the Streamlit app write nothing to disk: their results live in the session and
-are offered as Excel/CSV downloads on the results page. Only the Monte-Carlo
-study, which runs `scripts/run_mc_study.py` as a subprocess, writes to `outputs/`.)
+`simulation_seed42_agents1000_all_20260805_120000.parquet`. (The Streamlit app
+writes nothing to disk: single runs and Monte-Carlo studies both run in process,
+their results live in the session and are offered as Excel/CSV downloads.)
 
 ## 5. Repository layout
 
@@ -148,7 +148,9 @@ scripts/              CLI runners (run_simulation, run_mc_study), copula trainin
 tests/                pytest suite
 stata/                Stata scripts of an earlier error model (history only)
 outputs/              simulation results, created at runtime (git-ignored)
-experiments/          one-off analysis and debugging scripts (git-ignored)
+experiments/          one-off analysis and debugging scripts (git-ignored), except the
+                      tracked d3_doc_reference.py, which rebuilds data/d3_doc_reference.csv
+                      and is run by tests/test_donation_default_doc.py
 ```
 
 **Note:** `config/trait_model.pkl` is committed, so you do **not** need to train
@@ -173,10 +175,11 @@ pip install pytest
 pytest tests/          # about two minutes; everything passes
 ```
 
-Four parity tests additionally read the original Stata `.dta` files and **skip
-silently when those files are missing**; `docs/README.md` §8 says which files and
-where the paths are set. The import-boundary group imports each module in a fresh
-subprocess, so it takes longer than its test count suggests:
+Four parity tests additionally read the original Stata `.dta` files and **fail
+when those files are missing** (set `COOPECON_ALLOW_DTA_SKIP=1` to skip them
+instead); `docs/README.md` §8 says which files and where the paths are set. The
+import-boundary group imports each module in a fresh subprocess, so it takes
+longer than its test count suggests:
 
 ```bash
 pytest tests/test_import_boundary.py -q

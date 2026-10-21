@@ -2,7 +2,7 @@
 # Pinned: matches the locally validated version. Unpinned ">=1.28" made cloud deploys
 # install a newer Streamlit whose Starlette-based server crashed on a starlette
 # version mismatch (GZipResponder 'thread_minimum_size' TypeError).
-streamlit==1.48.1
+streamlit==1.49.0
 plotly>=5.17
 
 # Data and numerics
