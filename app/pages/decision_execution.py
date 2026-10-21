@@ -63,6 +63,23 @@ def format_decision_title(decision_name, include_number=False):
     return title
 
 
+def donation_income_mode_from_settings():
+    """Donation Default's own income mode from the live settings.
+
+    The global income_spec_mode can be contaminated when running disclose_income
+    with "Compare both" (simulation.py syncs di_income_mode to income_spec_mode for
+    results display), so the lookup is: 1) the donation tab persistence, 2) the
+    page2_tab_income_spec_mode widget, 3) the global income_spec_mode. The gate
+    (can_run_complete_simulation) and the Overview donation card both use it.
+    """
+    if (hasattr(st.session_state, 'donation_tab_persistence')
+            and 'income_spec_mode' in st.session_state.donation_tab_persistence):
+        return st.session_state.donation_tab_persistence['income_spec_mode']
+    if 'page2_tab_income_spec_mode' in st.session_state:
+        return st.session_state.page2_tab_income_spec_mode
+    return st.session_state.get('income_spec_mode', 'categorical only')
+
+
 def can_run_complete_simulation():
     """
     Determine if complete simulation can run based on configuration state.
@@ -119,16 +136,8 @@ def can_run_complete_simulation():
 
     # Donation default income modes: "Compare both" generates 2, others generate 1
     # FIX: Get donation_default's ACTUAL income mode from its dedicated storage
-    # The global income_spec_mode can be contaminated when running disclose_income with "Compare both"
-    # (simulation.py syncs di_income_mode to income_spec_mode for results display)
-    # Priority: 1) donation tab persistence, 2) page2_tab_income_spec_mode widget, 3) global income_spec_mode
-    donation_income_mode = None
-    if hasattr(st.session_state, 'donation_tab_persistence') and 'income_spec_mode' in st.session_state.donation_tab_persistence:
-        donation_income_mode = st.session_state.donation_tab_persistence['income_spec_mode']
-    elif 'page2_tab_income_spec_mode' in st.session_state:
-        donation_income_mode = st.session_state.page2_tab_income_spec_mode
-    else:
-        donation_income_mode = st.session_state.get('income_spec_mode', 'categorical only')
+    # (see donation_income_mode_from_settings)
+    donation_income_mode = donation_income_mode_from_settings()
     
     donation_income_count = 2 if ('compare' in str(donation_income_mode).lower() or 'both' in str(donation_income_mode).lower()) else 1
     
@@ -285,6 +294,243 @@ def can_run_complete_simulation():
         return (True, "Single configuration", 1, None, [])
 
 
+# --------------------------------------------------------------------------- #
+# The gate's blocking-issue warnings
+# --------------------------------------------------------------------------- #
+# Three screens show the "Run Complete Simulation" gate, each in its own wording:
+# "overview" (the Page-2 Overview tab), "tab" (a decision tab's Simulation
+# Options, render_simulation_buttons) and "results" (the results page,
+# results/config_selection.py). Every text keeps the trailing whitespace of the
+# screen's original; Streamlit strips it.
+
+#: The decision a blocking issue names (by its block_type) on the results page, in
+#: its warnings and in its disabled button's help.
+GATE_BLOCK_TYPE_TITLES = {
+    "disclose_income": "Disclose Income",
+    "donation_config": "Donation Default",
+    "disclose_documents": "Disclose Documents",
+    "rejected_transaction_defaults": "Rejected Transaction Defaults",
+}
+
+
+def blocking_issue_text(screen, i, block_type, reason):
+    """The warning of issue `i` (its `block_type` and `reason`) on `screen` when
+    SEVERAL issues block the complete run."""
+    if screen == "results":
+        # an issue of any other block type is the donation_config one
+        title = GATE_BLOCK_TYPE_TITLES.get(block_type, "Donation Default")
+        return f"""
+**Issue {i}: {title}**
+
+{reason}
+
+**Action Required:**
+1. Run **{title} Only** from the {title} tab
+2. Click **"Use This Config"** on the result you want to use
+                    """
+    if block_type == "disclose_income":
+        return f"""
+**Issue {i}: Disclose Income**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Income** tab
+2. Run **disclose_income only** and select one configuration
+3. Or change to **"Categorical only"** or **"Continuous only"** mode
+                        """
+    if block_type == "rejected_transaction_defaults":
+        return f"""
+**Issue {i}: Rejected Transaction Defaults**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Rejected Transaction Defaults** tab
+2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config")
+3. Or change its Income Specification to **"Categorical only"** or **"Continuous only"**
+                        """
+    if block_type == "disclose_documents" and screen == "tab":
+        return f"""
+**Issue {i}: Disclose Documents**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration
+3. Or change to **"Categorical only"** or **"Continuous only"** mode
+                        """
+    if block_type == "disclose_documents":
+        return f"""
+**Issue {i}: Disclose Documents**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration
+                        """
+    # donation_config block type
+    return f"""
+**Issue {i}: Donation Default**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Donation Default** tab
+2. Run **donation_default only** and select one configuration
+                        """
+
+
+def configuration_required_text(screen, block_type, reason):
+    """The warning on `screen` when exactly ONE issue blocks the complete run:
+    `block_type` and `reason` are the gate's."""
+    if screen == "results":
+        if block_type in GATE_BLOCK_TYPE_TITLES:
+            title = GATE_BLOCK_TYPE_TITLES[block_type]
+            return f"""
+⚠️ **{title} Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Run **{title} Only** from the {title} tab
+2. Click **"Use This Config"** on the result you want to use
+3. Return here to run complete simulation
+                """
+        return f"""
+⚠️ **Configuration Issue**
+
+{reason}
+                """
+    if screen == "overview":
+        if block_type == "disclose_income":
+            return f"""
+⚠️ **Disclose Income Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Income** tab
+2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+3. Return here to run complete simulation
+                    """
+        if block_type == "rejected_transaction_defaults":
+            return f"""
+⚠️ **Rejected Transaction Defaults Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Rejected Transaction Defaults** tab
+2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config"),
+   or change its Income Specification to **"Categorical only"** / **"Continuous only"**
+3. Return here to run complete simulation
+                    """
+        if block_type == "disclose_documents":
+            return f"""
+⚠️ **Disclose Documents Configuration Required**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
+3. Return here to run complete simulation
+                    """
+        if block_type == "donation_config":
+            return f"""
+⚠️ **Multiple Donation Configurations Detected**
+
+{reason}
+
+**Action Required:**
+1. Go to the **Donation Default** tab
+2. Run **donation_default only**
+3. Select your preferred configuration from results
+4. Return here to run complete simulation
+                    """
+    elif screen == "tab":
+        if block_type == "disclose_income":
+            return f"""
+⚠️ **Disclose Income Configuration Required**
+
+{reason}
+
+**Action Required:**
+
+1. Go to the **Disclose Income** tab
+2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
+3. Return here and click **Run Complete Simulation**
+
+This ensures all decisions produce a single result set.
+                    """
+        if block_type == "disclose_documents":
+            return f"""
+⚠️ **Disclose Documents Configuration Required**
+
+{reason}
+
+**Action Required:**
+
+1. Go to the **Disclose Documents** tab
+2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
+3. Return here and click **Run Complete Simulation**
+
+This ensures all decisions produce a single result set.
+                    """
+        if block_type == "rejected_transaction_defaults":
+            return f"""
+⚠️ **Rejected Transaction Defaults Configuration Required**
+
+{reason}
+
+**Action Required:**
+
+1. Go to the **Rejected Transaction Defaults** tab
+2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config"),
+   or change its Income Specification to **"Categorical only"** / **"Continuous only"**
+3. Return here and click **Run Complete Simulation**
+
+This ensures all decisions produce a single result set.
+                    """
+        if block_type == "donation_config":
+            return f"""
+⚠️ **Multiple Donation Configurations Detected**
+
+{reason}
+
+**Action Required:**
+
+1. Go to the **Donation Default** tab
+2. Run **donation_default only**
+3. **Select one configuration** from the results
+4. Return here and click **Run Complete Simulation**
+
+This ensures all decisions use consistent settings.
+                    """
+    # an unknown block type: say what is wrong without naming a decision
+    return f"""
+⚠️ **Configuration Issue**
+
+{reason}
+                    """
+
+
+def render_blocking_issues(screen, reason, block_type, blocking_issues):
+    """Draw the gate's blocking-issue warnings on `screen` (see
+    blocking_issue_text): with several issues an error saying how many, then one
+    warning per issue; otherwise the one issue's warning. `reason`, `block_type`
+    and `blocking_issues` are what can_run_complete_simulation() returned."""
+    if blocking_issues and len(blocking_issues) > 1:
+        st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
+        for i, issue in enumerate(blocking_issues, 1):
+            st.warning(blocking_issue_text(screen, i, issue['block_type'], issue['reason']))
+    else:
+        st.warning(configuration_required_text(screen, block_type, reason))
+
+
 def render_simulation_buttons(decision_name, selected_decisions):
     """
     Render both individual and complete simulation buttons for a decision tab.
@@ -376,122 +622,8 @@ def render_simulation_buttons(decision_name, selected_decisions):
                 help=help_text
             )
             
-            # FIX: Show ALL blocking issues, not just the first one
-            if blocking_issues and len(blocking_issues) > 1:
-                # Multiple issues - show them all together
-                st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
-                for i, issue in enumerate(blocking_issues, 1):
-                    if issue['block_type'] == "disclose_income":
-                        st.warning(f"""
-**Issue {i}: Disclose Income**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Disclose Income** tab
-2. Run **disclose_income only** and select one configuration
-3. Or change to **"Categorical only"** or **"Continuous only"** mode
-                        """)
-                    elif issue['block_type'] == "disclose_documents":
-                        st.warning(f"""
-**Issue {i}: Disclose Documents**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Disclose Documents** tab
-2. Run **disclose_documents only** and select one configuration
-3. Or change to **"Categorical only"** or **"Continuous only"** mode
-                        """)
-                    elif issue['block_type'] == "rejected_transaction_defaults":
-                        st.warning(f"""
-**Issue {i}: Rejected Transaction Defaults**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Rejected Transaction Defaults** tab
-2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config")
-3. Or change its Income Specification to **"Categorical only"** or **"Continuous only"**
-                        """)
-                    else:
-                        # donation_config block type
-                        st.warning(f"""
-**Issue {i}: Donation Default**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Donation Default** tab
-2. Run **donation_default only** and select one configuration
-                        """)
-            else:
-                # Single issue - show original format
-                if block_type == "disclose_income":
-                    st.warning(f"""
-⚠️ **Disclose Income Configuration Required**
-
-{reason}
-
-**Action Required:**
-
-1. Go to the **Disclose Income** tab
-2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
-3. Return here and click **Run Complete Simulation**
-
-This ensures all decisions produce a single result set.
-                    """)
-                elif block_type == "disclose_documents":
-                    st.warning(f"""
-⚠️ **Disclose Documents Configuration Required**
-
-{reason}
-
-**Action Required:**
-
-1. Go to the **Disclose Documents** tab
-2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
-3. Return here and click **Run Complete Simulation**
-
-This ensures all decisions produce a single result set.
-                    """)
-                elif block_type == "rejected_transaction_defaults":
-                    st.warning(f"""
-⚠️ **Rejected Transaction Defaults Configuration Required**
-
-{reason}
-
-**Action Required:**
-
-1. Go to the **Rejected Transaction Defaults** tab
-2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config"),
-   or change its Income Specification to **"Categorical only"** / **"Continuous only"**
-3. Return here and click **Run Complete Simulation**
-
-This ensures all decisions produce a single result set.
-                    """)
-                elif block_type == "donation_config":
-                    st.warning(f"""
-⚠️ **Multiple Donation Configurations Detected**
-
-{reason}
-
-**Action Required:**
-
-1. Go to the **Donation Default** tab
-2. Run **donation_default only**
-3. **Select one configuration** from the results
-4. Return here and click **Run Complete Simulation**
-
-This ensures all decisions use consistent settings.
-                    """)
-                else:
-                    # an unknown block type: say what is wrong without naming a decision
-                    st.warning(f"""
-⚠️ **Configuration Issue**
-
-{reason}
-                    """)
+            # Show ALL blocking issues, not just the first one
+            render_blocking_issues("tab", reason, block_type, blocking_issues)
             
         else:
             # Enabled button - can proceed

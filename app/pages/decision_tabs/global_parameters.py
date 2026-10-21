@@ -3,21 +3,12 @@
 Global parameters display and configuration for decision tabs.
 """
 import streamlit as st
-from app.models import get_decision_global_parameters
 
 
-def render_global_parameters_readonly(decision_name=None):
+def render_global_parameters_readonly():
     """Render global parameters in read-only mode that exactly mirrors Page 1 structure"""
     st.markdown('<h3 class="section-header">🌐 Global Parameters (Read-Only)</h3>', unsafe_allow_html=True)
     st.caption("💡 These parameters are configured on Page 1: Common Simulation Parameters")
-    
-    # Show which parameters this specific decision uses if provided
-    if decision_name:
-        decision_params = get_decision_global_parameters([decision_name])
-        if decision_params:
-            st.info(f"✅ This decision uses: {', '.join([p.replace('_', ' ').title() for p in sorted(decision_params)])}")
-        else:
-            st.info("ℹ️ This is a trait-based decision (doesn't use global parameters)")
     
     # Create 4-column layout for better space utilization
     col1, col2, col3, col4 = st.columns(4)
@@ -82,21 +73,6 @@ def render_global_parameters_readonly(decision_name=None):
             st.text(f"Minimum Income: ${st.session_state.sim_params.lognormal_min:.0f}")
             if st.session_state.sim_params.lognormal_max is not None:
                 st.text(f"Maximum Income: ${st.session_state.sim_params.lognormal_max:.0f}")
-            else:
-                st.text("Maximum Income: ∞ (no constraint)")
-        elif st.session_state.sim_params.income_distribution == "pareto":
-            st.text(f"Pareto x_m (minimum): ${st.session_state.sim_params.pareto_x_m:.0f}")
-            st.text(f"Pareto α (shape): {st.session_state.sim_params.pareto_alpha:.1f}")
-            if st.session_state.sim_params.pareto_max is not None:
-                st.text(f"Maximum Income: ${st.session_state.sim_params.pareto_max:.0f}")
-            else:
-                st.text("Maximum Income: ∞ (no constraint)")
-        elif st.session_state.sim_params.income_distribution == "weibull":
-            st.text(f"Weibull k (shape): {st.session_state.sim_params.weibull_k:.1f}")
-            st.text(f"Weibull λ (scale): ${st.session_state.sim_params.weibull_lambda:.0f}")
-            st.text(f"Minimum Income: ${st.session_state.sim_params.weibull_min:.0f}")
-            if st.session_state.sim_params.weibull_max is not None:
-                st.text(f"Maximum Income: ${st.session_state.sim_params.weibull_max:.0f}")
             else:
                 st.text("Maximum Income: ∞ (no constraint)")
         

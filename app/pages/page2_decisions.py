@@ -10,7 +10,7 @@ from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, get_decision_config, clear_decision_config, get_current_coefficients, get_current_stochastic_params, format_decision_title
+from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, get_decision_config, clear_decision_config, get_current_coefficients, get_current_stochastic_params, format_decision_title, donation_income_mode_from_settings, render_blocking_issues
 
 
 def initialize_page2_widget_keys():
@@ -95,54 +95,11 @@ def initialize_page2_widget_keys():
     elif 'income_spec_mode' not in st.session_state:
         st.session_state.income_spec_mode = 'categorical only'
     
-    # CRITICAL: Initialize default decision parameter keys
-    # These are the keys used by default decision widgets in the Overview tab
-    # They MUST be initialized even when the Overview tab hasn't rendered yet
-    # This prevents loss of default decision configurations when navigating
-    
-    from app.pages.decision_execution import DEFAULT_DECISION_VALUES
-    
-    for decision_name, default_value in DEFAULT_DECISION_VALUES.items():
-        if isinstance(default_value, dict):
-            decision_type = default_value.get("type")
-            
-            # Initialize random probability decision keys
-            if decision_type == "random_probability":
-                prob_key = f"{decision_name}_default_probability_y"
-                if prob_key not in st.session_state:
-                    st.session_state[prob_key] = default_value.get("probability_y", 0.5)
-            
-            # Initialize checkbox selection decision keys
-            elif decision_type == "checkbox_selection":
-                selection_key = f"{decision_name}_default_params"
-                if selection_key not in st.session_state:
-                    st.session_state[selection_key] = default_value.get("default_selection", []).copy()
-                
-                # Initialize individual checkbox keys
-                parameters = default_value.get("parameters", {})
-                default_selection = default_value.get("default_selection", [])
-                for param_key in parameters.keys():
-                    checkbox_key = f"{decision_name}_default_param_{param_key}"
-                    if checkbox_key not in st.session_state:
-                        st.session_state[checkbox_key] = param_key in default_selection
-            
-            # Initialize radio selection decision keys
-            elif decision_type == "radio_selection":
-                selection_key = f"{decision_name}_default_selection"
-                if selection_key not in st.session_state:
-                    st.session_state[selection_key] = default_value.get("default_option", "")
-            
-            # Initialize prioritized selection decision keys
-            elif decision_type == "prioritized_selection":
-                template_key = f"{decision_name}_priority_template"
-                if template_key not in st.session_state:
-                    st.session_state[template_key] = default_value.get("priority_template", []).copy()
-        
-        # Initialize numeric default decision keys
-        elif isinstance(default_value, (int, float)):
-            value_key = f"{decision_name}_default_value"
-            if value_key not in st.session_state:
-                st.session_state[value_key] = default_value
+    # The default-decision parameter keys the Overview tab's widgets use
+    # ({decision_name}_default_probability_y, _default_params, _default_param_*,
+    # _default_selection, _priority_template, _default_value) are seeded by
+    # models.initialize_default_decision_parameters, which
+    # models.initialize_session_state runs at the top of every script run.
 
 
 def render_overview_tab(selected_decisions):
@@ -181,109 +138,8 @@ def render_overview_tab(selected_decisions):
     col1, col2 = st.columns([3, 1])
     with col1:
         if not can_run:
-            # FIX: Show ALL blocking issues at once, not just the first one
-            if blocking_issues and len(blocking_issues) > 1:
-                # Multiple issues - show them all together
-                st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
-                for i, issue in enumerate(blocking_issues, 1):
-                    if issue['block_type'] == "disclose_income":
-                        st.warning(f"""
-**Issue {i}: Disclose Income**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Disclose Income** tab
-2. Run **disclose_income only** and select one configuration
-3. Or change to **"Categorical only"** or **"Continuous only"** mode
-                        """)
-                    elif issue['block_type'] == "rejected_transaction_defaults":
-                        st.warning(f"""
-**Issue {i}: Rejected Transaction Defaults**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Rejected Transaction Defaults** tab
-2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config")
-3. Or change its Income Specification to **"Categorical only"** or **"Continuous only"**
-                        """)
-                    elif issue['block_type'] == "disclose_documents":
-                        st.warning(f"""
-**Issue {i}: Disclose Documents**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Disclose Documents** tab
-2. Run **disclose_documents only** and select one configuration
-                        """)
-                    else:
-                        # donation_config block type
-                        st.warning(f"""
-**Issue {i}: Donation Default**
-
-{issue['reason']}
-
-**Action Required:**
-1. Go to the **Donation Default** tab
-2. Run **donation_default only** and select one configuration
-                        """)
-            else:
-                # Single issue - show original format for backward compatibility
-                if block_type == "disclose_income":
-                    st.warning(f"""
-⚠️ **Disclose Income Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Go to the **Disclose Income** tab
-2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
-3. Return here to run complete simulation
-                    """)
-                elif block_type == "rejected_transaction_defaults":
-                    st.warning(f"""
-⚠️ **Rejected Transaction Defaults Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Go to the **Rejected Transaction Defaults** tab
-2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config"),
-   or change its Income Specification to **"Categorical only"** / **"Continuous only"**
-3. Return here to run complete simulation
-                    """)
-                elif block_type == "disclose_documents":
-                    st.warning(f"""
-⚠️ **Disclose Documents Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Go to the **Disclose Documents** tab
-2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
-3. Return here to run complete simulation
-                    """)
-                elif block_type == "donation_config":
-                    st.warning(f"""
-⚠️ **Multiple Donation Configurations Detected**
-
-{reason}
-
-**Action Required:**
-1. Go to the **Donation Default** tab
-2. Run **donation_default only**
-3. Select your preferred configuration from results
-4. Return here to run complete simulation
-                    """)
-                else:
-                    # an unknown block type: say what is wrong without naming a decision
-                    st.warning(f"""
-⚠️ **Configuration Issue**
-
-{reason}
-                    """)
+            # Show ALL blocking issues at once, not just the first one
+            render_blocking_issues("overview", reason, block_type, blocking_issues)
         elif config_count > 1:
             dd_config = get_decision_config('donation_default')
             if dd_config:
@@ -431,21 +287,6 @@ def render_page2():
     render_navigation('page2')
 
 
-def _donation_income_mode_from_settings():
-    """Donation Default's own income mode from the live settings.
-
-    Uses the same three-level lookup can_run_complete_simulation() uses, so the
-    Overview card never picks up a global income_spec_mode that a disclose_income
-    run contaminated.
-    """
-    if (hasattr(st.session_state, 'donation_tab_persistence')
-            and 'income_spec_mode' in st.session_state.donation_tab_persistence):
-        return st.session_state.donation_tab_persistence['income_spec_mode']
-    if 'page2_tab_income_spec_mode' in st.session_state:
-        return st.session_state.page2_tab_income_spec_mode
-    return st.session_state.get('income_spec_mode', 'categorical only')
-
-
 def current_donation_configuration():
     """The donation configuration the CURRENT Page-1 / Donation Default settings imply.
 
@@ -463,7 +304,9 @@ def current_donation_configuration():
         return None
 
     population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
-    donation_income_mode = _donation_income_mode_from_settings()
+    # The gate's own lookup, so the Overview card never picks up a global
+    # income_spec_mode that a disclose_income run contaminated.
+    donation_income_mode = donation_income_mode_from_settings()
 
     is_compare_mode = (
         population_mode == "Compare all"

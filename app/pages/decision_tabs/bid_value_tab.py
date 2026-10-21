@@ -20,15 +20,11 @@ def render_bid_value_tab():
     st.markdown("---")
     st.markdown('<h4 class="subsection-header">📐 Bidding Range Formula</h4>', unsafe_allow_html=True)
     
-    # Get parameters from session state
-    if hasattr(st.session_state, 'sim_params'):
-        vendor_price = st.session_state.sim_params.market_price
-        platform_markup = st.session_state.sim_params.platform_markup
-        price_range = st.session_state.sim_params.price_range
-    else:
-        vendor_price = 100.0
-        platform_markup = 0.1
-        price_range = 0.25
+    # Get parameters from session state (models.initialize_session_state seeds
+    # sim_params at the top of every run)
+    vendor_price = st.session_state.sim_params.market_price
+    platform_markup = st.session_state.sim_params.platform_markup
+    price_range = st.session_state.sim_params.price_range
     
     # Calculate range
     baseline_price = (1 + platform_markup) * vendor_price

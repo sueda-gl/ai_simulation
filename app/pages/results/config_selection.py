@@ -14,7 +14,9 @@ from app.pages.decision_execution import (
     can_run_complete_simulation,
     get_selected_decision_configs,
     get_decision_config,
-    clear_decision_config
+    clear_decision_config,
+    render_blocking_issues,
+    GATE_BLOCK_TYPE_TITLES,
 )
 from app.models import ALL_DECISIONS
 from app.pages.results.run_context import RunContext
@@ -243,45 +245,6 @@ def render_rejected_transaction_config_selection_ui(results_dict, ctx=None):
     _render_saved_config_banner('rejected_transaction_defaults', results_dict, ctx)
 
 
-# The decision a blocking issue names (by its block_type) in the warnings and in
-# the disabled button's help.
-_BLOCK_TYPE_TITLES = {
-    "disclose_income": "Disclose Income",
-    "donation_config": "Donation Default",
-    "disclose_documents": "Disclose Documents",
-    "rejected_transaction_defaults": "Rejected Transaction Defaults",
-}
-
-
-def _issue_warning(i, title, reason):
-    """Warning text of issue `i` when several issues block the complete run.
-    (The trailing whitespace is the original's; Streamlit strips it.)"""
-    return f"""
-**Issue {i}: {title}**
-
-{reason}
-
-**Action Required:**
-1. Run **{title} Only** from the {title} tab
-2. Click **"Use This Config"** on the result you want to use
-                    """
-
-
-def _configuration_required_warning(title, reason):
-    """Warning text when exactly one issue blocks the complete run.
-    (The trailing whitespace is the original's; Streamlit strips it.)"""
-    return f"""
-⚠️ **{title} Configuration Required**
-
-{reason}
-
-**Action Required:**
-1. Run **{title} Only** from the {title} tab
-2. Click **"Use This Config"** on the result you want to use
-3. Return here to run complete simulation
-                """
-
-
 def render_complete_simulation_section():
     """Render the complete simulation section with Run button after configuration selection"""
     
@@ -300,28 +263,12 @@ def render_complete_simulation_section():
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
     if not can_run:
-        # FIX: Show ALL blocking issues, not just the first one
-        if blocking_issues and len(blocking_issues) > 1:
-            # Multiple issues - show them all together
-            st.error(f"⚠️ **{len(blocking_issues)} Configuration Issues Detected**")
-            for i, issue in enumerate(blocking_issues, 1):
-                # an issue of any other block type is the donation_config one
-                title = _BLOCK_TYPE_TITLES.get(issue['block_type'], "Donation Default")
-                st.warning(_issue_warning(i, title, issue['reason']))
-        else:
-            # Single issue - show original format
-            if block_type in _BLOCK_TYPE_TITLES:
-                st.warning(_configuration_required_warning(_BLOCK_TYPE_TITLES[block_type], reason))
-            else:
-                st.warning(f"""
-⚠️ **Configuration Issue**
-
-{reason}
-                """)
+        # Show ALL blocking issues, not just the first one
+        render_blocking_issues("results", reason, block_type, blocking_issues)
         
         # Disabled button
         help_text = (f"{len(blocking_issues)} configuration issue(s) detected" if len(blocking_issues) > 1
-                     else f"Select a {_BLOCK_TYPE_TITLES[block_type]} config first" if block_type in _BLOCK_TYPE_TITLES
+                     else f"Select a {GATE_BLOCK_TYPE_TITLES[block_type]} config first" if block_type in GATE_BLOCK_TYPE_TITLES
                      else "Configuration issue detected")
             
         st.button(
