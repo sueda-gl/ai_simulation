@@ -132,22 +132,42 @@ One dict per decision tab:
 | `rejected_transaction_tab_persistence` | Rejected Transaction Defaults (decision 4) |
 
 It exists because of layer 1's weakness. It is written **only** from an `on_change`
-callback (`save_to_donation_storage`, `save_to_disclose_income_storage`,
-`save_to_dd_storage`, `save_to_rtd_storage`), that is, only when the user actually
-changes something, and it is read **before** the widget renders, by each tab's
-`restore_widget_from_storage`. The donation, Disclose Income and Disclose Documents
-tabs restore in this order:
+callback (`_tab_state.save`, or the tab's own callback), that is, only when the user
+actually changes something, and it is read **before** the widget renders, by
+`_tab_state.restore` (`app/pages/decision_tabs/_tab_state.py`). Every tab restores in
+the same order:
 
-1. the entry in the persistence dict, if there is one;
-2. otherwise the widget key, if it is still there;
+1. the live widget key, if it is still there;
+2. otherwise the entry in the persistence dict, if there is one;
 3. otherwise the hard default.
 
-The Decision 4 tab restores the other way round: the live widget key wins when it
-exists, because re-pushing the stored value on every rerun made its +/- buttons
-jump back. The two orders should become one; see the improvement plan.
+The key is written only when it is absent. Until 2026-10-22 the Donation, Disclose
+Income and Disclose Documents tabs did it the other way round and wrote the dict entry
+over the widget key on every rerun; Streamlit re-sends a key written through the
+Session State API to the browser with that run's response, and that overwrote the
++/- clicks of a number input that arrived while a rerun was in flight (two to four of
+six fast clicks landed on the Donation intercept inputs; Decision 4, restored
+widget-first, kept all six).
 
 So a value the user typed survives leaving the tab and coming back, even though the
 widget key did not.
+
+**One rule keeps the widget-first order safe: never write a widget key in a run that
+does not draw its widget.** Streamlit keeps such a write in its old session state
+under the user key, never refreshes that entry once the widget exists (later writes
+go under the widget id), and lets it resurface, stale, as soon as the widget is
+culled - in front of the dict entry. That is why Page 2 no longer pre-seeds the
+tabs' keys (`initialize_page2_widget_keys` only mirrors the canonical keys, §2 layer
+2, for the Overview tab that is drawn before the decision tabs), why each tab seeds
+its own keys right before its widgets, and why a reset writes only the keys of the
+widgets the same run draws (the Disclose Documents per-quintile sliders drop their
+keys on a reset and are seeded again on their next draw). The one exception keeps
+its guard elsewhere: the Donation intercept reset writes both intercept keys, the
+one the income mode draws and the one it does not, so those two inputs are seeded
+from the typed override not only while their key is absent but every time they come
+back after not being drawn (`donation_default._seed_intercept_input`, which asks the
+render log of `app/state/widgets.py`) - the run in which the value is pushed to the
+browser anyway, so a steady rerun still writes nothing.
 
 Registry category: `tab-persistence`.
 

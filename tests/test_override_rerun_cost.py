@@ -170,3 +170,93 @@ def test_fragment_rerun_does_not_repush(fake_session):
     widgets.st.session_state = Recorder(fake_session)
     widgets.sync_widget_key("override", signature="o")   # fragment rerun
     assert "override" not in writes
+
+
+# ---------------------------------------------------------------------------
+# 4. the Donation intercept override inputs are not re-pushed by an unchanged rerun
+# ---------------------------------------------------------------------------
+# Six quick "+" clicks on either Donation Default intercept input landed only 2-4
+# steps (measured in a browser, 2026-10-22: 3/6, 2/6, 4/6, 4/6 at 120 ms between
+# clicks; every other number input kept all six). The two keys were the only number
+# inputs restored by writing the stored override OVER the widget key on every rerun,
+# and a key written through the Session State API is re-sent to the browser with
+# that run's response, overwriting a click that arrived while the run was in flight.
+# AppTest cannot time clicks, but it can see the cause: the element proto's
+# ``set_value`` flag is True exactly when the key was written in that run (the flag
+# tests/browser_sim.py models the browser with). After a rerun in which the tab was
+# drawn and nothing changed, it must be False for both inputs - as it already is for
+# the Distribution Shift Value input and the Decision 4 intercept inputs.
+
+DONATION_INTERCEPT_INPUTS = {
+    "categorical only": ["override_categorical_intercept"],
+    "continuous only": ["override_continuous_intercept"],
+    "Compare both": ["override_categorical_intercept", "override_continuous_intercept"],
+}
+CANONICAL_INTERCEPT = {"override_categorical_intercept": "donation_coeff_intercept_cat",
+                       "override_continuous_intercept": "donation_coeff_intercept_cont"}
+
+
+def _donation_page2():
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_page2_script, default_timeout=600)
+    at.session_state['page2_manual_multiselect'] = ['donation_default']
+    at.session_state['page2_manual_selections'] = ['donation_default']
+    at.run()
+    assert not at.exception
+    return at
+
+
+def _pushed(at, key):
+    return bool(at.number_input(key=key).proto.set_value)
+
+
+def test_the_push_flag_is_observable():
+    """Control: the run that seeds an input's key does push it (so a False below means
+    'not written', not 'not observable')."""
+    at = _donation_page2()
+    assert _pushed(at, "override_categorical_intercept")          # seeded in this run
+    at.radio(key="page2_tab_income_spec_mode").set_value("continuous only").run()
+    assert _pushed(at, "override_continuous_intercept")           # first drawn in this run
+
+
+@pytest.mark.parametrize("mode", list(DONATION_INTERCEPT_INPUTS))
+def test_unchanged_rerun_does_not_repush_the_donation_intercept_inputs(mode):
+    at = _donation_page2()
+    at.radio(key="page2_tab_income_spec_mode").set_value(mode).run()
+    at.run()                                                      # the tab drawn, nothing changed
+    assert not at.exception
+    for key in DONATION_INTERCEPT_INPUTS[mode] + ["override_adjustment_shift"]:
+        assert not _pushed(at, key), f"{key} was written through the Session State API on an unchanged rerun"
+
+    # a click is the user's own value: it is saved, reaches the seam's key and the
+    # toast, and the next unchanged rerun pushes nothing either
+    for key in DONATION_INTERCEPT_INPUTS[mode]:
+        before = at.number_input(key=key).value
+        at.number_input(key=key).increment().run()
+        assert not at.exception
+        assert at.number_input(key=key).value == pytest.approx(before + 0.001)
+        assert at.session_state[CANONICAL_INTERCEPT[key]] == pytest.approx(before + 0.001)
+        assert any("auto-saved" in str(t.value) for t in at.toast), [t.value for t in at.toast]
+        at.run()
+        assert not _pushed(at, key)
+        assert at.number_input(key=key).value == pytest.approx(before + 0.001)
+
+
+def test_a_reset_before_the_input_was_ever_drawn_does_not_shadow_a_later_override():
+    """The resets write BOTH intercept keys, including the one whose input the income
+    mode does not draw; Streamlit keeps that write under the user key and lets it
+    resurface once the input has been drawn and culled. The typed override must
+    still win when the input comes back (the input is seeded on every return)."""
+    at = _donation_page2()                                        # categorical: the Continuous input never drawn
+    at.button(key="reset_intercept_btn").click().run()
+    at.run()
+    at.radio(key="page2_tab_income_spec_mode").set_value("continuous only").run()
+    at.number_input(key="override_continuous_intercept").increment().run()
+    typed = at.number_input(key="override_continuous_intercept").value
+    assert at.session_state["donation_coeff_intercept_cont"] == pytest.approx(typed)
+    at.radio(key="page2_tab_income_spec_mode").set_value("categorical only").run()
+    at.radio(key="page2_tab_income_spec_mode").set_value("continuous only").run()
+    assert at.number_input(key="override_continuous_intercept").value == pytest.approx(typed)
+    assert at.session_state["donation_coeff_intercept_cont"] == pytest.approx(typed)
+    at.run()
+    assert not _pushed(at, "override_continuous_intercept")

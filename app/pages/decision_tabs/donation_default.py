@@ -4,7 +4,7 @@ Donation Default decision tab configuration.
 """
 # Force rebuild timestamp: 2025-10-01
 import streamlit as st
-from app.state.widgets import stateful
+from app.state.widgets import drawn_in_previous_run, stateful
 from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
 import pandas as pd
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
@@ -85,8 +85,10 @@ def initialize_donation_widget_keys():
     seed_if_absent("tab_sigma_in_copula", st.session_state.get('sigma_in_copula', False))
     seed_if_absent("tab_sigma_in_research", st.session_state.get('sigma_in_research', True))
 
-    # Initialize canonical slider widget key (unified across all modes)
-    seed_if_absent("tab_sigma_coefficient_stochastic", st.session_state.get('sigma_coefficient', 1.0))
+    # (tab_sigma_coefficient_stochastic is seeded by render_donation_sigma_controls,
+    # right before the slider and only in a run that draws it: seeded here it would
+    # carry 1.0 - the quintile branch's coefficient - into a key no widget draws,
+    # which then wins over the stored coefficient when the slider comes back.)
     seed_if_absent("tab_anchor_weight", st.session_state.get('anchor_observed_weight', 0.75))
 
     # Initialize sigma strategy (overall vs quintile)
@@ -131,8 +133,7 @@ def render_donation_sigma_controls(mode_suffix: str):
     restore(
         strategy_widget_key, 'donation_tab_persistence',
         strategy_storage_key,
-        current_strategy,
-        widget_first=False
+        current_strategy
     )
 
     def on_strategy_change():
@@ -164,8 +165,7 @@ def render_donation_sigma_controls(mode_suffix: str):
         restore(
             coeff_widget_key, 'donation_tab_persistence',
             coeff_storage_key,
-            1.0,
-            widget_first=False
+            1.0
         )
 
         sigma_coefficient = stateful(st.slider,
@@ -216,8 +216,7 @@ def render_donation_sigma_controls(mode_suffix: str):
             restore(
                 widget_key, 'donation_tab_persistence',
                 storage_key,
-                current_scale,
-                widget_first=False
+                current_scale
             )
 
             base_sigma = BASE_SIGMAS[level]
@@ -265,7 +264,8 @@ def render_donation_default_tab():
         # the first draw shows; nothing below is a hard-coded number.
         defaults = research_defaults()
 
-        # Reset intercept widget keys
+        # Reset intercept widget keys (both, whichever one this income mode draws;
+        # see _seed_intercept_input for the one it does not)
         st.session_state.override_categorical_intercept = defaults['intercepts']['categorical']
         st.session_state.override_continuous_intercept = defaults['intercepts']['continuous']
         st.session_state.intercept_override_values = {}
@@ -301,16 +301,6 @@ def render_donation_default_tab():
         # Income specification selector
         st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
 
-        # Initialize the widget key if it doesn't exist
-        if "page2_tab_income_spec_mode" not in st.session_state:
-            # Map current income_spec_mode to radio button options
-            if st.session_state.income_spec_mode in ["Categorical only", "Continuous only", "Compare both"]:
-                st.session_state.page2_tab_income_spec_mode = st.session_state.income_spec_mode
-            elif st.session_state.income_spec_mode in ["compare both", "compare side-by-side"]:
-                st.session_state.page2_tab_income_spec_mode = "Compare both"
-            else:
-                st.session_state.page2_tab_income_spec_mode = "Categorical only"
-
         def on_income_spec_mode_change():
             """Handle income spec mode changes"""
             setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
@@ -324,8 +314,7 @@ def render_donation_default_tab():
         income_val = restore(
             'page2_tab_income_spec_mode', 'donation_tab_persistence',
             'income_spec_mode',
-            'categorical only',
-            widget_first=False
+            'categorical only'
         )
 
         # Ensure index matches logic if needed, but for radio string value is enough if in options
@@ -356,8 +345,7 @@ def render_donation_default_tab():
         restore(
             'tab_sigma_in_copula', 'donation_tab_persistence',
             'sigma_in_copula',
-            False,
-            widget_first=False
+            False
         )
         sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
@@ -372,8 +360,7 @@ def render_donation_default_tab():
         restore(
             'tab_sigma_in_research', 'donation_tab_persistence',
             'sigma_in_research',
-            True,
-            widget_first=False
+            True
         )
         sigma_in_research = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
@@ -398,8 +385,7 @@ def render_donation_default_tab():
         restore(
             'tab_anchor_weight', 'donation_tab_persistence',
             'anchor_weight',
-            0.75,
-            widget_first=False
+            0.75
         )
 
         anchor_observed_weight = stateful(st.slider,
@@ -787,6 +773,28 @@ def clear_input_field_cache():
             del st.session_state[key]
 
 
+def _seed_intercept_input(widget_key, spec_type, current):
+    """Seed an intercept input's key from the typed override (else ``current``, the
+    intercept in effect) when the key is absent, and when the input was not drawn
+    in the previous run - it comes back after an income-mode switch, navigation or
+    a reset. On a steady rerun the key is NOT written: a key written through the
+    Session State API is re-sent to the browser with that run's response, and
+    writing the stored override over it on every rerun (the old restore) made the
+    +/- clicks that arrived while a rerun was in flight disappear (2-4 of six
+    fast clicks landed).
+
+    The second condition is what lets the resets keep writing BOTH keys, including
+    the one whose input the income mode does not draw: Streamlit keeps a key written
+    in a run that does not draw its widget under the user key, never refreshes that
+    entry once the widget exists, and lets it resurface once the widget is culled -
+    in front of a later typed override. Seeding on every return of the input (the
+    run in which stateful() pushes the value to the browser anyway) makes the typed
+    override win over such a leftover."""
+    if widget_key not in st.session_state or not drawn_in_previous_run(widget_key):
+        st.session_state[widget_key] = float(
+            st.session_state.intercept_override_values.get(spec_type, current))
+
+
 def render_intercept_override_section():
     """Render the intercept override section with ability to modify default coefficient values"""
     
@@ -826,17 +834,13 @@ def render_intercept_override_section():
         with col3:
             st.markdown("**✏️ Override Values**")
             
-            # Override input fields based on income mode
+            # Override input fields based on income mode (the keys are seeded by
+            # _seed_intercept_input; the live widget value wins on a steady rerun)
             if income_mode == "Compare both":
                 # Show both categorical and continuous
                 
-                # Restore categorical widget key
-                restore(
-                    'override_categorical_intercept', 'intercept_override_values',
-                    'categorical',
-                    current_yaml_values['categorical'],
-                    widget_first=False
-                )
+                _seed_intercept_input('override_categorical_intercept', 'categorical',
+                                      current_yaml_values['categorical'])
                 
                 new_cat_intercept = stateful(st.number_input,
                     "Categorical",
@@ -848,13 +852,8 @@ def render_intercept_override_section():
                 )
                 st.session_state.intercept_override_values['categorical'] = new_cat_intercept
                 
-                # Restore continuous widget key
-                restore(
-                    'override_continuous_intercept', 'intercept_override_values',
-                    'continuous',
-                    current_yaml_values['continuous'],
-                    widget_first=False
-                )
+                _seed_intercept_input('override_continuous_intercept', 'continuous',
+                                      current_yaml_values['continuous'])
                 
                 new_cont_intercept = stateful(st.number_input,
                     "Continuous", 
@@ -869,13 +868,8 @@ def render_intercept_override_section():
             elif "continuous" in income_mode.lower():
                 # Show only continuous
                 
-                # Restore continuous widget key
-                restore(
-                    'override_continuous_intercept', 'intercept_override_values',
-                    'continuous',
-                    current_yaml_values['continuous'],
-                    widget_first=False
-                )
+                _seed_intercept_input('override_continuous_intercept', 'continuous',
+                                      current_yaml_values['continuous'])
                 
                 new_cont_intercept = stateful(st.number_input,
                     "Continuous",
@@ -890,13 +884,8 @@ def render_intercept_override_section():
             else:
                 # Show only categorical (default)
                 
-                # Restore categorical widget key
-                restore(
-                    'override_categorical_intercept', 'intercept_override_values',
-                    'categorical',
-                    current_yaml_values['categorical'],
-                    widget_first=False
-                )
+                _seed_intercept_input('override_categorical_intercept', 'categorical',
+                                      current_yaml_values['categorical'])
                 
                 new_cat_intercept = stateful(st.number_input,
                     "Categorical",

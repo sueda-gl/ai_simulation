@@ -127,8 +127,7 @@ def render_di_sigma_controls(mode_suffix: str):
     restore(
         strategy_widget_key, 'disclose_income_tab_persistence',
         strategy_storage_key,
-        current_strategy,
-        widget_first=False
+        current_strategy
     )
 
     def on_strategy_change():
@@ -166,8 +165,7 @@ def render_di_sigma_controls(mode_suffix: str):
         restore(
             coeff_widget_key, 'disclose_income_tab_persistence',
             coeff_storage_key,
-            scale_fallback,
-            widget_first=False
+            scale_fallback
         )
 
         sigma_coefficient = stateful(st.slider,
@@ -221,8 +219,7 @@ def render_di_sigma_controls(mode_suffix: str):
             restore(
                 widget_key, 'disclose_income_tab_persistence',
                 storage_key,
-                level_scale,
-                widget_first=False
+                level_scale
             )
 
             base_sigma = BASE_SIGMAS[level]
@@ -302,8 +299,7 @@ def render_disclose_income_tab():
         income_val = restore(
             'di_tab_income_mode', 'disclose_income_tab_persistence',
             'income_mode',
-            'Categorical only',
-            widget_first=False
+            'Categorical only'
         )
 
         # Ensure value is valid (handling case sensitivity)
@@ -354,8 +350,7 @@ def render_disclose_income_tab():
         restore(
             'di_tab_sigma_in_copula', 'disclose_income_tab_persistence',
             'di_sigma_in_copula',
-            False,
-            widget_first=False
+            False
         )
         sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
@@ -370,8 +365,7 @@ def render_disclose_income_tab():
         restore(
             'di_tab_sigma_enabled', 'disclose_income_tab_persistence',
             'sigma_enabled',
-            True,
-            widget_first=False
+            True
         )
         sigma_enabled = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
@@ -400,8 +394,7 @@ def render_disclose_income_tab():
         restore(
             'di_wopb_widget', 'disclose_income_tab_persistence',
             'wopb',
-            current_wopb,
-            widget_first=False
+            current_wopb
         )
 
         # WOPB - Weight for observed vs calculated prosocial behavior
@@ -421,8 +414,7 @@ def render_disclose_income_tab():
         restore(
             'di_wpb_widget', 'disclose_income_tab_persistence',
             'wpb',
-            current_wpb,
-            widget_first=False
+            current_wpb
         )
 
         # WPB - Weight for prosocial effect in disclosure equation
@@ -710,8 +702,7 @@ def _apply_config_to_widget_keys(config):
     (`di_tab_sigma_coefficient_stochastic`, `di_tab_sigma_strategy_stochastic`,
     `di_tab_sigma_q{1..5}_stochastic`); `reset_to_defaults` clears them with its
     bulk delete of every `di_` key instead.  The unsuffixed writes that used to
-    stand here set keys no widget and no reader ever used, so they are gone
-    (the Disclose Documents twin writes the suffixed keys and does set them).
+    stand here set keys no widget and no reader ever used, so they are gone.
     """
     anchor = config.get('anchor_weights', {})
     stochastic = config.get('stochastic', {})

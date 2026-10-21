@@ -14,50 +14,24 @@ from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISI
 
 
 def initialize_page2_widget_keys():
-    """Initialize all Page 2 widget keys to preserve values across navigation.
-    
-    CRITICAL: This function ensures donation decision parameters persist when:
-    - Navigating from Results back to Page 2
-    - Switching between Overview and decision tabs
-    - Running simulations
-    
-    Similar to Page 1's initialize_widget_keys(), but for donation-specific parameters.
+    """Mirror the canonical Donation / Disclose Income keys from their widget keys
+    at the top of every Page-2 run.
+
+    The decision tabs mirror these keys on every render, but the Overview tab is
+    drawn BEFORE them, and in the run that processes a change to one of these
+    widgets it reads the canonical keys (its donation card: the sigma coefficient,
+    the tick boxes, the anchor weight; the run gate: the income mode), so without
+    this mirror it would show the previous value for one rerun.
+
+    The widget keys themselves are NOT seeded here: each tab seeds its own keys
+    right before its widgets (``decision_tabs._tab_state.restore`` /
+    ``seed_if_absent``), in the run that draws them. A widget key written in a run
+    that does not draw the widget stays in Streamlit's old session state under the
+    user key, is never refreshed once the widget exists (later writes go under the
+    widget id), and resurfaces with that stale value once Streamlit culls the
+    widget - in front of the value the user typed (verified 2026-10-21/22).
     """
-    
-    # Initialize canonical donation widget keys (mode-independent, one set)
-    if "tab_sigma_in_copula" not in st.session_state:
-        st.session_state.tab_sigma_in_copula = st.session_state.get('sigma_in_copula', False)
-    
-    if "tab_sigma_in_research" not in st.session_state:
-        st.session_state.tab_sigma_in_research = st.session_state.get('sigma_in_research', True)
-    
-    # Unified slider widget key (no more mode-specific variants)
-    if "tab_sigma_coefficient_stochastic" not in st.session_state:
-        st.session_state.tab_sigma_coefficient_stochastic = st.session_state.get('sigma_coefficient', 1.0)
-    
-    if "tab_anchor_weight" not in st.session_state:
-        st.session_state.tab_anchor_weight = st.session_state.get('anchor_observed_weight', 0.75)
-    
-    # Initialize canonical disclose_income copula widget key
-    if "di_tab_sigma_in_copula" not in st.session_state:
-        st.session_state.di_tab_sigma_in_copula = st.session_state.get('di_sigma_in_copula', False)
-    
-    # Initialize income spec mode widget key
-    if "page2_tab_income_spec_mode" not in st.session_state:
-        # Map current income_spec_mode to radio button options
-        current_mode = st.session_state.get('income_spec_mode', 'categorical only')
-        if current_mode in ["categorical only", "continuous only", "Compare both"]:
-            st.session_state.page2_tab_income_spec_mode = current_mode
-        elif current_mode in ["compare both", "compare side-by-side"]:
-            st.session_state.page2_tab_income_spec_mode = "Compare both"
-        else:
-            st.session_state.page2_tab_income_spec_mode = "categorical only"
-    
-    # CRITICAL: Sync non-prefixed variables from canonical widget keys.
-    # These non-prefixed variables are what the simulation actually reads.
-    # With the unified key architecture, this is mode-independent -- the same
-    # canonical widget keys are used regardless of population mode.
-    
+
     # Sync donation sigma coefficient from unified widget key
     if 'tab_sigma_coefficient_stochastic' in st.session_state:
         st.session_state.sigma_coefficient = st.session_state.tab_sigma_coefficient_stochastic

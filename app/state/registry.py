@@ -148,7 +148,7 @@ def _rows(rows, initialised_by, category, **common) -> Tuple[KeySpec, ...]:
 
 P1_INIT = "page1_common_params.initialize_widget_keys (from page1_widget_values)"
 P1_INLINE = "page1_common_params.render_page1 (inline, just above the widget)"
-P2_INIT = "page2_decisions.initialize_page2_widget_keys"
+P2_INIT = "page2_decisions.initialize_page2_widget_keys"   # mirrors canonical keys only (2026-10-22)
 MODELS_INIT = "models.initialize_session_state"
 MODELS_DEFAULTS = "models.initialize_session_state (models.SESSION_DEFAULTS)"
 MODELS_DECISIONS = "models.initialize_default_decision_parameters"
@@ -416,14 +416,19 @@ _LEGACY_COEFF_INPUTS = (
 _DONATION_WIDGETS = _rows((
     ("tab_sigma_in_copula", "<sigma_in_copula, else False>"),
     ("tab_sigma_in_research", "<sigma_in_research, else True>"),
-    ("tab_sigma_coefficient_{mode_suffix}", "<sigma_coefficient, else 1.0>",
-     "mode_suffix is always 'stochastic'; the seam multiplies the one sigma constant by this slider"),
+    ("tab_sigma_coefficient_{mode_suffix}", "<donation_tab_persistence['sigma_coefficient_stochastic'], else 1.0>",
+     "mode_suffix is always 'stochastic'; seeded by render_donation_sigma_controls right before "
+     "the slider (not by the initialiser: the key must not be written in a run that does not "
+     "draw the slider); the seam multiplies the one sigma constant by this slider"),
     ("tab_anchor_weight", "<anchor_observed_weight, else 0.75>"),
     ("donation_tab_sigma_strategy_{mode_suffix}", "<donation_sigma_strategy>"),
     ("donation_tab_sigma_q{level}_{mode_suffix}", "<donation_quintile_scale_factors[level]>"),
     ("override_categorical_intercept", "<the current categorical intercept>"),
     ("override_continuous_intercept", "<the current continuous intercept>"),
     ("override_adjustment_shift", "<donation_adjustment_shift>"),
+    ("page2_tab_income_spec_mode", "<donation_tab_persistence['income_spec_mode'], else 'categorical only'>",
+     "the Donation tab's income-mode radio; seeded by render_donation_default_tab right before it "
+     "(Page 2 pre-seeded it from income_spec_mode until 2026-10-22)"),
     ("reset_intercept_btn", WIDGET),
     ("reset_adjustment_btn", WIDGET),
     ("reset_config_btn", WIDGET),
@@ -485,7 +490,6 @@ _RESET_PENDING_FLAGS = (
 )
 
 _PAGE2_WIDGETS = _rows((
-    ("page2_tab_income_spec_mode", "<income_spec_mode mapped onto the radio options>"),
     ("page2_manual_multiselect", "<page2_manual_selections>"),
     ("page2_select_all_checkbox", "<page2_select_all_state>"),
     ("clear_donation_config", WIDGET),
@@ -493,7 +497,7 @@ _PAGE2_WIDGETS = _rows((
     ("clear_rejected_transaction_config", WIDGET),
     ("run_complete_simulation", WIDGET),
     ("run_complete_simulation_disabled", WIDGET, "the disabled twin of the button above"),
-), P2_INIT + " / page2_decisions.render_page2", "page2-widget", is_widget=True)
+), "page2_decisions.render_page2", "page2-widget", is_widget=True)
 
 _RUN_BUTTONS = _rows((
     ("run_{decision_name}_only_btn", WIDGET,
@@ -509,8 +513,9 @@ _RUN_BUTTONS = _rows((
 
 _TAB_PERSISTENCE = (
     _row("donation_tab_persistence", {}, DON_INIT, "tab-persistence",
-         notes="written only from an on_change callback (save_to_donation_storage); "
-               "read back before the widget renders (restore_widget_from_storage)."),
+         notes="written only from an on_change callback (decision_tabs._tab_state.save); "
+               "read back before the widget renders (_tab_state.restore), and only "
+               "while the widget key is absent - the live widget key wins."),
     _row("disclose_income_tab_persistence", {}, DI_INIT, "tab-persistence",
          notes="wiped by the di_ prefix reset."),
     _row("disclose_documents_tab_persistence", {}, DD_INIT, "tab-persistence",

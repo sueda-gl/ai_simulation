@@ -88,8 +88,7 @@ def render_dd_sigma_controls(mode_suffix: str):
 
     restore(
         strategy_widget_key, 'disclose_documents_tab_persistence',
-        strategy_storage_key, current_strategy,
-        widget_first=False
+        strategy_storage_key, current_strategy
     )
 
     def on_strategy_change():
@@ -116,8 +115,7 @@ def render_dd_sigma_controls(mode_suffix: str):
 
         restore(
             coeff_widget_key, 'disclose_documents_tab_persistence',
-            coeff_storage_key, scale_fallback,
-            widget_first=False
+            coeff_storage_key, scale_fallback
         )
 
         sigma_coefficient = stateful(st.slider,
@@ -158,8 +156,7 @@ def render_dd_sigma_controls(mode_suffix: str):
             storage_key = f'dd_sigma_quintile_{level}_{mode_suffix}'
             widget_key = f'dd_tab_sigma_q{level}_{mode_suffix}'
             restore(
-                widget_key, 'disclose_documents_tab_persistence', storage_key, level_scale,
-                widget_first=False
+                widget_key, 'disclose_documents_tab_persistence', storage_key, level_scale
             )
             base_sigma = BASE_SIGMAS[level]
 
@@ -208,8 +205,7 @@ def render_disclose_documents_tab():
 
         income_val = restore(
             'dd_tab_income_mode', 'disclose_documents_tab_persistence',
-            'income_mode', 'Categorical only',
-            widget_first=False
+            'income_mode', 'Categorical only'
         )
         if income_val not in mode_options:
             income_val = next((o for o in mode_options if str(income_val).lower() == o.lower()), "Categorical only")
@@ -238,8 +234,7 @@ def render_disclose_documents_tab():
         st.markdown("**Copula Mode:**")
         restore(
             'dd_tab_sigma_in_copula', 'disclose_documents_tab_persistence',
-            'dd_sigma_in_copula', False,
-            widget_first=False
+            'dd_sigma_in_copula', False
         )
         sigma_in_copula = stateful(st.checkbox,
             "Add Normal(score, σ) draw to Copula runs",
@@ -252,8 +247,7 @@ def render_disclose_documents_tab():
         st.markdown("**Research Specification Mode:**")
         restore(
             'dd_tab_sigma_enabled', 'disclose_documents_tab_persistence',
-            'sigma_enabled', True,
-            widget_first=False
+            'sigma_enabled', True
         )
         sigma_enabled = stateful(st.checkbox,
             "Use Normal(score, σ) draw in Research Specification mode",
@@ -463,7 +457,18 @@ def auto_save_intercept(new_value):
 
 
 def _apply_config_to_widget_keys(config):
-    """Explicitly set every widget key from a config dict (defeats Streamlit's stale cache)."""
+    """Explicitly set the widget keys this tab resets, from a config dict.
+
+    Only keys whose widget the SAME run draws are written (the reset is applied
+    at the top of the run, before the tab's widgets): a widget key written in a
+    run that does not draw its widget stays in Streamlit's old session state under
+    the user key and resurfaces, stale, once the widget has been drawn and culled
+    again - in front of the value the user set. So the per-quintile sigma keys
+    (``dd_tab_sigma_q{1..5}_stochastic``), whose sliders are not drawn while the
+    strategy is back at 'overall', are NOT written: the bulk delete of every
+    ``dd_`` key dropped them, and ``render_dd_sigma_controls`` seeds them from
+    ``dd_quintile_scale_factors`` (reset below) when the sliders are drawn.
+    """
     stochastic = config.get('stochastic', {})
     st.session_state.dd_override_intercept = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
     # The Research Specification tick box defaults to on, so a reset leaves it on.
@@ -476,8 +481,6 @@ def _apply_config_to_widget_keys(config):
 
     default_scale = stochastic.get('scale_factor', 1.0)
     quintile_scales = stochastic.get('quintile_scale_factors', {})
-    for level in ['1', '2', '3', '4', '5']:
-        st.session_state[f'dd_tab_sigma_q{level}_stochastic'] = quintile_scales.get(level, default_scale)
 
     # Also set the READ-keys the simulation consumes (so reset is correct regardless of rerun timing).
     st.session_state.dd_income_mode = config.get('income_mode', 'Categorical only')

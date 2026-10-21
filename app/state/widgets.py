@@ -21,12 +21,15 @@ therefore its element id) changed - shows that built-in default, and sends it
 back on the next rerun, so the run computes with it. The script itself (and
 AppTest) still sees the seeded value, so nothing on the server looks wrong.
 
-Concretely: ``initialize_page2_widget_keys`` seeds ``tab_anchor_weight = 0.75``
-on the first Page-2 run, when the Donation tab is not drawn yet; one rerun later
-"Select All Decisions" draws the slider, the key already exists so nobody writes
-it again, the browser shows 0 and the next run takes ``anchor_observed_weight =
-0.0``. Passing ``value=<the key's value>`` as well would make ``default``
-right - and bring the warning back.
+Concretely (as it was until 2026-10-22, when Page 2 still pre-seeded the
+Donation tab's keys): ``initialize_page2_widget_keys`` seeded ``tab_anchor_weight
+= 0.75`` on the first Page-2 run, when the Donation tab was not drawn yet; one
+rerun later "Select All Decisions" drew the slider, the key already existed so
+nobody wrote it again, the browser showed 0 and the next run took
+``anchor_observed_weight = 0.0``. The same happens today to a key seeded in one
+run and drawn in a later one (the Overview's default-decision sliders, seeded by
+``models.initialize_session_state`` on Page 1). Passing ``value=<the key's
+value>`` as well would make ``default`` right - and bring the warning back.
 
 The fix
 -------
@@ -156,6 +159,12 @@ def sync_widget_key(key, initial=_MISSING, signature=None):
             st.session_state[key] = st.session_state[key]
     log[key] = signature
     return st.session_state[key] if key in st.session_state else None
+
+
+def drawn_in_previous_run(key):
+    """True when the stateful() widget bound to ``key`` was drawn in the previous
+    script run (so the browser holds it and a rerun need not re-push its value)."""
+    return key in (st.session_state.get(PREVIOUS_RENDER_LOG_KEY) or {})
 
 
 def stateful(widget_fn, *args, key, initial=_MISSING, **kwargs):

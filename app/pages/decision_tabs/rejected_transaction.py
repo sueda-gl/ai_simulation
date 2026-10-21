@@ -303,7 +303,7 @@ def render_flex_anchor_mix(config):
     storage_key = 'rtd_flex_observed_weight'
     current = restore(
         widget_key, 'rejected_transaction_tab_persistence',
-        storage_key, st.session_state.get(storage_key, default_w), widget_first=True)
+        storage_key, st.session_state.get(storage_key, default_w))
 
     def on_change():
         st.session_state['rtd_flex_observed_weight'] = float(
@@ -442,7 +442,7 @@ def render_decision_sigma_controls(config):
 
     strategy_val = restore(
         strategy_widget_key, 'rejected_transaction_tab_persistence',
-        strategy_storage_key, current_strategy, widget_first=True)
+        strategy_storage_key, current_strategy)
     strategy_val = 'quintile' if 'quintile' in str(strategy_val).lower() else 'overall'
     seed_if_changed(strategy_widget_key, strategy_val)
 
@@ -468,7 +468,7 @@ def render_decision_sigma_controls(config):
 
         coeff_val = restore(
             coeff_widget_key, 'rejected_transaction_tab_persistence',
-            coeff_storage_key, scale_fallback, widget_first=True)
+            coeff_storage_key, scale_fallback)
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
         seed_if_changed(coeff_widget_key, coeff_val)
 
@@ -501,7 +501,7 @@ def render_decision_sigma_controls(config):
             widget_key = f'rtd_tab_sigma_q{level}'
             q_val = restore(
                 widget_key, 'rejected_transaction_tab_persistence',
-                storage_key, level_scale, widget_first=True)
+                storage_key, level_scale)
             q_val = max(0.0, min(float(q_val), 2.0))
             seed_if_changed(widget_key, q_val)
 
@@ -550,7 +550,7 @@ def render_intercept_control(config, mech):
     storage_key = f'rtd_intercept_{mech}'
     current = restore(
         widget_key, 'rejected_transaction_tab_persistence',
-        storage_key, st.session_state.get(storage_key, research_default), widget_first=True)
+        storage_key, st.session_state.get(storage_key, research_default))
 
     def on_change(m=mech):
         st.session_state[f'rtd_intercept_{m}'] = st.session_state[f'rtd_tab_intercept_{m}']
@@ -859,7 +859,7 @@ def render_rejected_transaction_defaults_tab():
 
         income_val = restore(
             'rtd_tab_income_mode', 'rejected_transaction_tab_persistence',
-            'rtd_income_mode', 'Continuous only', widget_first=True)
+            'rtd_income_mode', 'Continuous only')
         if income_val not in mode_options:
             income_val = next((o for o in mode_options if str(income_val).lower() == o.lower()),
                               "Continuous only")
@@ -892,7 +892,7 @@ def render_rejected_transaction_defaults_tab():
         st.markdown("**Copula Mode:**")
         copula_val = restore(
             'rtd_tab_sigma_in_copula', 'rejected_transaction_tab_persistence',
-            'rtd_sigma_in_copula', False, widget_first=True)
+            'rtd_sigma_in_copula', False)
         seed_if_changed('rtd_tab_sigma_in_copula', bool(copula_val))
         sigma_in_copula = stateful(st.checkbox,
             "Add Normal(anchor, σ) draw to Copula runs",
@@ -904,7 +904,7 @@ def render_rejected_transaction_defaults_tab():
         st.markdown("**Research Specification Mode:**")
         res_val = restore(
             'rtd_tab_sigma_enabled', 'rejected_transaction_tab_persistence',
-            'rtd_sigma_enabled', True, widget_first=True)
+            'rtd_sigma_enabled', True)
         seed_if_changed('rtd_tab_sigma_enabled', bool(res_val))
         sigma_enabled = stateful(st.checkbox,
             "Use Normal(anchor, σ) draw in Research Specification mode",
