@@ -225,7 +225,7 @@ The run is two passes over the agents:
 
 Adding a decision *at the end* of `DECISION_ORDER` leaves every existing number
 untouched. Inserting one in the middle shifts every later decision's offset and changes
-every later result. See [`how-to-add-a-decision.md`](how-to-add-a-decision.md).
+every later result. See [`how-to-change-the-model.md`](how-to-change-the-model.md).
 
 ---
 
