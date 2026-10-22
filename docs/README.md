@@ -26,10 +26,12 @@ Each layer may use the layers above it, never the other way round.
   app/pages + app/models.py + app/simulation.py   THE SCREENS      (Streamlit)
 ```
 
-A test enforces the engine's rule and the reports' (§6); the seam keeps its rule by
-convention. One import goes the other way: `app/state/saved_configs.py` imports
-`app/models.py` and, inside a function, `RunContext` from `app/pages/results/`, so a
-pin records the run on screen (§5).
+A test enforces the engine's rule, the reports' and the stores' - nothing under
+`app/state/` imports `app/pages/`, not even inside a function (§6); the seam keeps its
+rule by convention. A pin records the run on screen because the results page hands the
+store the run's values as arguments (§5). `app/state/saved_configs.py` still imports
+two names from `app/models.py` (the donation σ constant and the coefficient loader);
+no test covers that import.
 
 ### The engine, `src/`
 
@@ -342,24 +344,30 @@ default decision lists, the seed and the agent count, per result key the income
 mode each income-dependent decision actually ran with, the moment the run started,
 and - since 2026-10-22 - the Page 1 parameters the run used (the whole
 `SimulationParameters` snapshot as a plain dict, `RunMetadata.simulation_params`),
-the Decision 4 element the run button named (`rtd_run_element`) and the donation
-anchor weight the run ran with (the tab slider, or the pinned donation record's).
-The per-decision income modes matter because a complete run names its result keys
-after the global income mode while Decision 4 runs with its own tab's mode.
+the Decision 4 element the run button named (`rtd_run_element`), the donation
+anchor weight the run ran with (the tab slider, or the pinned donation record's) and
+the default-decision settings the run used (`RunMetadata.default_decision_settings`:
+for every decision, the Overview tab's probability, parameter selection, priority
+template, option or value as `build_plan.collect_decision_settings` resolved them for
+the engine). The per-decision income modes matter because a complete run names its
+result keys after the global income mode while Decision 4 runs with its own tab's mode.
 
 The results page builds a `RunContext` (`app/pages/results/run_context.py`) from that
 metadata plus the result frames and asks *it* every question about the run: its
-shape, and its Page 1 values (`ctx.param(name)`, `ctx.platform_markup`,
-`ctx.periods`, ...). It deliberately does **not** read the live Page-1 / Page-2
-widgets or `st.session_state.sim_params`: those describe the run being configured
-next, not the one on screen (the one exception is listed in §10). So editing Page 1
+shape, its Page 1 values (`ctx.param(name)`, `ctx.platform_markup`,
+`ctx.periods`, ...) and the defaults its unselected decisions ran with
+(`ctx.default_setting(...)`, e.g. the "Default Behavior" line). It deliberately does
+**not** read the live Page-1 / Page-2 widgets or `st.session_state.sim_params`: those
+describe the run being configured next, not the one on screen. So editing Page 1
 after a run and returning to the results page via "View Results" shows the run's
 summary, bidding explanation and exports unchanged (the `page1_edit_after_run`
 golden journey pins this). Metadata written before these fields existed falls back
 to the live values, the only ones such a session has.
 
-"Use This Config" (`app/state/saved_configs.py`) pins from the same `RunContext`:
-the run's seed, agent count, population mode and income mode, not the live widgets.
+"Use This Config" pins from the same `RunContext`: the results page hands the store
+(`app/state/saved_configs.py`) the run's seed, agent count, population mode and income
+mode (`RunContext.run_on_screen`), not the live widgets. The store takes them as
+arguments and never imports the page.
 When the pin is refused because another pinned decision ran with a different seed
 or agent count, the function returns the failure and the results page shows an
 error naming both runs; nothing is pinned and no success message appears.
@@ -368,12 +376,13 @@ error naming both runs; nothing is pinned and no success message appears.
 
 ## 6. The import boundary
 
-Two rules:
+Three rules:
 
 1. Nothing under `src/` may import `streamlit` or the `app` package.
 2. Nothing under `app/reports/` may import `streamlit`.
+3. Nothing under `app/state/` may import `app.pages` (the stores sit below the screens).
 
-`tests/test_import_boundary.py` enforces both for every module it finds, in two
+`tests/test_import_boundary.py` enforces all three for every module it finds, in two
 independent ways: it imports the module in a fresh subprocess and inspects the child's
 `sys.modules`, and it scans the source with `ast` for an import at any nesting depth,
 including one hidden inside a function body. The walk is guarded so the suite cannot
@@ -450,8 +459,8 @@ Run either snippet from the repository root with the virtual environment active.
 
 ```bash
 pip install pytest                      # not in requirements.txt
-pytest tests/ -q -m "not slow"          # engine, seam, boundary: 444 tests, about 40 seconds
-pytest tests/ -q                        # everything: 714 tests, about 3 minutes; everything passes
+pytest tests/ -q -m "not slow"          # engine, seam, boundary: 453 tests, about 40 seconds
+pytest tests/ -q                        # everything: 724 tests, about 3 minutes; everything passes
 ```
 
 Run them from the repository root (`pytest.ini` puts the root on the import path;
@@ -537,11 +546,38 @@ The reasons behind behaviour that looks odd at first sight.
   cheapest available), in every sheet.
 * **Customer Price in the exports** is `(1 + price_range) × (1 + platform_markup) ×
   vendor price` for Purchase Now, the bid value for a Bid, and N/A for Fixed and
-  Discount customers, whose price the platform algorithm sets. `tests/test_export_pricing.py`
-  pins this.
-* **Decisions 9 and 10 are transaction-level.** The per-request purchase-now-or-bid
-  choice and bid value are drawn inside Decision 6; the per-agent values the two slots
-  still produce are not part of the documented outputs.
+  Discount customers, whose price the platform algorithm sets. Every sheet computes the
+  Purchase Now price through the one shared function (`app/reports/_common.py`,
+  `purchase_now_price`: the price multiplied first, as the formula is written), so every
+  sheet stores the same cents - for a two-decimal vendor price the other order can land
+  one cent away (1.40: 1.93, not 1.92). `tests/test_export_pricing.py` pins this.
+* **A missing value is exported as N/A; nothing is substituted for it.** One rule for
+  every export sheet (`app/reports/_common.py`): a cell the run did not produce reads
+  `N/A`. The income is the dollar value the run assigned and never falls back to the
+  12-200 credit allowance (`actual_allowance`); an allowance level never falls back to an
+  income category or an income; the group and the study programme are read from the one
+  column the engine produces (`Group_experiment`, `Study Program`), blank or absent ->
+  `N/A`; a request whose vendor id is missing or names no vendor of the run has `N/A` in
+  every vendor cell (label, price, quality, sustainability, proximity, scores) and no
+  Purchase Now price (the market price is not substituted); an agent without a
+  Decision 5 dict has `N/A` in every weight cell and in the vendor score, and an agent
+  with no scorable vendor has `N/A` averages; a Y/N outcome is 1 / 0 and `N/A` when
+  missing - Decision 2's never-eligible agents included, so Y, N and never-eligible stay
+  distinguishable; a missing trait, donation rate or product id (the engine writes none)
+  is `N/A`, never a blank, a zero or a configuration default.
+  `tests/test_export_missing_values.py` pins this.
+* **Decisions 9 and 10 are made per purchase request, not per agent.** Twelve of
+  the thirteen decisions are computed once per agent and add a column to that agent's
+  row. Decisions 9 (buy now or bid) and 10 (how much to bid) are made every time the
+  agent sends a purchase request, so one agent has many of them; the code draws them
+  inside Decision 6, the decision that generates the agent's purchase requests, and
+  every request carries its own choice and bid value. Those per-request values are
+  what the exports show. The two slots numbered 9 and 10 still exist in the decision
+  list and still compute one value per agent, but nothing reads those per-agent
+  values; they are leftovers from before the per-request design. They stay because
+  each decision's random stream is seeded by its position in the list (§3): removing
+  the two slots would shift the seeds of Decisions 11, 12 and 13 and change their
+  draws in every mode.
 * **Transaction IDs are assigned after the run**, by a stable sort on
   `timestamp_hours`, so the Decision 6 and Decision 9 exports agree.
 * **Export timestamps are relative to the moment the run was started.** The run
@@ -561,6 +597,3 @@ The reasons behind behaviour that looks odd at first sight.
 * Decision 4's five segments are equal slices between a population's lowest and
   highest score, so copula and research populations are cut on different windows. This
   follows the specification.
-* The results page's "Default Behavior" line for a random-probability default decision
-  (`viz_helpers.get_dynamic_description`) reads the live Overview probability, not the
-  run's: change it after a run and the line changes, the run's numbers do not.
