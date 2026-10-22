@@ -298,7 +298,9 @@ The run is two passes over the agents:
 
 Adding a decision *at the end* of `DECISION_ORDER` leaves every existing number
 untouched. Inserting one in the middle shifts every later decision's offset and changes
-every later result. See [`how-to-change-the-model.md`](how-to-change-the-model.md).
+every later result. See [`how-to-change-the-model.md`](how-to-change-the-model.md);
+when a methodology document arrives for one of the nine default decisions,
+[`how-to-model-a-new-decision.md`](how-to-model-a-new-decision.md) is the recipe.
 
 ---
 
@@ -459,8 +461,8 @@ Run either snippet from the repository root with the virtual environment active.
 
 ```bash
 pip install pytest                      # not in requirements.txt
-pytest tests/ -q -m "not slow"          # engine, seam, boundary: 453 tests, about 40 seconds
-pytest tests/ -q                        # everything: 724 tests, about 3 minutes; everything passes
+pytest tests/ -q -m "not slow"          # engine, seam, boundary: 493 tests, about 40 seconds
+pytest tests/ -q                        # everything: 767 tests, about 3 minutes; everything passes
 ```
 
 Run them from the repository root (`pytest.ini` puts the root on the import path;

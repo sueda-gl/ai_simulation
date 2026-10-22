@@ -142,7 +142,8 @@ app/                  THE STREAMLIT APP
 
 config/               decisions.yaml, simulation.yaml, trait_model.pkl (copula)
 data/                 experiment/survey workbooks + frozen reference CSVs
-docs/                 README.md (start here), how-to-change-the-model.md, session-state.md
+docs/                 README.md (start here), how-to-change-the-model.md,
+                      how-to-model-a-new-decision.md, session-state.md
 docs/reference/       the platform documentation - the source of truth for the model
 scripts/              CLI runners (run_simulation, run_mc_study), copula training,
                       build_dd_sigma (re-derives the Decision 2 sigma from the raw data)

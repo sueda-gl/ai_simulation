@@ -5,8 +5,8 @@ which reference. This page is the map.
 
 ```bash
 pip install pytest                                   # not in requirements.txt
-.venv/bin/python -m pytest tests/ -q -m "not slow"   # 453 tests, about 40 seconds
-.venv/bin/python -m pytest tests/ -q                 # 724 tests, about 3 minutes
+.venv/bin/python -m pytest tests/ -q -m "not slow"   # 493 tests, about 40 seconds
+.venv/bin/python -m pytest tests/ -q                 # 767 tests, about 3 minutes
 ```
 
 Run from the repository root: `pytest.ini` puts the root on `sys.path`
@@ -79,6 +79,7 @@ Some modules also import from each other: `base_state` / `plan_for` / `ALL` from
 | `test_donation_default_doc.py` | Decision 3 participant by participant at shift 0 / sigma 0, in both income modes; noise gate and rescale. | The methodology document, re-implemented in `data/d3_doc_reference.csv`; the `.dta` at `PROF_DTA`. |
 | `test_engine_helpers.py` | `should_use_stochastic`, `assign_global_transaction_ids`, `build_simulation_params`. | Their contracts. |
 | `test_export_pricing.py` | Customer Price per transaction type; one vendor score across the Agent- and Transaction-Level exports. | `docs/reference/COOPECON AI Agent Documentation 2026-10-07.docx`. |
+| `test_export_missing_values.py` | The one rule for a missing value in every sheet: `N/A`, nothing substituted (group, income, vendor, weights, Y/N labels, product id, averages). | `docs/README.md` §9. |
 | `test_golden_runs.py` | 15 runs through snapshot, plan and execute: result frames, vendor lists, 13 export builders. | Golden `tests/golden/<scenario>/`. |
 | `test_import_boundary.py` | `src/` never imports `streamlit` or `app`; `app/reports/` never imports `streamlit`; `app/state/` never imports `app.pages` (subprocess and AST). | The import rules (`docs/README.md` §6). |
 | `test_no_consensus_in_outputs.py` | Exports and screens say "integrated", never "consensus". | The output wording rule. |

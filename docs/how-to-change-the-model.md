@@ -2,7 +2,9 @@
 
 The thirteen decisions are fixed; what changes over time is their constants, their
 equations, the controls the user can adjust, the noise model, and what the exports
-contain. This page is the recipe for each kind of change, and the routine that proves
+contain. Turning one of the nine default decisions into a modelled one, when its
+methodology document arrives, is a separate page:
+[`how-to-model-a-new-decision.md`](how-to-model-a-new-decision.md). This page is the recipe for each kind of change, and the routine that proves
 nothing else moved. It assumes you have read [`README.md`](README.md), in particular
 §3 (where the random numbers come from) and §9 (the design decisions).
 
