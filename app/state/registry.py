@@ -9,7 +9,7 @@ a doc build or a reviewer can read it without starting a session.
 ``tests/test_session_key_registry.py`` walks ``app/`` with ``ast`` and holds the
 code against this file in both directions: a key the code touches must have an
 entry, and an entry no code touches must go.
-``docs/session-state.md`` explains the four persistence layers the
+``docs/session-state.md`` explains the three persistence layers the
 ``category`` field names and lists the keys that are written but never read.
 
 Conventions for ``default``:
@@ -35,7 +35,7 @@ CATEGORIES = (
     "page1-mirror",      # the canonical Page-1 value a widget mirrors
     "page2-widget",      # a Page-2 / decision-tab widget's own key
     "page2-mirror",      # the canonical Page-2 value the seam reads
-    "tab-persistence",   # the per-tab dict that outlives an un-rendered widget
+    "tab-persistence",   # the Donation tab's dict that outlives an un-rendered widget
     "saved-config",      # "Use This Config" pins
     "run-flag",          # what the click that started a run recorded
     "results",           # run output and the widgets that display it
@@ -60,14 +60,16 @@ CATEGORIES = (
 #: ``chart_key``  - the plotly key built by the shared chart helpers
 #:                  (``donation_hist_*`` / ``*_pie_*`` / ``*_raw_hist_*`` and the
 #:                  Decision-4 density charts).
-#: ``widget_key`` / ``storage_dict_name`` - the parameters of the decision tabs'
-#:                  shared persistence helpers (``decision_tabs._tab_state``:
-#:                  ``restore`` / ``save`` / ``seed_if_absent`` / ``seed_if_changed``);
-#:                  the widget key and the ``*_tab_persistence`` dict (or
-#:                  ``intercept_override_values``) they read and write.  Every
-#:                  caller still binds the widget key literally (``key=``) or
-#:                  through KEY_PARAMETER_TABLES below.
-DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key", "widget_key", "storage_dict_name")
+#: ``widget_key`` / ``canonical_key`` - the decision tabs' seeding helpers
+#:                  (``decision_tabs._tab_state``: ``restore`` / ``save`` /
+#:                  ``seed_if_absent`` / ``seed_if_changed``): the widget key they
+#:                  are handed, and the canonical key ``restore`` looks it up in
+#:                  TAB_WIDGET_CANONICAL below.  Every caller still binds the
+#:                  widget key literally (``key=``) or through
+#:                  KEY_PARAMETER_TABLES, and every canonical key of the table is
+#:                  written literally next to its widget (the test holds the
+#:                  table to both).
+DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key", "widget_key", "canonical_key")
 
 #: ``[k for k in st.session_state.keys() if k.startswith(<prefix>)]`` - the
 #: whole-decision resets, and the per-category purchasing limits Page 1's reset
@@ -101,50 +103,126 @@ PREFIX_DELETE_PREFIXES = ("dd_", "di_", "rtd_", "purchasing_limit_")
 #: sliders, the two stochastic tick boxes, the income-mode radio).
 #:   dp       - prefix of the canonical keys and of the strategy / quintile widget keys
 #:   wp       - prefix of the coefficient slider's and the tick boxes' widget keys
-#:   sp       - prefix of the persistence-dict entries and of the copula / research
-#:              canonical keys ("" on the Donation tab)
+#:   sp       - prefix of the copula / research canonical keys ("" on the Donation tab)
 #:   suffix   - the widget-key suffix of the σ controls ("" on Decision 4)
 #:   research - the research-box stem: Donation "sigma_in_research", the others "sigma_enabled"
 #:   coefficient   - the canonical key of the σ coefficient (Donation "sigma_coefficient")
 #:   income_widget - the income-mode radio's widget key
 #:   income        - the canonical income-mode key
-#:   storage       - the tab's persistence dict
 ControlKeys = namedtuple("ControlKeys",
-                         "dp wp sp suffix research coefficient income_widget income storage")
+                         "dp wp sp suffix research coefficient income_widget income")
 CONTROL_KEYS = {
     "donation_default": ControlKeys(
         dp="donation_", wp="tab_", sp="", suffix="_stochastic", research="sigma_in_research",
         coefficient="sigma_coefficient", income_widget="page2_tab_income_spec_mode",
-        income="income_spec_mode", storage="donation_tab_persistence"),
+        income="income_spec_mode"),
     "disclose_income": ControlKeys(
         dp="di_", wp="di_tab_", sp="di_", suffix="_stochastic", research="sigma_enabled",
         coefficient="di_scale_factor", income_widget="di_tab_income_mode",
-        income="di_income_mode", storage="disclose_income_tab_persistence"),
+        income="di_income_mode"),
     "disclose_documents": ControlKeys(
         dp="dd_", wp="dd_tab_", sp="dd_", suffix="_stochastic", research="sigma_enabled",
         coefficient="dd_scale_factor", income_widget="dd_tab_income_mode",
-        income="dd_income_mode", storage="disclose_documents_tab_persistence"),
+        income="dd_income_mode"),
     "rejected_transaction_defaults": ControlKeys(
         dp="rtd_", wp="rtd_tab_", sp="rtd_", suffix="", research="sigma_enabled",
         coefficient="rtd_scale_factor", income_widget="rtd_tab_income_mode",
-        income="rtd_income_mode", storage="rejected_transaction_tab_persistence"),
+        income="rtd_income_mode"),
 }
 
 #: The Disclose Income / Disclose Documents twin machinery (intercept override,
 #: resets, actions): ``dp`` prefixes every key of the tab, ``wp`` + ``suffix`` the
-#: σ widget keys the reset writes, ``storage`` is the persistence dict.
-DisclosureKeys = namedtuple("DisclosureKeys", "dp wp suffix storage")
+#: σ widget keys the reset writes.
+DisclosureKeys = namedtuple("DisclosureKeys", "dp wp suffix")
 DISCLOSURE_KEYS = {
-    "disclose_income": DisclosureKeys(dp="di_", wp="di_tab_", suffix="_stochastic",
-                                      storage="disclose_income_tab_persistence"),
-    "disclose_documents": DisclosureKeys(dp="dd_", wp="dd_tab_", suffix="_stochastic",
-                                         storage="disclose_documents_tab_persistence"),
+    "disclose_income": DisclosureKeys(dp="di_", wp="di_tab_", suffix="_stochastic"),
+    "disclose_documents": DisclosureKeys(dp="dd_", wp="dd_tab_", suffix="_stochastic"),
 }
 
 #: module (path from the repository root) -> the rows its f-string keys expand over
 KEY_PARAMETER_TABLES = {
     "app/pages/decision_tabs/_controls.py": CONTROL_KEYS,
     "app/pages/decision_tabs/_disclosure.py": DISCLOSURE_KEYS,
+}
+
+
+# --------------------------------------------------------------------------- #
+# Where a decision-tab widget's value lives when its widget is not drawn
+# --------------------------------------------------------------------------- #
+#: widget key -> (canonical key, entry): the canonical home of every Disclose
+#: Income, Disclose Documents and Decision 4 widget that
+#: ``decision_tabs._tab_state.restore`` seeds.  Streamlit drops a widget key once
+#: its widget is not drawn (another page, the decision unselected, the σ controls
+#: hidden); the canonical key is written right after the widget on every render
+#: and is never dropped, so ``restore`` seeds an absent widget key from it (the
+#: live widget key always wins).  ``entry`` is None for a flat key, or the entry
+#: of a dict-valued canonical key (the per-quintile sliders map to entries
+#: '1'..'5' of ``<prefix>quintile_scale_factors``).  Until 2026-10-22 a per-tab
+#: ``*_tab_persistence`` dict, filled from ``on_change``, played this part for
+#: these three tabs too; it only ever held what the canonical key held.
+#:
+#: ``tests/test_session_key_registry.py`` holds this table to CONTROL_KEYS (the
+#: shared controls name their keys from those rows) and to the registry rows.
+#: A widget drawn through ``restore`` that is in neither table raises at its
+#: first draw.
+_QUINTILE_LEVELS = ("1", "2", "3", "4", "5")
+_RTD_MECHANISMS = ("ttp", "loyalty", "wtp", "risk_taking", "flexibility")
+TAB_WIDGET_CANONICAL = {
+    # Disclose Income (decision 1)
+    "di_tab_sigma_in_copula": ("di_sigma_in_copula", None),
+    "di_tab_sigma_enabled": ("di_sigma_enabled", None),
+    "di_tab_sigma_strategy_stochastic": ("di_sigma_strategy", None),
+    "di_tab_sigma_coefficient_stochastic": ("di_scale_factor", None),
+    **{f"di_tab_sigma_q{level}_stochastic": ("di_quintile_scale_factors", level)
+       for level in _QUINTILE_LEVELS},
+    "di_wopb_widget": ("di_wopb", None),
+    "di_wpb_widget": ("di_wpb", None),
+    "di_tab_income_mode": ("di_income_mode", None),
+    # Disclose Documents (decision 2)
+    "dd_tab_sigma_in_copula": ("dd_sigma_in_copula", None),
+    "dd_tab_sigma_enabled": ("dd_sigma_enabled", None),
+    "dd_tab_sigma_strategy_stochastic": ("dd_sigma_strategy", None),
+    "dd_tab_sigma_coefficient_stochastic": ("dd_scale_factor", None),
+    **{f"dd_tab_sigma_q{level}_stochastic": ("dd_quintile_scale_factors", level)
+       for level in _QUINTILE_LEVELS},
+    "dd_tab_income_mode": ("dd_income_mode", None),
+    # Rejected Transaction Defaults (decision 4)
+    "rtd_tab_sigma_in_copula": ("rtd_sigma_in_copula", None),
+    "rtd_tab_sigma_enabled": ("rtd_sigma_enabled", None),
+    "rtd_tab_sigma_strategy": ("rtd_sigma_strategy", None),
+    "rtd_tab_sigma_coefficient": ("rtd_scale_factor", None),
+    **{f"rtd_tab_sigma_q{level}": ("rtd_quintile_scale_factors", level)
+       for level in _QUINTILE_LEVELS},
+    **{f"rtd_tab_intercept_{mech}": (f"rtd_intercept_{mech}", None)
+       for mech in _RTD_MECHANISMS},
+    "rtd_tab_flex_observed_weight": ("rtd_flex_observed_weight", None),
+    "rtd_tab_income_mode": ("rtd_income_mode", None),
+}
+
+#: widget key -> entry of ``donation_tab_persistence``: the Donation tab still
+#: seeds its widgets from its persistence dict (written only from ``on_change``,
+#: ``_tab_state.save``; the live widget key wins; the default comes last - the
+#: canonical key is NOT consulted).  It could not join the table above without a
+#: visible change: its whole-tab reset ("Reset Config to Defaults") clears the
+#: dict while the σ coefficient slider, if drawn, keeps its live value, so a
+#: coefficient edited before the reset (say 1.3) stays on screen until the
+#: slider is next culled (the decision unselected, a Page-1 round trip) and then
+#: comes back at the fallback 1.0; the quintile sliders and the σ-mode radio,
+#: whose canonical keys the same render rewrites, keep their edits across that
+#: culling.  Seeding from a canonical key would keep the coefficient too (the
+#: canonical ``sigma_coefficient`` is besides overwritten with 1.0 while the
+#: σ mode is 'quintile', so the slider would need a home of its own).  Whether
+#: the reset should forget the coefficient is an owner decision; until it is
+#: taken, this tab keeps the dict so every screen stays as recorded.
+DONATION_TAB_PERSISTENCE = {
+    "tab_sigma_in_copula": "sigma_in_copula",
+    "tab_sigma_in_research": "sigma_in_research",
+    "donation_tab_sigma_strategy_stochastic": "sigma_strategy_stochastic",
+    "tab_sigma_coefficient_stochastic": "sigma_coefficient_stochastic",
+    **{f"donation_tab_sigma_q{level}_stochastic": f"donation_sigma_quintile_{level}_stochastic"
+       for level in _QUINTILE_LEVELS},
+    "tab_anchor_weight": "anchor_weight",
+    "page2_tab_income_spec_mode": "income_spec_mode",
 }
 
 
@@ -379,7 +457,11 @@ _PAGE2_MIRRORS = (
          notes="donation sigma in the documentation population; mirrors "
                "tab_sigma_in_research."),
     _row("sigma_coefficient", 1.0, MODELS_DEFAULTS, "page2-mirror", engine_input=True,
-         notes="sigma_value = the one sigma constant x this coefficient."),
+         notes="sigma_value = the one sigma constant x this coefficient.  The "
+               "coefficient IN EFFECT: the slider while the σ mode is 'overall', "
+               "1.0 while it is 'quintile' (render_donation_default_tab) - so it "
+               "cannot seed the slider, which keeps its value in the Donation "
+               "persistence dict (DONATION_TAB_PERSISTENCE)."),
     _row("sigma_value_ui", 9.8995, P2_INIT, "page2-mirror",
          notes="display-only product of the sigma constant and the coefficient; "
                "the seam recomputes it from the one constant rather than reading it."),
@@ -586,21 +668,19 @@ _RUN_BUTTONS = _rows((
 
 
 # --------------------------------------------------------------------------- #
-# tab persistence dicts
+# the Donation tab's persistence dict
 # --------------------------------------------------------------------------- #
 
 _TAB_PERSISTENCE = (
     _row("donation_tab_persistence", {}, DON_INIT, "tab-persistence",
          notes="written only from an on_change callback (decision_tabs._tab_state.save); "
                "read back before the widget renders (_tab_state.restore), and only "
-               "while the widget key is absent - the live widget key wins."),
-    _row("disclose_income_tab_persistence", {}, DI_INIT, "tab-persistence",
-         notes="wiped by the di_ prefix reset."),
-    _row("disclose_documents_tab_persistence", {}, DD_INIT, "tab-persistence",
-         notes="wiped by the dd_ prefix reset."),
-    _row("rejected_transaction_tab_persistence", {}, RTD_INIT, "tab-persistence",
-         notes="wiped by the rtd_ prefix reset; the per-element reset pops just "
-               "that element's entries."),
+               "while the widget key is absent - the live widget key wins.  The last "
+               "of the four tab dicts: the other three tabs seed their widgets from "
+               "their canonical keys since 2026-10-22 (TAB_WIDGET_CANONICAL); why "
+               "this one stays is on DONATION_TAB_PERSISTENCE.  Cleared by the "
+               "Donation whole-tab reset; the gate's donation income-mode lookup "
+               "reads its income_spec_mode entry first."),
 )
 
 
@@ -797,6 +877,7 @@ def lookup(key: str) -> Optional[KeySpec]:
 __all__ = [
     "CATEGORIES", "DYNAMIC_KEY_VARIABLES", "PREFIX_DELETE_PREFIXES", "WIDGET",
     "CONTROL_KEYS", "ControlKeys", "DISCLOSURE_KEYS", "DisclosureKeys", "KEY_PARAMETER_TABLES",
+    "TAB_WIDGET_CANONICAL", "DONATION_TAB_PERSISTENCE",
     "KeySpec", "REGISTRY", "lookup", "matching_families", "normalise",
     "pattern_regex", "specificity",
 ]

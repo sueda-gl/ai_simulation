@@ -13,17 +13,20 @@ an owner decision, not a refactoring).
 
 Keys
 ----
-A control's widget key, persistence-dict entry and canonical key are built from
-the tab's row of ``app.state.registry.CONTROL_KEYS`` (``keys``): for example
+A control's widget key and canonical key are built from the tab's row of
+``app.state.registry.CONTROL_KEYS`` (``keys``): for example
 ``f"{keys.wp}sigma_coefficient{keys.suffix}"`` is ``tab_sigma_coefficient_stochastic``
 on the Donation tab and ``rtd_tab_sigma_coefficient`` on Decision 4. The registry
 holds one row per concrete key, and ``tests/test_session_key_registry.py`` expands
 every such f-string over every row of the table, so a key cannot leave the
 registry's sight by being built here.
 
-Persistence follows ``_tab_state`` (docs/session-state.md §2): the live widget key
-wins, the persistence dict seeds an absent key, the canonical key is written after
-the widget on every render.
+Seeding follows ``_tab_state`` (docs/session-state.md §2): the live widget key
+wins, the canonical key (``registry.TAB_WIDGET_CANONICAL``) seeds an absent one,
+and the canonical key is written after the widget on every render. The Donation
+tab's widgets seed from (and save into, on ``on_change``) its persistence dict
+instead - ``registry.DONATION_TAB_PERSISTENCE`` says why; ``_tab_state.saver``
+gives the other tabs' widgets no callback.
 
 Decision 4 shares the tick boxes, the income radio, the σ-mode radio and the
 coefficient slider; its per-element "Effective σ" lines, its per-quintile sliders
@@ -36,7 +39,7 @@ import streamlit as st
 
 from app.state.registry import ControlKeys
 from app.state.widgets import stateful
-from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent, seed_if_changed
+from app.pages.decision_tabs._tab_state import restore, save, saver, seed_if_absent, seed_if_changed
 
 LEVELS = ('1', '2', '3', '4', '5')
 
@@ -66,11 +69,6 @@ class TabControls:
     """One tab's controls: its keys, its σ constants, and every textual drift."""
 
     keys: ControlKeys
-    #: persistence-dict entry of the research tick box ('sigma_in_research' on the
-    #: Donation tab, 'sigma_enabled' on Disclose Income / Documents, 'rtd_sigma_enabled')
-    research_storage: str
-    #: persistence-dict entry of the income-mode radio
-    income_storage: str
 
     # -- income-mode radio ---------------------------------------------------
     income_label: str
@@ -83,7 +81,7 @@ class TabControls:
     #: value when it is an option, else the default) or None (Donation: not seeded;
     #: restore() alone, and a value outside the options is left as it is)
     income_seed: Optional[str]
-    #: called after the canonical key and the persistence dict are written
+    #: called after the canonical key (and the Donation dict entry) is written
     after_income_change: Optional[Callable[[], None]] = None
 
     # -- tick boxes ----------------------------------------------------------
@@ -118,8 +116,8 @@ class TabControls:
     overall_summary: str = "{coeff:.2f} × {base:.4f} = {eff:.4f}"
     #: the slider's help; None = "Coefficient to multiply the base σ. Final σ = <base> × coefficient"
     coefficient_help: Optional[str] = None
-    #: the coefficient slider's default when neither the key nor the persistence
-    #: dict holds one: a number (Donation 1.0), or None = the canonical coefficient
+    #: the coefficient slider's default when neither its key nor its stored value
+    #: holds one: a number (Donation 1.0), or None = the canonical coefficient
     #: key (Disclose Income / Documents, which raises when the key is absent)
     coefficient_fallback: Optional[float] = None
     #: a quintile's coefficient when the quintile dict lacks it: a number
@@ -150,11 +148,11 @@ def render_income_mode(spec):
 
     def on_income_mode_change():
         st.session_state[keys.income] = st.session_state[keys.income_widget]
-        save(keys.income_widget, keys.storage, spec.income_storage)
+        save(keys.income_widget)
         if spec.after_income_change is not None:
             spec.after_income_change()
 
-    income_val = restore(keys.income_widget, keys.storage, spec.income_storage, spec.income_default)
+    income_val = restore(keys.income_widget, spec.income_default)
 
     # Ensure value is valid (handling case sensitivity)
     if spec.income_seed is not None and income_val not in mode_options:
@@ -186,15 +184,15 @@ def render_stochastic_tick_boxes(spec):
     # --- Copula sigma checkbox (always visible) ---
     st.markdown("**Copula Mode:**")
     copula_widget_key = f'{keys.wp}sigma_in_copula'
-    copula_canonical_key = f'{keys.sp}sigma_in_copula'   # also the persistence-dict entry
-    copula_val = restore(copula_widget_key, keys.storage, copula_canonical_key, False)
+    copula_canonical_key = f'{keys.sp}sigma_in_copula'
+    copula_val = restore(copula_widget_key, False)
     if spec.coerce:
         seed_if_changed(copula_widget_key, bool(copula_val))
     sigma_in_copula = stateful(st.checkbox,
         f"Add Normal({noun}, σ) draw to Copula runs",
         help="When enabled, Copula mode will also use the stochastic component",
         key=copula_widget_key,
-        on_change=lambda: save(copula_widget_key, keys.storage, copula_canonical_key)
+        on_change=saver(copula_widget_key)
     )
     st.session_state[copula_canonical_key] = sigma_in_copula
 
@@ -202,14 +200,14 @@ def render_stochastic_tick_boxes(spec):
     st.markdown("**Research Specification Mode:**")
     research_widget_key = f'{keys.wp}{keys.research}'
     research_canonical_key = f'{keys.sp}{keys.research}'
-    research_val = restore(research_widget_key, keys.storage, spec.research_storage, True)
+    research_val = restore(research_widget_key, True)
     if spec.coerce:
         seed_if_changed(research_widget_key, bool(research_val))
     sigma_enabled = stateful(st.checkbox,
         f"Use Normal({noun}, σ) draw in Research Specification mode",
         help=f"When enabled, adds stochastic variation via Normal({noun}, σ) draws.",
         key=research_widget_key,
-        on_change=lambda: save(research_widget_key, keys.storage, spec.research_storage)
+        on_change=saver(research_widget_key)
     )
     st.session_state[research_canonical_key] = sigma_enabled
     return sigma_in_copula, sigma_enabled
@@ -227,11 +225,10 @@ def render_strategy_radio(spec):
         st.markdown("**σ mode**")
 
     strategy_widget_key = f'{keys.dp}tab_sigma_strategy{keys.suffix}'
-    strategy_storage_key = f'{keys.sp}sigma_strategy{keys.suffix}'
     strategy_canonical_key = f'{keys.dp}sigma_strategy'
     current_strategy = st.session_state.get(strategy_canonical_key, 'overall')
 
-    strategy_val = restore(strategy_widget_key, keys.storage, strategy_storage_key, current_strategy)
+    strategy_val = restore(strategy_widget_key, current_strategy)
     if spec.coerce:
         strategy_val = 'quintile' if 'quintile' in str(strategy_val).lower() else 'overall'
         seed_if_changed(strategy_widget_key, strategy_val)
@@ -239,7 +236,7 @@ def render_strategy_radio(spec):
     def on_strategy_change():
         """Handle sigma strategy changes."""
         st.session_state[strategy_canonical_key] = st.session_state[strategy_widget_key]
-        save(strategy_widget_key, keys.storage, strategy_storage_key)
+        save(strategy_widget_key)
 
     sigma_strategy = stateful(st.radio,
         spec.strategy_label,
@@ -257,13 +254,12 @@ def render_strategy_radio(spec):
 
 def render_coefficient_slider(spec, scale_fallback):
     """The overall σ coefficient slider, seeded with ``scale_fallback`` when
-    neither its key nor the persistence dict holds a value; writes the canonical
+    neither its key nor its stored value holds one; writes the canonical
     coefficient key and returns the coefficient."""
     keys = spec.keys
     coeff_widget_key = f'{keys.wp}sigma_coefficient{keys.suffix}'
-    coeff_storage_key = f'{keys.sp}sigma_coefficient{keys.suffix}'
 
-    coeff_val = restore(coeff_widget_key, keys.storage, coeff_storage_key, scale_fallback)
+    coeff_val = restore(coeff_widget_key, scale_fallback)
     if spec.coerce:
         coeff_val = max(0.0, min(float(coeff_val), 2.0))
         seed_if_changed(coeff_widget_key, coeff_val)
@@ -280,7 +276,7 @@ def render_coefficient_slider(spec, scale_fallback):
         step=0.01,
         help=help_text,
         key=coeff_widget_key,
-        on_change=lambda: save(coeff_widget_key, keys.storage, coeff_storage_key)
+        on_change=saver(coeff_widget_key)
     )
     st.session_state[keys.coefficient] = sigma_coefficient
     return sigma_coefficient
@@ -349,10 +345,9 @@ def render_sigma_controls(spec):
         level_scale = current_quintile_scales.get(level, default_scale)
         level_scale = max(0.0, min(float(level_scale), 2.0))
 
-        storage_key = f'{keys.dp}sigma_quintile_{level}{keys.suffix}'
         widget_key = f'{keys.dp}tab_sigma_q{level}{keys.suffix}'
 
-        restore(widget_key, keys.storage, storage_key, level_scale)
+        restore(widget_key, level_scale)
 
         base_sigma = spec.base_sigmas[level]
 
@@ -364,7 +359,7 @@ def render_sigma_controls(spec):
                 max_value=2.0,
                 step=0.01,
                 key=widget_key,
-                on_change=lambda wk=widget_key, sk=storage_key: save(wk, keys.storage, sk)
+                on_change=saver(widget_key)
             )
         with col_result:
             effective = base_sigma * q_coeff

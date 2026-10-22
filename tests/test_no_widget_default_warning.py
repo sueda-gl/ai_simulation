@@ -84,7 +84,7 @@ def test_page1_and_page2_widgets_are_driven_by_session_state_only(offenders):
          "rejected_transaction_defaults"]).run()
     _no_warning(at, "Page 2 with decisions selected", offenders)
 
-    # values saved into the tab persistence dicts are restored on every rerun
+    # values the tabs' canonical keys hold are restored on every rerun
     at.checkbox(key="di_tab_sigma_in_copula").check().run()
     at.slider(key="di_tab_sigma_coefficient_stochastic").set_value(0.5).run()
     at.slider(key="purchase_vs_bid_default_probability_y").set_value(0.3).run()

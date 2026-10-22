@@ -15,8 +15,8 @@ own ``apply_extra_widget_keys`` hook.
 Reset order (docs/session-state.md §7): the button only raises
 ``_{dp}reset_to_defaults_pending``; ``apply_pending_reset`` runs at the TOP of the
 next script run, before any of the tab's widgets exists, deletes every ``{dp}``
-key and the persistence dict, and writes the widget keys the same run draws from
-the configuration file. The per-quintile σ sliders are deliberately not written:
+key, and writes the widget keys the same run draws from the configuration
+file. The per-quintile σ sliders are deliberately not written:
 their keys drop with the bulk delete and the controls seed them again from the
 canonical quintile dict when the sliders are next drawn.
 """
@@ -194,7 +194,7 @@ def reset_to_defaults(spec):
 
 def apply_pending_reset(spec):
     """Apply a scheduled reset before any of the tab's widgets renders: clear
-    every ``{dp}`` key and the persistence dict, then seed the defaults."""
+    every ``{dp}`` key, then seed the defaults."""
     keys = spec.keys
     pending_key = f'_{keys.dp}reset_to_defaults_pending'
     if not st.session_state.get(pending_key, False):
@@ -202,11 +202,9 @@ def apply_pending_reset(spec):
     del st.session_state[pending_key]
     reset_config = spec.load_config()
 
-    # 1. Clear all the tab's keys and persistence storage
+    # 1. Clear all the tab's keys (widget keys and canonical keys alike)
     for key in [k for k in st.session_state.keys() if k.startswith(keys.dp)]:
         del st.session_state[key]
-    if keys.storage in st.session_state:
-        del st.session_state[keys.storage]
 
     # 2. SET every widget key to the default value.  This prevents
     #    Streamlit's internal widget cache from retaining stale slider

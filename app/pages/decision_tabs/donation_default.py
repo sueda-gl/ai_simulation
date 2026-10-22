@@ -7,7 +7,7 @@ import traceback
 import streamlit as st
 from app.state.widgets import drawn_in_previous_run, stateful
 from app.state.saved_configs import clear_decision_config
-from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
+from app.pages.decision_tabs._tab_state import restore, saver, seed_if_absent
 from app.pages.decision_tabs._controls import (
     EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, TabControls,
     render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
@@ -86,7 +86,8 @@ def get_coefficient(name, mode_suffix=None):
 def initialize_donation_widget_keys():
     """Initialize widget keys for donation_default tab to preserve values across navigation"""
 
-    # Initialize persistence storage if missing
+    # Initialize persistence storage if missing (this tab's third home; see
+    # registry.DONATION_TAB_PERSISTENCE for why it is the last tab that has one)
     if "donation_tab_persistence" not in st.session_state:
         st.session_state.donation_tab_persistence = {}
 
@@ -121,8 +122,6 @@ def _after_income_mode_change():
 #: σ constants and the tab's own wording.
 DONATION_CONTROLS = TabControls(
     keys=CONTROL_KEYS['donation_default'],
-    research_storage='sigma_in_research',
-    income_storage='income_spec_mode',
     income_label="Income Mode for Donation Model",
     income_help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
     income_options=["categorical only", "continuous only", "Compare both"],
@@ -152,10 +151,10 @@ def render_donation_default_tab():
     # Handle full config reset flag BEFORE any widgets render
     if st.session_state.get('_reset_config_to_defaults_flag', False):
         st.session_state._reset_config_to_defaults_flag = False
-        
+
         # Clear persistence storage
         st.session_state.donation_tab_persistence = {}
-        
+
         # Research defaults from config/decisions.yaml (read-only) - the same values
         # the first draw shows; nothing below is a hard-coded number.
         defaults = research_defaults()
@@ -225,12 +224,8 @@ def render_donation_default_tab():
         # Anchor weights
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
 
-        # Restore anchor weight
-        restore(
-            'tab_anchor_weight', 'donation_tab_persistence',
-            'anchor_weight',
-            0.75
-        )
+        # Restore anchor weight (from the tab's persistence dict)
+        restore('tab_anchor_weight', 0.75)
 
         anchor_observed_weight = stateful(st.slider,
             "Weight for observed vs modeled prosocial behavior",
@@ -239,7 +234,7 @@ def render_donation_default_tab():
             step=0.01,
             help="Anchor = w × Observed + (1-w) × Predicted",
             key="tab_anchor_weight",
-            on_change=lambda: save('tab_anchor_weight', 'donation_tab_persistence', 'anchor_weight')
+            on_change=saver('tab_anchor_weight')
         )
         st.session_state.anchor_observed_weight = anchor_observed_weight
         st.markdown(f"Predicted weight: {1 - anchor_observed_weight:.2f}")

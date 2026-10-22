@@ -11,7 +11,7 @@ import streamlit as st
 from app.state.widgets import stateful
 from app.state.saved_configs import clear_decision_config
 from app.pages.decision_execution import render_simulation_buttons
-from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
+from app.pages.decision_tabs._tab_state import restore, seed_if_absent
 from app.pages.decision_tabs._controls import (
     EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, MODE_OPTIONS, TabControls,
     render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
@@ -67,10 +67,6 @@ def initialize_disclose_income_session_state():
     """Initialize session state for disclose_income tab."""
     config = research_default_config()
 
-    # Initialize storage for persistence
-    if 'disclose_income_tab_persistence' not in st.session_state:
-        st.session_state.disclose_income_tab_persistence = {}
-
     # Initialize model parameters from config
     anchor_weights = config.get('anchor_weights', {})
     stochastic = config.get('stochastic', {})
@@ -110,8 +106,6 @@ def initialize_disclose_income_session_state():
 #: σ constants and the tab's own wording.
 DI_CONTROLS = TabControls(
     keys=CONTROL_KEYS['disclose_income'],
-    research_storage='sigma_enabled',
-    income_storage='income_mode',
     income_label="Income Specification for Disclosure Model",
     income_help="""
             **Categorical only**: Uses level-specific intercepts based on income categories (5 levels)
@@ -178,12 +172,8 @@ def render_disclose_income_tab():
         current_wopb = anchor_weights.get('observed_prosocial', 0.25)
         current_wpb = anchor_weights.get('prosocial_weight', 0.50)
 
-        # Restore WOPB from storage
-        restore(
-            'di_wopb_widget', 'disclose_income_tab_persistence',
-            'wopb',
-            current_wopb
-        )
+        # Seed WOPB from its canonical key (di_wopb) when the slider comes back
+        restore('di_wopb_widget', current_wopb)
 
         # WOPB - Weight for observed vs calculated prosocial behavior
         new_wopb = stateful(st.slider,
@@ -193,17 +183,12 @@ def render_disclose_income_tab():
             step=0.01,
             help="anchored_PB = WOPB×Observed_PB + (1-WOPB×Calculated_PB based on Honesty-Humility, Agreeableness, Openness, and Religiosity); Default: 0.25",
             key="di_wopb_widget",
-            on_change=lambda: save('di_wopb_widget', 'disclose_income_tab_persistence', 'wopb')
         )
         st.markdown(f"Observed prosocial behavior weight: {new_wopb:.2f}")
         st.session_state.di_wopb = new_wopb
 
-        # Restore WPB from storage
-        restore(
-            'di_wpb_widget', 'disclose_income_tab_persistence',
-            'wpb',
-            current_wpb
-        )
+        # Seed WPB from its canonical key (di_wpb) when the slider comes back
+        restore('di_wpb_widget', current_wpb)
 
         # WPB - Weight for prosocial effect in disclosure equation
         new_wpb = stateful(st.slider,
@@ -213,7 +198,6 @@ def render_disclose_income_tab():
             step=0.01,
             help="DI = β0+(1-WPB)×(Income, Extroversion, Neuroticism, Honesty-Humility, and Agreeableness) + WPB×(Prosocial Behavior×Income_High); Default: 0.5",
             key="di_wpb_widget",
-            on_change=lambda: save('di_wpb_widget', 'disclose_income_tab_persistence', 'wpb')
         )
         st.markdown(f"Prosocial behavior weight: {new_wpb:.2f}")
         st.session_state.di_wpb = new_wpb

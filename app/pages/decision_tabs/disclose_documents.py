@@ -59,9 +59,6 @@ def initialize_disclose_documents_session_state():
     config = research_default_config()
     stochastic = config.get('stochastic', {})
 
-    if 'disclose_documents_tab_persistence' not in st.session_state:
-        st.session_state.disclose_documents_tab_persistence = {}
-
     defaults = {
         'dd_intercept': config.get('intercept', RESEARCH_DEFAULT_INTERCEPT),
         'dd_sigma_enabled': True,
@@ -90,8 +87,6 @@ def initialize_disclose_documents_session_state():
 #: effective σ with four decimals).
 DD_CONTROLS = TabControls(
     keys=CONTROL_KEYS['disclose_documents'],
-    research_storage='sigma_enabled',
-    income_storage='income_mode',
     income_label="Income Specification for Disclosure Model",
     income_help="""
             **Categorical only**: Uses per-allowance-level intercepts (5 levels)

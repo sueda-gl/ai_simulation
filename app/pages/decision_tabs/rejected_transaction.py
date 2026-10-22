@@ -27,8 +27,8 @@ The model coefficients and sigma constants are fixed (dta-verified); the tab exp
 the income specification (categorical / continuous / compare both; WTP and
 Risk-Taking are the only income-using elements) and the stochastic settings per
 mechanism (sigma strategy and x0-2 coefficient).
-Persistence follows the tabs' triple-layer pattern (app/pages/decision_tabs/_tab_state.py):
-canonical rtd_* read keys + rtd_tab_* widget keys + a tab-persistence dict.
+Persistence follows the tabs' two-key pattern (app/pages/decision_tabs/_tab_state.py):
+canonical rtd_* read keys + rtd_tab_* widget keys seeded from them.
 """
 import traceback
 
@@ -39,7 +39,7 @@ from app.state.saved_configs import clear_decision_config, get_decision_config
 # call time, so a test can stub it (tests/test_rtd_tab_text_ui.py).
 from app.pages import decision_execution
 from app.pages.decision_execution import render_simulation_buttons
-from app.pages.decision_tabs._tab_state import restore, save, seed_if_changed
+from app.pages.decision_tabs._tab_state import restore, seed_if_changed
 from app.pages.decision_tabs._controls import (
     LEVEL_LABELS, MODE_OPTIONS, TabControls,
     render_coefficient_slider, render_income_mode, render_stochastic_tick_boxes,
@@ -77,8 +77,6 @@ OPTION_LABELS = {
 #: are its own (render_decision_sigma_controls).
 RTD_CONTROLS = TabControls(
     keys=CONTROL_KEYS['rejected_transaction_defaults'],
-    research_storage='rtd_sigma_enabled',
-    income_storage='rtd_income_mode',
     income_label="Income Specification for Rejected Transaction Model",
     income_help="""
             **Categorical only**: Willingness-to-Pay and Risk-Taking use fitted
@@ -133,9 +131,6 @@ def _mech_stoch_config(config, mech):
 def initialize_rtd_session_state():
     """Initialize session state for the Decision 4 tab (canonical rtd_* read keys)."""
     config = load_rtd_config()
-
-    if 'rejected_transaction_tab_persistence' not in st.session_state:
-        st.session_state.rejected_transaction_tab_persistence = {}
 
     # Sigma is a DECISION-WIDE setting (one strategy + coefficient applied to all five
     # elements; each element keeps its own base sigma from config). Anchors and
@@ -335,15 +330,12 @@ def render_flex_anchor_mix(config):
     st.markdown("**Anchor Mix**")
     default_w = float((config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
     widget_key = 'rtd_tab_flex_observed_weight'
-    storage_key = 'rtd_flex_observed_weight'
-    current = restore(
-        widget_key, 'rejected_transaction_tab_persistence',
-        storage_key, st.session_state.get(storage_key, default_w))
+    canonical_key = 'rtd_flex_observed_weight'
+    current = restore(widget_key, st.session_state.get(canonical_key, default_w))
 
     def on_change():
         st.session_state['rtd_flex_observed_weight'] = float(
             st.session_state['rtd_tab_flex_observed_weight'])
-        save('rtd_tab_flex_observed_weight', 'rejected_transaction_tab_persistence', 'rtd_flex_observed_weight')
 
     seed_if_changed(widget_key, float(current))
     w_obs = stateful(st.slider,
@@ -493,19 +485,14 @@ def render_decision_sigma_controls(config):
             '4': default_scale, '5': default_scale})
         for level in ['1', '2', '3', '4', '5']:
             level_scale = max(0.0, min(float(current_scales.get(level, default_scale)), 2.0))
-            storage_key = f'rtd_sigma_quintile_{level}'
             widget_key = f'rtd_tab_sigma_q{level}'
-            q_val = restore(
-                widget_key, 'rejected_transaction_tab_persistence',
-                storage_key, level_scale)
+            q_val = restore(widget_key, level_scale)
             q_val = max(0.0, min(float(q_val), 2.0))
             seed_if_changed(widget_key, q_val)
 
             q_coeff = stateful(st.slider,
                 f"{LEVEL_LABELS[level]}", min_value=0.0, max_value=2.0, step=0.01,
                 key=widget_key,
-                on_change=lambda l=level: save(
-                    f'rtd_tab_sigma_q{l}', 'rejected_transaction_tab_persistence', f'rtd_sigma_quintile_{l}'),
             )
             quintile_coefficients[level] = q_coeff
         st.session_state.rtd_quintile_scale_factors = quintile_coefficients
@@ -543,14 +530,11 @@ def render_intercept_control(config, mech):
 
     st.markdown("**Intercept Override**")
     widget_key = f'rtd_tab_intercept_{mech}'
-    storage_key = f'rtd_intercept_{mech}'
-    current = restore(
-        widget_key, 'rejected_transaction_tab_persistence',
-        storage_key, st.session_state.get(storage_key, research_default))
+    canonical_key = f'rtd_intercept_{mech}'
+    current = restore(widget_key, st.session_state.get(canonical_key, research_default))
 
     def on_change(m=mech):
         st.session_state[f'rtd_intercept_{m}'] = st.session_state[f'rtd_tab_intercept_{m}']
-        save(f'rtd_tab_intercept_{m}', 'rejected_transaction_tab_persistence', f'rtd_intercept_{m}')
 
     # Narrow, vertically stacked control (a full-width intercept override was too
     # wide); the caller places it in the left of two columns. No `value=`
@@ -580,7 +564,7 @@ def render_intercept_control(config, mech):
                  "value shifts agents toward the lower segments, a positive value toward "
                  "the higher ones, capped at the end bins).",
     )
-    st.session_state[storage_key] = float(value)
+    st.session_state[canonical_key] = float(value)
     change = float(value) - research_default
     if abs(change) > 0.00001:
         impact = "Higher baseline" if change > 0 else "Lower baseline"
@@ -798,8 +782,6 @@ def reset_rtd_to_defaults():
     user-editable, so no YAML write is needed)."""
     for key in [k for k in st.session_state.keys() if k.startswith('rtd_')]:
         del st.session_state[key]
-    if 'rejected_transaction_tab_persistence' in st.session_state:
-        del st.session_state['rejected_transaction_tab_persistence']
     initialize_rtd_session_state()
     return True
 
@@ -809,20 +791,15 @@ def reset_rtd_element_to_defaults(mech):
     Anchor Mix weight) to research defaults.
 
     Surgical version of reset_rtd_to_defaults: deletes only this element's canonical
-    rtd_* keys, its rtd_tab_* widget keys, and its persistence-dict entries, then
-    re-initializes so the widgets revert on rerun. Sigma is decision-wide and is
-    deliberately NOT touched here (the whole-page reset covers it)."""
+    rtd_* keys and its rtd_tab_* widget keys, then re-initializes so the widgets
+    revert on rerun. Sigma is decision-wide and is deliberately NOT touched here
+    (the whole-page reset covers it)."""
     keys = [f'rtd_intercept_{mech}', f'rtd_tab_intercept_{mech}']
-    storage_keys = [f'rtd_intercept_{mech}']
     if mech == 'flexibility':
         keys += ['rtd_flex_observed_weight', 'rtd_tab_flex_observed_weight']
-        storage_keys.append('rtd_flex_observed_weight')
     for key in keys:
         if key in st.session_state:
             del st.session_state[key]
-    persistence = st.session_state.get('rejected_transaction_tab_persistence', {})
-    for storage_key in storage_keys:
-        persistence.pop(storage_key, None)
     initialize_rtd_session_state()
     return True
 
