@@ -498,13 +498,12 @@ against, fast or slow. Five kinds of test live in `tests/`:
 Fixtures several modules share live in `tests/conftest.py`, plain helper functions in
 `tests/helpers/`, the pinned on-screen wording in `tests/ui_strings.py`.
 
-**Four parity tests also read the original Stata `.dta` files and fail when they are
-missing**, naming the file and the constant that points at it; with
-`COOPECON_ALLOW_DTA_SKIP=1` set they skip instead. The paths are the `PROF_DTA`
-constants at the top of `tests/test_disclose_income_stata.py`,
+**Four parity tests also read the original Stata `.dta` files**, which live in
+`data/stata/` (the Decision 1, 2 and 4 files and the dedicated Donation file); the
+paths are the `PROF_DTA` constants at the top of `tests/test_disclose_income_stata.py`,
 `tests/test_disclose_documents.py`, `tests/test_donation_default_doc.py` and
-`tests/test_research_modes_use_reference_income.py`. Obtain the files and put them
-where those constants point (or point the constants at them).
+`tests/test_research_modes_use_reference_income.py`. A missing file fails the test
+naming it; with `COOPECON_ALLOW_DTA_SKIP=1` set it skips instead.
 
 ---
 

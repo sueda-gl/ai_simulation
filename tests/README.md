@@ -26,7 +26,7 @@ every test of such a module, including the module's own quick unit tests.
   `data/stata_d4_verification.csv` and `data/stata_d4_flexibility_verification.csv`
   (Decision 4), plus the survey and experiment workbooks in `data/` that the research
   populations are built from.
-* **The original Stata `.dta` files**, outside the repo. Four modules compare against
+* **The original Stata `.dta (in `data/stata/`)` files**, outside the repo. Four modules compare against
   them: `test_disclose_income_stata.py`, `test_disclose_documents.py`,
   `test_donation_default_doc.py` and `test_research_modes_use_reference_income.py`. Each
   test that reads one fails when the file is missing, naming the file and the `PROF_DTA`

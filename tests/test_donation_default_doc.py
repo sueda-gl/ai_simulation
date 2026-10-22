@@ -30,7 +30,7 @@ from src.engine.core import Engine
 from conftest import REPO, load_decisions_yaml, require_reference_file
 
 FROZEN = os.path.join(REPO, "data", "d3_doc_reference.csv")
-PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 1_Updated.dta"
+PROF_DTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "stata", "Stata_File_Decision 1_Updated.dta")
 TOL = 1e-6
 MODES = ("categorical", "continuous")
 

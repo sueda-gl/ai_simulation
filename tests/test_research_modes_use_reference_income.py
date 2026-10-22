@@ -42,7 +42,7 @@ INCOMES_CSV = os.path.join(REPO, "data", "stata_incomes.csv")
 STDACTIONS_CSV = os.path.join(REPO, "data", "stata_stdactions.csv")
 D4_CSV = os.path.join(REPO, "data", "stata_d4_verification.csv")
 FLEX_CSV = os.path.join(REPO, "data", "stata_d4_flexibility_verification.csv")
-PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision4_050926.dta"
+PROF_DTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "stata", "Stata_File_Decision4_050926.dta")
 
 # .dta ground-truth distributions (Stata_File_Decision4_050926.dta). Only the two
 # income-using elements move when the reference income replaces a generated draw;

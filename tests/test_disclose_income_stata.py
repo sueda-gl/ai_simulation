@@ -35,7 +35,7 @@ from conftest import REPO, load_decisions_yaml, require_reference_file
 SURVEY = os.path.join(REPO, "data", "Student Survey Results - Period 1.xlsx")
 EXPERIMENT = os.path.join(REPO, "data", "Student Experiment Results - Period 1-2.xlsx")
 FROZEN = os.path.join(REPO, "data", "stata_d1_verification.csv")
-PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 1_Updated.dta"
+PROF_DTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "stata", "Stata_File_Decision 1_Updated.dta")
 
 STATA_BETA0 = 0.1        # `gen beta0 = 0.1` in the corrected reference Stata code
 APP_DEFAULT_BETA0 = 0.75  # the app's research default (kept)

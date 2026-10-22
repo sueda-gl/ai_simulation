@@ -1,18 +1,10 @@
 # How to change the model
 
-The thirteen decisions are fixed; what changes over time is their constants, their
-equations, the controls the user can adjust, the noise model, and what the exports
-contain. Turning one of the nine default decisions into a modelled one, when its
-methodology document arrives, is a separate page:
-[`how-to-model-a-new-decision.md`](how-to-model-a-new-decision.md). This page is the recipe for each kind of change, and the routine that proves
-nothing else moved. It assumes you have read [`README.md`](README.md), in particular
-§3 (where the random numbers come from) and §9 (the design decisions).
-
-The rules of the model are in the platform documentation under
-[`reference/`](reference/README.md). A change to the model starts from a change to
-that document, or from a correction the document already contains and the code
-does not.
-
+The thirteen decisions are fixed; what changes is their constants, equations, user
+controls, noise model and exports. This page is the recipe for each kind of change and
+the routine that proves nothing else moved. Modelling one of the nine default decisions
+from a new document is a separate page: [`how-to-model-a-new-decision.md`](how-to-model-a-new-decision.md).
+The rules of the model are the documents under [`reference/`](reference/README.md).
 ---
 
 ## 0. The routine, before and after every change

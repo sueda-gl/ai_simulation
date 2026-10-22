@@ -29,7 +29,7 @@ from conftest import REPO, load_decisions_yaml, require_reference_file
 SURVEY = os.path.join(REPO, "data", "Student Survey Results - Period 1.xlsx")
 EXPERIMENT = os.path.join(REPO, "data", "Student Experiment Results - Period 1-2.xlsx")
 FROZEN_INCOME = os.path.join(REPO, "data", "stata_incomes.csv")
-PROF_DTA = "/Users/suedagul/Downloads/Stata_File_Decision 2_260626 - CORRECTED.dta"
+PROF_DTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "stata", "Stata_File_Decision 2_260626 - CORRECTED.dta")
 
 # Document / reference gold targets (CORRECTED model: fixed coeffs + beta0 = -0.75)
 DOC_CATEGORICAL = {12: 89.47, 32: 39.34, 72: 1.92, 128: 0.0, 200: 0.0}
