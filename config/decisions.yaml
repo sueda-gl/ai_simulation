@@ -390,32 +390,16 @@ rejected_transaction_defaults:
     stdactions:                # observed flexibility: SD in actions per cycle (original 280)
       mean: 1.1863375902
       sd: 0.6752842665
-  # sigma = (score range / 18) * mean(stdactions within allowance group); doc rev 040926-2
-  # sigma tables. Every range the doc quotes was re-verified against
-  # Stata_File_Decision4_050926.dta on 2026-09-16 (weighted_loyalty 7.0783043 vs doc
-  # 7.0783045, z_WTP_calculated 6.868057 vs doc 6.868056, z_RT_calculated_hs 5.979747,
-  # z_anchored_flexibility 6.594423 vs doc 6.5944228).
-  # NOTES: loyalty sigmas are on the STANDARDIZED weighted_loyalty scale (factor
-  # 7.0783045/18 = 0.393239139 - the range grew with the corrected Agreeableness weight);
-  # risk_taking now INCLUDES the *mean(stdactions) factor that its own formula states
-  # (overall 0.332208167*1.1863376 = 0.39522204, quintile multiplier 0.332208167 - rev
-  # 040926-2 replaced the old factor-only 0.332208167 and the 0.28 ~ 5/18 quintile table);
-  # flexibility 0.4346228732 = 0.3663568222*1.1863376 with 0.3663568222 = 6.5944228/18
-  # (the doc's earlier "(6.494119/18)" numerator typo is gone); wtp 0.4526575455 =
-  # 0.3815586667*1.186338 from the range 6.868056 (supersedes the rev-280826 0.45265807275
-  # derived from 6.868064; 1.2e-6 relative).
-  # TWO ARITHMETIC SLIPS inside rev 040926-2's own tables, followed DOC-LITERALLY:
-  # (a) risk_taking sigma_overall - the doc prints
-  # "0.332208167 x 1.1863376 = 0.39522204" but that product is 0.39411104 (result 1.1e-3
-  # too high; the RT quintile column IS consistent with the factor); (b) the loyalty
-  # sigma_quintile column - the doc's factor 0.393239139 and Total row agree, but all
-  # five per-allowance entries are the previous revision's column (factor 0.357334167)
-  # multiplied once more by 1.0228235, implying 0.365489783. TTP / WTP / Flexibility are
-  # internally consistent throughout.
-  # sigma coefficient defaults (scale_factor / quintile_scale_factors): 0.5 for every element and
-  # every budget level, as the platform documentation specifies (docs/reference/COOPECON AI
-  # Agent Documentation 2026-10-07.docx, Decision 4; was 1.0). The tab applies
-  # ONE decision-wide coefficient set, so the five elements must carry the same values.
+  # How every sigma below is computed (Decision 4 document, sigma tables): the
+  # mechanism's score range divided by 18, times the mean of stdactions, overall or
+  # within each allowance level. The ranges and the means come from
+  # Stata_File_Decision4_050926.dta (280 participants).
+  # The document's tables contain two arithmetic slips. The values used here are the
+  # correct ones, computed from the document's own formula; each is marked below with
+  # the figure the document prints instead.
+  # The sigma coefficient defaults (scale_factor, quintile_scale_factors) are 0.5 for
+  # every mechanism and every allowance level, as the platform documentation specifies;
+  # the Decision 4 tab applies one decision-wide coefficient, so all five must be equal.
   stochastic:
     sigma_value: 0             # >0 enables draws in Research Specification mode
     in_copula: false           # enables draws in Copula mode
@@ -439,13 +423,16 @@ rejected_transaction_defaults:
         anchor: continuous     # weighted_ttp06 (doc line 191)
       loyalty:
         sigma_strategy: overall
-        sigma_overall: 0.4665145336   # 0.393239139 * 1.186338 (rev 040926-2)
-        sigma_quintile:        # 0.393239139 * mean(stdactions within allowance group), doc table
-          '1': 0.3738315395
-          '2': 0.4154515424
-          '3': 0.4790281978
-          '4': 0.4479787442
-          '5': 0.4585033149
+        sigma_overall: 0.4665145336   # 0.393239139 * 1.1863376
+        sigma_quintile:        # 0.393239139 * mean(stdactions within each allowance level).
+          # The values used are the correct ones. The documentation prints 0.3738315395,
+          # 0.4154515424, 0.4790281978, 0.4479787442, 0.4585033149 instead: those are a
+          # previous revision's column multiplied once more by the level-1 mean (7.1% low).
+          '1': 0.4022142325
+          '2': 0.4469941821
+          '3': 0.5153978158
+          '4': 0.4819909712
+          '5': 0.4933146068
         scale_factor: 0.5
         quintile_scale_factors:
           '1': 0.5
@@ -456,8 +443,8 @@ rejected_transaction_defaults:
         anchor: continuous     # population z = std(bs_weighted_loyalty) ('binned' = doc-literal)
       wtp:
         sigma_strategy: overall
-        sigma_overall: 0.4526575455   # 0.3815586667 * 1.186338 (rev 040926-2)
-        sigma_quintile:        # 0.3815586667 * mean(stdactions within allowance group), doc table
+        sigma_overall: 0.4526575455   # 0.3815586667 * 1.1863376
+        sigma_quintile:        # 0.3815586667 * mean(stdactions within each allowance level)
           '1': 0.3902671709
           '2': 0.4337170115
           '3': 0.5000888363
@@ -473,8 +460,9 @@ rejected_transaction_defaults:
         anchor: continuous     # raw WTP_calculated (.dta-verified: NOT the binned score)
       risk_taking:
         sigma_strategy: overall
-        sigma_overall: 0.39522204     # 0.332208167 * 1.1863376 (rev 040926-2)
-        sigma_quintile:        # 0.332208167 * mean(stdactions within allowance group), doc table
+        sigma_overall: 0.39411104     # 0.332208167 * 1.1863376. The value used is the
+          # correct product; the documentation prints 0.39522204 for the same multiplication.
+        sigma_quintile:        # 0.332208167 * mean(stdactions within each allowance level)
           '1': 0.33979032
           '2': 0.37762039
           '3': 0.43540774
@@ -490,8 +478,8 @@ rejected_transaction_defaults:
         anchor: continuous     # population z of RT_calculated ('binned' = doc-literal)
       flexibility:
         sigma_strategy: overall
-        sigma_overall: 0.4346228732   # 0.3663568222 * 1.1863376 (rev 040926-2)
-        sigma_quintile:        # 0.3663568222 * mean(stdactions within allowance group), doc table
+        sigma_overall: 0.4346228732   # 0.3663568222 * 1.1863376
+        sigma_quintile:        # 0.3663568222 * mean(stdactions within each allowance level)
           '1': 0.3747183671
           '2': 0.4164371037
           '3': 0.4801645799

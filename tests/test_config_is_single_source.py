@@ -3,16 +3,19 @@ config/decisions.yaml is the ONLY source of every constant of the four modelled 
 
 (a) None of the four decision modules (src/decisions/disclose_income_stochastic.py,
     disclose_documents_stochastic.py, donation_default.py,
-    rejected_transaction_defaults.py) carries a literal copy of a value that is in its
-    decision's YAML block under the same key. The scan is deliberately narrow, so that
-    an unrelated number can never trip it:
+    rejected_transaction_defaults.py), nor the Decision 4 tab
+    (app/pages/decision_tabs/rejected_transaction.py), carries a literal copy of a
+    value that is in its decision's YAML block under the same key. The scan is
+    deliberately narrow, so that an unrelated number can never trip it:
 
       1. ``<expr>.get('<key>', <number>)`` - a fallback for a YAML key, flagged when
-         <key> is a leaf key of the decision's block and <number> equals the file's value;
+         <key> is a key on the path of one of the block's values (its leaf key or any
+         key above it) and <number> equals that value;
       2. a dict literal ``{'<key>': <number>, ...}`` anywhere in the module (also
          ``{<int>: <number>}``, matched as ``level_<int>`` / ``'<int>'``) - the former
-         CATEGORICAL_INTERCEPTS / *_COEFFS / DEFAULT_Z_SCORING shape - flagged on the
-         same key-and-value match;
+         CATEGORICAL_INTERCEPTS / *_COEFFS / DEFAULT_Z_SCORING shape, and the tab's
+         former FALLBACK_SIGMA_OVERALL ``{'risk_taking': <its sigma_overall>}`` -
+         flagged on the same key-and-value match;
       3. a module-level ``NAME = <number>`` (the former B_EXTRA / BETA0 shape), flagged
          when the number equals ANY numeric leaf of the block.
 
@@ -51,6 +54,7 @@ from src.decisions.rejected_transaction_defaults import (
 from conftest import ROOT, load_decisions_yaml
 
 DECISIONS_DIR = ROOT / "src" / "decisions"
+D4_TAB = ROOT / "app" / "pages" / "decision_tabs" / "rejected_transaction.py"
 MODULES = {
     "disclose_income": "disclose_income_stochastic.py",
     "disclose_documents": "disclose_documents_stochastic.py",
@@ -63,7 +67,7 @@ NEUTRAL = (0.0, 1.0, -1.0)
 # ----------------------------------------------------------------------------- (a)
 
 def _numeric_leaves(node, path=()):
-    """(dotted path, leaf key, float value) for every int/float leaf (bools excluded)."""
+    """(key path, float value) for every int/float leaf (bools excluded)."""
     out = []
     if isinstance(node, dict):
         for k, v in node.items():
@@ -72,7 +76,7 @@ def _numeric_leaves(node, path=()):
         for i, v in enumerate(node):
             out += _numeric_leaves(v, path + (str(i),))
     elif isinstance(node, (int, float)) and not isinstance(node, bool):
-        out.append((".".join(path), path[-1], float(node)))
+        out.append((path, float(node)))
     return out
 
 
@@ -108,10 +112,11 @@ def _same(a, b):
 def literal_copies(source: str, block: dict):
     """Every (line, description) where ``source`` carries a literal copy of ``block``."""
     leaves = _numeric_leaves(block)
-    by_key = {}
-    for _, key, value in leaves:
-        by_key.setdefault(key, []).append(value)
-    all_values = [v for _, _, v in leaves]
+    by_key = {}              # every key on a value's path -> the values below it
+    for path, value in leaves:
+        for key in set(path):
+            by_key.setdefault(key, []).append(value)
+    all_values = [v for _, v in leaves]
     tree = ast.parse(source)
     hits = []
 
@@ -153,6 +158,17 @@ def test_no_module_carries_a_literal_copy_of_its_yaml_block(decision, filename):
         "\n".join(f"  line {line}: {what}" for line, what in hits)
 
 
+def test_the_decision_4_tab_carries_no_literal_copy_of_its_yaml_block():
+    """The Decision 4 tab reads its sigma constants, categorical income effects,
+    coefficients and anchor weight from the file (it used to carry
+    FALLBACK_SIGMA_OVERALL, FALLBACK_CATEGORICAL_EFFECTS and per-coefficient
+    ``.get`` defaults)."""
+    block = load_decisions_yaml()["rejected_transaction_defaults"]
+    hits = literal_copies(D4_TAB.read_text(), block)
+    assert hits == [], f"{D4_TAB.name}: literal copies of config/decisions.yaml values:\n" + \
+        "\n".join(f"  line {line}: {what}" for line, what in hits)
+
+
 def test_the_scan_catches_each_shape_it_claims_to():
     """The scanner is not vacuous: each of the three shapes is reported, neutral
     numbers and unrelated numbers are not."""
@@ -169,6 +185,11 @@ def test_the_scan_catches_each_shape_it_claims_to():
     )
     hits = literal_copies(sample, block)
     assert [line for line, _ in hits] == [1, 2, 2, 4], hits
+    # a dict keyed by a key above the value (the tab's former FALLBACK_SIGMA_OVERALL)
+    rtd = load_decisions_yaml()["rejected_transaction_defaults"]
+    sigma_rt = rtd["stochastic"]["mechanisms"]["risk_taking"]["sigma_overall"]
+    hits = literal_copies(f"S = {{'risk_taking': {sigma_rt!r}, 'ttp': 123.456}}\n", rtd)
+    assert [line for line, _ in hits] == [1], hits
 
 
 # ----------------------------------------------------------------------------- (b)

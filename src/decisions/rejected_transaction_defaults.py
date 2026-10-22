@@ -45,11 +45,12 @@ STOCHASTIC LAYER: Normal(anchor, sigma) per mechanism, anchored on the continuou
 operative score (raw composite for ttp/wtp, population z for the others; the
 doc-literal binned anchor via stochastic.anchor = 'binned'), re-binned on the
 population min/max of the DRAWN values. sigma = (score range / 18) * mean(stdactions
-within allowance group), the doc's sigma tables (config/decisions.yaml
-stochastic.mechanisms.<m>; SIGMA_FACTORS / MEAN_STDACTIONS below document their
-derivation and the two arithmetic slips there). Population statistics, the draws' min/max
-included, are computed after Pass 1 by compute_rtd_population_stats
-(src/engine/core.py), which replays each agent's decision RNG stream bit-for-bit.
+within allowance group), the document's formula (config/decisions.yaml
+stochastic.mechanisms.<m>, which notes the two slips in the document's printed sigma
+tables; SIGMA_FACTORS / MEAN_STDACTIONS below document the derivation). Population
+statistics, the draws' min/max included, are computed after Pass 1 by
+compute_rtd_population_stats (src/engine/core.py), which replays each agent's
+decision RNG stream bit-for-bit.
 
 RANK AGGREGATION (doc Section 6; params['aggregation']): the four rankings' COMPLETE
 orderings (the priority sequence rotated to the segment's first choice) are
@@ -147,23 +148,11 @@ SIGMA_FACTORS = {
     "risk_taking": 0.332208167,
     "flexibility": 0.3663568222,
 }
-# The sigma values themselves (sigma_overall = factor * 1.1863376, sigma_quintile =
-# factor * mean(stdactions within group), per mechanism) live ONLY in
-# config/decisions.yaml, stochastic.mechanisms.<m>; SIGMA_OVERALL below is the file's
-# column, read at import for the readers that import it by name.
-# TWO ARITHMETIC SLIPS inside rev 040926-2's own sigma tables. Both are followed
-# DOC-LITERALLY (the document's printed tables are the operative spec) and pinned by
-# tests/test_rejected_transaction_defaults.py::
-# test_sigma_tables_internal_consistency_and_the_two_doc_slips:
-#   (a) RISK-TAKING overall. The doc writes "0.332208167 x 1.1863376 = 0.39522204";
-#       that product is 0.39411104, so the printed result is 1.1e-3 (0.28%) too high.
-#       The five RT quintile entries are consistent with the factor.
-#   (b) LOYALTY quintiles. The doc states the factor 0.393239139 and its Total row
-#       (0.4665145336) agrees, but all five per-allowance entries are the PREVIOUS
-#       revision's column (factor 0.357334167) multiplied once more by 1.0228235,
-#       implying a factor of 0.365489783. The overall value is consistent.
-# Everything else (TTP / WTP / Flexibility, overall AND quintiles) satisfies
-# sigma = factor * mean(stdactions within group) to <= 1e-6.
+# The sigma values (sigma_overall = factor * 1.1863376, sigma_quintile = factor *
+# mean(stdactions within each allowance level)) live only in config/decisions.yaml,
+# stochastic.mechanisms.<m>; SIGMA_OVERALL below is the file's column, read at import.
+# They follow the document's formula; the two arithmetic slips in the document's
+# printed sigma tables are noted next to the values in the YAML.
 
 MECHANISMS = ("ttp", "loyalty", "wtp", "risk_taking", "flexibility")
 

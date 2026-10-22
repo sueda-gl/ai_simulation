@@ -58,20 +58,24 @@ EXPECTED_RT_DIST = {1: 20, 2: 100, 3: 110, 4: 46, 5: 4}
 # rev 040926-2 adopted the app's corrected O/N/A IVW coefficients (was 17/83/141/35/4)
 EXPECTED_FLEX_DIST = {1: 17, 2: 85, 3: 137, 4: 37, 5: 4}
 
-# Stochastic sigmas printed by doc rev 040926-2 (see test_sigma_constants_match_the_document)
+# Stochastic sigma factors printed by doc rev 040926-2: score range / 18 per mechanism
+# (see test_sigma_constants_match_the_document)
 DOC_SIGMA_FACTORS = {
     "ttp": 6.0 / 18.0, "loyalty": 0.393239139, "wtp": 0.3815586667,
     "risk_taking": 0.332208167, "flexibility": 0.3663568222,
 }
-DOC_SIGMA_OVERALL = {
+# The sigmas config/decisions.yaml holds: factor x mean(stdactions), overall and within
+# each allowance level - the document's formula. The document prints two of them
+# differently (DOC_PRINTED_* below); the file holds the formula's values.
+EXPECTED_SIGMA_OVERALL = {
     "ttp": 0.395446, "loyalty": 0.4665145336, "wtp": 0.4526575455,
-    "risk_taking": 0.39522204, "flexibility": 0.4346228732,
+    "risk_taking": 0.39411104, "flexibility": 0.4346228732,
 }
-DOC_SIGMA_QUINTILES = {
+EXPECTED_SIGMA_QUINTILES = {
     "ttp": {'1': 0.3409411667, '2': 0.3788993667, '3': 0.4368824333,
             '4': 0.4085647667, '5': 0.4181633667},
-    "loyalty": {'1': 0.3738315395, '2': 0.4154515424, '3': 0.4790281978,
-                '4': 0.4479787442, '5': 0.4585033149},
+    "loyalty": {'1': 0.4022142325, '2': 0.4469941821, '3': 0.5153978158,
+                '4': 0.4819909712, '5': 0.4933146068},
     "wtp": {'1': 0.3902671709, '2': 0.4337170115, '3': 0.5000888363,
             '4': 0.4676742829, '5': 0.4786615699},
     "risk_taking": {'1': 0.33979032, '2': 0.37762039, '3': 0.43540774,
@@ -79,10 +83,15 @@ DOC_SIGMA_QUINTILES = {
     "flexibility": {'1': 0.3747183671, '2': 0.4164371037, '3': 0.4801645799,
                     '4': 0.4490414678, '5': 0.4595910065},
 }
+# What the document prints for the two values its own formula does not give
+# (test_the_file_does_not_hold_the_documents_two_misprints)
+DOC_PRINTED_RT_SIGMA_OVERALL = 0.39522204
+DOC_PRINTED_LOYALTY_SIGMA_QUINTILES = {'1': 0.3738315395, '2': 0.4154515424, '3': 0.4790281978,
+                                       '4': 0.4479787442, '5': 0.4585033149}
 # doc rev 040926-2 score ranges, all re-derived from the 050926 file below
 DOC_RANGES = {"loyalty": 7.0783045, "wtp": 6.868056,
               "risk_taking": 5.979747, "flexibility": 6.5944228}
-WTP_SIGMA = DOC_SIGMA_OVERALL["wtp"]   # the sigma the stochastic tests pin
+WTP_SIGMA = EXPECTED_SIGMA_OVERALL["wtp"]   # the sigma the stochastic tests pin
 # beta0 applies on the RAW weighted_ttp composite - the scale the document specifies
 # (Section 1: TTP_i = beta0 + ..., no "after standardization" qualifier). App default
 # beta0 = 0 (as in the original September 2026 version), which
@@ -304,17 +313,18 @@ def test_categorical_columns_match_the_dta(gold, cat_model_params, sim_config):
 
 
 # ---------------------------------------------------------------------------
-# Stochastic sigma constants (doc rev 040926-2 tables)
+# Stochastic sigma constants (the document's formula; doc rev 040926-2 factors)
 # ---------------------------------------------------------------------------
 def test_sigma_constants_match_the_document(gold, params):
-    """SIGMA_FACTORS / SIGMA_OVERALL and the YAML must carry the rev 040926-2 values
-    VERBATIM, and each factor must be the .dta's own score range / 18."""
+    """SIGMA_FACTORS carries the rev 040926-2 factors VERBATIM, each the .dta's own
+    score range / 18; SIGMA_OVERALL and the YAML carry the sigmas the document's
+    formula gives (EXPECTED_SIGMA_*)."""
     assert SIGMA_FACTORS == DOC_SIGMA_FACTORS
-    assert SIGMA_OVERALL == DOC_SIGMA_OVERALL
+    assert SIGMA_OVERALL == EXPECTED_SIGMA_OVERALL
     for mech in MECHANISMS:
         cfg = params["stochastic"]["mechanisms"][mech]
-        assert cfg["sigma_overall"] == DOC_SIGMA_OVERALL[mech], mech
-        assert cfg["sigma_quintile"] == DOC_SIGMA_QUINTILES[mech], mech
+        assert cfg["sigma_overall"] == EXPECTED_SIGMA_OVERALL[mech], mech
+        assert cfg["sigma_quintile"] == EXPECTED_SIGMA_QUINTILES[mech], mech
     # every doc range is the .dta's own range (TTP's factor is the doc's 6/18 scaling)
     for mech, col in (("loyalty", "weighted_loyalty"), ("wtp", "z_WTP_calculated"),
                       ("risk_taking", "z_RT_calculated_hs"),
@@ -330,42 +340,41 @@ def test_sigma_constants_match_the_document(gold, params):
         assert abs(MEAN_STDACTIONS[q] - sub.mean()) < 1e-6, q
 
 
-def test_sigma_tables_internal_consistency_and_the_two_doc_slips(params):
-    """sigma = factor * mean(stdactions within group). TTP, WTP and Flexibility satisfy
-    that identity for BOTH the overall value and all five quintiles; Risk-Taking and
-    Loyalty each carry exactly one arithmetic slip in rev 040926-2, which is followed
-    doc-literally (the document's printed tables are the operative spec) and pinned
-    here so the deviation is recorded rather than silently inherited:
+def test_every_sigma_is_factor_times_mean_stdactions(params):
+    """The invariant of the sigma tables: for every mechanism, the file's sigma_overall
+    is factor * mean(stdactions) and each sigma_quintile is factor * mean(stdactions
+    within that allowance level), to 1e-6."""
+    for mech in MECHANISMS:
+        cfg = params["stochastic"]["mechanisms"][mech]
+        assert abs(SIGMA_FACTORS[mech] * MEAN_STDACTIONS["overall"]
+                   - cfg["sigma_overall"]) < 1e-6, mech
+        assert sorted(cfg["sigma_quintile"]) == ['1', '2', '3', '4', '5'], mech
+        for q, val in cfg["sigma_quintile"].items():
+            assert abs(SIGMA_FACTORS[mech] * MEAN_STDACTIONS[int(q)] - val) < 1e-6, (mech, q)
+
+
+def test_the_file_does_not_hold_the_documents_two_misprints(params):
+    """Rev 040926-2 prints two sigma entries its own formula does not give; the file
+    deliberately holds the formula's values, so restoring a printed value fails here:
 
       * RISK-TAKING, overall: the doc writes "0.332208167 x 1.1863376 = 0.39522204",
         but that product is 0.39411104 - the printed result is 1.1e-3 (0.28%) too high.
-        The five quintile entries ARE consistent with the factor 0.332208167.
-      * LOYALTY, quintiles: the doc states the factor 0.393239139 and its Total row
-        (0.4665145336) agrees, but all five per-allowance entries are the PREVIOUS
+      * LOYALTY, per allowance level: the five printed entries are the PREVIOUS
         revision's column (factor 0.357334167) multiplied once more by 1.0228235, i.e.
         they imply a factor of 0.365489783 instead of 0.393239139.
     """
-    exact = ("ttp", "wtp", "flexibility")
-    for mech in exact:
-        assert abs(SIGMA_FACTORS[mech] * MEAN_STDACTIONS["overall"]
-                   - DOC_SIGMA_OVERALL[mech]) < 1e-6, mech
-        for q, val in DOC_SIGMA_QUINTILES[mech].items():
-            assert abs(SIGMA_FACTORS[mech] * MEAN_STDACTIONS[int(q)] - val) < 1e-6, (mech, q)
-
-    # Risk-Taking: quintiles consistent, overall off by the doc's own multiplication slip
-    for q, val in DOC_SIGMA_QUINTILES["risk_taking"].items():
-        assert abs(SIGMA_FACTORS["risk_taking"] * MEAN_STDACTIONS[int(q)] - val) < 1e-6, q
+    mechs = params["stochastic"]["mechanisms"]
     recomputed_rt = SIGMA_FACTORS["risk_taking"] * MEAN_STDACTIONS["overall"]
     assert abs(recomputed_rt - 0.39411104) < 1e-8
-    assert abs(DOC_SIGMA_OVERALL["risk_taking"] - recomputed_rt - 0.001111) < 1e-8
+    assert abs(DOC_PRINTED_RT_SIGMA_OVERALL - recomputed_rt - 0.001111) < 1e-8
+    assert abs(mechs["risk_taking"]["sigma_overall"] - DOC_PRINTED_RT_SIGMA_OVERALL) > 1e-4
 
-    # Loyalty: overall consistent, quintile column implies the superseded factor
-    assert abs(SIGMA_FACTORS["loyalty"] * MEAN_STDACTIONS["overall"]
-               - DOC_SIGMA_OVERALL["loyalty"]) < 1e-6
-    implied = [DOC_SIGMA_QUINTILES["loyalty"][str(q)] / MEAN_STDACTIONS[q]
+    implied = [DOC_PRINTED_LOYALTY_SIGMA_QUINTILES[str(q)] / MEAN_STDACTIONS[q]
                for q in range(1, 6)]
     assert all(abs(f - 0.365489783) < 1e-8 for f in implied), implied
     assert abs(0.365489783 - 0.357334167 * MEAN_STDACTIONS[1]) < 1e-8
+    for q, printed in DOC_PRINTED_LOYALTY_SIGMA_QUINTILES.items():
+        assert abs(mechs["loyalty"]["sigma_quintile"][q] - printed) > 1e-4, q
 
 
 # ---------------------------------------------------------------------------

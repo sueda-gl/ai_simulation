@@ -95,25 +95,6 @@ RTD_CONTROLS = TabControls(
                      "of the decision. Final σ per element = base σ × coefficient.",
 )
 
-# Fallback sigma constants (config/decisions.yaml is the source of truth).
-# Values from the revised Decision 4 document (2026-09): loyalty, WTP,
-# risk-taking and flexibility sigmas were all restated; TTP is unchanged.
-FALLBACK_SIGMA_OVERALL = {
-    'ttp': 0.395446, 'loyalty': 0.4665145336,
-    'wtp': 0.4526575455, 'risk_taking': 0.39522204,
-    'flexibility': 0.4346228732,
-}
-
-# Fallback categorical-income effects (config/decisions.yaml is the source of truth).
-# Level 1 (EUR 12) is the base level: intercept only; level_2..5 = EUR 32/72/128/200.
-FALLBACK_CATEGORICAL_EFFECTS = {
-    'wtp': {'intercept': -0.691843, 'level_2': 0.2671588, 'level_3': 0.5057716,
-            'level_4': 0.9411747, 'level_5': 1.822471},
-    'risk_taking': {'intercept': -0.0068307, 'level_2': 0.0026128, 'level_3': 0.0050555,
-                    'level_4': 0.0092738, 'level_5': 0.0179812},
-}
-
-
 def load_rtd_config():
     """Load rejected_transaction_defaults configuration from YAML (read-only).
 
@@ -122,10 +103,6 @@ def load_rtd_config():
     tolerate and a plain read suffices."""
     config = read_yaml_file(CONFIG_PATH)
     return config.get('rejected_transaction_defaults', {})
-
-
-def _mech_stoch_config(config, mech):
-    return (config.get('stochastic', {}).get('mechanisms', {}) or {}).get(mech, {}) or {}
 
 
 def initialize_rtd_session_state():
@@ -151,8 +128,7 @@ def initialize_rtd_session_state():
     for mech in MECHANISMS:
         defaults[f'rtd_intercept_{mech}'] = float(intercepts_cfg.get(mech, 0.0) or 0.0)
     # Flexibility Anchor Mix (W_OFlex; W_CFlex = 1 - W_OFlex), config default 0.25
-    defaults['rtd_flex_observed_weight'] = float(
-        (config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
+    defaults['rtd_flex_observed_weight'] = float(config['flexibility_anchor']['observed_weight'])
     # Section-6 rank aggregation: always on. The flag is kept in session state because
     # the seam (app/seam/build_plan.py) and the saved-config store read it, but no widget
     # renders it any more (it was a diagnostic switch with no basis in the document).
@@ -220,7 +196,7 @@ def render_option_labels():
 
 def render_formula_section(config, mech):
     """Render the mechanism's equation, coefficients, and segment mapping."""
-    coeffs = (config.get('coefficients', {}) or {}).get(mech, {}) or {}
+    coeffs = config['coefficients'][mech]
     sequences = config.get('priority_sequences', {}) or {}
 
     if mech == 'ttp':
@@ -231,11 +207,11 @@ def render_formula_section(config, mech):
         )
         st.latex(
             rf"TendencyToPlan_i\ (TTP_i) = \beta_0"
-            rf" {coeffs.get('extraversion', -0.0152556564):.9f} \times z_{{Extroversion_i}}"
-            rf" + {coeffs.get('agreeable', 0.0177638642):.8f} \times z_{{Agreeableness_i}}"
-            rf" + {coeffs.get('neuroticism', 0.01959):.5f} \times z_{{Neuroticism_i}}"
-            rf" + {coeffs.get('conscientiousness', 0.00901465):.8f} \times z_{{Conscientiousness_i}}"
-            rf" + {coeffs.get('education', 0.0297):.4f} \times Education_i,"
+            rf" {coeffs['extraversion']:.9f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs['agreeable']:.8f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs['neuroticism']:.5f} \times z_{{Neuroticism_i}}"
+            rf" + {coeffs['conscientiousness']:.8f} \times z_{{Conscientiousness_i}}"
+            rf" + {coeffs['education']:.4f} \times Education_i,"
             r"\quad Education_i \in \{0,1\}"
         )
         st.latex(r"OptionsListLength05_i = \left\lfloor (6 - 0.0001) \times"
@@ -250,9 +226,9 @@ def render_formula_section(config, mech):
         st.markdown(f"Estimates **{construct}** based on Big-5 personality traits.")
         st.latex(
             rf"Loyalty_i = \beta_1"
-            rf" {coeffs.get('extraversion', -0.009828468):.9f} \times z_{{Extroversion_i}}"
-            rf" + {coeffs.get('openness', 0.01096706):.8f} \times z_{{Openness_i}}"
-            rf" + {coeffs.get('agreeable', 0.0123046):.7f} \times z_{{Agreeableness_i}}"
+            rf" {coeffs['extraversion']:.9f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs['openness']:.8f} \times z_{{Openness_i}}"
+            rf" + {coeffs['agreeable']:.7f} \times z_{{Agreeableness_i}}"
         )
     elif mech == 'wtp':
         st.markdown(f"Estimates **{construct}** based on personality traits and income.")
@@ -287,7 +263,7 @@ def render_formula_section(config, mech):
 def _flex_anchor_weights(config):
     """(W_OFlex, W_CFlex): the Anchor Mix slider's current value (session state) over the
     config default; the calculated weight is always 1 - W_OFlex."""
-    default_w = float((config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
+    default_w = float(config['flexibility_anchor']['observed_weight'])
     w_obs = float(st.session_state.get('rtd_flex_observed_weight', default_w))
     return w_obs, 1.0 - w_obs
 
@@ -304,11 +280,11 @@ def _render_flexibility_formula(config, coeffs):
     )
     st.latex(
         rf"CalculatedFlexibility_i = \beta_4"
-        rf" + {coeffs.get('extraversion', 0.0206):.4f} \times z_{{Extroversion_i}}"
-        rf" + {coeffs.get('openness', 0.0294118):.7f} \times z_{{Openness_i}}"
-        rf" {coeffs.get('neuroticism', -0.04921357):.8f} \times z_{{Neuroticism_i}}"
-        rf" + {coeffs.get('agreeable', 0.04339814):.8f} \times z_{{Agreeableness_i}}"
-        rf" + {coeffs.get('conscientiousness', 0.04811179):.8f} \times z_{{Conscientiousness_i}}"
+        rf" + {coeffs['extraversion']:.4f} \times z_{{Extroversion_i}}"
+        rf" + {coeffs['openness']:.7f} \times z_{{Openness_i}}"
+        rf" {coeffs['neuroticism']:.8f} \times z_{{Neuroticism_i}}"
+        rf" + {coeffs['agreeable']:.8f} \times z_{{Agreeableness_i}}"
+        rf" + {coeffs['conscientiousness']:.8f} \times z_{{Conscientiousness_i}}"
     )
     st.latex(
         rf"AnchoredFlexibility_i = W_{{OFlex}} \times ObservedFlexibility_i"
@@ -328,7 +304,7 @@ def render_flex_anchor_mix(config):
     """Anchor Mix (Flexibility sub-tab): the W_OFlex slider, mirroring Decision 1's
     W_OPB control. W_CFlex is always 1 - W_OFlex."""
     st.markdown("**Anchor Mix**")
-    default_w = float((config.get('flexibility_anchor') or {}).get('observed_weight', 0.25))
+    default_w = float(config['flexibility_anchor']['observed_weight'])
     widget_key = 'rtd_tab_flex_observed_weight'
     canonical_key = 'rtd_flex_observed_weight'
     current = restore(widget_key, st.session_state.get(canonical_key, default_w))
@@ -352,9 +328,10 @@ def render_flex_anchor_mix(config):
 
 
 def _categorical_effects(config, mech):
-    """Per-quintile income effects for wtp / risk_taking (YAML with fallbacks)."""
-    cfg = (config.get('categorical_income_effects', {}) or {}).get(mech, {}) or {}
-    return {k: float(cfg.get(k, v)) for k, v in FALLBACK_CATEGORICAL_EFFECTS[mech].items()}
+    """Per-quintile income effects for wtp / risk_taking, read from the file (level 1,
+    EUR 12, is the base level: intercept only; level_2..5 = EUR 32/72/128/200)."""
+    cfg = config['categorical_income_effects'][mech]
+    return {k: float(cfg[k]) for k in ('intercept', 'level_2', 'level_3', 'level_4', 'level_5')}
 
 
 # Quintile labels for the categorical income effects table - EXACTLY the
@@ -391,19 +368,19 @@ def _render_continuous_equation(coeffs, mech):
     if mech == 'wtp':
         st.latex(
             rf"WTP_i = \beta_2"
-            rf" + {coeffs.get('extraversion', 0.078863062):.9f} \times z_{{Extroversion_i}}"
-            rf" {coeffs.get('agreeable', -0.012326128):.9f} \times z_{{Agreeableness_i}}"
-            rf" + {coeffs.get('income', 0.698):.3f} \times z_{{Income_i}}"
+            rf" + {coeffs['extraversion']:.9f} \times z_{{Extroversion_i}}"
+            rf" {coeffs['agreeable']:.9f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs['income']:.3f} \times z_{{Income_i}}"
         )
     else:
         st.latex(
             rf"RiskTaking_i = \beta_3"
-            rf" + {coeffs.get('extraversion', 0.025942386297):.10f} \times z_{{Extroversion_i}}"
-            rf" + {coeffs.get('openness', 0.023699214948):.10f} \times z_{{Openness_i}}"
-            rf" {coeffs.get('agreeable', -0.038734315188):.10f} \times z_{{Agreeableness_i}}"
-            rf" {coeffs.get('conscientiousness', -0.037739440732):.10f} \times z_{{Conscientiousness_i}}"
-            rf" {coeffs.get('neuroticism', -0.025388697852):.10f} \times z_{{Neuroticism_i}}"
-            rf" + {coeffs.get('income', 0.006874197106):.10f} \times z_{{Income_i}}"
+            rf" + {coeffs['extraversion']:.10f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs['openness']:.10f} \times z_{{Openness_i}}"
+            rf" {coeffs['agreeable']:.10f} \times z_{{Agreeableness_i}}"
+            rf" {coeffs['conscientiousness']:.10f} \times z_{{Conscientiousness_i}}"
+            rf" {coeffs['neuroticism']:.10f} \times z_{{Neuroticism_i}}"
+            rf" + {coeffs['income']:.10f} \times z_{{Income_i}}"
         )
 
 
@@ -413,18 +390,18 @@ def _render_categorical_equation(config, coeffs, mech):
     if mech == 'wtp':
         st.latex(
             rf"WTP_i = \beta_2"
-            rf" + {coeffs.get('extraversion', 0.078863062):.9f} \times z_{{Extroversion_i}}"
-            rf" {coeffs.get('agreeable', -0.012326128):.9f} \times z_{{Agreeableness_i}}"
+            rf" + {coeffs['extraversion']:.9f} \times z_{{Extroversion_i}}"
+            rf" {coeffs['agreeable']:.9f} \times z_{{Agreeableness_i}}"
             rf" + \beta_{{income\_q}}[quintile_i]"
         )
     else:
         st.latex(
             rf"RiskTaking_i = \beta_3"
-            rf" + {coeffs.get('extraversion', 0.025942386297):.10f} \times z_{{Extroversion_i}}"
-            rf" + {coeffs.get('openness', 0.023699214948):.10f} \times z_{{Openness_i}}"
-            rf" {coeffs.get('agreeable', -0.038734315188):.10f} \times z_{{Agreeableness_i}}"
-            rf" {coeffs.get('conscientiousness', -0.037739440732):.10f} \times z_{{Conscientiousness_i}}"
-            rf" {coeffs.get('neuroticism', -0.025388697852):.10f} \times z_{{Neuroticism_i}}"
+            rf" + {coeffs['extraversion']:.10f} \times z_{{Extroversion_i}}"
+            rf" + {coeffs['openness']:.10f} \times z_{{Openness_i}}"
+            rf" {coeffs['agreeable']:.10f} \times z_{{Agreeableness_i}}"
+            rf" {coeffs['conscientiousness']:.10f} \times z_{{Conscientiousness_i}}"
+            rf" {coeffs['neuroticism']:.10f} \times z_{{Neuroticism_i}}"
             rf" + \beta_{{income\_q}}[quintile_i]"
         )
     render_categorical_effects_table(config, mech)
@@ -456,10 +433,9 @@ def render_decision_sigma_controls(config):
 
     Returns the per-budget-level sigma table (quintile mode) as a DataFrame so the
     caller can render it at full page width, or None in uniform mode."""
-    bases = {m: float(_mech_stoch_config(config, m).get('sigma_overall', FALLBACK_SIGMA_OVERALL[m]))
-             for m in MECHANISMS}
-    base_quintiles = {m: {str(k): float(v) for k, v in
-                          (_mech_stoch_config(config, m).get('sigma_quintile', {}) or {}).items()}
+    mechanisms = config['stochastic']['mechanisms']
+    bases = {m: float(mechanisms[m]['sigma_overall']) for m in MECHANISMS}
+    base_quintiles = {m: {str(k): float(v) for k, v in mechanisms[m]['sigma_quintile'].items()}
                       for m in MECHANISMS}
 
     sigma_strategy = render_strategy_radio(RTD_CONTROLS)
@@ -470,8 +446,8 @@ def render_decision_sigma_controls(config):
         sigma_coefficient = render_coefficient_slider(RTD_CONTROLS, scale_fallback)
         for m in MECHANISMS:
             st.markdown(f"{ELEMENT_SHORT[m]}: Effective σ = Base σ (empirical from 280 "
-                        f"participants) × multiplier = {bases[m]:.6g} × "
-                        f"{sigma_coefficient:.2f} = {bases[m] * sigma_coefficient:.6g}")
+                        f"participants) × multiplier = {bases[m]:.2f} × "
+                        f"{sigma_coefficient:.2f} = {bases[m] * sigma_coefficient:.2f}")
         return None
     else:
         st.markdown("**Per-Quintile σ Coefficients**")
@@ -502,8 +478,8 @@ def render_decision_sigma_controls(config):
             row = {'Budget Level': LEVEL_LABELS[level]}
             for m in MECHANISMS:
                 base = base_quintiles[m].get(level, bases[m])
-                row[f'{ELEMENT_SHORT[m]} base σ'] = round(base, 6)
-                row[f'{ELEMENT_SHORT[m]} effective σ'] = round(base * quintile_coefficients[level], 6)
+                row[f'{ELEMENT_SHORT[m]} base σ'] = f"{base:.2f}"
+                row[f'{ELEMENT_SHORT[m]} effective σ'] = f"{base * quintile_coefficients[level]:.2f}"
             eff_rows.append(row)
         return pd.DataFrame(eff_rows)
 
@@ -681,7 +657,7 @@ def render_aggregation_subtab(config):
     output rules and the sub-tab's own Run button. The aggregation is always on
     (ties that no criterion can separate are always broken at random, the
     document's rule)."""
-    sequences = config.get('priority_sequences', {}) or {}
+    sequences = config['priority_sequences']
     st.markdown(
         "The Loyalty, Willingness-to-Pay, Risk-Taking and Flexibility "
         "mechanisms each produce a priority list of the five options per agent. "
@@ -701,10 +677,10 @@ def render_aggregation_subtab(config):
     )
     st.markdown("##### Inputs (priority lists per mechanism)")
     inputs_df = pd.DataFrame([
-        {'Mechanism': 'Loyalty', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('loyalty', [3, 1, 4, 5, 2]))},
-        {'Mechanism': 'Willingness-to-Pay', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('wtp', [3, 2, 1, 4, 5]))},
-        {'Mechanism': 'Risk-Taking', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('risk_taking', [4, 2, 1, 3, 5]))},
-        {'Mechanism': 'Flexibility', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences.get('flexibility', [2, 4, 3, 1, 5]))},
+        {'Mechanism': 'Loyalty', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences['loyalty'])},
+        {'Mechanism': 'Willingness-to-Pay', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences['wtp'])},
+        {'Mechanism': 'Risk-Taking', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences['risk_taking'])},
+        {'Mechanism': 'Flexibility', 'Priority sequence': ' > '.join(f"Option {o}" for o in sequences['flexibility'])},
     ])
     _render_black_table(inputs_df)
 

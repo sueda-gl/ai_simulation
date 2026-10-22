@@ -43,10 +43,11 @@ def _load_base_sigma_overall():
 # config/decisions.yaml, loaded once at import. The file is never written.
 BASE_SIGMA_OVERALL = _load_base_sigma_overall()
 
-# The tab prints the base σ at four decimals and computes the effective σ it
-# shows next to it from that printed value, so the on-screen arithmetic stays
-# self-consistent (e.g. "0.10 × 9.8995 = 0.9899"). Display only: the model
-# takes its σ from the configuration file directly.
+# The effective σ the tab shows is computed from the base σ rounded to four
+# decimals, the precision the tab printed it with until every σ on screen went to
+# two decimals; printed with two decimals, the result is the same as from the
+# unrounded base for every slider value. Display only: the model takes its σ
+# from the configuration file directly.
 DISPLAY_SIGMA_OVERALL = round(BASE_SIGMA_OVERALL, 4)
 
 

@@ -8,8 +8,9 @@ in Research Specification runs), the σ-mode radio (uniform / per quintile), the
 with their metrics, and the income-mode radio. Until 2026-10-22 each tab carried
 its own copy, with small drifts between the copies. This module draws them once;
 every drift is a parameter of :class:`TabControls`, so each tab still renders
-exactly what it rendered (the drifts are listed on the fields; harmonising them is
-an owner decision, not a refactoring).
+what it rendered, except the σ figures, which the owner has since set to two
+decimals on every tab (the remaining drifts are listed on the fields; harmonising
+them is an owner decision, not a refactoring).
 
 Keys
 ----
@@ -100,20 +101,17 @@ class TabControls:
     strategy_label: str = "Apply σ uniformly or per budget level?"
 
     # -- coefficient slider and quintile sliders -----------------------------
+    # Every σ on screen (base, effective, per-quintile base in the slider labels
+    # and the metrics) is printed with two decimals (owner decision, 2026-10-22).
     base_sigma: Optional[float] = None
     #: what the "Effective σ" arithmetic multiplies: the base σ, or on Disclose
-    #: Income the base σ rounded to four decimals (so the printed arithmetic agrees)
+    #: Income the base σ rounded to four decimals (a leftover of its former
+    #: four-decimal display; printed with two decimals, the result is the same as
+    #: from the unrounded base for every slider value)
     effective_base: Optional[float] = None
-    #: format of the base σ in the "Base σ = ...", help and "Effective σ" texts:
-    #: '.4f', or '' (Disclose Documents prints the raw float)
-    base_fmt: str = '.4f'
-    #: format of the effective σ in the "Effective σ = ..." line: '.2f' or '.4f'
-    effective_fmt: str = '.2f'
-    #: format of the per-quintile base σ in the slider labels and of the metric
-    quintile_fmt: str = '.2f'
     #: the parenthesised overall-σ summary of the quintile-mode warning / note,
     #: a str.format template over base, coeff (the overall coefficient) and eff
-    overall_summary: str = "{coeff:.2f} × {base:.4f} = {eff:.4f}"
+    overall_summary: str = "{coeff:.2f} × {base:.2f} = {eff:.2f}"
     #: the slider's help; None = "Coefficient to multiply the base σ. Final σ = <base> × coefficient"
     coefficient_help: Optional[str] = None
     #: the coefficient slider's default when neither its key nor its canonical
@@ -263,7 +261,7 @@ def render_coefficient_slider(spec, scale_fallback):
     if spec.coefficient_help is not None:
         help_text = spec.coefficient_help
     else:
-        help_text = f"Coefficient to multiply the base σ. Final σ = {spec.base_sigma:{spec.base_fmt}} × coefficient"
+        help_text = f"Coefficient to multiply the base σ. Final σ = {spec.base_sigma:.2f} × coefficient"
 
     sigma_coefficient = stateful(st.slider,
         "σ Coefficient (multiplier)",
@@ -289,7 +287,7 @@ def render_sigma_controls(spec):
 
     if sigma_strategy == 'overall':
         # OVERALL MODE: Single slider
-        st.markdown(f"Base σ = {spec.base_sigma:{spec.base_fmt}} (empirical from 280 participants)")
+        st.markdown(f"Base σ = {spec.base_sigma:.2f} (empirical from 280 participants)")
 
         # The slider starts from the canonical coefficient (seeded by the tab's
         # initialiser from the configuration) or the tab's own fallback. 0.0 is a
@@ -301,7 +299,7 @@ def render_sigma_controls(spec):
         sigma_coefficient = render_coefficient_slider(spec, scale_fallback)
 
         effective_sigma = spec.effective_base * sigma_coefficient
-        st.markdown(f"Effective σ = {spec.base_sigma:{spec.base_fmt}} × {sigma_coefficient:.2f} = {effective_sigma:{spec.effective_fmt}}")
+        st.markdown(f"Effective σ = {spec.base_sigma:.2f} × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
         return sigma_strategy, sigma_coefficient
 
     # QUINTILE MODE: 5 sliders (one per income level)
@@ -349,7 +347,7 @@ def render_sigma_controls(spec):
         col_slider, col_result = st.columns([3, 1])
         with col_slider:
             q_coeff = stateful(st.slider,
-                f"{spec.level_labels[level]} (base σ={base_sigma:{spec.quintile_fmt}})",
+                f"{spec.level_labels[level]} (base σ={base_sigma:.2f})",
                 min_value=0.0,
                 max_value=2.0,
                 step=0.01,
@@ -357,7 +355,7 @@ def render_sigma_controls(spec):
             )
         with col_result:
             effective = base_sigma * q_coeff
-            st.metric("Effective σ", f"{effective:{spec.quintile_fmt}}")
+            st.metric("Effective σ", f"{effective:.2f}")
 
         quintile_coefficients[level] = q_coeff
 

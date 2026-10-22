@@ -83,8 +83,7 @@ def initialize_disclose_documents_session_state():
 
 
 #: The tab's shared controls (decision_tabs._controls): keys from the registry,
-#: σ constants and the tab's own wording (the base σ is printed unformatted, the
-#: effective σ with four decimals).
+#: σ constants and the tab's own wording.
 DD_CONTROLS = TabControls(
     keys=CONTROL_KEYS['disclose_documents'],
     income_label="Income Specification for Disclosure Model",
@@ -99,10 +98,6 @@ DD_CONTROLS = TabControls(
     draw_noun='score',
     base_sigma=BASE_SIGMA_OVERALL,
     effective_base=BASE_SIGMA_OVERALL,
-    base_fmt='',
-    effective_fmt='.4f',
-    quintile_fmt='.4f',
-    overall_summary="{coeff:.2f} × {base} = {eff:.4f}",
     base_sigmas=BASE_SIGMAS,
     level_labels=LEVEL_LABELS,
 )
