@@ -21,7 +21,7 @@ from app.pages.decision_execution import (
 )
 from app.models import ALL_DECISIONS
 from app.pages.results.run_context import RunContext
-from app.components import rtd_page_element
+from app.pages.results.overview import rtd_page_element
 from app.reports.rtd import rtd_summary_metric_keys
 
 

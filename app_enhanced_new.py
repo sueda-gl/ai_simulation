@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[0]))
 
 # Import from our modularized app
 from app.models import initialize_session_state
-from app.components import get_css_styles
+from app.pages.css import get_css_styles
 from app.pages import render_page1, render_page2, render_results_page
 from app.state.widgets import begin_script_run, end_script_run
 

@@ -9,7 +9,7 @@ import streamlit as st
 from app.models import SESSION_DEFAULTS, SimulationParameters
 from app.state.widgets import stateful
 import pandas as pd
-from app.components import show_income_distribution_histogram
+from app.pages.page1_income_histogram import show_income_distribution_histogram
 from app.pages.navigation import render_navigation
 
 # Research Specification samples the participants randomly (seeded by the run seed);

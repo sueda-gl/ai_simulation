@@ -104,153 +104,22 @@ def _download_with_preview(metrics, label, data, file_name, help, preview_title,
         preview()
 
 
-def render_export_section(df, results_dict=None, using_selected_config=False):
-    """Render the export/download section (simplified)"""
+def render_export_section(df, results_dict=None):
+    """Render the export/download section: the export block for the run's shape
+    (donation-only, disclose-income-only, disclose-documents-only, Decision 4-only
+    or the full two-level export), then the "Clear Results" button."""
     from app.pages.results.run_context import RunContext
     ctx = RunContext.from_session()  # the run's own shape, not the live widgets
-    # Drop the bookkeeping columns before any processing. Exact column-name
-    # matching, so 'disclose_income' is never caught by an 'income' substring.
-    columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'enriched_requests_count']
-    
-    if df is not None:
-        df = df[[col for col in df.columns if col not in columns_to_exclude]]
-    if results_dict is not None:
-        results_dict = {
-            key: config_df[[col for col in config_df.columns if col not in columns_to_exclude]]
-            for key, config_df in results_dict.items()
-        }
+    df, results_dict = _drop_bookkeeping_columns(df, results_dict)
 
     st.subheader("💾 Export Results")
     
     # Check if this is a donation-only run (special simplified export)
-    trait_columns = DONATION_ONLY_EXPORT_TRAIT_COLUMNS
-    
     is_donation_only_run = ctx.is_individual_run('donation_default')
 
     if is_donation_only_run:
-        # DONATION-ONLY EXPORT: Simplified version with just donation and traits
-        # Filter main df to only include donation columns
-        columns_to_keep = [col for col in df.columns 
-                          if (col == 'donation_default' or col in trait_columns or col == 'agent_id')]
-        df = df[columns_to_keep]
-        
-        # Filter results_dict to only include donation columns
-        if results_dict is not None:
-            results_dict = {
-                key: config_df[[col for col in config_df.columns 
-                               if (col == 'donation_default' or col in trait_columns or col == 'agent_id')]]
-                for key, config_df in results_dict.items()
-            }
-        
-        # Check if we have multiple configurations to compare.
-        # For donation-only runs, the using_selected_config flag (which may reflect a stale
-        # saved config) is irrelevant -- always export all computed configs.
-        export_all_configs = results_dict is not None and len(results_dict) > 1
-        
-        # Check if this is "Compare all" mode (different population modes with different agents)
-        is_compare_all = _is_compare_all_mode(results_dict)
-        
-        if export_all_configs and is_compare_all:
-            st.markdown(f"""
-            **Donation Default Results Export (Compare All Mode - {len(results_dict)} Configurations):**
-            - Each population mode (Copula, Research Spec, Research Baseline) has its own columns
-            - Agent ID, traits, and donation rates for Categorical and Continuous income modes
-            - **Note:** Each row contains 3 different agents (one per population mode), each with their correct traits
-            """)
-        elif export_all_configs:
-            st.markdown(f"""
-            **Donation Default Results Export (All {len(results_dict)} Configurations):**
-            - Agent ID, trait columns, and donation_default rate for each configuration
-            - All configurations combined in one file for comparison
-            """)
-        else:
-            st.markdown("""
-            **Donation Default Results Export:**
-            - Agent ID, trait columns, and donation_default rate
-            """)
-        
-        try:
-            if export_all_configs and is_compare_all:
-                # COMPARE ALL MODE: Each population mode gets its own sheet
-                # Each sheet contains traits + both categorical and continuous donation columns
-                sheets_data = donation_compare_all_sheets(results_dict)
-                
-                if not sheets_data:
-                    st.warning("⚠️ No data available for export")
-                    return
-                
-                # Write each population mode to its own sheet,
-                # applying 2-decimal formatting to price/rate columns
-                excel_bytes = to_xlsx_bytes(sheets_data, apply_export_price_formatting)
-                
-                # Show metrics
-                total_sheets = len(sheets_data)
-                first_sheet_df = next(iter(sheets_data.values()))
-                
-                # Show preview with explanation
-                def preview():
-                    st.info("""
-                    **Sheet Structure:**
-                    - **Copula**: Synthetic agents generated from copula
-                    - **ResSpec**: Original 280 participants (random subset when agents < 280; bootstrap with replacement when agents > 280)
-                    - **ResBase**: Original 280 participants (original order; cycling when agents ≠ 280)
-                    
-                    Each sheet contains Agent ID, traits, and donation rates for both Categorical and Continuous income modes.
-                    """)
-                    _preview_sheets(sheets_data)
-                
-                _download_with_preview(
-                    [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
-                     ("Columns per Sheet", len(first_sheet_df.columns))],
-                    label=f"📊 Download Donation Excel ({total_sheets} Sheets)",
-                    data=excel_bytes,
-                    file_name=f"donation_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    help="Each population mode has its own sheet with traits and donation rates for both income modes",
-                    preview_title="📋 Preview Donation Data (first 5 rows per sheet)",
-                    preview=preview,
-                )
-            
-            elif export_all_configs:
-                # SAME POPULATION MODE: Multiple income modes with same agents
-                # Safe to combine by row since agents are identical
-                combined_df = donation_all_configs_frame(results_dict)
-                
-                # Apply 2-decimal formatting to price/rate columns
-                excel_bytes = to_xlsx_bytes(
-                    {'All Configurations': combined_df}, apply_export_price_formatting
-                )
-                
-                _download_with_preview(
-                    [("Total Agents", len(combined_df))],
-                    label=f"📊 Download Donation Excel (All {len(results_dict)} Configs)",
-                    data=excel_bytes,
-                    file_name=f"donation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    help=f"Donation results with {len(results_dict)} configurations for comparison",
-                    preview_title="📋 Preview Donation Data (first 5 rows)",
-                    preview=lambda: _preview_frame(combined_df, 10),
-                )
-            
-            else:
-                # SINGLE CONFIG: Simple export with just one configuration
-                df_export = donation_single_export_frame(df)
-                
-                # Apply 2-decimal formatting to price/rate columns
-                excel_bytes = to_xlsx_bytes(
-                    {'Donation Results': df_export}, apply_export_price_formatting
-                )
-                
-                _download_with_preview(
-                    [("Total Agents", len(df_export))],
-                    label="📊 Download Donation Default Excel",
-                    data=excel_bytes,
-                    file_name=f"donation_default_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    help="Donation results with agent traits and donation rates",
-                    preview_title="📋 Preview Donation Data (first 5 rows)",
-                    preview=lambda: _preview_frame(df_export),
-                )
-        
-        except ImportError:
-            st.caption("⚠️ Excel export requires openpyxl")
+        if not _render_donation_only_export(df, results_dict):
+            return      # nothing to export: the section ends without "Clear Results"
     
     # Check if this is a disclose_income-only run (special simplified export)
     is_disclose_income_only_run = ctx.is_individual_run('disclose_income')
@@ -267,54 +136,219 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
     )
 
     if is_disclose_income_only_run:
-        # DISCLOSE INCOME-ONLY EXPORT: Simplified version with all 19 disclose income columns
-        # Check if we have multiple configurations to compare.
-        # For disclose_income-only runs, the using_selected_config flag (which is based on
-        # donation_default config state) is irrelevant -- always export all computed configs.
-        export_all_configs = results_dict is not None and len(results_dict) > 1
-        
-        # Check if this is "Compare all" mode (different population modes with different agents)
-        is_compare_all = _is_compare_all_mode(results_dict)
-        
+        _render_disclose_income_only_export(df, results_dict)
+
+    elif is_disclose_documents_only_run:
+        _render_disclose_documents_only_export(df, results_dict)
+
+    elif is_rtd_only_run:
+        _render_rtd_only_export(df, results_dict)
+
+    elif not is_donation_only_run:
+        _render_two_level_export(df, ctx)
+
+    _render_clear_results_button()
+
+
+def _drop_bookkeeping_columns(df, results_dict):
+    """The frame and the per-configuration frames without the bookkeeping columns."""
+    # Drop the bookkeeping columns before any processing. Exact column-name
+    # matching, so 'disclose_income' is never caught by an 'income' substring.
+    columns_to_exclude = ['raw', 'index', 'consumption_frequency', 'enriched_requests_count']
+    
+    if df is not None:
+        df = df[[col for col in df.columns if col not in columns_to_exclude]]
+    if results_dict is not None:
+        results_dict = {
+            key: config_df[[col for col in config_df.columns if col not in columns_to_exclude]]
+            for key, config_df in results_dict.items()
+        }
+    return df, results_dict
+
+
+def _render_donation_only_export(df, results_dict):
+    """Donation-only run: one Excel of the donation rates and traits (Compare-all,
+    all configurations or a single configuration). Returns False when a Compare-all
+    run has nothing to export - the section then ends here."""
+    trait_columns = DONATION_ONLY_EXPORT_TRAIT_COLUMNS
+    
+    # DONATION-ONLY EXPORT: Simplified version with just donation and traits
+    # Filter main df to only include donation columns
+    columns_to_keep = [col for col in df.columns 
+                      if (col == 'donation_default' or col in trait_columns or col == 'agent_id')]
+    df = df[columns_to_keep]
+    
+    # Filter results_dict to only include donation columns
+    if results_dict is not None:
+        results_dict = {
+            key: config_df[[col for col in config_df.columns 
+                           if (col == 'donation_default' or col in trait_columns or col == 'agent_id')]]
+            for key, config_df in results_dict.items()
+        }
+    
+    # Check if we have multiple configurations to compare.
+    # A donation-only run always exports all computed configs (a saved config,
+    # which may be stale, does not filter it).
+    export_all_configs = results_dict is not None and len(results_dict) > 1
+    
+    # Check if this is "Compare all" mode (different population modes with different agents)
+    is_compare_all = _is_compare_all_mode(results_dict)
+    
+    if export_all_configs and is_compare_all:
+        st.markdown(f"""
+            **Donation Default Results Export (Compare All Mode - {len(results_dict)} Configurations):**
+            - Each population mode (Copula, Research Spec, Research Baseline) has its own columns
+            - Agent ID, traits, and donation rates for Categorical and Continuous income modes
+            - **Note:** Each row contains 3 different agents (one per population mode), each with their correct traits
+            """)
+    elif export_all_configs:
+        st.markdown(f"""
+            **Donation Default Results Export (All {len(results_dict)} Configurations):**
+            - Agent ID, trait columns, and donation_default rate for each configuration
+            - All configurations combined in one file for comparison
+            """)
+    else:
+        st.markdown("""
+            **Donation Default Results Export:**
+            - Agent ID, trait columns, and donation_default rate
+            """)
+    
+    try:
         if export_all_configs and is_compare_all:
-            st.markdown(f"""
+            # COMPARE ALL MODE: Each population mode gets its own sheet
+            # Each sheet contains traits + both categorical and continuous donation columns
+            sheets_data = donation_compare_all_sheets(results_dict)
+            
+            if not sheets_data:
+                st.warning("⚠️ No data available for export")
+                return False
+            
+            # Write each population mode to its own sheet,
+            # applying 2-decimal formatting to price/rate columns
+            excel_bytes = to_xlsx_bytes(sheets_data, apply_export_price_formatting)
+            
+            # Show metrics
+            total_sheets = len(sheets_data)
+            first_sheet_df = next(iter(sheets_data.values()))
+            
+            # Show preview with explanation
+            def preview():
+                st.info("""
+                    **Sheet Structure:**
+                    - **Copula**: Synthetic agents generated from copula
+                    - **ResSpec**: Original 280 participants (random subset when agents < 280; bootstrap with replacement when agents > 280)
+                    - **ResBase**: Original 280 participants (original order; cycling when agents ≠ 280)
+                    
+                    Each sheet contains Agent ID, traits, and donation rates for both Categorical and Continuous income modes.
+                    """)
+                _preview_sheets(sheets_data)
+            
+            _download_with_preview(
+                [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
+                 ("Columns per Sheet", len(first_sheet_df.columns))],
+                label=f"📊 Download Donation Excel ({total_sheets} Sheets)",
+                data=excel_bytes,
+                file_name=f"donation_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                help="Each population mode has its own sheet with traits and donation rates for both income modes",
+                preview_title="📋 Preview Donation Data (first 5 rows per sheet)",
+                preview=preview,
+            )
+        
+        elif export_all_configs:
+            # SAME POPULATION MODE: Multiple income modes with same agents
+            # Safe to combine by row since agents are identical
+            combined_df = donation_all_configs_frame(results_dict)
+            
+            # Apply 2-decimal formatting to price/rate columns
+            excel_bytes = to_xlsx_bytes(
+                {'All Configurations': combined_df}, apply_export_price_formatting
+            )
+            
+            _download_with_preview(
+                [("Total Agents", len(combined_df))],
+                label=f"📊 Download Donation Excel (All {len(results_dict)} Configs)",
+                data=excel_bytes,
+                file_name=f"donation_all_configs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                help=f"Donation results with {len(results_dict)} configurations for comparison",
+                preview_title="📋 Preview Donation Data (first 5 rows)",
+                preview=lambda: _preview_frame(combined_df, 10),
+            )
+        
+        else:
+            # SINGLE CONFIG: Simple export with just one configuration
+            df_export = donation_single_export_frame(df)
+            
+            # Apply 2-decimal formatting to price/rate columns
+            excel_bytes = to_xlsx_bytes(
+                {'Donation Results': df_export}, apply_export_price_formatting
+            )
+            
+            _download_with_preview(
+                [("Total Agents", len(df_export))],
+                label="📊 Download Donation Default Excel",
+                data=excel_bytes,
+                file_name=f"donation_default_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                help="Donation results with agent traits and donation rates",
+                preview_title="📋 Preview Donation Data (first 5 rows)",
+                preview=lambda: _preview_frame(df_export),
+            )
+    
+    except ImportError:
+        st.caption("⚠️ Excel export requires openpyxl")
+    return True
+
+
+def _render_disclose_income_only_export(df, results_dict):
+    """Disclose-income-only run: the 19-column disclose income Excel (one sheet per
+    configuration for Compare all / Compare both)."""
+    # DISCLOSE INCOME-ONLY EXPORT: Simplified version with all 19 disclose income columns
+    # Check if we have multiple configurations to compare.
+    # A disclose_income-only run always exports all computed configs (a saved
+    # config does not filter it).
+    export_all_configs = results_dict is not None and len(results_dict) > 1
+    
+    # Check if this is "Compare all" mode (different population modes with different agents)
+    is_compare_all = _is_compare_all_mode(results_dict)
+    
+    if export_all_configs and is_compare_all:
+        st.markdown(f"""
             **Disclose Income Results Export (Compare All Mode - {len(results_dict)} Configurations):**
             - Each configuration (population mode + income mode) has its own sheet
             - All 19 disclose income columns including traits, weights, and calculated values
             - PB_i, DI_i, and disclose_income values are specific to each configuration
             """)
-        elif export_all_configs:
-            st.markdown(f"""
+    elif export_all_configs:
+        st.markdown(f"""
             **Disclose Income Results Export (Compare Both - {len(results_dict)} Configurations):**
             - Each income mode (Categorical/Continuous) has its own sheet
             - All 19 disclose income columns with correct PB_i, DI_i, and disclose_income values
             """)
-        else:
-            st.markdown("""
+    else:
+        st.markdown("""
             **Disclose Income Results Export:**
             - All 19 disclose income columns including traits, weights, and calculated values
             """)
-        
-        try:
-            if export_all_configs and is_compare_all:
-                # COMPARE ALL MODE: Each configuration gets its own sheet
-                # Each sheet contains all 19 disclose income columns with correct values for that config
-                # This ensures PB_i, DI_i, and disclose_income are accurate for each income mode
-                sheets_data = disclose_income_compare_all_sheets(results_dict)
+    
+    try:
+        if export_all_configs and is_compare_all:
+            # COMPARE ALL MODE: Each configuration gets its own sheet
+            # Each sheet contains all 19 disclose income columns with correct values for that config
+            # This ensures PB_i, DI_i, and disclose_income are accurate for each income mode
+            sheets_data = disclose_income_compare_all_sheets(results_dict)
+            
+            if not sheets_data:
+                st.warning("⚠️ No data available for export")
+            else:
+                # Write each population mode to its own sheet
+                excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
                 
-                if not sheets_data:
-                    st.warning("⚠️ No data available for export")
-                else:
-                    # Write each population mode to its own sheet
-                    excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
-                    
-                    # Show metrics
-                    total_sheets = len(sheets_data)
-                    first_sheet_df = next(iter(sheets_data.values()))
-                    
-                    # Show preview
-                    def preview():
-                        st.info("""
+                # Show metrics
+                total_sheets = len(sheets_data)
+                first_sheet_df = next(iter(sheets_data.values()))
+                
+                # Show preview
+                def preview():
+                    st.info("""
                         **Sheet Structure (separate sheets for each configuration):**
                         - **Copula_Cat / Copula_Cont**: Synthetic agents with Categorical/Continuous income
                         - **ResSpec_Cat / ResSpec_Cont**: Research Specification with Categorical/Continuous income
@@ -322,311 +356,320 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                         
                         Each sheet contains all 19 disclose income columns with PB_i, DI_i, and disclose_income values specific to that configuration.
                         """)
-                        _preview_sheets(sheets_data, max_columns=10)
-                    
-                    _download_with_preview(
-                        [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
-                         ("Columns per Sheet", len(first_sheet_df.columns))],
-                        label=f"📊 Download Disclose Income Excel ({total_sheets} Sheets)",
-                        data=excel_bytes,
-                        file_name=f"disclose_income_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        help="Each configuration (population mode + income mode) has its own sheet",
-                        preview_title="📋 Preview Disclose Income Data (first 5 rows per sheet)",
-                        preview=preview,
-                    )
-            
-            elif export_all_configs:
-                # COMPARE BOTH MODE: Separate sheets for each income mode
-                # Each sheet has complete 19 columns with correct PB_i, DI_i, disclose_income values
-                sheets_data = disclose_income_compare_both_sheets(results_dict)
+                    _preview_sheets(sheets_data, max_columns=10)
                 
-                if not sheets_data:
-                    st.warning("⚠️ Unable to prepare Excel data")
-                else:
-                    excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
-                    
-                    # Show metrics
-                    total_sheets = len(sheets_data)
-                    first_sheet_df = next(iter(sheets_data.values()))
-                    
-                    # Show preview
-                    def preview():
-                        st.info("""
+                _download_with_preview(
+                    [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
+                     ("Columns per Sheet", len(first_sheet_df.columns))],
+                    label=f"📊 Download Disclose Income Excel ({total_sheets} Sheets)",
+                    data=excel_bytes,
+                    file_name=f"disclose_income_compare_all_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help="Each configuration (population mode + income mode) has its own sheet",
+                    preview_title="📋 Preview Disclose Income Data (first 5 rows per sheet)",
+                    preview=preview,
+                )
+        
+        elif export_all_configs:
+            # COMPARE BOTH MODE: Separate sheets for each income mode
+            # Each sheet has complete 19 columns with correct PB_i, DI_i, disclose_income values
+            sheets_data = disclose_income_compare_both_sheets(results_dict)
+            
+            if not sheets_data:
+                st.warning("⚠️ Unable to prepare Excel data")
+            else:
+                excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
+                
+                # Show metrics
+                total_sheets = len(sheets_data)
+                first_sheet_df = next(iter(sheets_data.values()))
+                
+                # Show preview
+                def preview():
+                    st.info("""
                         **Sheet Structure:**
                         - **Categorical**: Results with categorical income treatment
                         - **Continuous**: Results with continuous income treatment
                         
                         Each sheet contains all 19 columns with PB_i, DI_i, and disclose_income values specific to that income mode.
                         """)
-                        _preview_sheets(sheets_data, max_columns=10)
-                    
-                    _download_with_preview(
-                        [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
-                         ("Columns per Sheet", len(first_sheet_df.columns))],
-                        label=f"📊 Download Disclose Income Excel ({total_sheets} Sheets)",
-                        data=excel_bytes,
-                        file_name=f"disclose_income_compare_both_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        help="Each income mode has its own sheet with all 19 disclose income columns",
-                        preview_title="📋 Preview Disclose Income Data (first 5 rows per sheet)",
-                        preview=preview,
-                    )
-            
-            else:
-                # SINGLE CONFIG: Simple export with just one configuration
-                export_df = prepare_disclose_income_excel_data(df)
+                    _preview_sheets(sheets_data, max_columns=10)
                 
-                if export_df is None:
-                    st.warning("⚠️ Unable to prepare Excel data. Some required columns may be missing.")
-                else:
-                    excel_bytes = build_disclose_income_results_xlsx(export_df)
-                    
-                    _download_with_preview(
-                        [("Total Agents", len(export_df))],
-                        label="📊 Download Disclose Income Excel",
-                        data=excel_bytes,
-                        file_name=f"disclose_income_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        help="Disclose income results with all 19 columns",
-                        preview_title="📋 Preview Disclose Income Data (first 5 rows)",
-                        preview=lambda: _preview_frame(export_df),
-                    )
-        
-        except ImportError:
-            st.caption("⚠️ Excel export requires openpyxl")
-
-    elif is_disclose_documents_only_run:
-        # DISCLOSE DOCUMENTS-ONLY EXPORT: focused DD Excel (mirror of the disclose_income-only export).
-        # A DD-only run has no purchases (transaction-level export would be empty) and no other
-        # decisions (agent-level export would be sparse), so we export a focused DD sheet instead.
-        export_all_configs = results_dict is not None and len(results_dict) > 1
-        is_compare_all = _is_compare_all_mode(results_dict)
-
-        if export_all_configs and is_compare_all:
-            st.markdown(f"**Disclose Documents Results Export (Compare All - {len(results_dict)} configurations):** one sheet per population × income mode, full privacy-calculus calculation chain.")
-        elif export_all_configs:
-            st.markdown(f"**Disclose Documents Results Export (Compare Both - {len(results_dict)} configurations):** one sheet per income mode.")
-        else:
-            st.markdown("**Disclose Documents Results Export:** full privacy-calculus calculation chain (z-scores, weighted_dd, score, decision, customer type).")
-
-        try:
-            if export_all_configs:
-                sheets_data = disclose_documents_export_sheets(results_dict, is_compare_all)
-                if not sheets_data:
-                    st.warning("⚠️ No disclose documents data available for export")
-                else:
-                    excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
-                    first = next(iter(sheets_data.values()))
-                    _download_with_preview(
-                        [("Sheets", len(sheets_data)), ("Agents per Sheet", len(first)),
-                         ("Columns per Sheet", len(first.columns))],
-                        label=f"📄 Download Agent Disclose Documents Data ({len(sheets_data)} Sheets)",
-                        data=excel_bytes,
-                        file_name=f"disclose_documents_compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        help="Each configuration (population × income mode) has its own sheet",
-                        preview_title="📋 Preview Disclose Documents Data (first 5 rows per sheet)",
-                        preview=lambda: _preview_sheets(sheets_data, caption=False),
-                    )
-            else:
-                export_df = prepare_disclose_documents_excel_data(df)
-                if export_df is None or export_df.empty:
-                    st.warning("⚠️ No disclose documents data available for export")
-                else:
-                    excel_bytes = build_disclose_documents_results_xlsx(export_df)
-                    _download_with_preview(
-                        [("Agents", len(export_df)), ("Columns", len(export_df.columns))],
-                        label="📄 Download Agent Disclose Documents Data",
-                        data=excel_bytes,
-                        file_name=f"disclose_documents_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        help="Disclose documents results with the full calculation chain",
-                        preview_title="📋 Preview Disclose Documents Data (first 5 rows)",
-                        preview=lambda: _preview_frame(export_df),
-                    )
-        except ImportError:
-            st.caption("⚠️ Excel export requires openpyxl")
-
-    elif is_rtd_only_run:
-        # DECISION 4-ONLY EXPORT: agent-level workbook only. An individual Decision 4
-        # run produces no purchase requests, so no transaction-level file is offered.
-        from app.components import rtd_page_element
-        from app.pages.results.visualizations.transaction_viz import (
-            _prepare_rtd_model_export, _rtd_selected_config_key,
-        )
-        from app.reports.rtd import RTD_AGGREGATION_ELEMENT, RTD_ELEMENT_SHEETS
-        active_element = rtd_page_element()
-        # Once a configuration has been selected with "Use This Config" the export
-        # covers ONLY that configuration, mirroring the results
-        # display (transaction_viz.render_rtd_comparison_results).
-        selected_key = _rtd_selected_config_key(results_dict or {})
-        if selected_key is not None:
-            results_dict = {selected_key: results_dict[selected_key]}
-            df = results_dict[selected_key]
-        export_all_configs = results_dict is not None and len(results_dict) > 1
-
-        if active_element == RTD_AGGREGATION_ELEMENT:
-            st.markdown(
-                "**Decision 4 Integrated Default List Export:** one row per agent with "
-                "every input and z-score, each element's score, segment and list, the "
-                "integrated ranking with its tie-break diagnostics and the integrated "
-                "default list."
-            )
-        elif active_element:
-            st.markdown(
-                f"**Decision 4 Results Export ({RTD_ELEMENT_SHEETS[active_element]} element):** "
-                "one row per agent with the element's independent variables and the "
-                "z-scores its equation uses, its score, segments and the resulting "
-                "option sequence."
-            )
-        else:
-            st.markdown(
-                "**Decision 4 (Rejected Transaction Defaults) Results Export:** one row "
-                "per agent with the Decision 4 element results - the integrated default "
-                "list sheet with every input, z-score, element score and segment, then "
-                "one self-contained sheet per element."
-            )
-        if selected_key is not None:
-            st.caption("Selected configuration only.")
-        if export_all_configs:
-            st.caption(f"{len(results_dict)} configurations - sheet names are prefixed "
-                       "with the configuration.")
-
-        try:
-            def _rtd_sheets_for(frame):
-                return rtd_element_subset(_prepare_rtd_model_export(frame) or {}, active_element)
-
-            if export_all_configs:
-                sheets_data = {}
-                for config_key, config_df in results_dict.items():
-                    if (config_df is None or config_df.empty
-                            or 'rtd_choice_length' not in config_df.columns):
-                        continue
-                    prefix = rtd_config_sheet_prefix(config_key)
-                    for name, sheet_df in _rtd_sheets_for(config_df).items():
-                        sheets_data[rtd_prefixed_sheet_name(prefix, name)] = sheet_df
-            else:
-                sheets_data = _rtd_sheets_for(df)
-
-            if not sheets_data:
-                st.warning("⚠️ No Decision 4 data available for export")
-            else:
-                excel_bytes = rtd_model_xlsx_bytes(sheets_data)
-                first = next(iter(sheets_data.values()))
-                # the one keyed download of the section, so it is drawn here
-                _metrics_row([("Agents", len(first)), ("Sheets", len(sheets_data))])
-                st.download_button(
-                    label="📊 Download Decision 4 Agent-Level Excel",
+                _download_with_preview(
+                    [("Sheets", total_sheets), ("Agents per Sheet", len(first_sheet_df)),
+                     ("Columns per Sheet", len(first_sheet_df.columns))],
+                    label=f"📊 Download Disclose Income Excel ({total_sheets} Sheets)",
                     data=excel_bytes,
-                    file_name=f"rejected_transaction_defaults_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime=_XLSX_MIME,
-                    help="One row per agent with the Decision 4 element results",
-                    key="rtd_export_section_download",
+                    file_name=f"disclose_income_compare_both_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help="Each income mode has its own sheet with all 19 disclose income columns",
+                    preview_title="📋 Preview Disclose Income Data (first 5 rows per sheet)",
+                    preview=preview,
                 )
-                with st.expander("📋 Preview Decision 4 Data (first 5 rows per sheet)"):
-                    _preview_sheets(sheets_data, as_text=True)
-        except ImportError:
-            st.caption("⚠️ Excel export requires openpyxl")
+        
+        else:
+            # SINGLE CONFIG: Simple export with just one configuration
+            export_df = prepare_disclose_income_excel_data(df)
+            
+            if export_df is None:
+                st.warning("⚠️ Unable to prepare Excel data. Some required columns may be missing.")
+            else:
+                excel_bytes = build_disclose_income_results_xlsx(export_df)
+                
+                _download_with_preview(
+                    [("Total Agents", len(export_df))],
+                    label="📊 Download Disclose Income Excel",
+                    data=excel_bytes,
+                    file_name=f"disclose_income_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help="Disclose income results with all 19 columns",
+                    preview_title="📋 Preview Disclose Income Data (first 5 rows)",
+                    preview=lambda: _preview_frame(export_df),
+                )
+    
+    except ImportError:
+        st.caption("⚠️ Excel export requires openpyxl")
 
-    elif not is_donation_only_run:
-        # FULL TWO-LEVEL EXPORT: For all other simulations
-        st.markdown("""
+
+def _render_disclose_documents_only_export(df, results_dict):
+    """Disclose-documents-only run: the focused disclose documents Excel."""
+    # DISCLOSE DOCUMENTS-ONLY EXPORT: focused DD Excel (mirror of the disclose_income-only export).
+    # A DD-only run has no purchases (transaction-level export would be empty) and no other
+    # decisions (agent-level export would be sparse), so we export a focused DD sheet instead.
+    export_all_configs = results_dict is not None and len(results_dict) > 1
+    is_compare_all = _is_compare_all_mode(results_dict)
+
+    if export_all_configs and is_compare_all:
+        st.markdown(f"**Disclose Documents Results Export (Compare All - {len(results_dict)} configurations):** one sheet per population × income mode, full privacy-calculus calculation chain.")
+    elif export_all_configs:
+        st.markdown(f"**Disclose Documents Results Export (Compare Both - {len(results_dict)} configurations):** one sheet per income mode.")
+    else:
+        st.markdown("**Disclose Documents Results Export:** full privacy-calculus calculation chain (z-scores, weighted_dd, score, decision, customer type).")
+
+    try:
+        if export_all_configs:
+            sheets_data = disclose_documents_export_sheets(results_dict, is_compare_all)
+            if not sheets_data:
+                st.warning("⚠️ No disclose documents data available for export")
+            else:
+                excel_bytes = build_disclosure_sheets_xlsx(sheets_data)
+                first = next(iter(sheets_data.values()))
+                _download_with_preview(
+                    [("Sheets", len(sheets_data)), ("Agents per Sheet", len(first)),
+                     ("Columns per Sheet", len(first.columns))],
+                    label=f"📄 Download Agent Disclose Documents Data ({len(sheets_data)} Sheets)",
+                    data=excel_bytes,
+                    file_name=f"disclose_documents_compare_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help="Each configuration (population × income mode) has its own sheet",
+                    preview_title="📋 Preview Disclose Documents Data (first 5 rows per sheet)",
+                    preview=lambda: _preview_sheets(sheets_data, caption=False),
+                )
+        else:
+            export_df = prepare_disclose_documents_excel_data(df)
+            if export_df is None or export_df.empty:
+                st.warning("⚠️ No disclose documents data available for export")
+            else:
+                excel_bytes = build_disclose_documents_results_xlsx(export_df)
+                _download_with_preview(
+                    [("Agents", len(export_df)), ("Columns", len(export_df.columns))],
+                    label="📄 Download Agent Disclose Documents Data",
+                    data=excel_bytes,
+                    file_name=f"disclose_documents_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    help="Disclose documents results with the full calculation chain",
+                    preview_title="📋 Preview Disclose Documents Data (first 5 rows)",
+                    preview=lambda: _preview_frame(export_df),
+                )
+    except ImportError:
+        st.caption("⚠️ Excel export requires openpyxl")
+
+
+def _render_rtd_only_export(df, results_dict):
+    """Individual Decision 4 model run: the agent-level Decision 4 workbook only."""
+    # DECISION 4-ONLY EXPORT: agent-level workbook only. An individual Decision 4
+    # run produces no purchase requests, so no transaction-level file is offered.
+    from app.pages.results.overview import rtd_page_element
+    from app.pages.results.visualizations.transaction_viz import (
+        _prepare_rtd_model_export, _rtd_selected_config_key,
+    )
+    from app.reports.rtd import RTD_AGGREGATION_ELEMENT, RTD_ELEMENT_SHEETS
+    active_element = rtd_page_element()
+    # Once a configuration has been selected with "Use This Config" the export
+    # covers ONLY that configuration, mirroring the results
+    # display (transaction_viz.render_rtd_comparison_results).
+    selected_key = _rtd_selected_config_key(results_dict or {})
+    if selected_key is not None:
+        results_dict = {selected_key: results_dict[selected_key]}
+        df = results_dict[selected_key]
+    export_all_configs = results_dict is not None and len(results_dict) > 1
+
+    if active_element == RTD_AGGREGATION_ELEMENT:
+        st.markdown(
+            "**Decision 4 Integrated Default List Export:** one row per agent with "
+            "every input and z-score, each element's score, segment and list, the "
+            "integrated ranking with its tie-break diagnostics and the integrated "
+            "default list."
+        )
+    elif active_element:
+        st.markdown(
+            f"**Decision 4 Results Export ({RTD_ELEMENT_SHEETS[active_element]} element):** "
+            "one row per agent with the element's independent variables and the "
+            "z-scores its equation uses, its score, segments and the resulting "
+            "option sequence."
+        )
+    else:
+        st.markdown(
+            "**Decision 4 (Rejected Transaction Defaults) Results Export:** one row "
+            "per agent with the Decision 4 element results - the integrated default "
+            "list sheet with every input, z-score, element score and segment, then "
+            "one self-contained sheet per element."
+        )
+    if selected_key is not None:
+        st.caption("Selected configuration only.")
+    if export_all_configs:
+        st.caption(f"{len(results_dict)} configurations - sheet names are prefixed "
+                   "with the configuration.")
+
+    try:
+        def _rtd_sheets_for(frame):
+            return rtd_element_subset(_prepare_rtd_model_export(frame) or {}, active_element)
+
+        if export_all_configs:
+            sheets_data = {}
+            for config_key, config_df in results_dict.items():
+                if (config_df is None or config_df.empty
+                        or 'rtd_choice_length' not in config_df.columns):
+                    continue
+                prefix = rtd_config_sheet_prefix(config_key)
+                for name, sheet_df in _rtd_sheets_for(config_df).items():
+                    sheets_data[rtd_prefixed_sheet_name(prefix, name)] = sheet_df
+        else:
+            sheets_data = _rtd_sheets_for(df)
+
+        if not sheets_data:
+            st.warning("⚠️ No Decision 4 data available for export")
+        else:
+            excel_bytes = rtd_model_xlsx_bytes(sheets_data)
+            first = next(iter(sheets_data.values()))
+            # the one keyed download of the section, so it is drawn here
+            _metrics_row([("Agents", len(first)), ("Sheets", len(sheets_data))])
+            st.download_button(
+                label="📊 Download Decision 4 Agent-Level Excel",
+                data=excel_bytes,
+                file_name=f"rejected_transaction_defaults_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime=_XLSX_MIME,
+                help="One row per agent with the Decision 4 element results",
+                key="rtd_export_section_download",
+            )
+            with st.expander("📋 Preview Decision 4 Data (first 5 rows per sheet)"):
+                _preview_sheets(sheets_data, as_text=True)
+    except ImportError:
+        st.caption("⚠️ Excel export requires openpyxl")
+
+
+def _render_two_level_export(df, ctx):
+    """Every other run: the agent-level and the transaction-level Excel files."""
+    # FULL TWO-LEVEL EXPORT: For all other simulations
+    st.markdown("""
         **Two separate Excel files are available for download:**
         - **Agent-Level Excel**: One row per agent with all agent-level decisions and summary statistics
         - **Transaction-Level Excel**: One row per purchase request with detailed transaction information
         """)
+    
+    # Get vendor data if available
+    vendors_data = None
+    if hasattr(df, 'attrs') and 'vendors' in df.attrs:
+        vendors_data = df.attrs['vendors']
+    
+    try:
+        # The pricing parameters are the RUN's (RunContext, from the run
+        # metadata), not the live Page 1 widgets; the page passes the VALUES in.
+        vendor_price_min = ctx.vendor_price_min
+        vendor_price_max = ctx.vendor_price_max
+
+        # Build agent-level and transaction-level DataFrames
+        agent_df = build_agent_level_dataframe(
+            df,
+            vendors_data=vendors_data,
+            vendor_price_min=vendor_price_min,
+            vendor_price_max=vendor_price_max,
+        )
+        transaction_df = build_transaction_level_dataframe(
+            df,
+            vendors_data=vendors_data,
+            # The three values the builder's TimestampConverter needs: the
+            # run's start (RunContext.base_time) and the run's period duration
+            # and period count.
+            base_time=ctx.base_time,
+            duration_hours=ctx.duration_hours,
+            periods=ctx.periods,
+            market_price=ctx.market_price,
+            platform_markup=ctx.platform_markup,
+            price_range=ctx.price_range,
+            vendor_price_min=vendor_price_min,
+            vendor_price_max=vendor_price_max,
+        )
+
+        # Show summary statistics
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Agents", len(agent_df))
+            st.caption("Rows in Agent-Level file")
+        with col2:
+            st.metric("Total Transactions", len(transaction_df))
+            st.caption("Rows in Transaction-Level file")
         
-        # Get vendor data if available
-        vendors_data = None
-        if hasattr(df, 'attrs') and 'vendors' in df.attrs:
-            vendors_data = df.attrs['vendors']
+        # Create two separate Excel files
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        try:
-            # The pricing parameters are the RUN's (RunContext, from the run
-            # metadata), not the live Page 1 widgets; the page passes the VALUES in.
-            vendor_price_min = ctx.vendor_price_min
-            vendor_price_max = ctx.vendor_price_max
+        # Agent-Level Excel (2-decimal formatting on price columns)
+        agent_bytes = to_xlsx_bytes(
+            {'Agent Level': agent_df}, apply_export_price_formatting
+        )
+        
+        # Transaction-Level Excel (2-decimal formatting on price columns)
+        transaction_bytes = to_xlsx_bytes(
+            {'Transaction Level': transaction_df}, apply_export_price_formatting
+        )
+        
+        # Download buttons for separate files
+        st.markdown("### 📥 Download Files")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            _xlsx_download_button(
+                "📊 Download Agent-Level Excel",
+                agent_bytes,
+                f"simulation_agent_level_{timestamp}.xlsx",
+                f"Agent-level data: {len(agent_df)} agents × {len(agent_df.columns)} columns"
+            )
+        
+        with col2:
+            _xlsx_download_button(
+                "📊 Download Transaction-Level Excel",
+                transaction_bytes,
+                f"simulation_transaction_level_{timestamp}.xlsx",
+                f"Transaction-level data: {len(transaction_df)} transactions × {len(transaction_df.columns)} columns"
+            )
+        
+        # Show preview of what's in each file
+        st.markdown("### 📋 Data Preview")
+        
+        with st.expander("👥 Preview Agent-Level Data (first 5 rows)"):
+            _preview_frame(agent_df, 15)
+        
+        with st.expander("🔄 Preview Transaction-Level Data (first 5 rows)"):
+            _preview_frame(transaction_df, 15)
+        
+    except Exception as e:
+        st.error(f"Error creating Excel export: {str(e)}")
+        st.caption("⚠️ Please ensure all required data is available. If the problem persists, contact support.")
+        import traceback
+        st.caption(f"Error details: {traceback.format_exc()}")
+        
+        # Fallback: show raw data
+        with st.expander("🔍 View Raw Data (for debugging)"):
+            st.dataframe(rename_consensus_columns(df), use_container_width=True)
 
-            # Build agent-level and transaction-level DataFrames
-            agent_df = build_agent_level_dataframe(
-                df,
-                vendors_data=vendors_data,
-                vendor_price_min=vendor_price_min,
-                vendor_price_max=vendor_price_max,
-            )
-            transaction_df = build_transaction_level_dataframe(
-                df,
-                vendors_data=vendors_data,
-                # The three values the builder's TimestampConverter needs: the
-                # run's start (RunContext.base_time) and the run's period duration
-                # and period count.
-                base_time=ctx.base_time,
-                duration_hours=ctx.duration_hours,
-                periods=ctx.periods,
-                market_price=ctx.market_price,
-                platform_markup=ctx.platform_markup,
-                price_range=ctx.price_range,
-                vendor_price_min=vendor_price_min,
-                vendor_price_max=vendor_price_max,
-            )
 
-            # Show summary statistics
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Agents", len(agent_df))
-                st.caption("Rows in Agent-Level file")
-            with col2:
-                st.metric("Total Transactions", len(transaction_df))
-                st.caption("Rows in Transaction-Level file")
-            
-            # Create two separate Excel files
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            
-            # Agent-Level Excel (2-decimal formatting on price columns)
-            agent_bytes = to_xlsx_bytes(
-                {'Agent Level': agent_df}, apply_export_price_formatting
-            )
-            
-            # Transaction-Level Excel (2-decimal formatting on price columns)
-            transaction_bytes = to_xlsx_bytes(
-                {'Transaction Level': transaction_df}, apply_export_price_formatting
-            )
-            
-            # Download buttons for separate files
-            st.markdown("### 📥 Download Files")
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                _xlsx_download_button(
-                    "📊 Download Agent-Level Excel",
-                    agent_bytes,
-                    f"simulation_agent_level_{timestamp}.xlsx",
-                    f"Agent-level data: {len(agent_df)} agents × {len(agent_df.columns)} columns"
-                )
-            
-            with col2:
-                _xlsx_download_button(
-                    "📊 Download Transaction-Level Excel",
-                    transaction_bytes,
-                    f"simulation_transaction_level_{timestamp}.xlsx",
-                    f"Transaction-level data: {len(transaction_df)} transactions × {len(transaction_df.columns)} columns"
-                )
-            
-            # Show preview of what's in each file
-            st.markdown("### 📋 Data Preview")
-            
-            with st.expander("👥 Preview Agent-Level Data (first 5 rows)"):
-                _preview_frame(agent_df, 15)
-            
-            with st.expander("🔄 Preview Transaction-Level Data (first 5 rows)"):
-                _preview_frame(transaction_df, 15)
-            
-        except Exception as e:
-            st.error(f"Error creating Excel export: {str(e)}")
-            st.caption("⚠️ Please ensure all required data is available. If the problem persists, contact support.")
-            import traceback
-            st.caption(f"Error details: {traceback.format_exc()}")
-            
-            # Fallback: show raw data
-            with st.expander("🔍 View Raw Data (for debugging)"):
-                st.dataframe(rename_consensus_columns(df), use_container_width=True)
-
+def _render_clear_results_button():
+    """The "Clear Results" button: wipes the session and stays on the results page."""
     if st.button("🔄 Clear Results"):
         # Clear all session state to reset the entire application
         keys_to_delete = [key for key in st.session_state.keys()]

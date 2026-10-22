@@ -23,7 +23,7 @@ Each layer may use the one above it, never the other way round.
               |
   app/state   +  app/reports                      STORES & REPORTS (reports: no Streamlit)
               |
-  app/pages   +  app/components                   THE SCREENS      (all the Streamlit)
+  app/pages                                       THE SCREENS      (all the Streamlit)
 ```
 
 ### The engine, `src/`
@@ -117,10 +117,13 @@ Streamlit, no globals, no writes to session state.
   return frames or bytes; they never import Streamlit, so an export can be built and
   checked without a browser.
 
-### The screens, `app/pages/`, `app/components.py`
+### The screens, `app/pages/`
 
 * `page1_common_params.py` — Page 1: population size, seed, income distribution,
-  vendors, thresholds.
+  vendors, thresholds; `page1_income_histogram.py` draws its income distribution
+  preview.
+* `css.py` — the global CSS (`get_css_styles`), injected by `app_enhanced_new.py` on
+  every script run.
 * `page2_decisions.py` + `decision_tabs/` — Page 2: the Overview tab and one tab per
   configurable decision.
 * `decision_execution.py` — the Run buttons (`run_individual_decision`,
@@ -128,6 +131,29 @@ Streamlit, no globals, no writes to session state.
   disables "Run Complete Simulation" while a selected decision would produce several
   configurations and none is saved (`can_run_complete_simulation` and its warnings).
 * `results/` — the results page; `results/run_context.py` is the piece to know (§5).
+  * `main_results.py` lays the page out: Decision Results, the overview, the
+    configuration banners, the agent details and the export.
+  * `overview.py` — `show_overview` (headline metrics, the donation / disclose income /
+    disclose documents analyses of one result frame) and the Decision 4 run-shape
+    helpers `rtd_page_element` / `rtd_overview_metric`.
+  * `config_pin.py` — the "Use This Config" buttons and the seed-mismatch error;
+    `config_selection.py` — the selected-configuration banners and "Run Complete
+    Simulation".
+  * `comparisons.py` — the Compare-all / Compare-both grids; `mc_display.py` — the
+    Monte-Carlo screen.
+  * `components/export_section.py` — the export section, one function per run shape
+    (donation-only, disclose-income-only, disclose-documents-only, Decision 4-only,
+    the two-level export); `components/agent_details.py` — the agent details.
+  * `visualizations/` — one module per decision; `DECISION_VISUALIZATIONS` in its
+    `__init__.py` routes a decision to its view and `viz_helpers.py` holds the shared
+    helpers (`yes_no_pie`). `disclosure_viz.py` (Decisions 1, 2), `transaction_viz.py`
+    (Decision 4; the name is historical, its tests patch it), `donation_viz.py`
+    (3, 13), `vendor_viz.py` (5, 8), `purchasing_viz.py` (6, 7),
+    `purchase_vs_bid_viz.py` (9), `bidding_viz.py` (10),
+    `rejected_transaction_option_viz.py` (11), `rejected_bid_value_viz.py` (12).
+* `app/components.py` — a re-export shim, kept only because
+  `tests/test_run_context_run_values.py` still imports from it; new code imports from
+  the modules above.
 * `app/models.py` — `SimulationParameters` (the Page-1 settings, kept in
   `st.session_state.sim_params`), `SESSION_DEFAULTS` (the other values a fresh session
   starts with) and `initialize_session_state()`, which `app_enhanced_new.py` calls on

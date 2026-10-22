@@ -26,6 +26,7 @@ from app.reports.disclosure import (
     raw_value_stats,
 )
 from app.pages.results.run_context import RunContext
+from app.pages.results.visualizations.viz_helpers import yes_no_pie
 
 
 def _income_mode_suffix():
@@ -76,11 +77,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         with col_pie:
             st.markdown(f"**{decision_title} Distribution**")
             if len(value_counts) > 0:
-                fig_pie = px.pie(
-                    values=value_counts.values,
-                    names=value_counts.index,
-                    color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
-                )
+                fig_pie = yes_no_pie(value_counts)
                 st.plotly_chart(fig_pie, use_container_width=True)
 
         with col_hist:
@@ -160,11 +157,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
         # No raw values available - show pie chart only
         if len(value_counts) > 0:
             st.markdown(f"**{decision_title} Distribution**")
-            fig = px.pie(
-                values=value_counts.values,
-                names=value_counts.index,
-                color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}  # Green for Yes, Red for No
-            )
+            fig = yes_no_pie(value_counts)
             st.plotly_chart(fig, use_container_width=True)
 
     # Excel download section

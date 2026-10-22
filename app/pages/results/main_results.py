@@ -10,7 +10,8 @@ Page-1 / Page-2 mode keys, which describe the run being configured.
 import streamlit as st
 import pandas as pd
 from app.pages.navigation import render_navigation
-from app.components import show_overview, show_monte_carlo_results
+from app.pages.results.overview import show_overview
+from app.pages.results.mc_display import show_monte_carlo_results
 from app.pages.results.comparisons import (
     render_all_modes_comparison,
     render_income_comparison
@@ -128,7 +129,7 @@ def render_rtd_element_subtitle(decision_name, decision_number):
     weight or size); nothing for whole-decision or complete runs."""
     if decision_name != 'rejected_transaction_defaults':
         return
-    from app.components import rtd_page_element
+    from app.pages.results.overview import rtd_page_element
     from app.reports.rtd import rtd_element_subtitle
     subtitle = rtd_element_subtitle(decision_number, rtd_page_element())
     if subtitle:
@@ -227,7 +228,7 @@ def _render_overview_section(results_dict, ctx, has_explicit_donation_config):
             elif 'rtd_choice_length' in df.columns:
                 # Decision 4 model run: run-shape-aware headline metric (a per-element
                 # run of a ranking element has none)
-                from app.components import rtd_overview_metric
+                from app.pages.results.overview import rtd_overview_metric
                 rtd_label, rtd_value = rtd_overview_metric(df)
                 if rtd_label:
                     st.metric(rtd_label, rtd_value)
@@ -490,22 +491,9 @@ def render_single_run_results():
     if st.session_state.show_individual_agents and not df.empty:
         render_individual_agent_details(df)
 
-    # Raw data download
+    # Raw data download: every run passes its full results_dict; the export section
+    # decides from the run's shape what each run exports
     if not df.empty:
-        # Detect if this is an individual decision run (single decision, no defaults).
-        # For individual decision runs, saved config state should NOT filter the export --
-        # all computed configs should always be available for download.
-        _is_individual_decision_run = ctx.is_individual_decision_run
-
-        if _is_individual_decision_run:
-            # Individual decision runs: always pass full results_dict, never filter by saved config.
-            # Saved configs are for the "Run Complete Simulation" workflow, not for export filtering.
-            render_export_section(df, results_dict=results_dict, using_selected_config=False)
-        else:
-            # Combined/full simulation runs: apply donation-specific config logic
-            using_selected_config_from_sim = _has_explicit_donation_config
-
-            # Pass full results_dict for multi-config export (if not using selected config)
-            render_export_section(df, results_dict=results_dict, using_selected_config=using_selected_config_from_sim)
+        render_export_section(df, results_dict=results_dict)
 
     # No flag cleanup needed - we read directly from unified config storage

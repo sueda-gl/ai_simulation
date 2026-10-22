@@ -1,25 +1,26 @@
 # app/pages/results/visualizations/transaction_viz.py
 """
-Transaction and purchase-related visualization functions.
-Handles purchase_vs_bid, rejected_transaction_defaults, and rejected_transaction_option decisions.
+Decision 4 (rejected_transaction_defaults) visualizations: the model run's
+element sections, integrated default list and Excel downloads, the comparison
+layout (``render_rtd_comparison_results``) and the legacy priority-template
+view of a default (unselected) run.
+
+The other transaction decisions have their own modules: purchase_vs_bid_viz.py
+(Decision 9), rejected_transaction_option_viz.py (Decision 11) and
+rejected_bid_value_viz.py (Decision 12). This module keeps its old name because
+the Decision 4 tests import it and patch its globals.
 """
 import streamlit as st
-import pandas as pd
 import numpy as np
 import plotly.express as px
 
 from app.reports.transactions import (
-    build_purchase_vs_bid_export,
     prepare_priority_lists_export,
     priority_first_choice_counts,
     priority_length_breakdown_lines,
     priority_list_agent_count,
     priority_lists_xlsx_bytes,
     priority_option_agent_counts,
-    purchase_vs_bid_breakdown_frame,
-    purchase_vs_bid_request_counts,
-    purchase_vs_bid_xlsx_bytes,
-    rejected_option_value_counts,
 )
 from app.reports.rtd import (
     RTD_AGG_SHEET,
@@ -49,7 +50,6 @@ from app.reports.rtd import (
     rtd_stata_bins,
 )
 
-from app.reports.timestamps import TimestampConverter
 from app.pages.results.run_context import RunContext
 
 # The pure builders now live in app/reports/{transactions,rtd}.py. These aliases keep
@@ -65,125 +65,6 @@ _rtd_bin_count = rtd_bin_count
 _rtd_stata_bins = rtd_stata_bins
 _rtd_first_choice = rtd_first_choice
 _rtd_reversed_sequence = rtd_reversed_sequence
-
-
-def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
-    """Visualization for purchase_vs_bid - per-request Purchase Now/bid choices"""
-    
-    # Show that decisions are now made PER REQUEST
-    st.info("⚠️ **Note**: Decisions are made **per purchase request**, not per agent. A single agent can choose differently for each purchase.")
-    
-    # Reference to Decision 2 for customer type definitions
-    st.info("💡 **Customer Type Information**: This decision only applies to **Regular Customers**. For detailed customer type definitions and distribution, see **Decision 2: Disclose Documents**.")
-    
-    # Extract REQUEST-LEVEL data from purchase_requests
-    st.markdown("---")
-    st.markdown("### 🎯 Purchase Now vs Bid Decisions")
-    st.caption("📊 Decisions for **Regular Customers only** - For full customer type breakdown, see **Decision 2: Disclose Documents**")
-    
-    if 'purchase_requests' in df.columns:
-        # Count regular customer choices (PN / BID, per request)
-        regular_counts, total_regular_requests = purchase_vs_bid_request_counts(df)
-        
-        if total_regular_requests > 0:
-            pn_count = regular_counts.get('PN', 0)
-            bid_count = regular_counts.get('BID', 0)
-            
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Regular Requests", f"{total_regular_requests:,}", 
-                         help="Purchase requests from regular customers only")
-            with col2:
-                st.metric("Purchase Now (PN)", f"{pn_count:,} ({pn_count/total_regular_requests*100:.1f}%)")
-            with col3:
-                st.metric("Bid (BID)", f"{bid_count:,} ({bid_count/total_regular_requests*100:.1f}%)")
-            with col4:
-                st.metric("Purchase Now Rate", f"{pn_count/total_regular_requests*100:.1f}%")
-            
-            # Purchase Now vs Bid visualization - donut chart
-            col_plot, col_stats = st.columns([2, 1])
-            
-            with col_plot:
-                st.markdown(f"**Purchase Decisions Distribution ({total_regular_requests:,} requests)**")
-                fig = px.pie(
-                    values=[pn_count, bid_count],
-                    names=['Purchase Now (PN)', 'Bid (BID)'],
-                    hole=0.4,  # Donut chart
-                    color_discrete_map={
-                        'Purchase Now (PN)': '#4CAF50',  # Green
-                        'Bid (BID)': '#FF9800'  # Orange
-                    }
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col_stats:
-                st.markdown("**🛒 Request-Level Choices**")
-                st.caption("(Regular customers only)")
-                breakdown_df = purchase_vs_bid_breakdown_frame(
-                    pn_count, bid_count, total_regular_requests)
-                st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("No regular customer purchase requests found")
-        
-        # Excel Export Section
-        st.markdown("---")
-        st.markdown("**📥 Export Purchase Now vs Bid Decision Data**")
-        st.caption("Download detailed request-level data for all regular customers with pricing and transaction information")
-        
-        # Build transaction records: the pricing parameters are the RUN's
-        # (RunContext, not the live Page 1 widgets); the vendor list is the run's
-        ctx = RunContext.from_session()
-        transaction_records = build_purchase_vs_bid_export(
-            df,
-            # The converter's base time (the run's start), period duration and
-            # period count are the run's, so the page builds it
-            ts_converter=TimestampConverter(
-                ctx.base_time,
-                ctx.duration_hours,
-                ctx.periods,
-            ),
-            market_price=ctx.market_price,
-            platform_markup=ctx.platform_markup,
-            price_range=ctx.price_range,
-            vendors=getattr(st.session_state, 'vendors', None),
-        )
-        
-        if transaction_records and len(transaction_records) > 0:
-            try:
-                from datetime import datetime
-
-                # Create DataFrame (already sorted by the build function)
-                export_df = pd.DataFrame(transaction_records)
-
-                # Create Excel with multiple sheets
-                xlsx_bytes = purchase_vs_bid_xlsx_bytes(export_df)
-                
-                col_download, col_info = st.columns([1, 2])
-                
-                with col_download:
-                    st.download_button(
-                        label="📊 Download Purchase Now vs Bid Excel",
-                        data=xlsx_bytes,
-                        file_name=f"purchase_now_vs_bid_decisions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        help="Download request-level data for regular customers with purchase decisions"
-                    )
-                
-                with col_info:
-                    num_sheets = 1 + len(export_df['Period'].dropna().unique()) if 'Period' in export_df.columns else 1
-                    st.caption(f"📋 Export includes {len(export_df):,} requests across {num_sheets} sheets")
-                    st.caption(f"✅ Fields: Purchase Request ID, Agent ID, Honesty_Humility, Assigned Allowance Level, Study Program, Group_experiment, TWT+Sospeso, income, Customer Type, Income Category, Purchase Type, Vendor, Vendor Price, timestamp, Period, Customer Price")
-                    st.caption(f"🔄 Sorted by: timestamp (chronological order)")
-            
-            except ImportError:
-                st.warning("⚠️ Excel export requires openpyxl package")
-            except Exception as e:
-                st.error(f"❌ Error creating Excel file: {str(e)}")
-        else:
-            st.info("ℹ️ No purchase request data available for export")
-    else:
-        st.warning("No purchase_requests data available")
 
 
 def render_rejected_transaction_defaults(df, decision_name, decision_title, decision_data):
@@ -448,7 +329,7 @@ def _rtd_is_combined_frame(df):
 def _rtd_run_shape(df):
     """(shape, element) for this frame - see the run-shape comment above.
     `element` is the run element for the 'element' shape and None otherwise."""
-    from app.components import rtd_page_element
+    from app.pages.results.overview import rtd_page_element
 
     if _rtd_is_combined_frame(df):
         return 'combined', None
@@ -641,7 +522,7 @@ def render_rtd_comparison_results(results_dict, decision_name):
 
     Returns True if anything was rendered.
     """
-    from app.components import show_overview, rtd_overview_metric
+    from app.pages.results.overview import show_overview, rtd_overview_metric
     from app.pages.decision_execution import format_result_name
     from app.pages.results.run_context import RunContext
 
@@ -841,7 +722,7 @@ def _render_rtd_selection_button(df, result_key):
     from app.pages.results.comparisons import should_enable_selection
     if not should_enable_selection():
         return
-    from app.components import render_rejected_transaction_selection_button
+    from app.pages.results.config_pin import render_rejected_transaction_selection_button
     render_rejected_transaction_selection_button(result_key, df)
 
 
@@ -1102,85 +983,3 @@ def _prepare_rtd_model_export(df):
     except Exception as e:
         st.error(f"Error preparing Decision 4 export: {e}")
         return None
-
-
-def render_rejected_transaction_option(df, decision_name, decision_title, decision_data):
-    """Visualization for rejected_transaction_option with interactive radio buttons"""
-    
-    # Define the 5 options
-    options = [
-        ("higher_price_category", "Option 1: Purchase from another (higher) price category of the same vendor"),
-        ("lower_pn_vendor", "Option 2: Purchase from another vendor at PN price which is lower than the PN price of the current vendor"),
-        ("current_vendor_pn", "Option 3: Purchase from the current vendor at PN price"), 
-        ("place_bid", "Option 4: Place a bid for the current vendor in the current period (rejected fixed) or next period (rejected bids/discount)"),
-        ("forgo_transaction", "Option 5: Forgo the purchase request")
-    ]
-    
-    option_names = dict(options)
-    
-    # Get current option from results or session state
-    value_counts, current_option = rejected_option_value_counts(decision_data)
-    
-    # Use _default_selection key (same as Page 2 Overview tab) for consistency
-    # (read-only here: the key is initialised at app start by app.models)
-    radio_key = f"{decision_name}_default_selection"
-
-    # Top section: Current results display
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Agents", f"{len(decision_data):,}")
-    
-    with col2:
-        # Show what's configured for NEXT simulation (from session state)
-        configured_option = st.session_state.get(radio_key, current_option)
-        display_name = option_names.get(configured_option, configured_option)
-        st.metric("Configured Option", display_name.split(":")[0])  # Just "Option X"
-    
-    with col3:
-        # Show most common from CURRENT results
-        most_common_option = option_names.get(current_option, current_option)
-        st.metric("Most Common Result", most_common_option.split(":")[0])
-    
-    with col4:
-        if len(value_counts) > 0:
-            percentage = (value_counts.iloc[0] / len(decision_data)) * 100
-            st.metric("Result Frequency", f"{percentage:.1f}%")
-    
-    # Main configuration section - READ-ONLY DISPLAY
-    st.markdown("---")
-    st.markdown("**⚙️ Specific Option Configuration (Read-Only):**")
-    
-    col_radio, col_viz = st.columns([1, 1])
-    
-    with col_radio:
-        # Get current selection from session state
-        current_selection = st.session_state.get(radio_key, current_option)
-        
-        # Display selected option as read-only
-        st.success(f"✅ **Selected Option:**\n\n{option_names.get(current_selection, current_selection)}")
-        
-        st.caption("💡 To modify this setting: Go to **Page 2 → Overview Tab**")
-    
-    with col_viz:
-        # Show current results visualization
-        if len(value_counts) > 0:
-            # Create readable labels for the chart
-            readable_labels = [option_names.get(opt, opt) for opt in value_counts.index]
-            
-            st.markdown("### Current Simulation Results")
-            fig = px.pie(
-                values=value_counts.values,
-                names=readable_labels,
-                color_discrete_sequence=px.colors.qualitative.Set3
-            )
-            fig.update_layout(showlegend=True, height=400)
-            st.plotly_chart(fig, use_container_width=True, key="rejected_transaction_option_chart")
-        else:
-            st.info("No simulation data available")
-
-
-def render_rejected_bid_value(df, decision_name, decision_title, decision_data):
-    """Visualization for rejected_bid_value"""
-    st.markdown("**Not relevant given choice of Option 5**")
-

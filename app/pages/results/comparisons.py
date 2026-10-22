@@ -8,7 +8,7 @@ RunContext says whether the run compared both income specifications, and which
 single income type its keys carry.
 """
 import streamlit as st
-from app.components import show_overview
+from app.pages.results.overview import show_overview
 from app.pages.results.run_context import RunContext
 
 
