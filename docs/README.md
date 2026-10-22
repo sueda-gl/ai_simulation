@@ -185,9 +185,13 @@ results dictionary; "Compare all × Compare both" produces six sub-runs in a fix
 
 **The runner writes nothing until the results exist.** The only session writes inside
 `run_full_simulation` happen after `execute` returns, so a failed run leaves the
-session as it was. The buttons hand the runner a `RunRequest` (src/contract/plan.py)
-saying which decisions run and which use defaults; the plan builder reads the
-request, never a swapped selection.
+results, the run metadata and the vendor list as they were. The *buttons* do write
+before the run starts (app/pages/decision_execution.py): a per-tab "Run X Only"
+clears a pinned configuration of that decision (Donation Default, Disclose Income,
+Disclose Documents), and every run button records `custom_decisions` /
+`default_decisions`; those writes stay even when the run fails. The buttons hand the
+runner a `RunRequest` (src/contract/plan.py) saying which decisions run and which use
+defaults; the plan builder reads the request, never a swapped selection.
 
 The other Run buttons (per-tab "Run X Only", per-tab "Run Complete", the Results-page
 "Run Complete") all funnel into the same `run_full_simulation()` in Single Run mode. In
@@ -278,15 +282,31 @@ chosen for each decision, is identical across modes.
 
 When a run finishes, `app/simulation.py` stores `st.session_state._run_metadata`: the
 population and income modes the run actually used, the result keys, the custom and
-default decision lists, the seed and the agent count, and per result key the income
-mode each income-dependent decision actually ran with. That last one matters because
-a complete run names its result keys after the global income mode while Decision 4
-runs with its own tab's mode.
+default decision lists, the seed and the agent count, per result key the income
+mode each income-dependent decision actually ran with, the moment the run started,
+and - since 2026-10-22 - the Page 1 parameters the run used (the whole
+`SimulationParameters` snapshot as a plain dict, `RunMetadata.simulation_params`),
+the Decision 4 element the run button named (`rtd_run_element`) and the donation
+anchor weight the run ran with (the tab slider, or the pinned donation record's).
+The per-decision income modes matter because a complete run names its result keys
+after the global income mode while Decision 4 runs with its own tab's mode.
 
 The results page builds a `RunContext` (`app/pages/results/run_context.py`) from that
-metadata plus the result frames and asks *it* every question about the run's shape.
-It deliberately does **not** read the live Page-1 / Page-2 widgets: those describe the
-run being configured next, not the one on screen.
+metadata plus the result frames and asks *it* every question about the run: its
+shape, and its Page 1 values (`ctx.param(name)`, `ctx.platform_markup`,
+`ctx.periods`, ...). It deliberately does **not** read the live Page-1 / Page-2
+widgets or `st.session_state.sim_params`: those describe the run being configured
+next, not the one on screen. So editing Page 1 after a run and returning to the
+results page via "View Results" shows the run's summary, bidding explanation and
+exports unchanged (the `page1_edit_after_run` golden journey pins this). Metadata
+written before these fields existed falls back to the live values, the only ones
+such a session has.
+
+"Use This Config" (`app/state/saved_configs.py`) pins from the same `RunContext`:
+the run's seed, agent count, population mode and income mode, not the live widgets.
+When the pin is refused because another pinned decision ran with a different seed
+or agent count, the function returns the failure and the results page shows an
+error naming both runs; nothing is pinned and no success message appears.
 
 ---
 
@@ -415,7 +435,20 @@ The reasons behind behaviour that looks odd at first sight.
   file is therefore the only source of every constant.
 * **A pinned configuration must reproduce its run.** "Use This Config" stores a sha256
   of the decision's output columns; a later complete run recomputes it and refuses to
-  show results that differ.
+  show results that differ. The seed, agent count, population and income mode it
+  stores are the run's (`RunContext`), so a Page 1 edit between the run and the pin
+  cannot change what is pinned; a seed or agent-count conflict with an already pinned
+  decision is shown as an error, never reported as a save.
+* **The results page shows the run, not the widgets.** Every Page 1 value the page
+  and the exports need (markup, price range, market price, periods, duration, vendor
+  price bounds, the agent count) comes from `RunMetadata.simulation_params` through
+  `RunContext`; the same holds for the Decision 4 element flag and the donation anchor
+  mix. A Page 1 edit after a run changes the next run, never the one on screen.
+* **Page 1 reports an income maximum that is not above the minimum.** The three
+  "b - Maximum Value ($)" fields accept any number; a value at or below the minimum
+  shows one error and the discount-threshold widget is drawn as if no maximum were
+  set (the engine only clamps incomes to the maximum, so the run itself never failed -
+  only the screen used to).
 * **An absent tab key means the tab's default, never "off".** Otherwise the same visible
   settings would give different numbers depending on whether a tab had been opened.
 * **The income standard deviation divides by N − 1**, matching Stata's `egen std()`

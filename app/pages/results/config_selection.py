@@ -25,6 +25,16 @@ from app.components import rtd_page_element
 from app.reports.rtd import rtd_summary_metric_keys
 
 
+def seed_mismatch_message(failure):
+    """One sentence for the st.error shown when a configuration cannot be pinned
+    because another pinned decision ran with a different seed or agent count
+    (``save_decision_config``'s error_info)."""
+    conflicting = str(failure.get('conflicting_decision') or 'another').replace('_', ' ').title()
+    return (f"Configuration not saved: this run used seed {failure.get('new_seed')} with "
+            f"{failure.get('new_n_agents')} agents, but the pinned {conflicting} configuration "
+            f"used seed {failure.get('existing_seed')} with {failure.get('existing_n_agents')} agents.")
+
+
 def render_configuration_selection_ui(results_dict, ctx=None):
     """Render configuration selection UI for donation decision results"""
     ctx = ctx if ctx is not None else RunContext.from_session()
@@ -99,9 +109,12 @@ def render_configuration_selection_ui(results_dict, ctx=None):
                     key="save_single_config",
                     help="Save this configuration for use in combined simulations"
                 ):
-                    save_selected_configuration(result_key, result_df)
-                    st.success(f"✅ Configuration saved: {population_mode} + {income_spec_mode}")
-                    st.rerun()
+                    saved, _config, failure = save_selected_configuration(result_key, result_df)
+                    if saved:
+                        st.success(f"✅ Configuration saved: {population_mode} + {income_spec_mode}")
+                        st.rerun()
+                    else:
+                        st.error(seed_mismatch_message(failure))
         return
     
     # MULTIPLE CONFIGS or ALREADY SAVED: Show selected config and "Run Complete Simulation"

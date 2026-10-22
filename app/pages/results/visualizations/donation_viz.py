@@ -11,7 +11,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
-from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.reports.donation import (
     build_donation_default_export,
     build_donation_default_xlsx,
@@ -242,23 +241,23 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         st.markdown("Download detailed purchase request data with donation rates (one row per request)")
 
         try:
-            # Session values the pure builder needs: the vendor list, the timestamp
-            # anchors, and the Page-1 pricing parameters (Customer Price rule, COOPECON
-            # AI Agent Documentation 2026-10-07: the run's markup and price range, not
-            # the builder's defaults).
+            # Values the pure builder needs: the run's vendor list, the timestamp
+            # anchors, and the RUN's Page-1 pricing parameters (Customer Price rule,
+            # COOPECON AI Agent Documentation 2026-10-07: the run's markup and price
+            # range - RunContext, not the live widgets nor the builder's defaults).
             vendors_data = None
             if hasattr(st.session_state, 'vendors'):
                 vendors_data = st.session_state.vendors
-            sim_params = getattr(st.session_state, 'sim_params', None)
+            ctx = RunContext.from_session()
 
             transaction_records = build_donation_transaction_export(
                 df, vendors=vendors_data,
-                base_time=RunContext.from_session().base_time,
-                duration_hours=float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
-                periods=int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
-                market_price=getattr(sim_params, 'market_price', 100.0),
-                platform_markup=getattr(sim_params, 'platform_markup', 0.1),
-                price_range=getattr(sim_params, 'price_range', 0.25),
+                base_time=ctx.base_time,
+                duration_hours=ctx.duration_hours,
+                periods=ctx.periods,
+                market_price=ctx.market_price,
+                platform_markup=ctx.platform_markup,
+                price_range=ctx.price_range,
             )
 
             if len(transaction_records) > 0:

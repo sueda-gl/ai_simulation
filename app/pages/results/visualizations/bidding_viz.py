@@ -19,21 +19,16 @@ from app.reports.bidding import (
     build_bid_value_export,
     collect_bid_values,
 )
-from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.pages.results.run_context import RunContext
 
 
 def render_bid_value(df, decision_name, decision_title, decision_data):
     """Visualization for bid_value with bidding price range formula"""
 
-    # Get parameters from session state (from Page 1)
-    if hasattr(st.session_state, 'sim_params'):
-        platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)  # Default 10%
-        price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)  # Default 25%
-    else:
-        # Fallback defaults
-        platform_markup = 0.1
-        price_range = 0.25
+    # The run's Page 1 pricing parameters (RunContext, not the live widgets)
+    ctx = RunContext.from_session()
+    platform_markup = ctx.platform_markup
+    price_range = ctx.price_range
 
     # ============================================================================
     # SECTION 1: ACTUAL SIMULATION RESULTS (Request-Level)
@@ -100,14 +95,13 @@ def render_bid_value(df, decision_name, decision_title, decision_data):
                 if hasattr(st.session_state, 'vendors'):
                     vendors_data = st.session_state.vendors
 
-                # Build bid records (timestamps relative to the run's start, Page 1's
-                # period duration and period count)
-                sim_params = getattr(st.session_state, 'sim_params', None)
+                # Build bid records (timestamps relative to the run's start, the
+                # run's period duration and period count)
                 bid_records = build_bid_value_export(
                     df, vendors_data,
-                    RunContext.from_session().base_time,
-                    float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
-                    int(getattr(sim_params, 'periods', DEFAULT_PERIODS))
+                    ctx.base_time,
+                    ctx.duration_hours,
+                    ctx.periods
                 )
 
                 if len(bid_records) > 0:

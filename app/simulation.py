@@ -255,6 +255,11 @@ def _run_metadata_dict(metadata: RunMetadata) -> dict:
         'decision_income_modes': {key: dict(modes) for key, modes in metadata.decision_income_modes.items()},
         'rtd_compare_both_fallback': metadata.rtd_compare_both_fallback,
         'started_at': metadata.started_at,
+        # the Page 1 parameters, Decision 4 element flag and donation anchor weight
+        # the run used - the results page reads these, never the live widgets
+        'simulation_params': dict(metadata.simulation_params),
+        'rtd_run_element': metadata.rtd_run_element,
+        'anchor_observed_weight': metadata.anchor_observed_weight,
     }
 
 

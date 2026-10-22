@@ -34,7 +34,6 @@ from app.reports.vendor import (
     vendor_selection_breakdown_xlsx,
     vendor_selection_shares,
 )
-from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.pages.results.run_context import RunContext
 
 
@@ -213,13 +212,11 @@ def render_vendor_selection(df, decision_name, decision_title, decision_data):
         vendors_data = st.session_state.vendors
         total_vendors_available = len(vendors_data)
 
-    # Get configured price bounds for consistent normalization
-    # (Used in vendor score calculations throughout this function)
-    price_min_config = None
-    price_max_config = None
-    if hasattr(st.session_state, 'sim_params'):
-        price_min_config = getattr(st.session_state.sim_params, 'vendor_price_min', 50.0)
-        price_max_config = getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
+    # The run's price bounds for consistent normalization (RunContext: the
+    # run's own Page 1 parameters, not the live widgets)
+    ctx = RunContext.from_session()
+    price_min_config = ctx.vendor_price_min
+    price_max_config = ctx.vendor_price_max
 
     # Vendors selected, request / transaction shares and the dominant shares
     shares = vendor_selection_shares(decision_data, df)
@@ -358,18 +355,13 @@ def _render_vendor_period_breakdown(df, vendors_data, vendor_counts):
     st.markdown("---")
     st.markdown("**📅 Vendor Selection Breakdown by Period:**")
     
-    # Breakdown by Period
-    st.markdown("---")
-    st.markdown("**📅 Vendor Selection Breakdown by Period:**")
-    
     # Check if we have data (requests + vendors)
     has_purchase_requests = 'purchase_requests' in df.columns
     has_any_vendor_data = (len(vendor_counts) > 0) or (vendors_data and len(vendors_data) > 0)
     
     if has_purchase_requests and has_any_vendor_data:
-        # Page 1's period duration
-        duration_hours = float(getattr(getattr(st.session_state, 'sim_params', None),
-                                       'duration_hours', DEFAULT_DURATION_HOURS))
+        # the run's period duration
+        duration_hours = RunContext.from_session().duration_hours
         
         # Collect data by period
         period_data = collect_period_data(df, duration_hours)
@@ -446,32 +438,21 @@ def _render_purchase_request_export(df):
         if isinstance(results, dict):
             vendors_for_export = results.get('vendors') or results.get('config', {}).get('vendors')
     
-    # Get configured price bounds for consistent normalization
-    price_min_config = None
-    price_max_config = None
-    if hasattr(st.session_state, 'sim_params'):
-        price_min_config = getattr(st.session_state.sim_params, 'vendor_price_min', 50.0)
-        price_max_config = getattr(st.session_state.sim_params, 'vendor_price_max', 150.0)
-
-    # Get the pricing parameters the customer price formula uses
-    platform_markup = 0.1
-    price_range = 0.25
-    if hasattr(st.session_state, 'sim_params'):
-        platform_markup = getattr(st.session_state.sim_params, 'platform_markup', 0.1)
-        price_range = getattr(st.session_state.sim_params, 'price_range', 0.25)
+    # The run's price bounds (normalization) and the pricing parameters the
+    # customer price formula uses - RunContext, not the live Page 1 widgets
+    ctx = RunContext.from_session()
 
     # Build purchase request level data (timestamps relative to the run's start,
-    # Page 1's period duration and period count)
-    sim_params = getattr(st.session_state, 'sim_params', None)
+    # the run's period duration and period count)
     purchase_request_data = build_purchase_request_export(
         df, vendors_for_export,
-        RunContext.from_session().base_time,
-        float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
-        int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
-        platform_markup=platform_markup,
-        price_range=price_range,
-        price_min_config=price_min_config,
-        price_max_config=price_max_config
+        ctx.base_time,
+        ctx.duration_hours,
+        ctx.periods,
+        platform_markup=ctx.platform_markup,
+        price_range=ctx.price_range,
+        price_min_config=ctx.vendor_price_min,
+        price_max_config=ctx.vendor_price_max
     )
     
     if purchase_request_data and len(purchase_request_data) > 0:

@@ -49,7 +49,7 @@ from app.reports.rtd import (
     rtd_stata_bins,
 )
 
-from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS, TimestampConverter
+from app.reports.timestamps import TimestampConverter
 from app.pages.results.run_context import RunContext
 
 # The pure builders now live in app/reports/{transactions,rtd}.py. These aliases keep
@@ -131,22 +131,21 @@ def render_purchase_vs_bid(df, decision_name, decision_title, decision_data):
         st.markdown("**📥 Export Purchase Now vs Bid Decision Data**")
         st.caption("Download detailed request-level data for all regular customers with pricing and transaction information")
         
-        # Build transaction records (the pricing parameters and the vendor list
-        # the builder needs come off the session; the defaults match the
-        # fallbacks the builder used when it read them itself)
-        sim_params = getattr(st.session_state, 'sim_params', None)
+        # Build transaction records: the pricing parameters are the RUN's
+        # (RunContext, not the live Page 1 widgets); the vendor list is the run's
+        ctx = RunContext.from_session()
         transaction_records = build_purchase_vs_bid_export(
             df,
             # The converter's base time (the run's start), period duration and
-            # period count come off the session, so the page builds it
+            # period count are the run's, so the page builds it
             ts_converter=TimestampConverter(
-                RunContext.from_session().base_time,
-                float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
-                int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
+                ctx.base_time,
+                ctx.duration_hours,
+                ctx.periods,
             ),
-            market_price=getattr(sim_params, 'market_price', 100.0),
-            platform_markup=getattr(sim_params, 'platform_markup', 0.1),
-            price_range=getattr(sim_params, 'price_range', 0.25),
+            market_price=ctx.market_price,
+            platform_markup=ctx.platform_markup,
+            price_range=ctx.price_range,
             vendors=getattr(st.session_state, 'vendors', None),
         )
         
@@ -218,10 +217,8 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
         "forgo_transaction": "Option 5"
     }
     
-    # Check the actual simulation execution mode from session state
-    simulation_mode = "unknown"
-    if hasattr(st.session_state, 'sim_params') and hasattr(st.session_state.sim_params, 'simulation_execution_mode'):
-        simulation_mode = st.session_state.sim_params.simulation_execution_mode
+    # The execution mode the run actually used (RunContext, not the live widget)
+    simulation_mode = str(RunContext.from_session().param('simulation_execution_mode', 'unknown'))
     
     # Analyze the prioritized lists from agent data
     st.info("ℹ️ **Note**: Each agent has a prioritized list of default options (1-5 options). The list shows their order of preference when transactions are rejected.")

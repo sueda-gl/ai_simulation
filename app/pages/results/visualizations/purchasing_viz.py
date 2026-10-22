@@ -31,7 +31,6 @@ from app.reports.purchasing import (
     timestamps_by_customer_type,
     top_agents_by_quantity,
 )
-from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.pages.results.run_context import RunContext
 
 
@@ -88,11 +87,8 @@ def _render_quantity_distribution(df, decision_name, decision_data):
     
     with col_stats:
         st.markdown("**📈 Statistics**")
-        # Get number of periods from simulation config
-        if hasattr(st.session_state, 'sim_params'):
-            periods = st.session_state.sim_params.periods
-        else:
-            periods = 15  # default
+        # the run's period count (RunContext, not the live Page 1 widget)
+        periods = RunContext.from_session().param('periods', 15)
         
         stats_df = quantity_stats_frame(decision_data, periods)
         st.dataframe(stats_df, use_container_width=True, hide_index=True)
@@ -145,11 +141,8 @@ def _render_requests_by_customer_type(df, decision_name):
             st.markdown("**📊 Detailed Analysis by Customer Type**")
             st.caption("Purchase request quantity distribution and statistics for each customer type")
             
-            # Get number of periods for per-period calculations
-            if hasattr(st.session_state, 'sim_params'):
-                periods = st.session_state.sim_params.periods
-            else:
-                periods = 15  # default
+            # the run's period count, for per-period calculations
+            periods = RunContext.from_session().param('periods', 15)
             
             
             # Create three sub-sections
@@ -280,10 +273,11 @@ def _render_request_timing(df):
         all_timestamps = collect_purchase_timestamps(df)
         
         if len(all_timestamps) > 0:
-            # Get simulation parameters for period breakdown
-            if hasattr(st.session_state, 'sim_params'):
-                periods = st.session_state.sim_params.periods
-                duration_hours = st.session_state.sim_params.duration_hours
+            # the run's period count and duration, for the period breakdown
+            ctx = RunContext.from_session()
+            if ctx.simulation_params:
+                periods = ctx.param('periods')
+                duration_hours = ctx.param('duration_hours')
                 term_duration = periods * duration_hours
             else:
                 term_duration = max(all_timestamps) if all_timestamps else 30
@@ -453,12 +447,10 @@ def _render_purchasing_exports(df):
         
         try:
             # Flatten purchase_requests to a transaction-level DataFrame (timestamps
-            # relative to the run's start, Page 1's period duration and count)
-            sim_params = getattr(st.session_state, 'sim_params', None)
+            # relative to the run's start, the run's period duration and count)
+            ctx = RunContext.from_session()
             transactions_df = build_transaction_export(
-                df, RunContext.from_session().base_time,
-                float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
-                int(getattr(sim_params, 'periods', DEFAULT_PERIODS))
+                df, ctx.base_time, ctx.duration_hours, ctx.periods
             )
             
             if transactions_df is not None:
@@ -494,13 +486,10 @@ def _render_purchasing_exports(df):
         st.caption("Download aggregated purchasing data at the agent level with breakdown by period")
         
         try:
-            # Get simulation parameters for period breakdown
-            if hasattr(st.session_state, 'sim_params'):
-                periods = st.session_state.sim_params.periods
-                duration_hours = st.session_state.sim_params.duration_hours
-            else:
-                periods = 15
-                duration_hours = 2.0
+            # the run's period count and duration, for the period breakdown
+            ctx = RunContext.from_session()
+            periods = ctx.param('periods', 15)
+            duration_hours = ctx.param('duration_hours', 2.0)
             
             # Build agent-level data
             agent_level_data = build_agent_level_purchases(df, periods, duration_hours)
@@ -543,13 +532,10 @@ def render_purchasing_frequency(df, decision_name, decision_title, decision_data
         st.warning("No purchase_requests data available for frequency visualization")
         return
     
-    # Get simulation parameters
-    if hasattr(st.session_state, 'sim_params'):
-        periods = st.session_state.sim_params.periods
-        duration_hours = st.session_state.sim_params.duration_hours
-    else:
-        periods = 15
-        duration_hours = 2.0
+    # the run's period count and duration (RunContext, not the live widgets)
+    ctx = RunContext.from_session()
+    periods = ctx.param('periods', 15)
+    duration_hours = ctx.param('duration_hours', 2.0)
     
     # Extract all timestamps from purchase_requests for analysis
     all_timestamps = collect_timestamps(df)

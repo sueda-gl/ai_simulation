@@ -21,16 +21,35 @@ property here; the semantics are the ones the page had when it read those keys:
 * ``is_compare_all`` / ``is_compare_both`` come from the effective modes the
   plan ran with (they are what the result keys were built from);
 * ``income_type`` normalises the effective income mode case-insensitively, as
-  the comparison grids always did.
+  the comparison grids always did;
+* ``param(name)`` / ``periods`` / ``platform_markup`` ... are the Page 1
+  parameters the run USED (``RunMetadata.simulation_params``), ``rtd_run_element``
+  the Decision 4 element its run button named and ``anchor_observed_weight`` the
+  donation anchor weight it ran with - never ``st.session_state.sim_params`` or the
+  live keys, which a Page 1 / Page 2 edit after the run has moved on.  Metadata
+  from before these were recorded (2026-10-22) falls back to the live values, the
+  only ones such a session has.
 """
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 import streamlit as st
 
 from app.models import ALL_DECISIONS
+from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
+
+
+def _as_plain_dict(sim_params: Any) -> Dict[str, Any]:
+    """A SimulationParameters object (or any attribute bag) as a plain dict - the
+    fallback for a session whose run metadata predates ``simulation_params``."""
+    if sim_params is None:
+        return {}
+    if dataclasses.is_dataclass(sim_params) and not isinstance(sim_params, type):
+        return dataclasses.asdict(sim_params)
+    return {k: v for k, v in vars(sim_params).items() if not k.startswith("_")}
 
 # Result keys of a "Compare all" run, in the order the page probes them.
 COMPARE_ALL_KEYS: Tuple[str, ...] = (
@@ -70,6 +89,14 @@ class RunContext:
     # ISO 8601 moment the run was started (``RunMetadata.started_at``); None when the
     # metadata does not carry it
     started_at: Optional[str] = None
+    # The Page 1 parameters the run used: SimulationParameters as a plain dict
+    # (``RunMetadata.simulation_params``); {} when nothing is known
+    simulation_params: Dict[str, Any] = field(default_factory=dict)
+    # The Decision 4 element the run button named ('ttp' ... 'flexibility',
+    # 'aggregation', or None for a whole-decision / complete run)
+    rtd_run_element: Optional[str] = None
+    # The donation anchor weight the run used (observed share; predicted = 1 - it)
+    anchor_observed_weight: float = 0.75
 
     # ------------------------------------------------------------ factory
     @classmethod
@@ -108,6 +135,20 @@ class RunContext:
         custom = metadata.get("custom_decisions", st.session_state.get("custom_decisions", []) or [])
         default = metadata.get("default_decisions", st.session_state.get("default_decisions", []) or [])
 
+        # The run's Page 1 parameters, Decision 4 element and anchor weight; metadata
+        # written before they were recorded falls back to the live values
+        if "simulation_params" in metadata:
+            simulation_params = dict(metadata["simulation_params"] or {})
+        else:
+            simulation_params = _as_plain_dict(st.session_state.get("sim_params"))
+        if "rtd_run_element" in metadata:
+            rtd_run_element = metadata["rtd_run_element"]
+        else:
+            rtd_run_element = st.session_state.get("rtd_run_element")
+        anchor = metadata.get("anchor_observed_weight")
+        if anchor is None:
+            anchor = st.session_state.get("anchor_observed_weight", 0.75)
+
         return cls(
             results=results,
             is_comparison=bool(metadata.get("is_comparison", len(result_keys) > 1)),
@@ -118,12 +159,53 @@ class RunContext:
             custom_decisions=tuple(custom),
             default_decisions=tuple(default),
             seed=metadata.get("seed"),
-            n_agents=metadata.get("n_agents"),
+            n_agents=metadata.get("n_agents", st.session_state.get("n_agents")),
             decision_income_modes={str(k): dict(v) for k, v in
                                    (metadata.get("decision_income_modes") or {}).items()},
             rtd_compare_both_fallback=bool(metadata.get("rtd_compare_both_fallback", False)),
             started_at=metadata.get("started_at") or None,
+            simulation_params=simulation_params,
+            rtd_run_element=rtd_run_element,
+            anchor_observed_weight=float(anchor),
         )
+
+    # --------------------------------------------------- the run's Page 1 values
+    def param(self, name: str, default: Any = None) -> Any:
+        """The Page 1 parameter ``name`` (a SimulationParameters attribute) the run
+        used; ``default`` when the run did not record it."""
+        return self.simulation_params.get(name, default)
+
+    @property
+    def periods(self) -> int:
+        return int(self.param("periods", DEFAULT_PERIODS))
+
+    @property
+    def duration_hours(self) -> float:
+        return float(self.param("duration_hours", DEFAULT_DURATION_HOURS))
+
+    @property
+    def market_price(self) -> float:
+        return float(self.param("market_price", 100.0))
+
+    @property
+    def platform_markup(self) -> float:
+        return float(self.param("platform_markup", 0.1))
+
+    @property
+    def price_range(self) -> float:
+        return float(self.param("price_range", 0.25))
+
+    @property
+    def vendor_price_min(self) -> float:
+        return float(self.param("vendor_price_min", 50.0))
+
+    @property
+    def vendor_price_max(self) -> float:
+        return float(self.param("vendor_price_max", 150.0))
+
+    @property
+    def anchor_predicted_weight(self) -> float:
+        return 1 - self.anchor_observed_weight
 
     # ----------------------------------------------------------- base time
     @property

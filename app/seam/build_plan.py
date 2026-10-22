@@ -42,6 +42,7 @@ Rules the builder follows (each noted inline where it applies):
 """
 
 import copy
+import dataclasses
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -479,6 +480,18 @@ def build_simulation_params(snapshot: Mapping) -> dict:
     return sim_config
 
 
+def simulation_params_snapshot(sim_params: Any) -> Dict[str, Any]:
+    """``RunMetadata.simulation_params``: every Page 1 parameter the run used, as a
+    plain dict copied from the ``sim_params`` object (a SimulationParameters
+    dataclass, or any object with attributes).  The results page and the exports
+    read the run's values from here, never from the live Page 1 object."""
+    if sim_params is None:
+        return {}
+    if dataclasses.is_dataclass(sim_params) and not isinstance(sim_params, type):
+        return dataclasses.asdict(sim_params)          # deep-copies nested values
+    return copy.deepcopy({k: v for k, v in vars(sim_params).items() if not k.startswith("_")})
+
+
 def build_purchasing_limits(snapshot: Mapping) -> Optional[dict]:
     """sim_params.purchasing_limits when enabled on Page 1, else None (yaml value stays)."""
     sim_params = snapshot["sim_params"]
@@ -514,6 +527,18 @@ def session_donation_coefficient_set(snapshot: Mapping, income_mode: str) -> Opt
         "beta_study": {label: snapshot[key(stem)] for stem, label in _DONATION_STUDY_KEYS.items()},
         "beta_hh": snapshot[key("hh")],
     }
+
+
+def donation_anchor_weights(snapshot: Mapping, saved: Optional[Mapping]) -> Dict[str, Any]:
+    """The donation anchor weights a run uses: the tab slider
+    (``anchor_observed_weight``), overridden by a pinned donation record's.
+    Shared by the Decision 3 patch and the run metadata (the results page shows
+    the run's mix, not the live slider)."""
+    anchor_observed = snapshot.get("anchor_observed_weight", 0.75)
+    anchor_weights: Dict[str, Any] = {"observed": anchor_observed, "predicted": 1 - anchor_observed}
+    if saved:
+        anchor_weights.update(((saved.get("stochastic_params") or {}).get("anchor_weights") or {}))
+    return anchor_weights
 
 
 def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
@@ -568,10 +593,7 @@ def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
         stochastic["quintile_scale_factors"] = copy.deepcopy(snapshot["donation_quintile_scale_factors"])
 
     # Anchor weights: the tab slider, overridden by the saved record
-    anchor_observed = snapshot.get("anchor_observed_weight", 0.75)
-    anchor_weights: Dict[str, Any] = {"observed": anchor_observed, "predicted": 1 - anchor_observed}
-    if saved:
-        anchor_weights.update(((saved.get("stochastic_params") or {}).get("anchor_weights") or {}))
+    anchor_weights = donation_anchor_weights(snapshot, saved)
 
     patch: Dict[str, Any] = {
         "regression": {"income_mode": actual_inc_mode},
@@ -1303,6 +1325,11 @@ def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFa
         is_comparison=len(sub_runs) > 1,
         decision_income_modes=decision_income_modes,
         rtd_compare_both_fallback=rtd_compare_both_fallback,
+        # what the results page and the exports read instead of the live widgets
+        simulation_params=simulation_params_snapshot(snapshot.get("sim_params")),
+        rtd_run_element=snapshot.get("rtd_run_element"),
+        anchor_observed_weight=donation_anchor_weights(
+            snapshot, facts.saved_configs.get("donation_default"))["observed"],
     )
 
 
@@ -1368,6 +1395,8 @@ __all__ = [
     "build_rejected_transaction_patch",
     "build_run_plan",
     "build_saved_expectations",
+    "donation_anchor_weights",
+    "simulation_params_snapshot",
     "build_simulation_params",
     "collect_decision_settings",
     "decision_income_mode",

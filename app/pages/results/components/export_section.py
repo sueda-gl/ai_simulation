@@ -2,7 +2,6 @@ import streamlit as st
 from datetime import datetime
 from src.contract.columns import rename_consensus_columns
 from app.models import initialize_session_state
-from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
 from app.reports import (
     apply_export_price_formatting,
     build_agent_level_dataframe,
@@ -539,11 +538,10 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
             vendors_data = df.attrs['vendors']
         
         try:
-            # Pricing parameters used to be read off st.session_state.sim_params
-            # inside the builders; the page reads them here and passes the VALUES in.
-            sim_params = getattr(st.session_state, 'sim_params', None)
-            vendor_price_min = getattr(sim_params, 'vendor_price_min', 50.0)
-            vendor_price_max = getattr(sim_params, 'vendor_price_max', 150.0)
+            # The pricing parameters are the RUN's (RunContext, from the run
+            # metadata), not the live Page 1 widgets; the page passes the VALUES in.
+            vendor_price_min = ctx.vendor_price_min
+            vendor_price_max = ctx.vendor_price_max
 
             # Build agent-level and transaction-level DataFrames
             agent_df = build_agent_level_dataframe(
@@ -556,14 +554,14 @@ def render_export_section(df, results_dict=None, using_selected_config=False):
                 df,
                 vendors_data=vendors_data,
                 # The three values the builder's TimestampConverter needs: the
-                # run's start (RunContext.base_time) and Page 1's period duration
+                # run's start (RunContext.base_time) and the run's period duration
                 # and period count.
                 base_time=ctx.base_time,
-                duration_hours=float(getattr(sim_params, 'duration_hours', DEFAULT_DURATION_HOURS)),
-                periods=int(getattr(sim_params, 'periods', DEFAULT_PERIODS)),
-                market_price=getattr(sim_params, 'market_price', 100.0),
-                platform_markup=getattr(sim_params, 'platform_markup', 0.1),
-                price_range=getattr(sim_params, 'price_range', 0.25),
+                duration_hours=ctx.duration_hours,
+                periods=ctx.periods,
+                market_price=ctx.market_price,
+                platform_markup=ctx.platform_markup,
+                price_range=ctx.price_range,
                 vendor_price_min=vendor_price_min,
                 vendor_price_max=vendor_price_max,
             )

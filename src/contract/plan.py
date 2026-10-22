@@ -205,6 +205,15 @@ class RunMetadata:
     # The moment the run was started (ISO 8601, ``app.simulation.run_started_at``):
     # the base time every export's timestamp column is relative to.
     started_at: str = ""
+    # The Page 1 parameters the run used (the SimulationParameters snapshot as a
+    # plain dict), the Decision 4 element the run button named (rtd_run_element:
+    # an element, 'aggregation' or None) and the donation anchor weight the run
+    # used (the tab slider, or the pinned donation record's).  The results page
+    # and the exports read these - never the live widgets - so a Page 1 edit
+    # after a run does not change what the page shows for that run.
+    simulation_params: Dict[str, Any] = field(default_factory=dict)
+    rtd_run_element: Optional[str] = None
+    anchor_observed_weight: Optional[float] = None
 
 
 @dataclass(frozen=True)

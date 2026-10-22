@@ -1170,25 +1170,52 @@ def _set_income_max(attr, text):
             pass
 
 
+#: Per income distribution: the sim_params attributes holding its "a - Minimum
+#: Value ($)" and "b - Maximum Value ($)", and the span the threshold widget uses
+#: above the minimum when no maximum is set.
+_INCOME_RANGE_ATTRS = {
+    "lognormal": ("lognormal_min", "lognormal_max", 100000),
+    "generalised_gamma": ("gg_min", "gg_max", 200000),
+    "dagum": ("dagum_min", "dagum_max", 150000),
+}
+
+#: Shown on Page 1 when "b - Maximum Value ($)" is not above "a - Minimum Value ($)".
+INCOME_MAX_NOT_ABOVE_MIN = "The maximum value must be above the minimum value."
+
+
+def _income_range_for_threshold(sim_params, distribution):
+    """(income_min, income_max) bounding the discount-threshold widget for the
+    selected income distribution.
+
+    A maximum that is not above the minimum is reported with st.error and then
+    ignored - the widget is drawn as if no maximum were set - so the page cannot
+    raise Streamlit's value-above-maximum error. (The engine itself only clamps
+    incomes to the maximum, so the run would not fail; only the screen did.)
+    """
+    if distribution not in _INCOME_RANGE_ATTRS:
+        return sim_params.income_min, sim_params.income_max
+
+    min_attr, max_attr, fallback_span = _INCOME_RANGE_ATTRS[distribution]
+    income_min = getattr(sim_params, min_attr)
+    income_max = getattr(sim_params, max_attr)   # None (or 0) = no maximum
+
+    if income_max and income_max <= income_min:
+        st.error(INCOME_MAX_NOT_ABOVE_MIN)
+        income_max = None
+    if not income_max:
+        income_max = income_min + fallback_span
+    return income_min, income_max
+
+
 def _render_discount_threshold():
     """💰 Discount Threshold, bounded by the income distribution's range."""
     # Discount Threshold Configuration
     st.markdown("### 💰 Discount Threshold")
 
-    # Calculate dynamic min/max based on income distribution
-    income_min = st.session_state.sim_params.income_min
-    income_max = st.session_state.sim_params.income_max
-
-    # For distributions without explicit min/max, use reasonable defaults
-    if st.session_state.page1_income_distribution == "lognormal":
-        income_min = st.session_state.sim_params.lognormal_min
-        income_max = st.session_state.sim_params.lognormal_max if st.session_state.sim_params.lognormal_max else income_min + 100000
-    elif st.session_state.page1_income_distribution == "generalised_gamma":
-        income_min = st.session_state.sim_params.gg_min
-        income_max = st.session_state.sim_params.gg_max if st.session_state.sim_params.gg_max else income_min + 200000
-    elif st.session_state.page1_income_distribution == "dagum":
-        income_min = st.session_state.sim_params.dagum_min
-        income_max = st.session_state.sim_params.dagum_max if st.session_state.sim_params.dagum_max else income_min + 150000
+    # Calculate dynamic min/max based on income distribution (a maximum that is
+    # not above the minimum is reported and treated as "no maximum")
+    income_min, income_max = _income_range_for_threshold(
+        st.session_state.sim_params, st.session_state.page1_income_distribution)
 
     # Ensure discount threshold is within bounds before creating the widget
     # Read from widget key first (for persistence)

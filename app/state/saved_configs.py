@@ -19,6 +19,35 @@ from app.seam.config_repo import get_config_repo
 from app.models import DONATION_SIGMA_OVERALL, load_donation_coefficients_from_yaml
 
 
+def _run_context():
+    """The run on screen (``RunContext`` over ``_run_metadata``): what "Use This
+    Config" pins - its seed, agent count, population and income mode - comes
+    from here, never from the live Page 1 widgets, which may have moved on since
+    the run.  (Imported lazily: app.pages.results imports this module.)"""
+    from app.pages.results.run_context import RunContext
+    return RunContext.from_session()
+
+
+def _run_seed_and_agents():
+    """(seed, n_agents) of the run on screen.  A session without run metadata (a
+    foreign session) falls back to the live Page 1 values, as the store always
+    did for it."""
+    ctx = _run_context()
+    if ctx.seed is not None and ctx.n_agents is not None:
+        return ctx.seed, ctx.n_agents
+    if hasattr(st.session_state, 'sim_params') and st.session_state.sim_params.simulation_mode == "Single Run":
+        seed = st.session_state.get('seed_input', st.session_state.get('seed', 42))
+    else:
+        seed = st.session_state.get('base_seed_input', st.session_state.get('base_seed', 42))
+    return seed, st.session_state.get('n_agents', 1000)
+
+
+def _run_population_mode():
+    """The population mode of the run on screen; the live Page 1 value only for a
+    session whose run metadata does not record it."""
+    return _run_context().effective_population_mode or st.session_state.get('population_mode', 'Copula (synthetic)')
+
+
 # ==================== DONATION DEFAULT (Decision 3) CONFIG SELECTION ====================
 # The donation triplet (details / params / metrics) plus the donation-only
 # wrappers over the unified store below.
@@ -26,6 +55,11 @@ from app.models import DONATION_SIGMA_OVERALL, load_donation_coefficients_from_y
 def save_selected_configuration(result_key, result_df):
     """
     Save the selected donation configuration for later use in combined simulations.
+
+    Returns ``save_decision_config``'s ``(success, config, error_info)`` triple:
+    a seed / agent-count mismatch with an already pinned decision is NOT saved,
+    and ``error_info`` says which decision conflicts and with what values, so the
+    screen can say so instead of reporting a save that never happened.
 
     DEPRECATED: This is a wrapper for backwards compatibility.
     New code should use: save_decision_config('donation_default', result_key, result_df, params, metrics, extra_data)
@@ -54,12 +88,10 @@ def save_selected_configuration(result_key, result_df):
         'income_spec_mode': config_details['income_spec_mode']
     }
 
-    # Use unified save function
-    success, config, error_info = save_decision_config(
+    # Use unified save function; the failure travels back to the screen
+    return save_decision_config(
         'donation_default', result_key, result_df, params, metrics, extra_data
     )
-
-    return config
 
 
 def extract_configuration_details(result_key):
@@ -68,8 +100,8 @@ def extract_configuration_details(result_key):
     # Population mode detection (the seam's parser of a Compare-all result key)
     population_mode = get_population_mode_from_result_key(result_key)
     if population_mode is None:
-        # For single-mode results, use current session state
-        population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
+        # For single-mode results, the mode the RUN used (not the live widget)
+        population_mode = _run_population_mode()
 
     # Income mode detection
     if 'categorical' in result_key:
@@ -77,8 +109,8 @@ def extract_configuration_details(result_key):
     elif 'continuous' in result_key:
         income_spec_mode = 'continuous only'
     else:
-        # For single-mode results, use current session state
-        income_spec_mode = st.session_state.get('income_spec_mode', 'categorical only')
+        # For single-mode results, the mode the RUN used (not the live widget)
+        income_spec_mode = _run_context().effective_income_mode
 
     return {
         'population_mode': population_mode,
@@ -194,8 +226,8 @@ def extract_disclose_income_configuration_details(result_key):
     elif 'continuous' in result_key.lower():
         income_mode = 'Continuous only'
     else:
-        # Use current session state value
-        income_mode = st.session_state.get('di_income_mode', 'Categorical only')
+        # the mode the RUN used (not the live tab value)
+        income_mode = _run_context().effective_income_mode
     
     return {
         'income_mode': income_mode
@@ -265,7 +297,7 @@ def extract_disclose_documents_configuration_details(result_key):
     elif 'continuous' in result_key.lower():
         income_mode = 'Continuous only'
     else:
-        income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
+        income_mode = _run_context().effective_income_mode   # the run's, not the live tab's
     return {'income_mode': income_mode}
 
 
@@ -345,7 +377,7 @@ def extract_rejected_transaction_configuration_details(result_key):
     elif 'continuous' in key:
         income_mode = 'Continuous only'
     else:
-        income_mode = str(st.session_state.get('rtd_income_mode', 'Continuous only'))
+        income_mode = str(_run_context().effective_income_mode)   # the run's, not the live tab's
         if 'compare' in income_mode.lower() or 'both' in income_mode.lower():
             income_mode = 'Continuous only'   # a single cell always has one mode
     population_mode = extract_configuration_details(result_key)['population_mode']
@@ -505,13 +537,9 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
             - config: The saved config dict (if successful)
             - error_info: Dict with seed mismatch details (if failed)
     """
-    # Get seed used during the original run
-    if hasattr(st.session_state, 'sim_params') and st.session_state.sim_params.simulation_mode == "Single Run":
-        original_seed = st.session_state.get('seed_input', st.session_state.get('seed', 42))
-    else:
-        original_seed = st.session_state.get('base_seed_input', st.session_state.get('base_seed', 42))
-    
-    original_n_agents = st.session_state.get('n_agents', 1000)
+    # The seed and agent count the run on screen used (its metadata), so the pin
+    # reproduces that run even after Page 1 has been edited
+    original_seed, original_n_agents = _run_seed_and_agents()
 
     # Record what this decision produced, so a later complete simulation can
     # prove it reproduced the run the user pinned.

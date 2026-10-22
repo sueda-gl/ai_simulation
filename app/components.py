@@ -27,9 +27,10 @@ def rtd_page_element():
     from app.pages.results.run_context import RunContext
     from app.reports.rtd import RTD_AGGREGATION_ELEMENT, RTD_ALL_ELEMENTS
 
-    if not RunContext.from_session().is_individual_run('rejected_transaction_defaults'):
+    ctx = RunContext.from_session()
+    if not ctx.is_individual_run('rejected_transaction_defaults'):
         return None
-    element = st.session_state.get('rtd_run_element')
+    element = ctx.rtd_run_element      # the run's flag, not the live tab's
     if element in RTD_ALL_ELEMENTS or element == RTD_AGGREGATION_ELEMENT:
         return element
     return None
@@ -76,11 +77,13 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
     # Documents results page. Detected via the DD-only run flag (the run's own
     # custom-decision list, i.e. what actually ran).
     from app.pages.results.run_context import RunContext
-    is_dd_focus = RunContext.from_session().custom_decisions == ('disclose_documents',)
+    ctx = RunContext.from_session()
+    is_dd_focus = ctx.custom_decisions == ('disclose_documents',)
     
-    # Display anchor weights info (donation-specific; hidden on Decision 4 model runs)
+    # Display anchor weights info (donation-specific; hidden on Decision 4 model runs):
+    # the mix the RUN used, not the live slider
     if 'rtd_choice_length' not in df.columns or 'donation_default' in df.columns:
-        st.caption(f"📊 Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
+        st.caption(f"📊 Anchor mix: {ctx.anchor_observed_weight:.2f} observed | {ctx.anchor_predicted_weight:.2f} predicted")
 
     # Headline decision drives the metric layout. "Traits Available" / "Decisions Computed"
     # are deliberately not shown. Priority mirrors the old headline metric:

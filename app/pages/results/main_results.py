@@ -235,7 +235,7 @@ def _render_overview_section(results_dict, ctx, has_explicit_donation_config):
         if 'rtd_choice_length' in df.columns and 'donation_default' not in df.columns:
             st.caption(f"📊 Mode: {mode_name.title()}")
         else:
-            st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {st.session_state.anchor_observed_weight:.2f} observed | {1 - st.session_state.anchor_observed_weight:.2f} predicted")
+            st.caption(f"📊 Mode: {mode_name.title()} | Anchor mix: {ctx.anchor_observed_weight:.2f} observed | {ctx.anchor_predicted_weight:.2f} predicted")
 
         # Check if we should enable selection for individual donation runs (Decision 4's
         # "Use This Config" renders under its detailed results, not in this overview)
@@ -412,31 +412,33 @@ def render_single_run_results():
 
         st.markdown("---")
 
-    # Show parameter summary
+    # Show parameter summary: the parameters THIS run used (RunContext, from the
+    # run metadata), not the live Page 1 widgets a later edit may have moved
     with st.expander("📊 Simulation Parameters Summary", expanded=False):
         col1, col2, col3 = st.columns(3)
+        p = ctx.param
 
         with col1:
             st.markdown("**Time & Market**")
-            st.write(f"- Periods: {st.session_state.sim_params.periods}")
-            st.write(f"- Duration: {st.session_state.sim_params.duration_hours} hours/period")
-            st.write(f"- Vendors: {st.session_state.sim_params.num_vendors}")
-            st.write(f"- Market Price: ${st.session_state.sim_params.market_price:.2f}")
+            st.write(f"- Periods: {p('periods')}")
+            st.write(f"- Duration: {p('duration_hours')} hours/period")
+            st.write(f"- Vendors: {p('num_vendors')}")
+            st.write(f"- Market Price: ${p('market_price', 0.0):.2f}")
 
         with col2:
             st.markdown("**Product & Pricing**")
-            st.write(f"- Products/Vendor: {st.session_state.sim_params.products_per_vendor}")
-            st.write(f"- Bidding %: {st.session_state.sim_params.bidding_percentage:.0%}")
-            st.write(f"- Platform Markup: {st.session_state.sim_params.platform_markup:.0%}")
-            st.write(f"- Price Range: ±{st.session_state.sim_params.price_range:.0%}")
+            st.write(f"- Products/Vendor: {p('products_per_vendor')}")
+            st.write(f"- Bidding %: {p('bidding_percentage', 0.0):.0%}")
+            st.write(f"- Platform Markup: {p('platform_markup', 0.0):.0%}")
+            st.write(f"- Price Range: ±{p('price_range', 0.0):.0%}")
 
         with col3:
             st.markdown("**Income & Agents**")
-            st.write(f"- Distribution: {st.session_state.sim_params.income_distribution}")
-            st.write(f"- Range: ${st.session_state.sim_params.income_min:.0f} - ${st.session_state.sim_params.income_max:.0f}")
-            st.write(f"- {st.session_state.sim_params.income_avg_type.title()}: ${st.session_state.sim_params.income_avg:.0f}")
-            st.write(f"- Discount Threshold: ${st.session_state.sim_params.discount_income_threshold:.0f}")
-            st.write(f"- Agents: {st.session_state.n_agents}")
+            st.write(f"- Distribution: {p('income_distribution')}")
+            st.write(f"- Range: ${p('income_min', 0.0):.0f} - ${p('income_max', 0.0):.0f}")
+            st.write(f"- {str(p('income_avg_type', '')).title()}: ${p('income_avg', 0.0):.0f}")
+            st.write(f"- Discount Threshold: ${p('discount_income_threshold', 0.0):.0f}")
+            st.write(f"- Agents: {ctx.n_agents}")
             # the number of decisions THIS run executed (custom + default)
             st.write(f"- Decisions: {ctx.num_decisions}")
 
