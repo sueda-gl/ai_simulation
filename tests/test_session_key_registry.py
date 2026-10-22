@@ -129,8 +129,8 @@ class _ScopeIndex:
 
     Two bindings count: ``k = "literal"`` / ``k = f"..."`` (every such binding
     above the use, because the name is often assigned in several branches of an
-    if/elif before the lookup) and ``for k in ("a", f"b_{x}")`` (the loop
-    variable stands for every element).  Dict literals are indexed too, for the
+    if/elif before the lookup) and ``for k in ("a", f"b_{x}")``, as a statement or
+    in a comprehension (the loop variable stands for every element).  Dict literals are indexed too, for the
     seeding loops in ``models.initialize_session_state``.
 
     One index is built per function and per module; a use resolves against its
@@ -154,7 +154,8 @@ class _ScopeIndex:
                     for elt in node.value.elts:
                         for spec in _literal_specs(elt):
                             self.looped[name].append(spec)
-            elif isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+            elif isinstance(node, (ast.For, ast.comprehension)) \
+                    and isinstance(node.target, ast.Name):
                 if isinstance(node.iter, (ast.List, ast.Tuple, ast.Set)):
                     for elt in node.iter.elts:
                         for spec in _literal_specs(elt):
@@ -342,9 +343,9 @@ class _Visitor(ast.NodeVisitor):
 def _parse(path):
     """Compile one module to an AST.
 
-    ``ast.parse`` re-raises the module's own SyntaxWarnings (there is a docstring
-    under app/pages/decision_tabs/ with an invalid ``\\_`` escape).  Those belong
-    to the app, not to this test, so reading a file here does not repeat them.
+    ``ast.parse`` re-raises the module's own SyntaxWarnings (an invalid escape
+    such as ``\\_`` in a string).  Those belong to the app, not to this test, so
+    reading a file here does not repeat them.
     """
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", SyntaxWarning)
@@ -388,13 +389,22 @@ def test_every_key_in_the_code_has_a_registry_entry(scan):
 
 
 def test_every_registry_entry_is_used_by_the_code(scan):
-    """No dead entries: a key that left the code must leave the registry."""
+    """No dead entries: a key that left the code must leave the registry.
+
+    The seam reads a snapshot, not ``st.session_state``, so the scan cannot see
+    its reads: an ``engine_input`` entry the seam names counts as used (the
+    read-only fallbacks of ``build_plan.collect_decision_settings``).  Once the
+    seam stops naming it, ``test_engine_input_keys_are_named_by_the_seam`` fails.
+    """
     used = set(scan.keys)
     matched = set()
     for key in used:
         spec = lookup(key)
         if spec is not None:
             matched.add(spec.name)
+    seam_named = _entries_the_seam_names()
+    matched |= {spec.name for spec in REGISTRY
+                if spec.engine_input and spec.name in seam_named}
     dead = [spec.name for spec in REGISTRY if spec.name not in matched]
     assert not dead, (
         "registry entries no key in app/ matches (delete them):\n"
@@ -505,12 +515,11 @@ def _seam_key_vocabulary():
     return vocabulary
 
 
-def test_engine_input_keys_are_named_by_the_seam():
-    """`engine_input=True` means the plan builder reads it from the snapshot."""
-    vocabulary = _seam_key_vocabulary()
+def _entries_the_seam_names():
+    """Registry entry names ``app/seam`` names, literally or through a pattern."""
     resolved = set()
     patterns = []
-    for word in vocabulary:
+    for word in _seam_key_vocabulary():
         spec = lookup(word)
         if spec is not None:
             resolved.add(spec.name)
@@ -518,10 +527,16 @@ def test_engine_input_keys_are_named_by_the_seam():
             # the seam builds the name itself (f"{prefix}_scale_factor"); the
             # pattern covers whichever registry entries it can produce
             patterns.append(pattern_regex(word))
+    return resolved | {spec.name for spec in REGISTRY
+                       if any(p.fullmatch(spec.name) for p in patterns)}
+
+
+def test_engine_input_keys_are_named_by_the_seam():
+    """`engine_input=True` means the plan builder reads it from the snapshot."""
+    named = _entries_the_seam_names()
     missing = sorted(
         spec.name for spec in REGISTRY
-        if spec.engine_input and spec.name not in resolved
-        and not any(p.fullmatch(spec.name) for p in patterns))
+        if spec.engine_input and spec.name not in named)
     assert not missing, (
         "entries marked engine_input=True that app/seam never names:\n  "
         + "\n  ".join(missing))

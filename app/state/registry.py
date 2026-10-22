@@ -45,12 +45,14 @@ CATEGORIES = (
 #: over ``st.session_state.keys()``.  The scanner cannot resolve these; they are
 #: reviewed by hand and listed here so a *new* one fails the test.
 #:
-#: ``key``        - the parameter of ``default_config.save_to_persistent_storage``
-#:                  / ``restore_from_persistent_storage``; the parameter of the
+#: ``key``        - the parameter of ``state.widgets.sync_widget_key`` (the key of
+#:                  every ``stateful()`` widget); of ``default_config.save_to_persistent_storage``
+#:                  / ``restore_from_persistent_storage``; of the
 #:                  Decision-4 download helper ``transaction_viz._rtd_excel_download``
 #:                  (``rtd_dl_{mech}{chart_suffix}``, ``rtd_dl_aggregation{chart_suffix}``,
 #:                  ``rtd_model_download[_combined]{chart_suffix}``); and the loop variable
-#:                  of the ``dd_`` / ``di_`` / ``rtd_`` prefix resets and of the
+#:                  of the Disclose Income / Documents initialisers' defaults loops, of
+#:                  the ``dd_`` / ``di_`` / ``rtd_`` prefix resets and of the
 #:                  "Clear Results" wipe.
 #: ``k``          - the per-category purchasing-limit key on Page 1
 #:                  (``purchasing_limit_{i}``, bound in a lambda default).
@@ -187,9 +189,7 @@ _NAVIGATION = (
 
 _PAGE1_WIDGETS = _rows((
     ("n_agents_input", "<n_agents>"),
-    ("seed_input", "<seed>", "the Single-Run seed the seam pins a saved config against"),
     ("n_runs_input", "<n_runs>"),
-    ("base_seed_input", "<base_seed>", "the Monte-Carlo seed"),
     ("periods_input", "<sim_params.periods>"),
     ("duration_hours_input", "<int(sim_params.duration_hours)>"),
     ("num_vendors_input", "<sim_params.num_vendors>"),
@@ -235,6 +235,16 @@ _PAGE1_WIDGETS = _rows((
     ("page1_apply_limits", "<'Yes' if sim_params.apply_purchasing_limits else 'No'>"),
     ("single_vendor_carryover", "<sim_params.global_carryover>"),
 ), P1_INIT, "page1-widget", is_widget=True)
+
+_PAGE1_SEED_WIDGETS = (
+    _row("seed_input", "<seed>", P1_INIT, "page1-widget", is_widget=True,
+         engine_input=True,
+         notes="the Single-Run seed; the seam reads it before seed "
+               "(build_plan.resolve_seed_and_n) unless a saved config pins the seed"),
+    _row("base_seed_input", "<base_seed>", P1_INIT, "page1-widget", is_widget=True,
+         engine_input=True,
+         notes="the Monte-Carlo seed; the seam reads it before base_seed"),
+)
 
 _PAGE1_INLINE_WIDGETS = _rows((
     ("show_individual_agents_checkbox", "<show_individual_agents>",
@@ -307,17 +317,21 @@ _PAGE2_MIRRORS = (
     _row("donation_quintile_scale_factors", {"1": 1.0, "2": 1.0, "3": 1.0,
                                              "4": 1.0, "5": 1.0},
          DON_INIT, "page2-mirror", engine_input=True),
-    _row("donation_adjustment_shift", 0.0, DON_YAML, "page2-mirror",
-         engine_input=True, write_only=True,
-         notes="the shift comes from this key, never from the file.  Nothing "
-               "in app/ reads it back - only the seam does, from the snapshot."),
+    _row("donation_adjustment_shift", "<config/decisions.yaml adjustment.shift_value (-4.0), else 0.0>",
+         DON_YAML, "page2-mirror",
+         engine_input=True,
+         notes="the shift comes from this key, never from the file.  The seam reads "
+               "it from the snapshot; in app/ only "
+               "donation_default.reload_coefficients_for_income_mode reads it, to "
+               "carry it across a coefficient reload."),
     _row("donation_coeff_{name}", "<config/decisions.yaml regression_coefficients>",
          DON_YAML, "page2-mirror",
-         notes="the flat display set the Donation tab edits (intercept, hh, linear, "
-               "midsub, nosub, fullsub, q1..q5, incoming, law, ug, grad).  The "
-               "older q45 is never written; state.saved_configs still names it as "
-               "a fallback for q5.  The engine runs the _cat / _cont set below, "
-               "so this one is UI state."),
+         notes="the flat set of the active income mode (intercept, hh, linear, "
+               "midsub, nosub, fullsub, q1..q5, incoming, law, ug, grad); "
+               "state.saved_configs.get_current_coefficients stores it with a pinned "
+               "donation configuration.  The older q45 is never written; "
+               "state.saved_configs still names it as a fallback for q5.  The engine "
+               "runs the _cat / _cont set below, so this one is UI state."),
     _row("donation_coeff_intercept", "<config/decisions.yaml intercept>", DON_YAML,
          "page2-mirror",
          notes="the presence sentinel: models.initialize_session_state reloads the "
@@ -326,7 +340,8 @@ _PAGE2_MIRRORS = (
          "<config/decisions.yaml regression_coefficients.{categorical,continuous}>",
          "models.load_coefficient_set", "page2-mirror", engine_input=True,
          notes="suffix 'cat' / 'cont'; this is the set the seam hands the "
-               "engine (build_plan._donation_coefficients)."),
+               "engine (build_plan.session_donation_coefficient_set) and the set the "
+               "Donation tab's formula tables show."),
     _row("intercept_override_values", "<{} until an intercept is typed>",
          "decision_tabs.donation_default.render_intercept_override_section",
          "page2-mirror",
@@ -336,9 +351,9 @@ _PAGE2_MIRRORS = (
          "decision_tabs.donation_default.render_adjustment_override_section",
          "page2-mirror"),
     _row("di_intercept_override_values", "<{} until an intercept is typed>",
-         "decision_tabs.disclose_income.render_intercept_override", "page2-mirror"),
+         "decision_tabs.disclose_income.render_intercept_override_section", "page2-mirror"),
     _row("dd_intercept_override_values", "<{} until an intercept is typed>",
-         "decision_tabs.disclose_documents.render_intercept_override", "page2-mirror"),
+         "decision_tabs.disclose_documents.render_intercept_override_section", "page2-mirror"),
     _row("decision_params", "<DecisionParameters()>", MODELS_INIT, "page2-mirror",
          engine_input=True,
          notes="only .selected_decisions is used.  The run buttons hand the seam a "
@@ -400,18 +415,6 @@ _RTD_DISPLAY = (
 # --------------------------------------------------------------------------- #
 # Page 2 - widget keys
 # --------------------------------------------------------------------------- #
-
-#: ``clear_input_field_cache()`` deletes sixteen ``donation_coeff_*_input`` keys
-#: whenever the income mode changes, but no widget binds them any more - the
-#: coefficient number inputs were removed - so the list only ever finds them
-#: absent.  Left exactly as it is; a removal candidate, see
-#: docs/session-state.md.
-_LEGACY_COEFF_INPUTS = (
-    _row("donation_coeff_{name}_input", "<never written>",
-         "nothing - a stale cache-clearing list", "page2-widget",
-         notes="deleted by decision_tabs.donation_default.clear_input_field_cache; "
-               "no Streamlit widget binds these keys."),
-)
 
 _DONATION_WIDGETS = _rows((
     ("tab_sigma_in_copula", "<sigma_in_copula, else False>"),
@@ -475,7 +478,7 @@ _RTD_WIDGETS = _rows((
     ("rtd_run_aggregation_btn", WIDGET, "Run Integrated Default List Only"),
     ("rtd_tab_unselect_btn", WIDGET, "unselects a saved Decision-4 configuration"),
     ("rtd_subtabs", WIDGET, "st.container key of the sub-decision tabs (CSS hook for the bold labels)"),
-), RTD_INIT + " / render_rejected_transaction_tab", "page2-widget", is_widget=True)
+), RTD_INIT + " / render_rejected_transaction_defaults_tab", "page2-widget", is_widget=True)
 
 #: The whole-decision "Reset Config to Defaults" of the Disclose Income / Documents
 #: tabs is applied at the TOP of the next script run, before any of the tab's widgets
@@ -494,6 +497,7 @@ _PAGE2_WIDGETS = _rows((
     ("page2_select_all_checkbox", "<page2_select_all_state>"),
     ("clear_donation_config", WIDGET),
     ("clear_disclose_income_config", WIDGET),
+    ("clear_disclose_documents_config", WIDGET),
     ("clear_rejected_transaction_config", WIDGET),
     ("run_complete_simulation", WIDGET),
     ("run_complete_simulation_disabled", WIDGET, "the disabled twin of the button above"),
@@ -504,7 +508,7 @@ _RUN_BUTTONS = _rows((
      "the per-decision Run button; the Decision-4 tab reads its state back"),
     ("run_complete_from_{decision_name}_btn", WIDGET),
     ("run_complete_from_{decision_name}_btn_disabled", WIDGET),
-), "decision_execution.render_decision_run_controls", "page2-widget", is_widget=True)
+), "decision_execution.render_simulation_buttons", "page2-widget", is_widget=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -555,10 +559,10 @@ _RUN_FLAGS = (
          "decision_execution.run_individual_decision / run_combined_simulation",
          "run-flag", engine_input=True),
     _row("_reset_intercept_flag", True,
-         "decision_tabs.donation_default.reset_intercepts_to_defaults", "run-flag",
+         "decision_tabs.donation_default.render_actions_and_management_section", "run-flag",
          notes="one-rerun flag so the number_input picks the reset value up."),
     _row("_reset_adjustment_flag", True,
-         "decision_tabs.donation_default.reset_adjustment_to_defaults", "run-flag"),
+         "decision_tabs.donation_default.render_actions_and_management_section", "run-flag"),
     _row("_reset_config_to_defaults_flag", True,
          "decision_tabs.donation_default.render_actions_and_management_section",
          "run-flag"),
@@ -585,7 +589,7 @@ _RESULTS = (
 )
 
 _RESULT_WIDGETS = _rows((
-    ("inline_select_{result_key}", WIDGET, "donation 'Use This Config' radio"),
+    ("inline_select_{result_key}", WIDGET, "donation 'Use This Config' button"),
     ("di_inline_select_{result_key}", WIDGET),
     ("dd_inline_select_{result_key}", WIDGET),
     ("rtd_inline_select_{result_key}", WIDGET, "Decision-4 'Use This Config', under its results"),
@@ -657,19 +661,17 @@ _DEFAULTS = (
                "the seam names."),
     _row("rejected_transaction_defaults_option", "<never written>",
          "nothing - read-only fallback", "defaults", engine_input=True,
-         notes="the older post-simulation key for decision 4's radio; the seam "
-               "and get_actual_default_value both still look for it first."),
+         notes="named in the radio_selection branch of "
+               "build_plan.collect_decision_settings; decision 4 is a "
+               "prioritized_selection decision, so that lookup is never reached."),
     _row("rejected_transaction_option_selection", "<never written>",
          "nothing - read-only fallback", "defaults", engine_input=True,
          notes="the same for decision 11."),
-    _row("{decision_name}_config", "<never written>",
-         "nothing - read-only fallback", "defaults",
-         notes="third-priority lookup for a numeric default."),
     _row("reset_all_defaults", WIDGET,
          "decision_tabs.default_config.render_default_decisions_config", "defaults",
          is_widget=True),
     _row("{decision_name}_reset", WIDGET,
-         "decision_tabs.default_config.render_decision_default_config", "defaults",
+         "decision_tabs.default_config.render_prioritized_default_config", "defaults",
          is_widget=True),
     _row("{decision_name}_add_btn", WIDGET,
          "decision_tabs.default_config.render_prioritized_default_config", "defaults",
@@ -685,9 +687,9 @@ _DEFAULTS = (
 
 REGISTRY: Tuple[KeySpec, ...] = (
     _NAVIGATION
-    + _PAGE1_WIDGETS + _PAGE1_INLINE_WIDGETS + _PAGE1_MIRRORS
+    + _PAGE1_WIDGETS + _PAGE1_SEED_WIDGETS + _PAGE1_INLINE_WIDGETS + _PAGE1_MIRRORS
     + _PAGE2_MIRRORS + _DI_MIRRORS + _DD_MIRRORS + _RTD_MIRRORS + _RTD_DISPLAY
-    + _LEGACY_COEFF_INPUTS + _DONATION_WIDGETS + _DI_WIDGETS + _DD_WIDGETS + _RTD_WIDGETS
+    + _DONATION_WIDGETS + _DI_WIDGETS + _DD_WIDGETS + _RTD_WIDGETS
     + _RESET_PENDING_FLAGS
     + _PAGE2_WIDGETS + _RUN_BUTTONS
     + _TAB_PERSISTENCE + _SAVED_CONFIG + _RUN_FLAGS

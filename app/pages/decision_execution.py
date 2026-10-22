@@ -2,31 +2,31 @@
 """
 Decision execution functions for running individual and combined simulations.
 """
+import traceback
+
 import streamlit as st
 from src.contract.plan import RunRequest
 from app.simulation import run_full_simulation, run_monte_carlo_study
 from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
-
-# The 13 decisions' default values and default descriptions are pure contract
-# data (src/contract/defaults.py). Re-exported here because the screens and the
-# tests import them from this module.
-from src.contract.defaults import (  # noqa: F401
-    DEFAULT_DECISION_DESCRIPTIONS,
-    DEFAULT_DECISION_VALUES,
-)
-
-# The saved-decision-configuration store lives in app/state/saved_configs.py.
-# The names a page or a test still imports from this module are re-exported
-# here; new code imports them from app.state.saved_configs.
-from app.state.saved_configs import (  # noqa: F401
+# Used below; page1_common_params.py and the results pages also import some from here.
+from app.state.saved_configs import (
     clear_decision_config,
-    clear_selected_configuration,
-    format_result_name,
     get_current_coefficients,
     get_current_stochastic_params,
     get_decision_config,
     get_selected_decision_configs,
     has_decision_config,
+)
+
+# Re-exported (unused here) for results/visualizations/viz_helpers.py and tests/conftest.py.
+from src.contract.defaults import (  # noqa: F401
+    DEFAULT_DECISION_DESCRIPTIONS,
+    DEFAULT_DECISION_VALUES,
+)
+# Re-exported (unused here) for results/config_selection.py and visualizations/transaction_viz.py.
+from app.state.saved_configs import (  # noqa: F401
+    clear_selected_configuration,
+    format_result_name,
     save_selected_configuration,
 )
 
@@ -737,155 +737,6 @@ def render_simulation_buttons(decision_name, selected_decisions):
                     run_combined_simulation(selected_decisions)
 
 
-def get_actual_default_value(decision_name, sim_params=None):
-    """
-    Get the actual default value for a decision, handling random generation where needed.
-    This function returns values that can be used directly by the simulation.
-    
-    Priority order:
-    1. Pre-configured default from Page 2 Overview tab ({decision_name}_default_*)
-    2. Post-simulation adjustment from Results page ({decision_name}_*)
-    3. Hard-coded default from DEFAULT_DECISION_VALUES
-    """
-    import random
-    
-    base_value = DEFAULT_DECISION_VALUES.get(decision_name)
-    
-    # Handle parametric random decisions with configurable probabilities
-    if isinstance(base_value, dict) and base_value.get("type") == "random_probability":
-        # Priority 1: Check for pre-configured default from Overview tab
-        pre_config_key = f"{decision_name}_default_probability_y"
-        # Priority 2: Check for post-simulation adjustment from Results page
-        post_sim_key = f"{decision_name}_probability_y"
-        # Priority 3: Use hard-coded default
-        
-        probability_y = st.session_state.get(
-            pre_config_key, 
-            st.session_state.get(
-                post_sim_key, 
-                base_value.get("probability_y", 0.5)
-            )
-        )
-        
-        options = base_value.get("options", ["Y", "N"])
-        
-        # Weighted random choice
-        if random.random() < probability_y:
-            return options[0]  # First option (Y or purchase)
-        else:
-            return options[1]  # Second option (N or bid)
-    
-    # Handle prioritized selection decisions (rejected_transaction_defaults)
-    elif isinstance(base_value, dict) and base_value.get("type") == "prioritized_selection":
-        # Priority 1: Check for configured priority template from Overview tab
-        pre_config_key = f"{decision_name}_priority_template"
-        
-        # Priority 2: Use hard-coded default template
-        priority_template = st.session_state.get(
-            pre_config_key,
-            base_value.get("priority_template", ["forgo_transaction"])
-        )
-        return priority_template
-    
-    # Handle radio selection decisions (rejected transaction options)
-    elif isinstance(base_value, dict) and base_value.get("type") == "radio_selection":
-        # Priority 1: Check for pre-configured default from Overview tab
-        pre_config_key = f"{decision_name}_default_selection"
-        
-        # Priority 2: Check for post-simulation adjustments (older keys; nothing writes them now)
-        if decision_name == "rejected_transaction_defaults":
-            post_sim_key = "rejected_transaction_defaults_option"
-        elif decision_name == "rejected_transaction_option":
-            post_sim_key = "rejected_transaction_option_selection"
-        else:
-            post_sim_key = f"{decision_name}_selection"
-        
-        # Priority 3: Use hard-coded default
-        selected_value = st.session_state.get(
-            pre_config_key,
-            st.session_state.get(
-                post_sim_key,
-                base_value.get("default_option", "forgo_transaction")
-            )
-        )
-        return selected_value
-    
-    # Handle checkbox selection decisions (vendor choice weights)
-    elif isinstance(base_value, dict) and base_value.get("type") == "checkbox_selection":
-        # Priority 1: Check for pre-configured default from Overview tab
-        pre_config_key = f"{decision_name}_default_params"
-        # Priority 2: Check for post-simulation adjustment
-        post_sim_key = "vendor_choice_weights_selection"
-        
-        selected_params = st.session_state.get(
-            pre_config_key,
-            st.session_state.get(
-                post_sim_key,
-                base_value.get("default_selection", [])
-            )
-        )
-        
-        # Calculate equal weights for selected parameters
-        if len(selected_params) > 0:
-            weight_per_param = 1.0 / len(selected_params)
-            weights = {}
-            
-            # Set weights for all parameters
-            for param_key in base_value.get("parameters", {}).keys():
-                if param_key in selected_params:
-                    weights[param_key] = weight_per_param
-                else:
-                    weights[param_key] = 0.0
-            
-            return weights
-        else:
-            # Fallback to equal weights if nothing selected
-            params = list(base_value.get("parameters", {}).keys())
-            if params:
-                weight_per_param = 1.0 / len(params)
-                return {param: weight_per_param for param in params}
-            else:
-                return {"price": 0.25, "quality": 0.25, "proximity": 0.25, "sustainability": 0.25}
-    
-    # Handle numeric defaults (donation_default, final_donation_rate, etc.)
-    elif isinstance(base_value, (int, float)):
-        # Priority 1: Check for pre-configured default from Overview tab
-        pre_config_key = f"{decision_name}_default_value"
-        # Priority 2: Check for post-simulation adjustment (specific keys)
-        post_sim_key = f"{decision_name}_config"
-        
-        # Priority 3: Use hard-coded default
-        return st.session_state.get(
-            pre_config_key,
-            st.session_state.get(
-                post_sim_key,
-                base_value
-            )
-        )
-    
-    # Handle random within purchasing limit
-    elif base_value == "RANDOM_WITHIN_LIMIT":
-        # This needs to be handled per agent based on their income category
-        # Return a placeholder that the simulation will interpret
-        return "RANDOM_WITHIN_LIMIT"
-    
-    # Handle calculated purchasing frequency
-    elif base_value == "CALCULATED":
-        # This will be calculated based on purchasing quantity / period duration
-        # Return a placeholder that the simulation will interpret
-        return "CALCULATED"
-    
-    # Handle random bid value within range
-    elif base_value == "RANDOM_WITHIN_RANGE":
-        # This needs market price and bidding range from sim_params
-        # Return a placeholder that the simulation will interpret
-        return "RANDOM_WITHIN_RANGE"
-    
-    # For all other values (numbers, dictionaries, strings), return as-is
-    else:
-        return base_value
-
-
 def run_individual_decision(decision_name):
     """Run a single decision simulation.
     
@@ -957,7 +808,6 @@ def run_individual_decision(decision_name):
         except Exception as e:
             # custom_decisions / default_decisions are not restored
             st.error(f"❌ Error running {decision_name}: {str(e)}")
-            import traceback
             st.text(traceback.format_exc())
 
 
@@ -1135,6 +985,5 @@ def run_combined_simulation(selected_decisions):
 
         except Exception as e:
             st.error(f"❌ Error running complete simulation: {str(e)}")
-            import traceback
             st.text(traceback.format_exc())
 

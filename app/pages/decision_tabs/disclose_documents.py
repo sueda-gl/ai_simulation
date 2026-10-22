@@ -8,8 +8,11 @@ coefficients/intercepts are fixed (verified bit-for-bit against the reference St
 Decision 2 file); the tab exposes the income mode, optional intercept override, and the
 stochastic settings. UI mirrors the Disclose Income tab for consistency.
 """
+import traceback
+
 import streamlit as st
 from app.state.widgets import stateful
+from app.pages.decision_execution import render_simulation_buttons
 from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 import pandas as pd
@@ -270,20 +273,18 @@ def render_disclose_documents_tab():
 
     # Intercept Override Section
     st.markdown('<h4 class="subsection-header">Intercept Override</h4>', unsafe_allow_html=True)
-    render_intercept_override_section(config)
+    render_intercept_override_section()
 
     # Actions & Management Section
     st.markdown('<h4 class="subsection-header">Actions & Management</h4>', unsafe_allow_html=True)
-    render_actions_and_management_section(config)
+    render_actions_and_management_section()
 
     # Simulation buttons
     try:
-        from app.pages.decision_execution import render_simulation_buttons
         selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])
         render_simulation_buttons(decision_name="disclose_documents", selected_decisions=selected_decs)
     except Exception as e:
         st.error(f"Error rendering simulation buttons: {e}")
-        import traceback
         st.code(traceback.format_exc())
 
 
@@ -312,7 +313,7 @@ def render_formula_display(config):
 
         Output: "Y" if DD > 0 after stochastic draw, "N" otherwise.
         """)
-        render_mediator_equations(config)
+        render_mediator_equations()
 
         if income_mode == "Categorical only":
             render_categorical_dd_formula(config)
@@ -344,7 +345,7 @@ def render_formula_display(config):
         """)
 
 
-def render_mediator_equations(config):
+def render_mediator_equations():
     """Render Equation 1 (Privacy Concern) and Equation 2 (Trust) - same for both modes."""
     st.markdown("### Equation 1: Privacy Concern (PC)")
     st.latex(
@@ -408,7 +409,7 @@ def get_current_yaml_intercept():
     return load_disclose_documents_config().get('intercept', RESEARCH_DEFAULT_INTERCEPT)
 
 
-def render_intercept_override_section(config):
+def render_intercept_override_section():
     """Render the intercept override section (mirrors disclose_income)."""
     if 'dd_intercept_override_values' not in st.session_state:
         st.session_state.dd_intercept_override_values = {}
@@ -449,7 +450,8 @@ def render_intercept_override_section(config):
 
 
 def auto_save_intercept(new_value):
-    """Update intercept override in session state (YAML only written by Reset)."""
+    """Store the typed intercept override in session state (the configuration file
+    is read-only)."""
     if 'dd_intercept_override_values' not in st.session_state:
         st.session_state.dd_intercept_override_values = {}
     st.session_state.dd_intercept_override_values['intercept'] = new_value
@@ -541,7 +543,7 @@ def reset_intercept_to_default():
     return True
 
 
-def render_actions_and_management_section(config):
+def render_actions_and_management_section():
     """Render the combined actions and management section (mirrors disclose_income)."""
     col1, col2 = st.columns(2)
     with col1:

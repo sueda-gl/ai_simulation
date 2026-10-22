@@ -3,6 +3,7 @@
 Decision tabs module for the Enhanced AI Agent Simulation.
 """
 import streamlit as st
+from app.pages.decision_tabs.bid_value_tab import render_bid_value_tab
 from app.pages.decision_tabs.donation_default import render_donation_default_tab
 from app.pages.decision_tabs.disclose_income import render_disclose_income_tab
 from app.pages.decision_tabs.disclose_documents import render_disclose_documents_tab
@@ -22,15 +23,15 @@ def render_decision_tab(decision_name):
         render_disclose_documents_tab()
     elif decision_name == "bid_value":
         # Use dedicated bid_value tab with formula visualization
-        from app.pages.decision_tabs.bid_value_tab import render_bid_value_tab
         render_bid_value_tab()
     elif decision_name == "rejected_transaction_defaults":
         # Decision 4: four trait-based sub-decision mechanisms (TTP length + three rankings)
         render_rejected_transaction_defaults_tab()
     elif decision_name == "rejected_transaction_option":
-        # This decision is configured directly in the results page
-        st.info(f"Configuration for {decision_name.replace('_', ' ').title()} is available in the Results page.")
-        st.caption("💡 This decision uses radio buttons in the default values display for easy configuration.")
+        # No settings of its own: the run takes the Overview tab's default option
+        # (default_config.render_radio_default_config), drawn only while unselected
+        st.info("Rejected Transaction Option is configured on the Overview tab, under "
+                "\"Configure Default Decision Parameters\", which lists it while it is not selected.")
 
         # Still provide simulation buttons for this decision
         render_simulation_buttons(

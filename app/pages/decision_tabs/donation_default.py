@@ -2,14 +2,16 @@
 """
 Donation Default decision tab configuration.
 """
-# Force rebuild timestamp: 2025-10-01
+import traceback
+
 import streamlit as st
 from app.state.widgets import drawn_in_previous_run, stateful
+from app.state.saved_configs import clear_decision_config
 from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
 import pandas as pd
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 from app.seam.sentinels import donation_sigma_overall
-from app.pages.decision_execution import run_individual_decision
+from app.pages.decision_execution import render_simulation_buttons
 from app.models import load_donation_coefficients_from_yaml
 
 
@@ -31,8 +33,10 @@ def research_defaults():
     config/decisions.yaml (read-only): the single source of truth for "Reset Config
     to Defaults" - it used to write its own hard-coded copies of these numbers.
 
-    Not reset by it (deliberately; the tabs' reset buttons differ in scope): the σ
-    coefficient and tick boxes."""
+    Not in the file, so the reset sets them itself: the income mode and the two σ
+    tick boxes. The σ controls (mode radio, coefficient and per-quintile sliders)
+    keep their values: the reset writes none of their widget keys, and a live
+    widget key wins over the stored value (``_tab_state.restore``)."""
     block = read_yaml_file(CONFIG_PATH)['donation_default']
     stochastic = block.get('stochastic', {})
     default_scale = float(stochastic.get('scale_factor', 1.0))
@@ -106,7 +110,8 @@ def render_donation_sigma_controls(mode_suffix: str):
     Render sigma strategy controls (overall vs quintile) for donation_default.
 
     Args:
-        mode_suffix: One of 'copula', 'research', or 'compare' to distinguish widget keys
+        mode_suffix: the widget-key suffix; the tab passes 'stochastic' (one set of
+            σ controls shared by every population mode)
     """
     # Base sigma values per quintile (from empirical data)
     BASE_SIGMAS = {
@@ -306,8 +311,6 @@ def render_donation_default_tab():
             setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
             save('page2_tab_income_spec_mode', 'donation_tab_persistence', 'income_spec_mode')
             reload_coefficients_for_income_mode()
-            clear_input_field_cache()
-            from app.pages.decision_execution import clear_decision_config
             clear_decision_config('donation_default')
 
         # Restore income spec mode
@@ -401,15 +404,15 @@ def render_donation_default_tab():
         st.markdown(f"Predicted weight: {1 - anchor_observed_weight:.2f}")
     
     
-    # NEW: Mathematical Formula Display Section
+    # Mathematical Formula Display Section
     st.markdown('<h4 class="subsection-header">📐 Mathematical Model Formula</h4>', unsafe_allow_html=True)
     render_formula_display()
     
-    # NEW: Regression Coefficients Section
+    # Intercept Override Section
     st.markdown('<h4 class="subsection-header">🔢 Intercept Override</h4>', unsafe_allow_html=True)
     render_intercept_override_section()
     
-    # NEW: Distribution Adjustment Section
+    # Distribution Adjustment Section
     st.markdown('<h4 class="subsection-header">📊 Distribution Adjustment</h4>', unsafe_allow_html=True)
     render_adjustment_override_section()
     
@@ -420,8 +423,6 @@ def render_donation_default_tab():
     
     # Render both individual and complete simulation buttons
     try:
-        from app.pages.decision_execution import render_simulation_buttons
-        
         # Safety: Get selected_decisions with a default
         selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])
         
@@ -431,7 +432,6 @@ def render_donation_default_tab():
         )
     except Exception as e:
         st.error(f"Error rendering simulation buttons: {e}")
-        import traceback
         st.code(traceback.format_exc())
 
 
@@ -461,20 +461,20 @@ def render_formula_display():
 def render_categorical_formula():
     """Render categorical income specification formula"""
     
-    # Get current coefficient values FROM YAML ONLY
+    # The categorical coefficient set the model runs (session state, loaded from the file)
     _render_categorical_formula(
         intercept=get_coefficient('intercept', 'cat'),
         hh_coeff=get_coefficient('hh', 'cat'),
         group=[
-            st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-            st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-            st.session_state.get('donation_coeff_fullsub', 0.0)
+            get_coefficient('midsub', 'cat'),
+            get_coefficient('nosub', 'cat'),
+            get_coefficient('fullsub', 'cat')
         ],
         study=[
-            st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-            st.session_state.get('donation_coeff_law', -2.081331674770856),
-            st.session_state.get('donation_coeff_ug', -2.139093511519692),
-            st.session_state.get('donation_coeff_grad', 0.0)
+            get_coefficient('incoming', 'cat'),
+            get_coefficient('law', 'cat'),
+            get_coefficient('ug', 'cat'),
+            get_coefficient('grad', 'cat')
         ],
         income_labels=['Q1 (Level 12, ref)', 'Q2 (Level 32)', 'Q3 (Level 72)', 'Q4 (Level 128)', 'Q5 (Level 200)'],
         income=[
@@ -490,7 +490,7 @@ def render_categorical_formula():
 def render_categorical_formula_specific():
     """Render categorical income specification formula with categorical-specific coefficients"""
     
-    # Get categorical-specific coefficient values FROM YAML ONLY
+    # The categorical coefficient set the model runs (session state, loaded from the file)
     _render_categorical_formula(
         intercept=get_coefficient('intercept', 'cat'),
         hh_coeff=get_coefficient('hh', 'cat'),
@@ -518,7 +518,7 @@ def render_categorical_formula_specific():
 
 def _render_categorical_formula(intercept, hh_coeff, group, study, income_labels, income):
     """The categorical formula display, from the coefficient values the caller
-    looked up (the flat display set, or the categorical-specific set)."""
+    looked up."""
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -573,21 +573,21 @@ def _render_group_and_study_tables(group, study):
 def render_continuous_formula():
     """Render continuous income specification formula"""
     
-    # Get current coefficient values FROM YAML ONLY
+    # The continuous coefficient set the model runs (session state, loaded from the file)
     _render_continuous_formula(
         intercept=get_coefficient('intercept', 'cont'),
         hh_coeff=get_coefficient('hh', 'cont'),
         linear_coeff=get_coefficient('linear', 'cont'),
         group=[
-            st.session_state.get('donation_coeff_midsub', 0.856140306694656),
-            st.session_state.get('donation_coeff_nosub', -0.926633374153906),
-            st.session_state.get('donation_coeff_fullsub', 0.0)
+            get_coefficient('midsub', 'cont'),
+            get_coefficient('nosub', 'cont'),
+            get_coefficient('fullsub', 'cont')
         ],
         study=[
-            st.session_state.get('donation_coeff_incoming', -6.920193024391676),
-            st.session_state.get('donation_coeff_law', -2.081331674770856),
-            st.session_state.get('donation_coeff_ug', -2.139093511519692),
-            st.session_state.get('donation_coeff_grad', 0.0)
+            get_coefficient('incoming', 'cont'),
+            get_coefficient('law', 'cont'),
+            get_coefficient('ug', 'cont'),
+            get_coefficient('grad', 'cont')
         ],
     )
 
@@ -595,7 +595,7 @@ def render_continuous_formula():
 def render_continuous_formula_specific():
     """Render continuous income specification formula with continuous-specific coefficients"""
     
-    # Get continuous-specific coefficient values FROM YAML ONLY
+    # The continuous coefficient set the model runs (session state, loaded from the file)
     _render_continuous_formula(
         intercept=get_coefficient('intercept', 'cont'),
         hh_coeff=get_coefficient('hh', 'cont'),
@@ -616,7 +616,7 @@ def render_continuous_formula_specific():
 
 def _render_continuous_formula(intercept, hh_coeff, linear_coeff, group, study):
     """The continuous formula display, from the coefficient values the caller
-    looked up (the flat display set, or the continuous-specific set)."""
+    looked up."""
     
     # Symbolic formula
     st.markdown("**📐 Symbolic Formula:**")
@@ -743,34 +743,6 @@ def reload_coefficients_for_income_mode():
     active_key = f'donation_coeff_intercept_{_active_intercept_suffix()}'
     if active_key in st.session_state:
         st.session_state.donation_coeff_intercept = st.session_state[active_key]
-
-
-def clear_input_field_cache():
-    """Clear Streamlit input field cache to force refresh with new values"""
-    # Force refresh of input fields by clearing their keys from session state
-    # This makes Streamlit re-evaluate the default values
-    input_keys = [
-        'donation_coeff_intercept_input',
-        'donation_coeff_hh_input',
-        'donation_coeff_midsub_input',
-        'donation_coeff_nosub_input',
-        'donation_coeff_fullsub_input',
-        'donation_coeff_q1_input',
-        'donation_coeff_q2_input',
-        'donation_coeff_q3_input',
-        'donation_coeff_q4_input',
-        'donation_coeff_q5_input',
-        'donation_coeff_q45_input',  # Legacy
-        'donation_coeff_linear_input',
-        'donation_coeff_incoming_input',
-        'donation_coeff_law_input',
-        'donation_coeff_ug_input',
-        'donation_coeff_grad_input'
-    ]
-    
-    for key in input_keys:
-        if key in st.session_state:
-            del st.session_state[key]
 
 
 def _seed_intercept_input(widget_key, spec_type, current):

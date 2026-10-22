@@ -5,8 +5,12 @@ Disclose Income decision tab configuration.
 Decision 1: Disclose income for Fixed status at time of registration/review.
 Uses a two-stage mediation model when specified (research spec mode).
 """
+import traceback
+
 import streamlit as st
 from app.state.widgets import stateful
+from app.state.saved_configs import clear_decision_config
+from app.pages.decision_execution import render_simulation_buttons
 from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file, get_config_repo
 import pandas as pd
@@ -98,7 +102,8 @@ def render_di_sigma_controls(mode_suffix: str):
     Render sigma strategy controls (overall vs quintile) for disclose_income.
 
     Args:
-        mode_suffix: One of 'copula', 'research', or 'compare' to distinguish widget keys
+        mode_suffix: the widget-key suffix; the tab passes 'stochastic' (one set of
+            σ controls shared by every population mode)
     """
     # Base sigma values per quintile (from empirical data)
     BASE_SIGMAS = {
@@ -253,9 +258,8 @@ def render_disclose_income_tab():
     initialize_disclose_income_session_state()
     config = load_disclose_income_config()
 
-    # Overlay session-state intercept override so the formula display
-    # and other readers of `config` see the latest value even though
-    # the YAML is only written on explicit Reset/Save.
+    # Overlay the session-state intercept so the formula display shows the value
+    # in effect (the configuration file is read-only).
     if 'di_intercept' in st.session_state:
         config['intercept'] = st.session_state.di_intercept
 
@@ -292,7 +296,6 @@ def render_disclose_income_tab():
             new_mode = st.session_state.di_tab_income_mode
             st.session_state.di_income_mode = new_mode
             save('di_tab_income_mode', 'disclose_income_tab_persistence', 'income_mode')
-            from app.pages.decision_execution import clear_decision_config
             clear_decision_config('disclose_income')
 
         # Restore income mode from storage
@@ -436,16 +439,14 @@ def render_disclose_income_tab():
 
     # Intercept Override Section
     st.markdown('<h4 class="subsection-header">Intercept Override</h4>', unsafe_allow_html=True)
-    render_intercept_override_section(config)
+    render_intercept_override_section()
 
     # Actions & Management Section
     st.markdown('<h4 class="subsection-header">Actions & Management</h4>', unsafe_allow_html=True)
-    render_actions_and_management_section(config)
+    render_actions_and_management_section()
 
     # Simulation buttons - same as donation_default
     try:
-        from app.pages.decision_execution import render_simulation_buttons
-        
         # Safety: Get selected_decisions with a default
         selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])
         
@@ -455,7 +456,6 @@ def render_disclose_income_tab():
         )
     except Exception as e:
         st.error(f"Error rendering simulation buttons: {e}")
-        import traceback
         st.code(traceback.format_exc())
 
 
@@ -528,7 +528,7 @@ def render_equation1_and_combining(config):
     st.markdown("### Combining with Observed Behavior")
     wopb = config.get('anchor_weights', {}).get('observed_prosocial', 0.25)
     st.latex(f"""
-    PB_i = {wopb:.2f} \\times z_{{obs\_PB_i}} + {1-wopb:.2f} \\times z_{{calc\_PB_i}}
+    PB_i = {wopb:.2f} \\times z_{{obs\\_PB_i}} + {1-wopb:.2f} \\times z_{{calc\\_PB_i}}
     """)
     st.markdown("Note: Both observed and calculated PB are standardized (z-scored) before combining.")
 
@@ -615,7 +615,7 @@ def get_current_yaml_intercept():
     return config.get('intercept', 0.75)
 
 
-def render_intercept_override_section(config):
+def render_intercept_override_section():
     """Render the intercept override section with ability to modify the intercept value."""
 
     # Initialize override values if not present
@@ -628,8 +628,8 @@ def render_intercept_override_section(config):
         # configuration file is read-only, so it is the file's intercept.
         research_default = float(research_default_config().get('intercept', 0.75))
 
-        # Current YAML value is used as the widget's initial value
-        # so it reflects what's actually saved in the config.
+        # The configuration file's intercept seeds the override input until a
+        # value is typed.
         current_config_value = get_current_yaml_intercept()
 
         # Use 3 columns: Current Value, Override Value, Impact Preview
@@ -676,12 +676,9 @@ def render_intercept_override_section(config):
 
 
 def auto_save_intercept(new_value):
-    """Update intercept override in session state (not YAML).
-
-    The YAML is only written by the Reset button.  Reload Configuration
-    reads from the unchanged YAML, so it can restore the last saved value.
-    The simulation reads di_intercept from session state, so it always
-    picks up the latest override without needing a YAML write.
+    """Store the typed intercept override in session state (the configuration
+    file is read-only). The seam reads di_intercept from the session snapshot,
+    so the next run uses it.
     """
     if 'di_intercept_override_values' not in st.session_state:
         st.session_state.di_intercept_override_values = {}
@@ -795,7 +792,7 @@ def reset_intercept_to_default():
     return True
 
 
-def render_actions_and_management_section(config):
+def render_actions_and_management_section():
     """Render the combined actions and management section."""
 
     col1, col2 = st.columns(2)

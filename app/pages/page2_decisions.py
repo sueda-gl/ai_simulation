@@ -10,7 +10,9 @@ from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
-from app.pages.decision_execution import run_combined_simulation, DEFAULT_DECISION_VALUES, can_run_complete_simulation, get_decision_config, clear_decision_config, get_current_coefficients, get_current_stochastic_params, format_decision_title, donation_income_mode_from_settings, render_blocking_issues, current_donation_configuration
+from app.pages.decision_execution import run_combined_simulation, can_run_complete_simulation, format_decision_title, render_blocking_issues, current_donation_configuration
+from app.state.saved_configs import clear_decision_config, get_decision_config
+from app.reports.rtd import rtd_summary_metric_keys
 
 
 def initialize_page2_widget_keys():
@@ -82,17 +84,17 @@ def render_overview_tab(selected_decisions):
     # Display Global Parameters
     render_global_parameters_readonly()
     
-    # FIX: Always show saved configs regardless of whether decision is selected for customization
-    # This ensures users can see their saved configs even after navigation
-    # Show the section header once for both decision configs
+    # Saved configs show whether or not their decision is selected for customization,
+    # so they stay visible after navigation; one section header for all of them
     st.markdown('<h3 class="section-header">🎯 Saved Decision Configurations</h3>', unsafe_allow_html=True)
     
     # Render the config displays - they handle the "no config" case internally
     render_selected_donation_config_display()
     render_selected_disclose_income_config_display()
+    render_selected_disclose_documents_config_display()
     render_selected_rejected_transaction_config_display()
 
-    # NEW: Show default decisions configuration for unselected decisions
+    # Default-decision configuration for the unselected decisions
     st.markdown("---")
     render_default_decisions_config(selected_decisions, ALL_DECISIONS)
     
@@ -104,7 +106,6 @@ def render_overview_tab(selected_decisions):
     unselected_decisions = [d for d in ALL_DECISIONS if d not in selected_decisions]
     
     # Check if complete simulation can run (validation for multiple configurations)
-    # UPDATED: Now returns 5-tuple with blocking_issues list
     result = can_run_complete_simulation()
     can_run, reason, config_count, block_type = result[:4]
     blocking_issues = result[4] if len(result) > 4 else []
@@ -454,6 +455,74 @@ def render_selected_disclose_income_config_display():
                 st.rerun()
 
 
+def render_selected_disclose_documents_config_display():
+    """Display the selected disclose documents configuration in the overview tab -
+    mirrors render_selected_disclose_income_config_display (no anchor weights: the
+    Disclose Documents model has none)."""
+    
+    config = get_decision_config('disclose_documents')
+    
+    if config is None:
+        return
+    
+    st.markdown("#### 2. Disclose Documents")
+    
+    # Get income mode and population mode from config
+    income_mode = config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))
+    population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+    
+    with st.container():
+        st.success(f"✅ **Disclose Documents Configuration**: {population_mode} + {income_mode}")
+        
+        # Metrics display
+        metrics = config.get('metrics', {})
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Population Mode", population_mode)
+        
+        with col2:
+            st.metric("Income Mode", income_mode)
+        
+        with col3:
+            y_rate = metrics.get('y_rate', 0)
+            st.metric("Y Rate", f"{y_rate:.2%}")
+        
+        with col4:
+            st.metric("Agents", f"{config.get('total_agents', 0):,}")
+        
+        # Additional details in expandable section
+        with st.expander("📊 Configuration Details", expanded=False):
+            params = config.get('params', {})
+            
+            st.markdown("**🔢 Model Parameters:**")
+            param_col1, param_col2 = st.columns(2)
+            
+            with param_col1:
+                st.metric("Intercept", f"{params.get('intercept', 0):.4f}")
+            
+            with param_col2:
+                stochastic = params.get('stochastic', {})
+                st.metric("Scale Factor", f"{stochastic.get('scale_factor', 1.0):.2f}")
+                st.metric("Sigma Strategy", stochastic.get('sigma_strategy', 'overall'))
+            
+            st.markdown("**ℹ️ Configuration Info:**")
+            st.caption(f"Selected at: {config.get('selected_timestamp', 'Unknown')}")
+            st.caption(f"Original seed: {config.get('original_seed', 'Unknown')}")
+            st.caption(f"Source: {config.get('source', 'Unknown')}")
+        
+        # Action buttons
+        action_col1, action_col2 = st.columns([3, 1])
+        
+        with action_col1:
+            st.caption("This configuration will be used for the disclose documents decision in complete simulations")
+        
+        with action_col2:
+            if st.button("🗑️ Clear", help="Clear the selected configuration", key="clear_disclose_documents_config"):
+                clear_decision_config('disclose_documents')
+                st.rerun()
+
+
 def render_selected_rejected_transaction_config_display():
     """Display the selected Rejected Transaction Defaults (Decision 4) configuration in
     the overview tab - mirrors render_selected_disclose_income_config_display."""
@@ -470,7 +539,6 @@ def render_selected_rejected_transaction_config_display():
     income_mode = config.get('income_mode', params.get('income_mode', 'Unknown'))
     population_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
     metrics = config.get('metrics', {}) or {}
-    from app.reports.rtd import rtd_summary_metric_keys
     shown = rtd_summary_metric_keys(config.get('run_element'))
 
     with st.container():

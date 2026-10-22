@@ -45,11 +45,16 @@ you can read it, or import it from a script, without starting a session.
 module under `app/` with Python's own `ast` module and collects every way a key can
 be named: `st.session_state.x`, `st.session_state["x"]`, `.get`, `.pop`,
 `.setdefault`, `"x" in st.session_state`, `getattr`/`hasattr`/`setattr`/`delattr`,
-and every `key=` handed to a Streamlit call. Then it checks both directions:
+and every `key=` handed to a Streamlit call or to `stateful()`. A key held in a
+variable counts when the variable is bound to a literal or an f-string, or loops (a
+`for` statement or a comprehension) over a literal list of them. Then it checks both
+directions:
 
 * every key the code touches has a registry entry, so you cannot add a key quietly;
 * every registry entry is touched by the code, so a key that leaves the app has to
-  leave the registry and the list cannot rot into fiction.
+  leave the registry and the list cannot rot into fiction. The seam reads a
+  snapshot rather than `st.session_state`, so an `engine_input` entry the seam
+  names counts as touched (the read-only fallbacks of §6).
 
 It also checks that the `is_widget` and `write_only` flags still match reality, that
 every `engine_input` key is one the seam actually names, and that no key is covered
@@ -77,8 +82,10 @@ Take one setting, the Disclose Income σ tick box, and follow it.
 The string handed to a Streamlit widget as `key=`. Streamlit owns the value: it
 writes the user's input into it before the script reruns, and it refuses to let you
 change it after the widget has been created in the same run. **A widget key only
-survives while its widget keeps rendering.** Switch to another tab and the widget
-stops rendering; Streamlit is then free to drop the key.
+survives while its widget keeps rendering.** Every selected decision's tab is drawn
+in every Page-2 run (switching tabs happens in the browser), but leave the page or
+unselect the decision and the widget stops rendering; Streamlit is then free to drop
+the key.
 
 **The browser has its own copy.** Streamlit sends a key's value to the browser only
 in the run in which the key is *written* through `st.session_state`. A widget drawn
@@ -94,31 +101,47 @@ arguments, using a per-run render log (`_widget_render_log`, rotated by
 models the browser for AppTest; `tests/test_browser_state.py` uses it, and
 also checks statically that no value-less keyed widget bypasses `stateful()`.
 
-Registry categories: `page1-widget`, `page2-widget`. Names follow a convention:
-Page 1 uses `*_input` / `*_slider` / `page1_*`, the decision tabs use a `*_tab_*`
-infix (`tab_sigma_in_copula`, `di_tab_income_mode`, `rtd_tab_intercept_{mech}`).
+Registry categories: `page1-widget`, `page2-widget`. Names mostly follow a
+convention: Page 1 uses `*_input` / `*_slider` / `page1_*`, the decision tabs use a
+`*_tab_*` infix (`tab_sigma_in_copula`, `di_tab_income_mode`,
+`rtd_tab_intercept_{mech}`). The exceptions are the intercept and shift inputs
+(`override_categorical_intercept`, `override_continuous_intercept`,
+`override_adjustment_shift`, `di_override_intercept`, `dd_override_intercept`), the
+Disclose Income anchor sliders (`di_wopb_widget`, `di_wpb_widget`), the buttons, and
+on Page 1 `single_vendor_carryover`, `show_individual_agents_checkbox` and
+`purchasing_limit_{i}`. The Overview's default-decision widgets bind the layer-4 keys
+themselves (category `defaults`).
 
 ### Layer 2 — the canonical key
 
-The value the rest of the app reads, and the only layer the seam looks at. It is
-written unconditionally right after the widget call, on every render, so the two
-cannot drift apart while the tab is open:
+The value the rest of the app reads, and the layer the seam looks at (besides layer
+4 and the two Page-1 seed widget keys `seed_input` / `base_seed_input`, which it
+reads before `seed` / `base_seed`). It is written unconditionally right after the
+widget call, on every render, so the two cannot drift apart while the tab is open:
 
 ```python
-sigma_enabled = st.checkbox("Use Normal(anchor, σ) draw in Research Specification mode",
-                            value=res_val, key="di_tab_sigma_enabled", ...)
+restore('di_tab_sigma_enabled', 'disclose_income_tab_persistence', 'sigma_enabled', True)
+sigma_enabled = stateful(st.checkbox,
+                         "Use Normal(anchor, σ) draw in Research Specification mode",
+                         key="di_tab_sigma_enabled", on_change=..., ...)
 st.session_state.di_sigma_enabled = sigma_enabled
 ```
 
-Registry categories: `page1-mirror`, `page2-mirror`. Page 1's canonical layer is one
-object rather than one key per value: `sim_params`, a `SimulationParameters`
-instance whose *attributes* the widgets mirror.
+(`stateful()` refuses `value=` / `index=` / `default=`: the widget's value lives in
+the key, which `restore` seeds, §2 layer 3.)
 
-Because layer 2 is written only while the tab renders, an **unopened tab has no
-layer-2 value at all**, and the seam falls back to the default recorded in the
-registry. That is why `di_sigma_enabled`, `dd_sigma_enabled` and `rtd_sigma_enabled`
-default to `True`: precisely so that an unopened tab runs the same σ the tab would
-have shown.
+Registry categories: `page1-mirror`, `page2-mirror`. Page 1's canonical layer is
+mostly one object rather than one key per value: `sim_params`, a
+`SimulationParameters` instance whose *attributes* the widgets mirror; the run size,
+the seeds and the population mode are keys of their own (`n_agents`, `seed`,
+`base_seed`, `n_runs`, `population_mode`).
+
+The Disclose Income, Disclose Documents and Decision 4 canonical keys are written
+only by their own tab (its initialiser and its widgets), so a **tab that was never
+drawn - the decision never selected - leaves them absent**, and the seam falls back
+to its own default for an absent key (`app/seam/build_plan.py`). That is why
+`di_sigma_enabled`, `dd_sigma_enabled` and `rtd_sigma_enabled` default to `True`:
+precisely so that an undrawn tab runs the same σ the tab would have shown.
 
 ### Layer 3 — the tab persistence dict
 
@@ -178,11 +201,15 @@ Overview tab configures for decisions the user did *not* select
 (`{decision_name}_default_probability_y`, `_default_params`, `_default_selection`,
 `_priority_template`, `_default_value`).
 
-Those widgets live on the Overview tab, which is often never opened. Their session
-keys are also re-seeded from `DEFAULT_DECISION_VALUES` on every Page-2 render, which
-would overwrite a user's choice. `_persistent_defaults` sidesteps both problems:
-`default_config.save_to_persistent_storage(key)` copies the value in, and the seam
-consults it **before** the session key. The full order for one default decision is
+Those widgets are drawn on the Overview tab only while their decision is not
+selected, and only while Page 2 shows; otherwise Streamlit may drop their keys. At
+the top of every script run `models.initialize_default_decision_parameters` (called
+by `models.initialize_session_state`) seeds every **absent** key from
+`DEFAULT_DECISION_VALUES` - the hard default, not the user's choice.
+`_persistent_defaults` keeps the choice: `default_config.save_to_persistent_storage(key)`
+copies the value in (the widgets' `on_change`), `restore_from_persistent_storage`
+writes it back before the widget is drawn, and the seam consults it **before** the
+session key. The full order for one default decision is
 
 1. the post-simulation override (`{decision_name}_probability_y` and friends, §6);
 2. `_persistent_defaults[{decision_name}_default_probability_y]`;
@@ -232,16 +259,20 @@ session-state values that can change a number.
 | Disclose Income (1) | `di_intercept`, `di_wopb`, `di_wpb`, `di_income_mode`, `di_sigma_enabled`, `di_sigma_in_copula`, `di_sigma_strategy`, `di_scale_factor`, `di_quintile_scale_factors` |
 | Disclose Documents (2) | `dd_intercept`, `dd_income_mode`, `dd_sigma_enabled`, `dd_sigma_in_copula`, `dd_sigma_strategy`, `dd_scale_factor`, `dd_quintile_scale_factors` |
 | Rejected Transaction Defaults (4) | `rtd_income_mode`, `rtd_intercept_{mech}` (five elements), `rtd_flex_observed_weight`, `rtd_aggregation_enabled`, `rtd_sigma_enabled`, `rtd_sigma_in_copula`, `rtd_sigma_strategy`, `rtd_scale_factor`, `rtd_quintile_scale_factors` |
-| Default decisions | `_persistent_defaults`, `{decision_name}_default_probability_y`, `_default_params`, `_default_selection`, `_priority_template`, `_default_value`, `final_donation_rate_default_value` |
+| Default decisions | `_persistent_defaults`, `{decision_name}_default_probability_y`, `_default_params`, `_default_selection`, `_priority_template`, `_default_value`, `final_donation_rate_default_value`, and the seam's read-only fallbacks (§6) |
 | Saved configs | `selected_decision_configs` |
 
 Two things are easy to get wrong here.
 
-* **The donation coefficients the engine runs are the suffixed ones.** The Donation
-  tab shows and edits the flat `donation_coeff_*` keys, but `build_plan` reads
-  `donation_coeff_{name}_cat` / `_cont`. The flat set is display state.
-* **`sigma_value_ui` is not read.** It is the product of the σ constant and the
-  coefficient slider, kept for the screen. There is one σ constant, in
+* **The donation coefficients the engine runs are the suffixed ones.** `build_plan`
+  reads `donation_coeff_{name}_cat` / `_cont`, and the Donation tab's formula tables
+  show that set too. The flat `donation_coeff_*` keys (the active income mode's set)
+  are display state: a pinned donation configuration stores them
+  (`state.saved_configs.get_current_coefficients`), and the intercept override
+  writes the active intercept into them as well as into the suffixed key.
+* **The seam does not read `sigma_value_ui`.** It is the product of the σ constant
+  and the coefficient slider, stored with a pinned donation configuration
+  (`state.saved_configs.get_current_stochastic_params`). There is one σ constant, in
   `config/decisions.yaml`, and the seam recomputes the product itself from
   `sigma_coefficient`.
 
@@ -260,16 +291,14 @@ screen says so.
 
 ## 5. Written but never read
 
-One key is written and never read **inside `app/`** but is not a removal candidate,
-because the seam reads it from the snapshot: `donation_adjustment_shift`. The
-registry marks it `write_only=True, engine_input=True`, which is exactly that
-situation.
+None at present: no registry entry is `write_only`. The test holds the registry to
+the scan, so a key that becomes written-but-never-read in `app/` fails it until the
+registry marks it `write_only=True` and this section lists it. Such a key is still
+not a removal candidate if it is also `engine_input` (the seam reads the snapshot).
 
-One family is stale in the other direction. `clear_input_field_cache()` in the
-Donation tab deletes sixteen `donation_coeff_*_input` keys when the income mode
-changes, but no widget binds those keys any more (the coefficient number inputs
-were removed), so the list only ever finds them absent. Harmless, and also a removal
-candidate.
+`donation_adjustment_shift` looks write-only but is not: besides the seam,
+`donation_default.reload_coefficients_for_income_mode` reads it to carry it across a
+coefficient reload.
 
 ## 6. Read but never written
 
@@ -278,10 +307,10 @@ always falls through to the next priority.
 
 | Key | Looked up by | Falls through to |
 |---|---|---|
-| `{decision_name}_probability_y` | `build_plan._collect_decision_settings`, priority 1 | `_persistent_defaults`, then the session key, then `DEFAULT_DECISION_VALUES` |
-| `{decision_name}_selection` (concretely `vendor_choice_weights_selection`) | same, priority 1 | same |
-| `rejected_transaction_defaults_option`, `rejected_transaction_option_selection` | same, priority 1 for the two radio decisions, and `decision_execution.get_actual_default_value` | same |
-| `{decision_name}_config` | `decision_execution.get_actual_default_value`, priority 2 | the hard-coded default |
+| `{decision_name}_probability_y` | `build_plan.collect_decision_settings`, priority 1 for the random-probability decisions | `_persistent_defaults`, then the session key, then `DEFAULT_DECISION_VALUES` |
+| `{decision_name}_selection` (concretely `vendor_choice_weights_selection`) | same, priority 1 for the checkbox decision | same |
+| `rejected_transaction_option_selection` | same, priority 1 for the radio decision (11) | same |
+| `rejected_transaction_defaults_option` | named in the same radio branch, which decision 4 (a priority list) never reaches | - |
 | `donation_coeff_q45` | never written; `state.saved_configs` still names it as the fallback for `donation_coeff_q5` when saving a configuration | `0.0` |
 
 These are the remains of an "adjust the default on the results page and re-run"
@@ -291,14 +320,16 @@ feature that no screen offers any more. The priority chains still have a slot fo
 
 ## 7. Bulk operations
 
-Four places delete keys wholesale. They matter because they are the only way a key
-disappears, and the registry's initialisers are what put it back.
+Five places delete keys wholesale. They matter because they are the only way a key
+disappears (besides Streamlit dropping an undrawn widget's key), and the registry's
+initialisers are what put it back.
 
 | Operation | What it deletes | Then |
 |---|---|---|
-| A decision tab's **Reset to research defaults** | every key starting with `di_`, `dd_` or `rtd_` (whichever tab), plus that tab's persistence dict. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists | calls the tab's `initialize_*_session_state()` (DI/DD: re-seeds the widget keys from the defaults) |
+| A decision tab's **Reset Config to Defaults** (Disclose Income, Disclose Documents, Decision 4) | every key starting with `di_`, `dd_` or `rtd_` (whichever tab), plus that tab's persistence dict. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists | Decision 4 calls `initialize_rtd_session_state()`; Disclose Income / Documents write the reset widget keys and canonical keys from the file (`_apply_config_to_widget_keys`), and the tab's `initialize_*_session_state()` runs next in the same run |
 | Decision 4's per-element reset | only `rtd_intercept_{mech}` and its widget key (for Flexibility also `rtd_flex_observed_weight` and its slider key), plus those entries in the persistence dict | same; σ is decision-wide and deliberately untouched |
 | Page 1's **Reset to Default Values** | every `purchasing_limit_{i}`, `purchasing_limits_temp` and the five widget keys that pass `value=` (the three "Maximum Value" text inputs, `uniform_purchasing_limit_input`, `show_individual_agents_checkbox`); every other Page-1 widget key is *written* | `sim_params` fields go back to the `SimulationParameters` dataclass defaults and the Page-1 session values to `models.SESSION_DEFAULTS`; the widget keys are written from `page1_widget_values`, the same mapping `initialize_widget_keys` seeds a fresh session from |
+| The Overview's **Reset All Defaults** | for every unselected decision, its `{decision_name}_default_*` and `_priority_template` keys (and the `_default_param_*` checkbox keys), plus their `_persistent_defaults` entries | `models.initialize_default_decision_parameters` seeds them again at the top of the next run |
 | **Clear Results** on the results page | *every* key in `st.session_state` | calls `models.initialize_session_state()` and stays on the results page |
 
 The prefix list lives in the registry as `PREFIX_DELETE_PREFIXES` and the test
@@ -313,10 +344,16 @@ a helper's parameter, or a loop over `st.session_state.keys()`. They are reviewe
 hand and listed in `DYNAMIC_KEY_VARIABLES`, so that a *new* unresolvable access fails
 the test rather than slipping past it:
 
-* `key` — the parameter of `save_to_persistent_storage` / `restore_from_persistent_storage`,
-  and the loop variable of the prefix resets and the Clear Results wipe;
+* `key` — the parameter of `state.widgets.sync_widget_key` (every `stateful()`
+  widget's key), of `save_to_persistent_storage` / `restore_from_persistent_storage`
+  and of the Decision-4 download helper; the loop variable of the Disclose Income /
+  Documents initialisers, the prefix resets and the Clear Results wipe;
 * `k` — the per-category purchasing-limit key on Page 1, bound in a lambda default;
-* `chart_key` — the plotly key the shared Decision-4 chart helpers receive.
+* `chart_key` — the plotly key the shared Decision-4 chart helpers receive;
+* `widget_key`, `storage_dict_name` — the parameters of the tabs' persistence helpers
+  (`decision_tabs/_tab_state.py`: `restore`, `save`, `seed_if_absent`,
+  `seed_if_changed`): the widget key and the `*_tab_persistence` dict they read and
+  write. Every caller still binds its widget key literally (`key=`).
 
 ---
 

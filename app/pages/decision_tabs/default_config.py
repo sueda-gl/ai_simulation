@@ -6,7 +6,8 @@ These parameters apply to decisions that are NOT selected for custom configurati
 import streamlit as st
 from app.state.widgets import stateful
 from app.state.saved_configs import get_decision_config
-from app.pages.decision_execution import DEFAULT_DECISION_VALUES, format_decision_title, current_donation_configuration
+from src.contract.defaults import DEFAULT_DECISION_VALUES
+from app.pages.decision_execution import format_decision_title, current_donation_configuration
 
 
 def save_to_persistent_storage(key):
@@ -126,7 +127,7 @@ def render_probability_default_config(decision_name, default_value):
     prob_key = f"{decision_name}_default_probability_y"
     
     # SHADOW STATE: Restore from persistent storage before rendering
-    current_value = restore_from_persistent_storage(prob_key, default_probability)
+    restore_from_persistent_storage(prob_key, default_probability)
     
     # Special handling for purchase_vs_bid - show it only applies to regular customers
     st.caption(description)
@@ -284,7 +285,7 @@ def render_radio_default_config(decision_name, default_value):
     selection_key = f"{decision_name}_default_selection"
     
     # SHADOW STATE: Restore from persistent storage
-    current_selection = restore_from_persistent_storage(selection_key, default_option)
+    restore_from_persistent_storage(selection_key, default_option)
     
     # Create option names mapping
     option_names = dict(options) if options else {}
@@ -292,16 +293,9 @@ def render_radio_default_config(decision_name, default_value):
     col1, col2 = st.columns([2, 1])
     
     with col1:
-        # Compute default index based on current session state
-        # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
         option_codes = [opt[0] for opt in options]
         
-        try:
-            default_index = option_codes.index(current_selection) if current_selection in option_codes else 0
-        except Exception:
-            default_index = 0
-        
-        # Widget uses explicit index derived from session state
+        # No index=: the radio reads the key seeded just above (stateful() forbids index=)
         # SHADOW STATE: Use on_change to save to persistent storage
         selected = stateful(st.radio,
             "Default Option",
@@ -404,7 +398,7 @@ def render_numeric_default_config(decision_name, default_value):
     value_key = f"{decision_name}_default_value"
     
     # SHADOW STATE: Restore from persistent storage
-    current_value = restore_from_persistent_storage(value_key, default_value)
+    restore_from_persistent_storage(value_key, default_value)
     
     col1, col2 = st.columns([2, 1])
     
@@ -415,11 +409,9 @@ def render_numeric_default_config(decision_name, default_value):
             if decision_name == "final_donation_rate":
                 step_size = 0.01  # 1% increments, but display 4 decimal places
                 format_str = "%.4f"
-                caption_format = f"Percentage: {st.session_state[value_key]:.2%}"
             else:
                 step_size = 0.01
                 format_str = "%.2f"
-                caption_format = f"Percentage: {st.session_state[value_key]:.1%}"
             
             # Widget reads from session state
             # CRITICAL: Don't use .get() with fallback - key must exist before widget renders
@@ -470,9 +462,9 @@ def render_final_donation_rate_with_config(default_value, config=None):
     # Session state key for this decision's value
     value_key = "final_donation_rate_default_value"
     
-    # CRITICAL FIX: Do NOT force overwrite on every render!
-    # The value is synced ONCE when config is selected (in save_selected_configuration or auto_populate).
-    # After that, we must respect the user's manual adjustments in session state.
+    # Do NOT overwrite the value on every render: it is synced once, when a donation
+    # configuration is pinned (state.saved_configs.save_decision_config); after that
+    # the user's manual adjustments in session state win.
     
     # Initialize if missing
     if value_key not in st.session_state:
@@ -531,8 +523,6 @@ def render_placeholder_default_config(decision_name, default_value):
     # Decision-specific captions
     if decision_name in ["purchasing_quantity", "purchasing_frequency"]:
         st.caption("💡 No pre-configuration needed - this value is automatically calculated for all agents")
-    elif decision_name == "bid_amount":
-        st.caption("💡 No pre-configuration needed - this value is automatically calculated only for agents who ended up placing a bid")
     else:
         st.caption("💡 No pre-configuration needed - this value is automatically calculated during simulation")
 

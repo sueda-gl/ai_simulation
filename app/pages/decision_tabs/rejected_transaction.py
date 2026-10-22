@@ -30,8 +30,15 @@ mechanism (sigma strategy and x0-2 coefficient).
 Persistence follows the tabs' triple-layer pattern (app/pages/decision_tabs/_tab_state.py):
 canonical rtd_* read keys + rtd_tab_* widget keys + a tab-persistence dict.
 """
+import traceback
+
 import streamlit as st
 from app.state.widgets import stateful
+from app.state.saved_configs import clear_decision_config, get_decision_config
+# The module, not the function: the Run buttons look run_individual_decision up at
+# call time, so a test can stub it (tests/test_rtd_tab_text_ui.py).
+from app.pages import decision_execution
+from app.pages.decision_execution import render_simulation_buttons
 from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent, seed_if_changed
 from app.seam.config_repo import rtd_sigma_coefficient_defaults
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
@@ -656,8 +663,7 @@ def render_element_run_button(mech):
                  help=f"Run the Decision 4 simulation with the current settings and "
                       f"present only the {title} results and Excel"):
         st.session_state.rtd_run_element = mech
-        from app.pages.decision_execution import run_individual_decision
-        run_individual_decision('rejected_transaction_defaults')
+        decision_execution.run_individual_decision('rejected_transaction_defaults')
 
 
 def render_mechanism_subtab(config, mech):
@@ -693,8 +699,7 @@ def render_aggregation_run_button():
                       "present the integrated default list together with the "
                       "tie-resolution statistics"):
         st.session_state.rtd_run_element = 'aggregation'
-        from app.pages.decision_execution import run_individual_decision
-        run_individual_decision('rejected_transaction_defaults')
+        decision_execution.run_individual_decision('rejected_transaction_defaults')
 
 
 def render_aggregation_subtab(config):
@@ -769,7 +774,6 @@ def render_selected_config_notice():
     run buttons, with an Unselect button. Once a configuration is selected the runs
     present only that configuration, but it must be possible to
     unselect it at any point of the process so later runs present all alternatives."""
-    from app.pages.decision_execution import get_decision_config, clear_decision_config
     config = get_decision_config('rejected_transaction_defaults')
     if not config:      # only explicit "Use This Config" selections are stored
         return
@@ -972,11 +976,9 @@ def render_rejected_transaction_defaults_tab():
             or st.session_state.get('run_complete_from_rejected_transaction_defaults_btn')):
         st.session_state.rtd_run_element = None
     try:
-        from app.pages.decision_execution import render_simulation_buttons
         selected_decs = getattr(st.session_state.decision_params, 'selected_decisions', [])
         render_simulation_buttons(decision_name="rejected_transaction_defaults",
                                   selected_decisions=selected_decs)
     except Exception as e:
         st.error(f"Error rendering simulation buttons: {e}")
-        import traceback
         st.code(traceback.format_exc())

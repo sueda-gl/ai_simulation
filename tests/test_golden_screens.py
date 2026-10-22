@@ -466,6 +466,19 @@ def journey_use_this_config_then_complete(rec):
     return s.steps
 
 
+def journey_pin_disclose_documents(rec):
+    """"Use This Config" on a Disclose Documents result (the decision run alone, in
+    "Compare both": the results page offers the button where it shows more than one
+    configuration), then the pinned-configuration card on the Page 2 Overview."""
+    s = Session(rec).to_page2()
+    s.choose_decisions("page2_only_disclose_documents", ["disclose_documents"])
+    s.set("disclose_documents_compare_both", "dd_tab_income_mode", COMPARE_BOTH)
+    s.click_key("results_disclose_documents_compare_both", "run_disclose_documents_only_btn")
+    s.click("config_pinned", USE_THIS_CONFIG)
+    s.back_to_page2("page2_overview_with_pinned_card")
+    return s.steps
+
+
 def journey_monte_carlo_complete(rec):
     """A Monte-Carlo study (2 runs - the smallest the widget allows - of 40 agents),
     every decision selected, through "Run Complete Simulation"."""
@@ -539,6 +552,7 @@ JOURNEYS = {
     "donation_overrides_survive_navigation": journey_donation_overrides_survive_navigation,
     "compare_both_and_d4_elements": journey_compare_both_and_d4_elements,
     "use_this_config_then_complete": journey_use_this_config_then_complete,
+    "pin_disclose_documents": journey_pin_disclose_documents,
     "monte_carlo_complete": journey_monte_carlo_complete,
     "multi_vendor_complete": journey_multi_vendor_complete,
     "page1_income_distributions": journey_page1_income_distributions,
