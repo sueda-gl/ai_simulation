@@ -9,8 +9,9 @@ statistic, minus the Decision 4 model sheets (those live in `app.reports.rtd`):
   priority statistics shown alongside it.
 * Decision 11 - "rejected transaction option": the result value counts.
 
-`app/pages/results/visualizations/transaction_viz.py` imports them and keeps
-only the Streamlit rendering. Nothing here imports Streamlit or reads session
+The result views under `app/pages/results/visualizations/` (transaction_viz.py for
+Decision 4, purchase_vs_bid_viz.py, rejected_transaction_option_viz.py) import them
+and keep only the Streamlit rendering. Nothing here imports Streamlit or reads session
 state: the pricing parameters, the vendor list and the `TimestampConverter` are
 passed in explicitly.
 """

@@ -126,7 +126,7 @@ src/                  THE ENGINE - pure simulation, never imports Streamlit or a
   data/participants.py   the 280 experiment participants (read lazily, cached)
   trait_engine.py        samples synthetic agents from the copula model
   vendor_attribute_generator.py   vendor attributes and the shared vendor score
-  utils/stochastic.py    shared sigma helpers and the one stochastic gate
+  utils/stochastic.py    the one stochastic gate (should_use_stochastic)
   config.py              the one loader of config/decisions.yaml and simulation.yaml
 
 app/                  THE STREAMLIT APP
@@ -137,7 +137,7 @@ app/                  THE STREAMLIT APP
   reports/               every exported number, frame and workbook (no Streamlit)
   pages/                 the screens: page1, page2 + decision_tabs/, results/
   models.py              SimulationParameters and session-state initialisation
-  components.py          CSS and the Monte-Carlo screen
+  pages/css.py           the global CSS
 
 config/               decisions.yaml, simulation.yaml, trait_model.pkl (copula)
 data/                 experiment/survey workbooks + frozen reference CSVs

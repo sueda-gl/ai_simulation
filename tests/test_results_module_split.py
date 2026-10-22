@@ -1,7 +1,6 @@
 """The results modules after the split of app/components.py and transaction_viz.py.
 
-* ``app/components.py`` is a shim: it re-exports only what its remaining importers
-  use, and no module of the app imports it any more.
+* ``app/components.py`` no longer exists; nothing under app/ or tests/ imports it.
 * ``viz_helpers.yes_no_pie`` replaced four token-identical copies of the Y/N pie;
   it must keep drawing exactly the figure those copies drew.
 """
@@ -14,12 +13,6 @@ import pandas as pd
 
 from conftest import ROOT
 
-# The files that still import from the shim, and what they import.
-SHIM_IMPORTERS = {
-    "tests/test_run_context_run_values.py": {"rtd_page_element", "show_overview"},
-}
-
-
 def _imports_of_app_components(path):
     """The names `path` imports from app.components (empty set: none)."""
     names = set()
@@ -31,20 +24,10 @@ def _imports_of_app_components(path):
     return names
 
 
-def test_shim_reexports_only_what_its_importers_use():
-    import app.components as shim
-    from app.pages.results import overview
-
-    public = {n for n in vars(shim) if not n.startswith("_")}
-    assert public == set().union(*SHIM_IMPORTERS.values())
-    for name in public:
-        assert getattr(shim, name) is getattr(overview, name)
-    for rel, names in SHIM_IMPORTERS.items():
-        assert _imports_of_app_components(ROOT / rel) == names, rel
-
-
-def test_the_app_no_longer_imports_the_shim():
-    files = [ROOT / "app_enhanced_new.py"] + sorted((ROOT / "app").rglob("*.py"))
+def test_nothing_imports_app_components_and_it_is_gone():
+    assert not (ROOT / "app" / "components.py").exists()
+    files = ([ROOT / "app_enhanced_new.py"] + sorted((ROOT / "app").rglob("*.py"))
+             + sorted((ROOT / "tests").rglob("*.py")) + sorted((ROOT / "scripts").rglob("*.py")))
     importers = [str(p.relative_to(ROOT)) for p in files
                  if "__pycache__" not in p.parts and _imports_of_app_components(p)]
     assert importers == []

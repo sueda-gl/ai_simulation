@@ -1,6 +1,6 @@
 """Pure numerics and CSV building behind the Monte-Carlo results screen.
 
-`app.components.show_monte_carlo_results` reads `st.session_state['mc_results']`,
+`app.pages.results.mc_display.show_monte_carlo_results` reads `st.session_state['mc_results']`,
 calls the functions here and hands the results to `st.metric` /
 `st.plotly_chart` / `st.dataframe` / `st.download_button`. Nothing in this
 module imports Streamlit.

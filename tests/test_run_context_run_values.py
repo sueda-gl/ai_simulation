@@ -44,7 +44,7 @@ def _script():
     import streamlit as st
     import pandas as pd
     from app.models import initialize_session_state
-    from app.components import rtd_page_element, show_overview
+    from app.pages.results.overview import rtd_page_element, show_overview
     from app.pages.results.run_context import RunContext
     from app.pages.results.visualizations.bidding_viz import render_bid_value
 

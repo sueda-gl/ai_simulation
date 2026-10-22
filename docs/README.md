@@ -151,9 +151,6 @@ Streamlit, no globals, no writes to session state.
     (3, 13), `vendor_viz.py` (5, 8), `purchasing_viz.py` (6, 7),
     `purchase_vs_bid_viz.py` (9), `bidding_viz.py` (10),
     `rejected_transaction_option_viz.py` (11), `rejected_bid_value_viz.py` (12).
-* `app/components.py` — a re-export shim, kept only because
-  `tests/test_run_context_run_values.py` still imports from it; new code imports from
-  the modules above.
 * `app/models.py` — `SimulationParameters` (the Page-1 settings, kept in
   `st.session_state.sim_params`), `SESSION_DEFAULTS` (the other values a fresh session
   starts with) and `initialize_session_state()`, which `app_enhanced_new.py` calls on
