@@ -65,13 +65,11 @@ def format_decision_title(decision_name, include_number=False):
 def donation_income_mode_from_settings():
     """Donation Default's own income mode from the live settings.
 
-    The lookup is: 1) the donation tab persistence, 2) the page2_tab_income_spec_mode
-    widget, 3) the global income_spec_mode. The gate (can_run_complete_simulation)
-    and the Overview donation card both use it.
+    The lookup is: 1) the page2_tab_income_spec_mode widget (it holds the click
+    being processed before the tab renders), 2) the canonical income_spec_mode
+    (the last rendered value, which outlives the widget key). The gate
+    (can_run_complete_simulation) and the Overview donation card both use it.
     """
-    if (hasattr(st.session_state, 'donation_tab_persistence')
-            and 'income_spec_mode' in st.session_state.donation_tab_persistence):
-        return st.session_state.donation_tab_persistence['income_spec_mode']
     if 'page2_tab_income_spec_mode' in st.session_state:
         return st.session_state.page2_tab_income_spec_mode
     return st.session_state.get('income_spec_mode', 'categorical only')

@@ -31,7 +31,6 @@ import pytest
 from app.state.registry import (
     CATEGORIES,
     CONTROL_KEYS,
-    DONATION_TAB_PERSISTENCE,
     DYNAMIC_KEY_VARIABLES,
     KEY_PARAMETER_TABLES,
     PREFIX_DELETE_PREFIXES,
@@ -651,14 +650,10 @@ def test_key_parameter_tables_cover_their_modules(scan):
 
 def test_widget_canonical_table_matches_the_rows_and_the_registry(scan):
     """``TAB_WIDGET_CANONICAL`` (what ``_tab_state.restore`` seeds an absent
-    widget key from) and ``DONATION_TAB_PERSISTENCE`` (the Donation widgets,
-    which still seed from their dict) name only registered widget keys and
-    registered canonical keys, split the widgets of the ``CONTROL_KEYS`` rows
-    between them (the Donation row's in the dict table, the others' paired the
-    way each control writes its canonical key), and between them cover every
-    ``restore()`` call in ``app/`` exactly once (so a widget seeded through
-    ``restore`` cannot be missing from both, or in both)."""
-    assert not set(TAB_WIDGET_CANONICAL) & set(DONATION_TAB_PERSISTENCE)
+    widget key from) names only registered widget keys and registered canonical
+    keys, pairs every shared control of every ``CONTROL_KEYS`` row the way the
+    control writes its canonical key, and is read by every ``restore()`` call in
+    ``app/`` (so a widget seeded through it cannot be missing from it)."""
     modes = _modes_by_spec(scan)
     for widget_key, (canonical_key, entry) in TAB_WIDGET_CANONICAL.items():
         w, c = lookup(widget_key), lookup(canonical_key)
@@ -668,11 +663,6 @@ def test_widget_canonical_table_matches_the_rows_and_the_registry(scan):
         assert (entry is not None) == canonical_key.endswith("quintile_scale_factors"), widget_key
         # the canonical key is written somewhere in app/ by name (next to the widget)
         assert "w" in modes[c.name], canonical_key
-    for widget_key, entry in DONATION_TAB_PERSISTENCE.items():
-        w = lookup(widget_key)
-        assert w is not None and w.is_widget and w.category == "page2-widget", widget_key
-        assert isinstance(entry, str) and entry, widget_key
-    assert lookup("donation_tab_persistence").category == "tab-persistence"
 
     for tab, keys in CONTROL_KEYS.items():
         expected = {
@@ -685,13 +675,10 @@ def test_widget_canonical_table_matches_the_rows_and_the_registry(scan):
                (f"{keys.dp}quintile_scale_factors", level) for level in "12345"},
         }
         for widget_key, home in expected.items():
-            if tab == "donation_default":
-                assert widget_key in DONATION_TAB_PERSISTENCE, (tab, widget_key)
-            else:
-                assert TAB_WIDGET_CANONICAL.get(widget_key) == home, (tab, widget_key)
-    listed = set(TAB_WIDGET_CANONICAL) | set(DONATION_TAB_PERSISTENCE)
+            assert TAB_WIDGET_CANONICAL.get(widget_key) == home, (tab, widget_key)
+    listed = set(TAB_WIDGET_CANONICAL)
 
-    # every restore() call site names a widget key exactly one table holds
+    # every restore() call site names a widget key the table holds
     sites = {}
     for dirpath, dirnames, filenames in os.walk(APP):
         dirnames[:] = [d for d in dirnames if d != "__pycache__"]
@@ -723,7 +710,7 @@ def test_widget_canonical_table_matches_the_rows_and_the_registry(scan):
     for key, where in sites.items():
         concrete = [k for k in listed if pattern_regex(key).fullmatch(k)] \
             if "{" in key else ([key] if key in listed else [])
-        assert concrete, f"restore() seeds {key!r} ({where[0]}) but neither table lists it"
+        assert concrete, f"restore() seeds {key!r} ({where[0]}) but TAB_WIDGET_CANONICAL lacks it"
     seeded = {k for key in sites for k in listed
               if (pattern_regex(key).fullmatch(k) if "{" in key else key == k)}
     assert seeded == listed, f"table rows no restore() call seeds: {sorted(listed - seeded)}"

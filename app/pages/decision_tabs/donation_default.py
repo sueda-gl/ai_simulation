@@ -7,7 +7,7 @@ import traceback
 import streamlit as st
 from app.state.widgets import drawn_in_previous_run, stateful
 from app.state.saved_configs import clear_decision_config
-from app.pages.decision_tabs._tab_state import restore, saver, seed_if_absent
+from app.pages.decision_tabs._tab_state import restore, seed_if_absent
 from app.pages.decision_tabs._controls import (
     EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, TabControls,
     render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
@@ -40,8 +40,10 @@ def research_defaults():
 
     Not in the file, so the reset sets them itself: the income mode and the two σ
     tick boxes. The σ controls (mode radio, coefficient and per-quintile sliders)
-    keep their values: the reset writes none of their widget keys, and a live
-    widget key wins over the stored value (``_tab_state.restore``)."""
+    keep their values while they are drawn: the reset writes none of their widget
+    keys, and a live widget key wins over the canonical value
+    (``_tab_state.restore``); a σ control hidden at the reset (the coefficient in
+    quintile mode, the quintile sliders in overall mode) comes back at its default."""
     block = read_yaml_file(CONFIG_PATH)['donation_default']
     stochastic = block.get('stochastic', {})
     default_scale = float(stochastic.get('scale_factor', 1.0))
@@ -85,11 +87,6 @@ def get_coefficient(name, mode_suffix=None):
 
 def initialize_donation_widget_keys():
     """Initialize widget keys for donation_default tab to preserve values across navigation"""
-
-    # Initialize persistence storage if missing (this tab's third home; see
-    # registry.DONATION_TAB_PERSISTENCE for why it is the last tab that has one)
-    if "donation_tab_persistence" not in st.session_state:
-        st.session_state.donation_tab_persistence = {}
 
     # Initialize canonical checkbox widget keys (one set, mode-independent)
     seed_if_absent("tab_sigma_in_copula", st.session_state.get('sigma_in_copula', False))
@@ -152,8 +149,14 @@ def render_donation_default_tab():
     if st.session_state.get('_reset_config_to_defaults_flag', False):
         st.session_state._reset_config_to_defaults_flag = False
 
-        # Clear persistence storage
-        st.session_state.donation_tab_persistence = {}
+        # Forget the σ coefficient slider's canonical value: a slider drawn in this
+        # run keeps its live value (the reset writes none of the σ widget keys) and
+        # the render writes it back, so it also survives the next navigation - the
+        # owner-approved change of 2026-10-22 (the old persistence dict, cleared
+        # here and refilled only by a change, let the next navigation turn a
+        # still-displayed 1.3 into 1.0); a slider hidden by quintile mode comes
+        # back at the fallback 1.0, as before.
+        st.session_state.pop('donation_sigma_coefficient_setting', None)
 
         # Research defaults from config/decisions.yaml (read-only) - the same values
         # the first draw shows; nothing below is a hard-coded number.
@@ -213,6 +216,10 @@ def render_donation_default_tab():
         if sigma_in_copula or sigma_in_research:
             sigma_strategy, sigma_coefficient = render_sigma_controls(DONATION_CONTROLS)
             if sigma_strategy == 'overall':
+                # The coefficient in effect (the seam's engine input) is the slider;
+                # the slider's own canonical key, donation_sigma_coefficient_setting,
+                # was written by the shared controls right after it.
+                st.session_state.sigma_coefficient = sigma_coefficient
                 st.session_state.sigma_value_ui = BASE_SIGMA_OVERALL * sigma_coefficient
             else:
                 # Set sigma_value_ui to indicate stochastic is enabled (using overall sigma as fallback display)
@@ -224,7 +231,7 @@ def render_donation_default_tab():
         # Anchor weights
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
 
-        # Restore anchor weight (from the tab's persistence dict)
+        # Seed the anchor weight from its canonical key (anchor_observed_weight)
         restore('tab_anchor_weight', 0.75)
 
         anchor_observed_weight = stateful(st.slider,
@@ -234,7 +241,6 @@ def render_donation_default_tab():
             step=0.01,
             help="Anchor = w × Observed + (1-w) × Predicted",
             key="tab_anchor_weight",
-            on_change=saver('tab_anchor_weight')
         )
         st.session_state.anchor_observed_weight = anchor_observed_weight
         st.markdown(f"Predicted weight: {1 - anchor_observed_weight:.2f}")

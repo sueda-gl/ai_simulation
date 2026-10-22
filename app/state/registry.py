@@ -35,7 +35,6 @@ CATEGORIES = (
     "page1-mirror",      # the canonical Page-1 value a widget mirrors
     "page2-widget",      # a Page-2 / decision-tab widget's own key
     "page2-mirror",      # the canonical Page-2 value the seam reads
-    "tab-persistence",   # the Donation tab's dict that outlives an un-rendered widget
     "saved-config",      # "Use This Config" pins
     "run-flag",          # what the click that started a run recorded
     "results",           # run output and the widgets that display it
@@ -61,7 +60,7 @@ CATEGORIES = (
 #:                  (``donation_hist_*`` / ``*_pie_*`` / ``*_raw_hist_*`` and the
 #:                  Decision-4 density charts).
 #: ``widget_key`` / ``canonical_key`` - the decision tabs' seeding helpers
-#:                  (``decision_tabs._tab_state``: ``restore`` / ``save`` /
+#:                  (``decision_tabs._tab_state``: ``restore`` /
 #:                  ``seed_if_absent`` / ``seed_if_changed``): the widget key they
 #:                  are handed, and the canonical key ``restore`` looks it up in
 #:                  TAB_WIDGET_CANONICAL below.  Every caller still binds the
@@ -106,7 +105,9 @@ PREFIX_DELETE_PREFIXES = ("dd_", "di_", "rtd_", "purchasing_limit_")
 #:   sp       - prefix of the copula / research canonical keys ("" on the Donation tab)
 #:   suffix   - the widget-key suffix of the σ controls ("" on Decision 4)
 #:   research - the research-box stem: Donation "sigma_in_research", the others "sigma_enabled"
-#:   coefficient   - the canonical key of the σ coefficient (Donation "sigma_coefficient")
+#:   coefficient   - the canonical key of the σ coefficient slider (Donation
+#:                   "donation_sigma_coefficient_setting": the engine input
+#:                   sigma_coefficient is derived from it, see _PAGE2_MIRRORS)
 #:   income_widget - the income-mode radio's widget key
 #:   income        - the canonical income-mode key
 ControlKeys = namedtuple("ControlKeys",
@@ -114,7 +115,7 @@ ControlKeys = namedtuple("ControlKeys",
 CONTROL_KEYS = {
     "donation_default": ControlKeys(
         dp="donation_", wp="tab_", sp="", suffix="_stochastic", research="sigma_in_research",
-        coefficient="sigma_coefficient", income_widget="page2_tab_income_spec_mode",
+        coefficient="donation_sigma_coefficient_setting", income_widget="page2_tab_income_spec_mode",
         income="income_spec_mode"),
     "disclose_income": ControlKeys(
         dp="di_", wp="di_tab_", sp="di_", suffix="_stochastic", research="sigma_enabled",
@@ -149,25 +150,35 @@ KEY_PARAMETER_TABLES = {
 # --------------------------------------------------------------------------- #
 # Where a decision-tab widget's value lives when its widget is not drawn
 # --------------------------------------------------------------------------- #
-#: widget key -> (canonical key, entry): the canonical home of every Disclose
-#: Income, Disclose Documents and Decision 4 widget that
-#: ``decision_tabs._tab_state.restore`` seeds.  Streamlit drops a widget key once
-#: its widget is not drawn (another page, the decision unselected, the σ controls
-#: hidden); the canonical key is written right after the widget on every render
-#: and is never dropped, so ``restore`` seeds an absent widget key from it (the
-#: live widget key always wins).  ``entry`` is None for a flat key, or the entry
-#: of a dict-valued canonical key (the per-quintile sliders map to entries
-#: '1'..'5' of ``<prefix>quintile_scale_factors``).  Until 2026-10-22 a per-tab
-#: ``*_tab_persistence`` dict, filled from ``on_change``, played this part for
-#: these three tabs too; it only ever held what the canonical key held.
+#: widget key -> (canonical key, entry): the canonical home of every decision-tab
+#: widget that ``decision_tabs._tab_state.restore`` seeds.  Streamlit drops a
+#: widget key once its widget is not drawn (another page, the decision
+#: unselected, the σ controls hidden); the canonical key is written right after
+#: the widget on every render and is never dropped, so ``restore`` seeds an absent
+#: widget key from it (the live widget key always wins).  ``entry`` is None for a
+#: flat key, or the entry of a dict-valued canonical key (the per-quintile
+#: sliders map to entries '1'..'5' of ``<prefix>quintile_scale_factors``).  Until
+#: 2026-10-22 a per-tab ``*_tab_persistence`` dict, filled from ``on_change``,
+#: played this part; it only ever held what the canonical key held (the Donation
+#: σ coefficient slider, whose engine-facing key is overwritten in quintile mode,
+#: got a canonical key of its own, donation_sigma_coefficient_setting).
 #:
 #: ``tests/test_session_key_registry.py`` holds this table to CONTROL_KEYS (the
 #: shared controls name their keys from those rows) and to the registry rows.
-#: A widget drawn through ``restore`` that is in neither table raises at its
-#: first draw.
+#: A widget drawn through ``restore`` that is not listed here raises at its first
+#: draw.
 _QUINTILE_LEVELS = ("1", "2", "3", "4", "5")
 _RTD_MECHANISMS = ("ttp", "loyalty", "wtp", "risk_taking", "flexibility")
 TAB_WIDGET_CANONICAL = {
+    # Donation Default (decision 3)
+    "tab_sigma_in_copula": ("sigma_in_copula", None),
+    "tab_sigma_in_research": ("sigma_in_research", None),
+    "donation_tab_sigma_strategy_stochastic": ("donation_sigma_strategy", None),
+    "tab_sigma_coefficient_stochastic": ("donation_sigma_coefficient_setting", None),
+    **{f"donation_tab_sigma_q{level}_stochastic": ("donation_quintile_scale_factors", level)
+       for level in _QUINTILE_LEVELS},
+    "tab_anchor_weight": ("anchor_observed_weight", None),
+    "page2_tab_income_spec_mode": ("income_spec_mode", None),
     # Disclose Income (decision 1)
     "di_tab_sigma_in_copula": ("di_sigma_in_copula", None),
     "di_tab_sigma_enabled": ("di_sigma_enabled", None),
@@ -197,32 +208,6 @@ TAB_WIDGET_CANONICAL = {
        for mech in _RTD_MECHANISMS},
     "rtd_tab_flex_observed_weight": ("rtd_flex_observed_weight", None),
     "rtd_tab_income_mode": ("rtd_income_mode", None),
-}
-
-#: widget key -> entry of ``donation_tab_persistence``: the Donation tab still
-#: seeds its widgets from its persistence dict (written only from ``on_change``,
-#: ``_tab_state.save``; the live widget key wins; the default comes last - the
-#: canonical key is NOT consulted).  It could not join the table above without a
-#: visible change: its whole-tab reset ("Reset Config to Defaults") clears the
-#: dict while the σ coefficient slider, if drawn, keeps its live value, so a
-#: coefficient edited before the reset (say 1.3) stays on screen until the
-#: slider is next culled (the decision unselected, a Page-1 round trip) and then
-#: comes back at the fallback 1.0; the quintile sliders and the σ-mode radio,
-#: whose canonical keys the same render rewrites, keep their edits across that
-#: culling.  Seeding from a canonical key would keep the coefficient too (the
-#: canonical ``sigma_coefficient`` is besides overwritten with 1.0 while the
-#: σ mode is 'quintile', so the slider would need a home of its own).  Whether
-#: the reset should forget the coefficient is an owner decision; until it is
-#: taken, this tab keeps the dict so every screen stays as recorded.
-DONATION_TAB_PERSISTENCE = {
-    "tab_sigma_in_copula": "sigma_in_copula",
-    "tab_sigma_in_research": "sigma_in_research",
-    "donation_tab_sigma_strategy_stochastic": "sigma_strategy_stochastic",
-    "tab_sigma_coefficient_stochastic": "sigma_coefficient_stochastic",
-    **{f"donation_tab_sigma_q{level}_stochastic": f"donation_sigma_quintile_{level}_stochastic"
-       for level in _QUINTILE_LEVELS},
-    "tab_anchor_weight": "anchor_weight",
-    "page2_tab_income_spec_mode": "income_spec_mode",
 }
 
 
@@ -458,10 +443,24 @@ _PAGE2_MIRRORS = (
                "tab_sigma_in_research."),
     _row("sigma_coefficient", 1.0, MODELS_DEFAULTS, "page2-mirror", engine_input=True,
          notes="sigma_value = the one sigma constant x this coefficient.  The "
-               "coefficient IN EFFECT: the slider while the σ mode is 'overall', "
-               "1.0 while it is 'quintile' (render_donation_default_tab) - so it "
-               "cannot seed the slider, which keeps its value in the Donation "
-               "persistence dict (DONATION_TAB_PERSISTENCE)."),
+               "coefficient IN EFFECT: the slider (donation_sigma_coefficient_setting) "
+               "while the σ mode is 'overall', 1.0 while it is 'quintile' "
+               "(render_donation_default_tab writes it after the σ controls) - so "
+               "it cannot seed the slider."),
+    _row("donation_sigma_coefficient_setting", "<absent until the σ coefficient slider is drawn>",
+         "decision_tabs._controls.render_coefficient_slider", "page2-mirror",
+         notes="the Donation σ coefficient slider's own canonical home, written "
+               "right after the slider on every render (the Disclose Income / "
+               "Documents / Decision 4 twins are di_/dd_/rtd_scale_factor); "
+               "TAB_WIDGET_CANONICAL seeds the slider from it.  Not an engine "
+               "input: the seam reads sigma_coefficient.  The whole-tab reset "
+               "deletes it: a slider hidden by quintile mode at the reset comes "
+               "back at the fallback 1.0, a drawn slider keeps its value - and "
+               "keeps it across the next culling too, which the old persistence "
+               "dict (cleared by the reset, refilled only by a change) did not: "
+               "the slider went on showing 1.3 and the next navigation turned it "
+               "into 1.0.  Owner-approved behaviour change, 2026-10-22: what the "
+               "slider shows is what the run uses."),
     _row("sigma_value_ui", 9.8995, P2_INIT, "page2-mirror",
          notes="display-only product of the sigma constant and the coefficient; "
                "the seam recomputes it from the one constant rather than reading it."),
@@ -575,7 +574,7 @@ _RTD_DISPLAY = (
 _DONATION_WIDGETS = _rows((
     ("tab_sigma_in_copula", "<sigma_in_copula, else False>"),
     ("tab_sigma_in_research", "<sigma_in_research, else True>"),
-    ("tab_sigma_coefficient_stochastic", "<donation_tab_persistence['sigma_coefficient_stochastic'], else 1.0>",
+    ("tab_sigma_coefficient_stochastic", "<donation_sigma_coefficient_setting, else 1.0>",
      "seeded by _controls.render_sigma_controls right before the slider (not by the "
      "initialiser: the key must not be written in a run that does not draw the slider); "
      "the seam multiplies the one sigma constant by this slider"),
@@ -585,7 +584,7 @@ _DONATION_WIDGETS = _rows((
     ("override_categorical_intercept", "<the current categorical intercept>"),
     ("override_continuous_intercept", "<the current continuous intercept>"),
     ("override_adjustment_shift", "<donation_adjustment_shift>"),
-    ("page2_tab_income_spec_mode", "<donation_tab_persistence['income_spec_mode'], else 'categorical only'>",
+    ("page2_tab_income_spec_mode", "<income_spec_mode, else 'categorical only'>",
      "the Donation tab's income-mode radio; seeded by render_donation_default_tab right before it "
      "(Page 2 pre-seeded it from income_spec_mode until 2026-10-22)"),
     ("reset_intercept_btn", WIDGET),
@@ -665,23 +664,6 @@ _RUN_BUTTONS = _rows((
     ("run_complete_from_{decision_name}_btn", WIDGET),
     ("run_complete_from_{decision_name}_btn_disabled", WIDGET),
 ), "decision_execution.render_simulation_buttons", "page2-widget", is_widget=True)
-
-
-# --------------------------------------------------------------------------- #
-# the Donation tab's persistence dict
-# --------------------------------------------------------------------------- #
-
-_TAB_PERSISTENCE = (
-    _row("donation_tab_persistence", {}, DON_INIT, "tab-persistence",
-         notes="written only from an on_change callback (decision_tabs._tab_state.save); "
-               "read back before the widget renders (_tab_state.restore), and only "
-               "while the widget key is absent - the live widget key wins.  The last "
-               "of the four tab dicts: the other three tabs seed their widgets from "
-               "their canonical keys since 2026-10-22 (TAB_WIDGET_CANONICAL); why "
-               "this one stays is on DONATION_TAB_PERSISTENCE.  Cleared by the "
-               "Donation whole-tab reset; the gate's donation income-mode lookup "
-               "reads its income_spec_mode entry first."),
-)
 
 
 # --------------------------------------------------------------------------- #
@@ -846,7 +828,7 @@ REGISTRY: Tuple[KeySpec, ...] = (
     + _DONATION_WIDGETS + _DI_WIDGETS + _DD_WIDGETS + _RTD_WIDGETS
     + _RESET_PENDING_FLAGS
     + _PAGE2_WIDGETS + _RUN_BUTTONS
-    + _TAB_PERSISTENCE + _SAVED_CONFIG + _RUN_FLAGS
+    + _SAVED_CONFIG + _RUN_FLAGS
     + _RESULTS + _RESULT_WIDGETS + _DEFAULTS
 )
 
@@ -877,7 +859,7 @@ def lookup(key: str) -> Optional[KeySpec]:
 __all__ = [
     "CATEGORIES", "DYNAMIC_KEY_VARIABLES", "PREFIX_DELETE_PREFIXES", "WIDGET",
     "CONTROL_KEYS", "ControlKeys", "DISCLOSURE_KEYS", "DisclosureKeys", "KEY_PARAMETER_TABLES",
-    "TAB_WIDGET_CANONICAL", "DONATION_TAB_PERSISTENCE",
+    "TAB_WIDGET_CANONICAL",
     "KeySpec", "REGISTRY", "lookup", "matching_families", "normalise",
     "pattern_regex", "specificity",
 ]

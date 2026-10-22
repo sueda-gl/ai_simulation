@@ -13,8 +13,8 @@ a plain mapping) over an enumerated grid of its inputs:
 * a configuration pinned for a decision that is NOT selected (the gate selects it);
 * the shape of a pinned record (where its income mode and population mode sit),
   which only changes the success message;
-* the Donation tab's three-level income-mode lookup and the "compare" / "both"
-  detection.
+* the Donation tab's two-level income-mode lookup (its widget key, then the
+  canonical ``income_spec_mode``) and the "compare" / "both" detection.
 
 The seed and the agent count are NOT gate inputs: a pin with another seed or agent
 count is refused when it is made (``saved_configs.validate_seed_consistency``),
@@ -126,9 +126,8 @@ def _grid_rows():
                 if "pin" in state:
                     configs[decision] = PINNED[decision]
             session = _session(population, selected, configs, modes)
-            # the Donation tab's own lookup: the persistence dict first, then its
-            # widget key, then the global income_spec_mode (all three agree here)
-            session["donation_tab_persistence"] = {"income_spec_mode": modes["income_spec_mode"]}
+            # the Donation tab's own lookup: its widget key first, then the
+            # canonical income_spec_mode (both agree here)
             session["page2_tab_income_spec_mode"] = modes["income_spec_mode"]
             yield "|".join(parts), session
 
@@ -143,7 +142,6 @@ def _extra_rows():
             for mode in (plain_mode, compare):
                 modes = dict(plain, **{mode_key: mode})
                 session = _session(population, [], {decision: PINNED[decision]}, modes)
-                session["donation_tab_persistence"] = {"income_spec_mode": modes["income_spec_mode"]}
                 yield f"pin-only|pop={population}|{SHORT[decision]}={mode}", session
 
     # the shape of a pinned record: where the gate finds the saved mode it reports
@@ -196,17 +194,12 @@ def _extra_rows():
         for mode in ("compare", "both", "COMPARE BOTH", "Both specifications", "x", "", None, 3):
             modes = dict(plain, **{mode_key: mode})
             session = _session(COPULA, [decision], {}, modes)
-            session["donation_tab_persistence"] = {"income_spec_mode": modes["income_spec_mode"]}
             yield f"detect|{SHORT[decision]}={mode!r}", session
 
-    # the Donation tab's three-level income-mode lookup
+    # the Donation tab's two-level income-mode lookup: the widget key wins over
+    # the canonical income_spec_mode (the per-tab persistence dict that used to
+    # come first went on 2026-10-22; it only ever held what the canonical key held)
     lookups = {
-        "persistence-wins": dict(donation_tab_persistence={"income_spec_mode": "Compare both"},
-                                 page2_tab_income_spec_mode="categorical only",
-                                 income_spec_mode="categorical only"),
-        "persistence-without-entry": dict(donation_tab_persistence={},
-                                          page2_tab_income_spec_mode="Compare both",
-                                          income_spec_mode="categorical only"),
         "widget-wins": dict(page2_tab_income_spec_mode="Compare both",
                             income_spec_mode="categorical only"),
         "global-only": dict(income_spec_mode="Compare both"),
@@ -331,7 +324,6 @@ def test_a_compare_mode_without_a_pin_blocks_and_a_pin_unblocks(monkeypatch, dec
     modes = {k: p for k, p, _ in DECISIONS.values()}
     modes[mode_key] = compare
     session = _session(COMPARE_ALL, [decision], {}, modes)
-    session["donation_tab_persistence"] = {"income_spec_mode": modes["income_spec_mode"]}
     can_run, reason, count, block_type, issues = _gate(monkeypatch, session)
     title = execution.GATE_BLOCK_TYPE_TITLES[
         "donation_config" if decision == "donation_default" else decision]
@@ -351,7 +343,6 @@ def test_blocking_issues_come_in_the_gates_order(monkeypatch):
     Default - and the first one's block type is the headline."""
     modes = {k: c for k, _, c in DECISIONS.values()}
     session = _session(COPULA, list(DECISIONS), {}, modes)
-    session["donation_tab_persistence"] = {"income_spec_mode": "Compare both"}
     can_run, reason, count, block_type, issues = _gate(monkeypatch, session)
     assert not can_run and count == 2 and block_type == "disclose_income"
     assert [i[0] for i in issues] == list(DECISIONS)
