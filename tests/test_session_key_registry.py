@@ -9,6 +9,11 @@ form in which a session-state key can be named, and holds the result against
 * every registry entry is touched by the code (no dead entries);
 * families written with an f-string (``f"{decision_name}_default_value"``) are
   matched by their pattern entry;
+* in a module listed in ``registry.KEY_PARAMETER_TABLES`` (the decision tabs'
+  shared controls and the Disclose Income / Documents twin machinery), a key
+  built from the table's per-tab parameters (``f"{keys.wp}sigma_in_copula"``,
+  ``keys.income``) expands to one concrete key per row, and every expansion must
+  have its own entry;
 * every key marked as an engine input is one ``app/seam`` actually names.
 
 The scan is deliberately syntactic - it never imports the app, so it stays
@@ -18,6 +23,7 @@ green without Streamlit and cannot be fooled by an import-time side effect.
 import ast
 import collections
 import os
+import re
 import warnings
 
 import pytest
@@ -25,6 +31,7 @@ import pytest
 from app.state.registry import (
     CATEGORIES,
     DYNAMIC_KEY_VARIABLES,
+    KEY_PARAMETER_TABLES,
     PREFIX_DELETE_PREFIXES,
     REGISTRY,
     lookup,
@@ -124,6 +131,43 @@ def _literal_specs(node):
     return []
 
 
+_PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
+# ``keys.wp`` / ``self.keys.wp``: a dotted name whose last segment names a field
+_FIELD_REF = re.compile(r"^(?:[A-Za-z_]\w*\.)+([A-Za-z_]\w*)$")
+
+
+def _table_field(placeholder, fields):
+    """The table field a placeholder stands for, or None."""
+    match = _FIELD_REF.match(placeholder.strip())
+    if match and match.group(1) in fields:
+        return match.group(1)
+    return None
+
+
+def expand_over_table(spec, table):
+    """Every concrete key ``spec`` names under ``table`` (a registry
+    key-parameter table: tab -> row, or None).
+
+    Each ``{obj.field}`` placeholder whose last segment is a field of the rows is
+    replaced, row by row, with that row's value - jointly, so one spec gives one
+    key per tab.  Any other placeholder stays a family placeholder.  A spec without
+    a table placeholder is returned as it is.
+    """
+    if table is None:
+        return [spec]
+    fields = next(iter(table.values()))._fields
+    if not any(_table_field(ph, fields) for ph in _PLACEHOLDER.findall(spec)):
+        return [spec]
+
+    def substitute(row):
+        return _PLACEHOLDER.sub(
+            lambda m: (getattr(row, _table_field(m.group(1), fields))
+                       if _table_field(m.group(1), fields) else m.group(0)),
+            spec)
+
+    return list(dict.fromkeys(substitute(row) for row in table.values()))
+
+
 class _ScopeIndex:
     """Names in one scope (a module, or one function) that stand for a key.
 
@@ -191,18 +235,26 @@ class _ScopeIndex:
 
 
 class _Visitor(ast.NodeVisitor):
-    def __init__(self, rel, index, result):
+    def __init__(self, rel, index, result, table=None):
         self.rel, self.result = rel, result
+        self.table = table              # registry key-parameter rows, or None
         self._scopes = [index]          # innermost last
         self._stored, self._deleted = set(), set()
 
     def _resolve(self, node, line):
-        """Ask each enclosing scope, innermost first."""
+        """Ask each enclosing scope, innermost first; then expand the result over
+        the module's key-parameter table (a bare ``keys.<field>`` counts too)."""
         dynamic = ast.unparse(node).strip()
+        specs = []
         for index in reversed(self._scopes):
             specs, dynamic = index.resolve(node, line)
             if specs:
-                return specs, None
+                break
+        if not specs and self.table is not None and isinstance(node, ast.Attribute) \
+                and _table_field(dynamic, next(iter(self.table.values()))._fields):
+            specs = ["{" + dynamic + "}"]
+        if specs:
+            return [key for spec in specs for key in expand_over_table(spec, self.table)], None
         return [], dynamic
 
     def _enter_function(self, node):
@@ -336,8 +388,8 @@ class _Visitor(ast.NodeVisitor):
                     if isinstance(call, ast.Call) \
                             and isinstance(call.func, ast.Attribute) \
                             and call.func.attr == "startswith" and call.args:
-                        for spec in _literal_specs(call.args[0]):
-                            self.result.prefix_deletes.add(spec)
+                        specs, _ = self._resolve(call.args[0], call.lineno)
+                        self.result.prefix_deletes.update(specs)
 
 
 def _parse(path):
@@ -364,7 +416,8 @@ def scan_app(app_dir=APP, root=ROOT):
             path = os.path.join(dirpath, filename)
             rel = os.path.relpath(path, root)
             tree = _parse(path)
-            _Visitor(rel, _ScopeIndex(tree), result).visit(tree)
+            table = KEY_PARAMETER_TABLES.get(rel.replace(os.sep, "/"))
+            _Visitor(rel, _ScopeIndex(tree), result, table).visit(tree)
     return result
 
 
@@ -377,12 +430,14 @@ def scan():
 # tests
 # --------------------------------------------------------------------------- #
 
+def _unregistered(scan):
+    """key -> where, for every scanned key without a registry entry."""
+    return {key: use.where() for key, use in scan.keys.items() if lookup(key) is None}
+
+
 def test_every_key_in_the_code_has_a_registry_entry(scan):
     """No key may be introduced without describing it in the registry."""
-    missing = {}
-    for key, use in scan.keys.items():
-        if lookup(key) is None:
-            missing[key] = use.where()
+    missing = _unregistered(scan)
     assert not missing, (
         "session-state keys with no app/state/registry.py entry:\n"
         + "\n".join(f"  {k!r}  ({w})" for k, w in sorted(missing.items())))
@@ -563,3 +618,86 @@ def test_scan_finds_the_app(scan):
     assert len(scan.keys) > 150
     assert "sim_params" in scan.keys
     assert scan.wipe_all, "the Clear Results wipe-all disappeared from the scan"
+
+
+# --------------------------------------------------------------------------- #
+# keys built from the registry's per-tab parameter tables
+# --------------------------------------------------------------------------- #
+
+def test_key_parameter_tables_cover_their_modules(scan):
+    """Every listed module exists and its keys expand to concrete, registered keys
+    (no ``{keys.<field>}`` placeholder survives the expansion)."""
+    for rel, table in KEY_PARAMETER_TABLES.items():
+        assert os.path.exists(os.path.join(ROOT, rel)), rel
+        assert len({row._fields for row in table.values()}) == 1, rel
+    fields = {field for table in KEY_PARAMETER_TABLES.values()
+              for row in table.values() for field in row._fields}
+    leftovers = [key for key in scan.keys
+                 if any(_table_field(ph, fields) for ph in _PLACEHOLDER.findall(key))]
+    assert not leftovers, f"table placeholders not expanded: {leftovers}"
+    # the expansions really reach the registry rows written for each tab
+    for expected in ("tab_sigma_coefficient_stochastic", "di_tab_sigma_coefficient_stochastic",
+                     "dd_tab_sigma_coefficient_stochastic", "rtd_tab_sigma_coefficient",
+                     "tab_sigma_in_research", "di_tab_sigma_enabled", "rtd_tab_sigma_enabled",
+                     "page2_tab_income_spec_mode", "rtd_tab_income_mode",
+                     "di_override_intercept", "dd_override_intercept",
+                     "_di_reset_to_defaults_pending", "_dd_reset_to_defaults_pending"):
+        assert expected in scan.keys, expected
+        assert "widget" in scan.keys[expected].modes or expected.startswith("_"), expected
+
+
+def _scan_source(source, table, rel="app/pages/synthetic.py"):
+    result = ScanResult()
+    tree = ast.parse(source)
+    _Visitor(rel, _ScopeIndex(tree), result, table).visit(tree)
+    return result
+
+
+def test_expansion_is_joint_per_row_and_leaves_other_placeholders():
+    table = KEY_PARAMETER_TABLES["app/pages/decision_tabs/_controls.py"]
+    assert expand_over_table("{keys.dp}tab_sigma_q{level}{keys.suffix}", table) == [
+        "donation_tab_sigma_q{level}_stochastic", "di_tab_sigma_q{level}_stochastic",
+        "dd_tab_sigma_q{level}_stochastic", "rtd_tab_sigma_q{level}"]
+    assert expand_over_table("{keys.income}", table) == [
+        "income_spec_mode", "di_income_mode", "dd_income_mode", "rtd_income_mode"]
+    assert expand_over_table("{level}_only", table) == ["{level}_only"]
+    assert expand_over_table("{keys.dp}x", None) == ["{keys.dp}x"]
+    # a bare name is NOT a table reference (it could be any local)
+    assert expand_over_table("{dp}x", table) == ["{dp}x"]
+
+
+def test_an_unregistered_expansion_is_refused():
+    """A key built from the table that expands to a key the registry does not
+    hold is reported as missing - the table does not loosen the check."""
+    table = KEY_PARAMETER_TABLES["app/pages/decision_tabs/_controls.py"]
+    source = (
+        "import streamlit as st\n"
+        "def draw(keys):\n"
+        "    st.slider('x', key=f'{keys.wp}sigma_coefficient{keys.suffix}')\n"
+        "    st.slider('y', key=f'{keys.wp}no_such_widget')\n"
+        "    st.session_state[keys.income] = 1\n"
+    )
+    scan = _scan_source(source, table)
+    assert "di_tab_sigma_coefficient_stochastic" in scan.keys       # registered
+    assert "di_income_mode" in scan.keys and "income_spec_mode" in scan.keys
+    assert set(_unregistered(scan)) == {
+        "tab_no_such_widget", "di_tab_no_such_widget", "dd_tab_no_such_widget",
+        "rtd_tab_no_such_widget"}
+    assert not scan.dynamic
+
+
+def test_a_placeholder_outside_the_table_stays_dynamic():
+    """A dotted placeholder that is not a table field, or any placeholder in a
+    module without a table, is still a dynamic key (refused unless reviewed)."""
+    table = KEY_PARAMETER_TABLES["app/pages/decision_tabs/_controls.py"]
+    source = (
+        "import streamlit as st\n"
+        "def draw(keys, spec):\n"
+        "    st.slider('x', key=spec.widget)\n"
+        "    st.session_state[keys.dp]\n"
+    )
+    scan = _scan_source(source, table)
+    assert dict(scan.dynamic) == {"spec.widget": 1}
+    assert set(_unregistered(scan)) == {"donation_", "di_", "dd_", "rtd_"}
+    scan = _scan_source(source, None)
+    assert dict(scan.dynamic) == {"spec.widget": 1, "keys.dp": 1}

@@ -12,6 +12,15 @@ from app.state.widgets import stateful
 from app.state.saved_configs import clear_decision_config
 from app.pages.decision_execution import render_simulation_buttons
 from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
+from app.pages.decision_tabs._controls import (
+    EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, MODE_OPTIONS, TabControls,
+    render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
+)
+from app.pages.decision_tabs._disclosure import (
+    DisclosureTab, apply_pending_reset, render_actions_and_management_section,
+    render_intercept_override_section,
+)
+from app.state.registry import CONTROL_KEYS, DISCLOSURE_KEYS
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file, get_config_repo
 import pandas as pd
 
@@ -97,164 +106,33 @@ def initialize_disclose_income_session_state():
     seed_if_absent('di_tab_sigma_in_copula', st.session_state.get('di_sigma_in_copula', False))
 
 
-def render_di_sigma_controls(mode_suffix: str):
-    """
-    Render sigma strategy controls (overall vs quintile) for disclose_income.
-
-    Args:
-        mode_suffix: the widget-key suffix; the tab passes 'stochastic' (one set of
-            σ controls shared by every population mode)
-    """
-    # Base sigma values per quintile (from empirical data)
-    BASE_SIGMAS = {
-        '1': 5.705052,   # Level 1 (€12)
-        '2': 3.069326,   # Level 2 (€32)
-        '3': 3.532226,   # Level 3 (€72)
-        '4': 12.219622,  # Level 4 (€128)
-        '5': 16.854622,  # Level 5 (€200)
-    }
-
-    LEVEL_LABELS = {
-        '1': 'Level 1 (€12)',
-        '2': 'Level 2 (€32)',
-        '3': 'Level 3 (€72)',
-        '4': 'Level 4 (€128)',
-        '5': 'Level 5 (€200)',
-    }
-
-    # Strategy selection: Overall vs Quintiles
-    st.markdown("**σ mode**")
-
-    strategy_widget_key = f'di_tab_sigma_strategy_{mode_suffix}'
-    strategy_storage_key = f'di_sigma_strategy_{mode_suffix}'
-    current_strategy = st.session_state.get('di_sigma_strategy', 'overall')
-
-    restore(
-        strategy_widget_key, 'disclose_income_tab_persistence',
-        strategy_storage_key,
-        current_strategy
-    )
-
-    def on_strategy_change():
-        """Handle sigma strategy changes."""
-        new_strategy = st.session_state[strategy_widget_key]
-        save(strategy_widget_key, 'disclose_income_tab_persistence', strategy_storage_key)
-        st.session_state.di_sigma_strategy = new_strategy
-
-    sigma_strategy = stateful(st.radio,
-        "Apply σ uniformly or per budget level?",
-        options=['overall', 'quintile'],
-        format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-        key=strategy_widget_key,
-        on_change=on_strategy_change,
-        horizontal=True
-    )
-    st.session_state.di_sigma_strategy = sigma_strategy
-
-    st.markdown("---")
-
-    if sigma_strategy == 'overall':
-        # OVERALL MODE: Single slider
-        st.markdown(f"Base σ = {BASE_SIGMA_OVERALL:.4f} (empirical from 280 participants)")
-
-        coeff_widget_key = f'di_tab_sigma_coefficient_{mode_suffix}'
-        coeff_storage_key = f'di_sigma_coefficient_{mode_suffix}'
-
-        # The slider starts from di_scale_factor, which the tab initialiser seeds
-        # from the config's stochastic.scale_factor (0.1, the intended default). 0.0 is
-        # a legal, persisted value: tick box on + coefficient 0 -> sigma 0, no noise.
-        # (The 0 -> 1.0 snaps that used to sit here worked around the browser
-        # showing a slider's built-in 0, fixed properly in 5f2cac8.)
-        scale_fallback = st.session_state.di_scale_factor
-
-        restore(
-            coeff_widget_key, 'disclose_income_tab_persistence',
-            coeff_storage_key,
-            scale_fallback
-        )
-
-        sigma_coefficient = stateful(st.slider,
-            "σ Coefficient (multiplier)",
-            min_value=0.0,
-            max_value=2.0,
-            step=0.01,
-            help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
-            key=coeff_widget_key,
-            on_change=lambda: save(coeff_widget_key, 'disclose_income_tab_persistence', coeff_storage_key)
-        )
-        st.session_state.di_scale_factor = sigma_coefficient
-
-        effective_sigma = DISPLAY_SIGMA_OVERALL * sigma_coefficient
-        st.markdown(f"Effective σ = {BASE_SIGMA_OVERALL:.4f} × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
-
-    else:
-        # QUINTILE MODE: 5 sliders (one per income level)
-        current_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
-        overall_coeff = st.session_state.get('di_scale_factor', 1.0)
-        effective_sigma = DISPLAY_SIGMA_OVERALL * overall_coeff
-        if 'continuous' in str(current_income_mode).lower() and 'compare' not in str(current_income_mode).lower():
-            st.warning(
-                "**Continuous mode uses overall σ.** "
-                "Per-quintile σ values are based on categorical budget levels and are "
-                "not applicable to the continuous income specification. "
-                f"The simulation will use the overall σ ({overall_coeff:.2f} × {BASE_SIGMA_OVERALL:.4f} = {effective_sigma:.4f}) for continuous runs."
-            )
-        elif 'compare' in str(current_income_mode).lower():
-            st.info(
-                "**Note:** Per-quintile σ values will only apply to the **categorical** run. "
-                f"The continuous run will use the overall σ ({overall_coeff:.2f} × {BASE_SIGMA_OVERALL:.4f} = {effective_sigma:.4f})."
-            )
-        st.markdown("**Per-Quintile σ Coefficients**")
-        st.markdown("Each level has its own base σ from empirical data:")
-
-        quintile_coefficients = {}
-        default_scale = st.session_state.get('di_scale_factor', 1.0)
-        current_quintile_scales = st.session_state.get('di_quintile_scale_factors', {
-            '1': default_scale, '2': default_scale, '3': default_scale,
-            '4': default_scale, '5': default_scale
-        })
-
-        for level in ['1', '2', '3', '4', '5']:
-            level_scale = current_quintile_scales.get(level, default_scale)
-            level_scale = max(0.0, min(float(level_scale), 2.0))
-
-            storage_key = f'di_sigma_quintile_{level}_{mode_suffix}'
-            widget_key = f'di_tab_sigma_q{level}_{mode_suffix}'
-
-            restore(
-                widget_key, 'disclose_income_tab_persistence',
-                storage_key,
-                level_scale
-            )
-
-            base_sigma = BASE_SIGMAS[level]
-
-            col_slider, col_result = st.columns([3, 1])
-            with col_slider:
-                q_coeff = stateful(st.slider,
-                    f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
-                    min_value=0.0,
-                    max_value=2.0,
-                    step=0.01,
-                    key=widget_key,
-                    on_change=lambda l=level: save(
-                        f'di_tab_sigma_q{l}_{mode_suffix}', 'disclose_income_tab_persistence', f'di_sigma_quintile_{l}_{mode_suffix}'
-                    )
-                )
-            with col_result:
-                effective = base_sigma * q_coeff
-                st.metric("Effective σ", f"{effective:.2f}")
-
-            quintile_coefficients[level] = q_coeff
-
-        # Save quintile scale factors to session state
-        st.session_state.di_quintile_scale_factors = quintile_coefficients
+#: The tab's shared controls (decision_tabs._controls): keys from the registry,
+#: σ constants and the tab's own wording.
+DI_CONTROLS = TabControls(
+    keys=CONTROL_KEYS['disclose_income'],
+    research_storage='sigma_enabled',
+    income_storage='income_mode',
+    income_label="Income Specification for Disclosure Model",
+    income_help="""
+            **Categorical only**: Uses level-specific intercepts based on income categories (5 levels)
+            **Continuous only**: Uses single β₀ with income coefficient based on actual income
+            **Compare both**: Run both specifications for comparison
+            """,
+    income_options=MODE_OPTIONS,
+    income_default='Categorical only',
+    income_seed='match',
+    after_income_change=lambda: clear_decision_config('disclose_income'),
+    base_sigma=BASE_SIGMA_OVERALL,
+    effective_base=DISPLAY_SIGMA_OVERALL,
+    base_sigmas=EMPIRICAL_BASE_SIGMAS,
+    level_labels=LEVEL_LABELS,
+)
 
 
 def render_disclose_income_tab():
     """Render disclose_income specific configuration."""
     # Must run BEFORE any di_* widget is instantiated in this script run.
-    apply_pending_reset()
+    apply_pending_reset(DI_TAB)
     initialize_disclose_income_session_state()
     config = load_disclose_income_config()
 
@@ -271,72 +149,7 @@ def render_disclose_income_tab():
         # Income Specification
         st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
 
-        # Initialize the widget key if it doesn't exist
-        if "di_tab_income_mode" not in st.session_state:
-            current_mode = st.session_state.get('di_income_mode', 'Categorical only')
-            valid_modes = ["Categorical only", "Continuous only", "Compare both"]
-            
-            # Try exact match first
-            if current_mode in valid_modes:
-                st.session_state.di_tab_income_mode = current_mode
-            else:
-                # Try case-insensitive match
-                match_found = False
-                for m in valid_modes:
-                    if m.lower() == str(current_mode).lower():
-                        st.session_state.di_tab_income_mode = m
-                        match_found = True
-                        break
-                
-                if not match_found:
-                    st.session_state.di_tab_income_mode = "Categorical only"
-
-        def on_di_income_mode_change():
-            """Handle income spec mode changes for disclose income."""
-            new_mode = st.session_state.di_tab_income_mode
-            st.session_state.di_income_mode = new_mode
-            save('di_tab_income_mode', 'disclose_income_tab_persistence', 'income_mode')
-            clear_decision_config('disclose_income')
-
-        # Restore income mode from storage
-        income_val = restore(
-            'di_tab_income_mode', 'disclose_income_tab_persistence',
-            'income_mode',
-            'Categorical only'
-        )
-
-        # Ensure value is valid (handling case sensitivity)
-        mode_options = ["Categorical only", "Continuous only", "Compare both"]
-        
-        # Try to find a matching option (case-insensitive)
-        if income_val not in mode_options:
-            match_found = False
-            for opt in mode_options:
-                if str(income_val).lower() == opt.lower():
-                    income_val = opt
-                    match_found = True
-                    break
-            
-            if match_found:
-                # Update session state to match normalized value (critical for st.radio)
-                st.session_state.di_tab_income_mode = income_val
-            else:
-                income_val = "Categorical only"
-                st.session_state.di_tab_income_mode = income_val
-
-        income_mode = stateful(st.radio,
-            "Income Specification for Disclosure Model",
-            mode_options,
-            help="""
-            **Categorical only**: Uses level-specific intercepts based on income categories (5 levels)
-            **Continuous only**: Uses single β₀ with income coefficient based on actual income
-            **Compare both**: Run both specifications for comparison
-            """,
-            key="di_tab_income_mode",
-            on_change=on_di_income_mode_change
-        )
-        # Sync session state
-        st.session_state.di_income_mode = income_mode
+        render_income_mode(DI_CONTROLS)
 
     with col2:
         # Stochastic Component
@@ -348,41 +161,13 @@ def render_disclose_income_tab():
             st.info("📊 Research Baseline always uses anchor values only (deterministic). "
                     "Configure stochastic settings below for Copula / Research Specification runs.")
 
-        # --- Copula sigma checkbox (always visible) ---
-        st.markdown("**Copula Mode:**")
-        restore(
-            'di_tab_sigma_in_copula', 'disclose_income_tab_persistence',
-            'di_sigma_in_copula',
-            False
-        )
-        sigma_in_copula = stateful(st.checkbox,
-            "Add Normal(anchor, σ) draw to Copula runs",
-            help="When enabled, Copula mode will also use the stochastic component",
-            key="di_tab_sigma_in_copula",
-            on_change=lambda: save('di_tab_sigma_in_copula', 'disclose_income_tab_persistence', 'di_sigma_in_copula')
-        )
-        st.session_state.di_sigma_in_copula = sigma_in_copula
-
-        # --- Research Specification sigma checkbox (always visible) ---
-        st.markdown("**Research Specification Mode:**")
-        restore(
-            'di_tab_sigma_enabled', 'disclose_income_tab_persistence',
-            'sigma_enabled',
-            True
-        )
-        sigma_enabled = stateful(st.checkbox,
-            "Use Normal(anchor, σ) draw in Research Specification mode",
-            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
-            key="di_tab_sigma_enabled",
-            on_change=lambda: save('di_tab_sigma_enabled', 'disclose_income_tab_persistence', 'sigma_enabled')
-        )
-        st.session_state.di_sigma_enabled = sigma_enabled
+        sigma_in_copula, sigma_enabled = render_stochastic_tick_boxes(DI_CONTROLS)
 
         st.markdown("Research Baseline always uses anchor values only (deterministic).")
 
         # --- Shared sigma controls (strategy, coefficient, quintiles) ---
         if sigma_in_copula or sigma_enabled:
-            render_di_sigma_controls('stochastic')
+            render_sigma_controls(DI_CONTROLS)
         else:
             st.info("Stochastic component disabled for all modes - using anchor values directly")
 
@@ -439,11 +224,11 @@ def render_disclose_income_tab():
 
     # Intercept Override Section
     st.markdown('<h4 class="subsection-header">Intercept Override</h4>', unsafe_allow_html=True)
-    render_intercept_override_section()
+    render_intercept_override_section(DI_TAB)
 
     # Actions & Management Section
     st.markdown('<h4 class="subsection-header">Actions & Management</h4>', unsafe_allow_html=True)
-    render_actions_and_management_section()
+    render_actions_and_management_section(DI_TAB)
 
     # Simulation buttons - same as donation_default
     try:
@@ -609,215 +394,34 @@ def render_variable_definitions(income_mode):
         """)
 
 
-def get_current_yaml_intercept():
-    """Get current intercept value from YAML config."""
-    config = load_disclose_income_config()
-    return config.get('intercept', 0.75)
-
-
-def render_intercept_override_section():
-    """Render the intercept override section with ability to modify the intercept value."""
-
-    # Initialize override values if not present
-    if 'di_intercept_override_values' not in st.session_state:
-        st.session_state.di_intercept_override_values = {}
-
-    # Show current configuration values for reference
-    try:
-        # Research default — Impact Preview always compares against this. The
-        # configuration file is read-only, so it is the file's intercept.
-        research_default = float(research_default_config().get('intercept', 0.75))
-
-        # The configuration file's intercept seeds the override input until a
-        # value is typed.
-        current_config_value = get_current_yaml_intercept()
-
-        # Use 3 columns: Current Value, Override Value, Impact Preview
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown(f"**Research Default: {research_default:.4f}**")
-            st.markdown("Intercept (β₀)")
-            st.markdown("Fixed reference value from original research")
-
-        with col2:
-            st.markdown("**Override Value**")
-
-            # Seed the widget key ONLY when it is absent (after navigation); otherwise the
-            # live widget value wins. No rerun-dependent `value=` is passed below, so the
-            # widget id stays stable - re-seeding on every rerun plus a changing default
-            # made the +/- buttons jump back one step under fast clicks.
-            seed_if_absent('di_override_intercept', float(
-                st.session_state.di_intercept_override_values.get('intercept', current_config_value)))
-
-            new_intercept = stateful(st.number_input,
-                "Baseline disclosure tendency",
-                min_value=0.0,
-                max_value=5.0,
-                step=0.01,
-                format="%.4f",
-                help="β₀ = 0.75 in the disclose income equation. Override value, with higher values increasing baseline probability of disclosure.",
-                key="di_override_intercept",
-                on_change=lambda: auto_save_intercept(st.session_state.di_override_intercept)
-            )
-            st.session_state.di_intercept_override_values['intercept'] = new_intercept
-
-        with col3:
-            st.markdown("**Impact Preview**")
-            change = new_intercept - research_default
-            if abs(change) > 0.00001:
-                impact = "Higher baseline" if change > 0 else "Lower baseline"
-                st.metric("Change", f"{change:+.4f}", delta=impact)
-            else:
-                st.metric("Change", "No change")
-
-    except Exception as e:
-        st.error(f"Error loading configuration values: {e}")
-
-
-def auto_save_intercept(new_value):
-    """Store the typed intercept override in session state (the configuration
-    file is read-only). The seam reads di_intercept from the session snapshot,
-    so the next run uses it.
-    """
-    if 'di_intercept_override_values' not in st.session_state:
-        st.session_state.di_intercept_override_values = {}
-
-    st.session_state.di_intercept_override_values['intercept'] = new_value
-    st.session_state.di_intercept = new_value
-
-
-def _apply_config_to_widget_keys(config):
-    """Explicitly set the widget keys this tab resets, from a config dict.
-
-    Streamlit's internal widget cache can retain stale slider values even
-    after their session-state key is deleted.  Explicitly *setting* the key
-    is more reliable than deletion because it overwrites the cache.
+def _apply_extra_widget_keys(config):
+    """The anchor-mix sliders and their canonical keys, Disclose Income's own
+    part of a whole-tab reset (_disclosure.apply_config_to_widget_keys).
 
     NOTE: the sigma coefficient / strategy / quintile sliders are NOT set here.
-    Their live keys carry the `_stochastic` mode suffix
+    Their live keys carry the `_stochastic` suffix
     (`di_tab_sigma_coefficient_stochastic`, `di_tab_sigma_strategy_stochastic`,
-    `di_tab_sigma_q{1..5}_stochastic`); `reset_to_defaults` clears them with its
-    bulk delete of every `di_` key instead.  The unsuffixed writes that used to
-    stand here set keys no widget and no reader ever used, so they are gone.
+    `di_tab_sigma_q{1..5}_stochastic`); the reset clears them with its bulk delete
+    of every `di_` key instead, and the σ controls seed them again from the
+    canonical keys. The unsuffixed writes that used to stand here set keys no
+    widget and no reader ever used, so they are gone.
     """
     anchor = config.get('anchor_weights', {})
-    stochastic = config.get('stochastic', {})
-
     st.session_state.di_wopb_widget = anchor.get('observed_prosocial', 0.25)
     st.session_state.di_wpb_widget = anchor.get('prosocial_weight', 0.50)
-    st.session_state.di_override_intercept = config.get('intercept', 0.75)
-    # The Research Specification tick box defaults to on, so a reset leaves it on.
-    st.session_state.di_tab_sigma_enabled = True
-    st.session_state.di_tab_income_mode = config.get('income_mode', 'Categorical only')
-    st.session_state.di_tab_sigma_in_copula = False
-    st.session_state.di_sigma_in_copula = False
-
-    default_scale = stochastic.get('scale_factor', 1.0)
-    quintile_scales = stochastic.get('quintile_scale_factors', {})
-
-    # Also set the READ-keys the simulation consumes; the configuration file is
-    # read-only, so they can no longer be re-read from a rewritten file.
-    st.session_state.di_intercept = config.get('intercept', 0.75)
-    st.session_state.di_income_mode = config.get('income_mode', 'Categorical only')
     st.session_state.di_wopb = anchor.get('observed_prosocial', 0.25)
     st.session_state.di_wpb = anchor.get('prosocial_weight', 0.50)
-    st.session_state.di_sigma_enabled = True
-    st.session_state.di_sigma_strategy = stochastic.get('sigma_strategy', 'overall')
-    st.session_state.di_scale_factor = default_scale
-    st.session_state.di_quintile_scale_factors = {
-        level: quintile_scales.get(level, default_scale) for level in ['1', '2', '3', '4', '5']
-    }
 
 
-DI_RESET_PENDING_KEY = '_di_reset_to_defaults_pending'
-
-
-def reset_to_defaults():
-    """Build the default configuration and schedule the session-state reset.
-
-    The actual session-state reset runs at the TOP of the next script run (see
-    apply_pending_reset). Clearing / re-seeding the di_* widget keys here would
-    happen AFTER those widgets were already instantiated in this run - a
-    Streamlit anti-pattern that leaves widgets whose element id no longer has a
-    session-state entry (values jumped back after a reset).
-    """
-    st.session_state[DI_RESET_PENDING_KEY] = True
-    return True
-
-
-def apply_pending_reset():
-    """Apply a scheduled reset before any disclose_income widget renders."""
-    if not st.session_state.get(DI_RESET_PENDING_KEY, False):
-        return
-    del st.session_state[DI_RESET_PENDING_KEY]
-    _reset_session_to_defaults()
-
-
-def _reset_session_to_defaults():
-    """Clear every di_ key and the persistence dict, then seed the defaults."""
-    reset_config = research_default_config()
-
-    # 1. Clear all di_ keys and persistence storage
-    keys_to_clear = [k for k in st.session_state.keys() if k.startswith('di_')]
-    for key in keys_to_clear:
-        del st.session_state[key]
-    if 'disclose_income_tab_persistence' in st.session_state:
-        del st.session_state['disclose_income_tab_persistence']
-
-    # 2. SET every widget key to the default value.  This prevents
-    #    Streamlit's internal widget cache from retaining stale slider
-    #    values on the next rerun.
-    _apply_config_to_widget_keys(reset_config)
-
-
-def reset_intercept_to_default():
-    """Restore the configuration file's intercept into session state."""
-    try:
-        default_intercept = get_current_yaml_intercept()
-    except Exception as e:
-        st.error(f"Error saving configuration: {e}")
-        return False
-
-    # Update session state for intercept only
-    st.session_state.di_intercept = default_intercept
-    if 'di_intercept_override_values' in st.session_state:
-        st.session_state.di_intercept_override_values['intercept'] = default_intercept
-    # The override input is seeded only while its key is absent (stable widget id
-    # under fast clicks), so drop the key: the rerun that follows re-seeds it from
-    # the value just stored instead of keeping the old number on screen.
-    if 'di_override_intercept' in st.session_state:
-        del st.session_state['di_override_intercept']
-
-    return True
-
-
-def render_actions_and_management_section():
-    """Render the combined actions and management section."""
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("**🔄 Reset All**")
-        if st.button("Reset Config to Defaults", type="secondary", use_container_width=True,
-                     help="Reset all disclose income values to research defaults",
-                     key="di_reset_btn"):
-            success = reset_to_defaults()
-            if success:
-                st.toast("Configuration reset to defaults", icon="🔄")
-                st.rerun()
-            else:
-                st.toast("Failed to reset configuration", icon="⚠️")
-
-    with col2:
-        st.markdown("**🔄 Reset Intercept**")
-        if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True,
-                     help="Reset intercept value to research default (0.75)",
-                     key="di_reload_btn"):
-            # Only reset the intercept value - NOT all configuration values
-            success = reset_intercept_to_default()
-            if success:
-                st.toast("✅ Intercept reset to research default (0.75)", icon="🔄")
-                st.rerun()
-            else:
-                st.toast("❌ Failed to reset intercept", icon="⚠️")
+#: The intercept override, the resets and the action buttons (decision_tabs._disclosure).
+DI_TAB = DisclosureTab(
+    keys=DISCLOSURE_KEYS['disclose_income'],
+    decision_label='disclose income',
+    load_config=research_default_config,
+    default_intercept=0.75,
+    research_default_label='0.75',
+    intercept_min=0.0,
+    intercept_max=5.0,
+    intercept_help="β₀ = 0.75 in the disclose income equation. Override value, with higher values increasing baseline probability of disclosure.",
+    apply_extra_widget_keys=_apply_extra_widget_keys,
+)

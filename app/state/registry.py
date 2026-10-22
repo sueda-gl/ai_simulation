@@ -21,6 +21,7 @@ Conventions for ``default``:
 """
 
 import re
+from collections import namedtuple
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -64,7 +65,8 @@ CATEGORIES = (
 #:                  ``restore`` / ``save`` / ``seed_if_absent`` / ``seed_if_changed``);
 #:                  the widget key and the ``*_tab_persistence`` dict (or
 #:                  ``intercept_override_values``) they read and write.  Every
-#:                  caller still binds the widget key literally (``key=``).
+#:                  caller still binds the widget key literally (``key=``) or
+#:                  through KEY_PARAMETER_TABLES below.
 DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key", "widget_key", "storage_dict_name")
 
 #: ``[k for k in st.session_state.keys() if k.startswith(<prefix>)]`` - the
@@ -72,6 +74,78 @@ DYNAMIC_KEY_VARIABLES = ("key", "k", "chart_key", "widget_key", "storage_dict_na
 #: drops (a reset restores exactly what a fresh session shows).  Every key
 #: beginning with one of these is deleted.
 PREFIX_DELETE_PREFIXES = ("dd_", "di_", "rtd_", "purchasing_limit_")
+
+
+# --------------------------------------------------------------------------- #
+# Keys built from per-tab parameters
+# --------------------------------------------------------------------------- #
+# Two modules draw the same widgets for several decision tabs and name their keys
+# with f-strings over a per-tab row of parameters:
+#
+#   f"{keys.wp}sigma_coefficient{keys.suffix}"   ->  tab_sigma_coefficient_stochastic,
+#                                                    di_tab_sigma_coefficient_stochastic,
+#                                                    dd_tab_sigma_coefficient_stochastic,
+#                                                    rtd_tab_sigma_coefficient
+#
+# The module reads its rows from HERE (``decision_tabs._controls`` builds its specs
+# from CONTROL_KEYS, ``decision_tabs._disclosure`` from DISCLOSURE_KEYS), so the
+# keys the app uses are these values, and ``tests/test_session_key_registry.py``
+# expands every such f-string of the module over every row - a placeholder
+# ``{<name>.<field>}`` whose last segment is a field of the row - and holds each
+# expansion against the rows below (one row per concrete key, as for every other
+# key).  A placeholder ``{level}`` that is not a field stays a family placeholder.
+# A placeholder that is neither is a dynamic key and fails the test unless it is in
+# DYNAMIC_KEY_VARIABLES.
+
+#: The four tabs' shared controls (σ strategy radio, coefficient and per-quintile
+#: sliders, the two stochastic tick boxes, the income-mode radio).
+#:   dp       - prefix of the canonical keys and of the strategy / quintile widget keys
+#:   wp       - prefix of the coefficient slider's and the tick boxes' widget keys
+#:   sp       - prefix of the persistence-dict entries and of the copula / research
+#:              canonical keys ("" on the Donation tab)
+#:   suffix   - the widget-key suffix of the σ controls ("" on Decision 4)
+#:   research - the research-box stem: Donation "sigma_in_research", the others "sigma_enabled"
+#:   coefficient   - the canonical key of the σ coefficient (Donation "sigma_coefficient")
+#:   income_widget - the income-mode radio's widget key
+#:   income        - the canonical income-mode key
+#:   storage       - the tab's persistence dict
+ControlKeys = namedtuple("ControlKeys",
+                         "dp wp sp suffix research coefficient income_widget income storage")
+CONTROL_KEYS = {
+    "donation_default": ControlKeys(
+        dp="donation_", wp="tab_", sp="", suffix="_stochastic", research="sigma_in_research",
+        coefficient="sigma_coefficient", income_widget="page2_tab_income_spec_mode",
+        income="income_spec_mode", storage="donation_tab_persistence"),
+    "disclose_income": ControlKeys(
+        dp="di_", wp="di_tab_", sp="di_", suffix="_stochastic", research="sigma_enabled",
+        coefficient="di_scale_factor", income_widget="di_tab_income_mode",
+        income="di_income_mode", storage="disclose_income_tab_persistence"),
+    "disclose_documents": ControlKeys(
+        dp="dd_", wp="dd_tab_", sp="dd_", suffix="_stochastic", research="sigma_enabled",
+        coefficient="dd_scale_factor", income_widget="dd_tab_income_mode",
+        income="dd_income_mode", storage="disclose_documents_tab_persistence"),
+    "rejected_transaction_defaults": ControlKeys(
+        dp="rtd_", wp="rtd_tab_", sp="rtd_", suffix="", research="sigma_enabled",
+        coefficient="rtd_scale_factor", income_widget="rtd_tab_income_mode",
+        income="rtd_income_mode", storage="rejected_transaction_tab_persistence"),
+}
+
+#: The Disclose Income / Disclose Documents twin machinery (intercept override,
+#: resets, actions): ``dp`` prefixes every key of the tab, ``wp`` + ``suffix`` the
+#: σ widget keys the reset writes, ``storage`` is the persistence dict.
+DisclosureKeys = namedtuple("DisclosureKeys", "dp wp suffix storage")
+DISCLOSURE_KEYS = {
+    "disclose_income": DisclosureKeys(dp="di_", wp="di_tab_", suffix="_stochastic",
+                                      storage="disclose_income_tab_persistence"),
+    "disclose_documents": DisclosureKeys(dp="dd_", wp="dd_tab_", suffix="_stochastic",
+                                         storage="disclose_documents_tab_persistence"),
+}
+
+#: module (path from the repository root) -> the rows its f-string keys expand over
+KEY_PARAMETER_TABLES = {
+    "app/pages/decision_tabs/_controls.py": CONTROL_KEYS,
+    "app/pages/decision_tabs/_disclosure.py": DISCLOSURE_KEYS,
+}
 
 
 @dataclass(frozen=True)
@@ -351,9 +425,9 @@ _PAGE2_MIRRORS = (
          "decision_tabs.donation_default.render_adjustment_override_section",
          "page2-mirror"),
     _row("di_intercept_override_values", "<{} until an intercept is typed>",
-         "decision_tabs.disclose_income.render_intercept_override_section", "page2-mirror"),
+         "decision_tabs._disclosure.render_intercept_override_section (Disclose Income)", "page2-mirror"),
     _row("dd_intercept_override_values", "<{} until an intercept is typed>",
-         "decision_tabs.disclose_documents.render_intercept_override_section", "page2-mirror"),
+         "decision_tabs._disclosure.render_intercept_override_section (Disclose Documents)", "page2-mirror"),
     _row("decision_params", "<DecisionParameters()>", MODELS_INIT, "page2-mirror",
          engine_input=True,
          notes="only .selected_decisions is used.  The run buttons hand the seam a "
@@ -419,13 +493,13 @@ _RTD_DISPLAY = (
 _DONATION_WIDGETS = _rows((
     ("tab_sigma_in_copula", "<sigma_in_copula, else False>"),
     ("tab_sigma_in_research", "<sigma_in_research, else True>"),
-    ("tab_sigma_coefficient_{mode_suffix}", "<donation_tab_persistence['sigma_coefficient_stochastic'], else 1.0>",
-     "mode_suffix is always 'stochastic'; seeded by render_donation_sigma_controls right before "
-     "the slider (not by the initialiser: the key must not be written in a run that does not "
-     "draw the slider); the seam multiplies the one sigma constant by this slider"),
+    ("tab_sigma_coefficient_stochastic", "<donation_tab_persistence['sigma_coefficient_stochastic'], else 1.0>",
+     "seeded by _controls.render_sigma_controls right before the slider (not by the "
+     "initialiser: the key must not be written in a run that does not draw the slider); "
+     "the seam multiplies the one sigma constant by this slider"),
     ("tab_anchor_weight", "<anchor_observed_weight, else 0.75>"),
-    ("donation_tab_sigma_strategy_{mode_suffix}", "<donation_sigma_strategy>"),
-    ("donation_tab_sigma_q{level}_{mode_suffix}", "<donation_quintile_scale_factors[level]>"),
+    ("donation_tab_sigma_strategy_stochastic", "<donation_sigma_strategy>"),
+    ("donation_tab_sigma_q{level}_stochastic", "<donation_quintile_scale_factors[level]>"),
     ("override_categorical_intercept", "<the current categorical intercept>"),
     ("override_continuous_intercept", "<the current continuous intercept>"),
     ("override_adjustment_shift", "<donation_adjustment_shift>"),
@@ -441,9 +515,9 @@ _DI_WIDGETS = _rows((
     ("di_tab_income_mode", "<di_income_mode>"),
     ("di_tab_sigma_enabled", "<di_sigma_enabled>"),
     ("di_tab_sigma_in_copula", "<di_sigma_in_copula, else False>"),
-    ("di_tab_sigma_coefficient_{mode_suffix}", "<di_scale_factor>"),
-    ("di_tab_sigma_strategy_{mode_suffix}", "<di_sigma_strategy>"),
-    ("di_tab_sigma_q{level}_{mode_suffix}", "<di_quintile_scale_factors[level]>"),
+    ("di_tab_sigma_coefficient_stochastic", "<di_scale_factor>"),
+    ("di_tab_sigma_strategy_stochastic", "<di_sigma_strategy>"),
+    ("di_tab_sigma_q{level}_stochastic", "<di_quintile_scale_factors[level]>"),
     ("di_wopb_widget", "<di_wopb>"),
     ("di_wpb_widget", "<di_wpb>"),
     ("di_override_intercept", "<di_intercept>"),
@@ -455,9 +529,9 @@ _DD_WIDGETS = _rows((
     ("dd_tab_income_mode", "<dd_income_mode>"),
     ("dd_tab_sigma_enabled", "<dd_sigma_enabled>"),
     ("dd_tab_sigma_in_copula", "<dd_sigma_in_copula, else False>"),
-    ("dd_tab_sigma_coefficient_{mode_suffix}", "<dd_scale_factor>"),
-    ("dd_tab_sigma_strategy_{mode_suffix}", "<dd_sigma_strategy>"),
-    ("dd_tab_sigma_q{level}_{mode_suffix}", "<dd_quintile_scale_factors[level]>"),
+    ("dd_tab_sigma_coefficient_stochastic", "<dd_scale_factor>"),
+    ("dd_tab_sigma_strategy_stochastic", "<dd_sigma_strategy>"),
+    ("dd_tab_sigma_q{level}_stochastic", "<dd_quintile_scale_factors[level]>"),
     ("dd_override_intercept", "<dd_intercept>"),
     ("dd_reset_btn", WIDGET),
     ("dd_reload_btn", WIDGET),
@@ -485,10 +559,10 @@ _RTD_WIDGETS = _rows((
 #: is instantiated (September 2026); the button only raises this flag.
 _RESET_PENDING_FLAGS = (
     _row("_di_reset_to_defaults_pending", True,
-         "decision_tabs.disclose_income.reset_to_defaults", "page2-mirror",
+         "decision_tabs._disclosure.reset_to_defaults (Disclose Income)", "page2-mirror",
          notes="consumed (deleted) by apply_pending_reset at the top of the Disclose Income tab"),
     _row("_dd_reset_to_defaults_pending", True,
-         "decision_tabs.disclose_documents.reset_to_defaults", "page2-mirror",
+         "decision_tabs._disclosure.reset_to_defaults (Disclose Documents)", "page2-mirror",
          notes="consumed (deleted) by apply_pending_reset at the top of the Disclose Documents tab"),
 )
 
@@ -722,6 +796,7 @@ def lookup(key: str) -> Optional[KeySpec]:
 
 __all__ = [
     "CATEGORIES", "DYNAMIC_KEY_VARIABLES", "PREFIX_DELETE_PREFIXES", "WIDGET",
+    "CONTROL_KEYS", "ControlKeys", "DISCLOSURE_KEYS", "DisclosureKeys", "KEY_PARAMETER_TABLES",
     "KeySpec", "REGISTRY", "lookup", "matching_families", "normalise",
     "pattern_regex", "specificity",
 ]

@@ -39,7 +39,13 @@ from app.state.saved_configs import clear_decision_config, get_decision_config
 # call time, so a test can stub it (tests/test_rtd_tab_text_ui.py).
 from app.pages import decision_execution
 from app.pages.decision_execution import render_simulation_buttons
-from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent, seed_if_changed
+from app.pages.decision_tabs._tab_state import restore, save, seed_if_changed
+from app.pages.decision_tabs._controls import (
+    LEVEL_LABELS, MODE_OPTIONS, TabControls,
+    render_coefficient_slider, render_income_mode, render_stochastic_tick_boxes,
+    render_strategy_radio,
+)
+from app.state.registry import CONTROL_KEYS
 from app.seam.config_repo import rtd_sigma_coefficient_defaults
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 import pandas as pd
@@ -64,10 +70,32 @@ OPTION_LABELS = {
     5: "Option 5: forgo the transaction",
 }
 
-LEVEL_LABELS = {
-    '1': 'Level 1 (€12)', '2': 'Level 2 (€32)', '3': 'Level 3 (€72)',
-    '4': 'Level 4 (€128)', '5': 'Level 5 (€200)',
-}
+#: The tab's shared controls (decision_tabs._controls): keys from the registry
+#: and the tab's own wording. Decision 4 shares the income radio, the two tick
+#: boxes, the σ-mode radio and the coefficient slider; its σ is decision-wide, so
+#: the per-element "Effective σ" lines, the per-quintile sliders and the σ table
+#: are its own (render_decision_sigma_controls).
+RTD_CONTROLS = TabControls(
+    keys=CONTROL_KEYS['rejected_transaction_defaults'],
+    research_storage='rtd_sigma_enabled',
+    income_storage='rtd_income_mode',
+    income_label="Income Specification for Rejected Transaction Model",
+    income_help="""
+            **Categorical only**: Willingness-to-Pay and Risk-Taking use fitted
+            income quintile effects (Quintiles 1-5)
+            **Continuous only**: Willingness-to-Pay and Risk-Taking use the generated
+            monetary income (z-scored)
+            **Compare both**: Run both specifications for comparison
+
+            Options List Length (Tendency to Plan) and Loyalty do not use income.
+            """,
+    income_options=MODE_OPTIONS,
+    income_default='Continuous only',
+    income_seed='exact',
+    coerce=True,
+    coefficient_help="Coefficient to multiply each element's base σ. Applies to all elements "
+                     "of the decision. Final σ per element = base σ × coefficient.",
+)
 
 # Fallback sigma constants (config/decisions.yaml is the source of truth).
 # Values from the revised Decision 4 document (2026-09): loyalty, WTP,
@@ -442,51 +470,12 @@ def render_decision_sigma_controls(config):
                           (_mech_stoch_config(config, m).get('sigma_quintile', {}) or {}).items()}
                       for m in MECHANISMS}
 
-    st.markdown("**σ mode**")
-    strategy_widget_key = 'rtd_tab_sigma_strategy'
-    strategy_storage_key = 'rtd_sigma_strategy'
-    current_strategy = st.session_state.get(strategy_storage_key, 'overall')
-
-    strategy_val = restore(
-        strategy_widget_key, 'rejected_transaction_tab_persistence',
-        strategy_storage_key, current_strategy)
-    strategy_val = 'quintile' if 'quintile' in str(strategy_val).lower() else 'overall'
-    seed_if_changed(strategy_widget_key, strategy_val)
-
-    def on_strategy_change():
-        st.session_state.rtd_sigma_strategy = st.session_state.rtd_tab_sigma_strategy
-        save('rtd_tab_sigma_strategy', 'rejected_transaction_tab_persistence', 'rtd_sigma_strategy')
-
-    sigma_strategy = stateful(st.radio,
-        "Apply σ uniformly or per budget level?",
-        options=['overall', 'quintile'],
-        format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-        key=strategy_widget_key, on_change=on_strategy_change, horizontal=True,
-    )
-    st.session_state.rtd_sigma_strategy = sigma_strategy
-
-    st.markdown("---")
+    sigma_strategy = render_strategy_radio(RTD_CONTROLS)
 
     if sigma_strategy == 'overall':
-        coeff_widget_key = 'rtd_tab_sigma_coefficient'
-        coeff_storage_key = 'rtd_sigma_coefficient'
         scale_fallback = st.session_state.get('rtd_scale_factor',
                                               rtd_sigma_coefficient_defaults(config)[0])
-
-        coeff_val = restore(
-            coeff_widget_key, 'rejected_transaction_tab_persistence',
-            coeff_storage_key, scale_fallback)
-        coeff_val = max(0.0, min(float(coeff_val), 2.0))
-        seed_if_changed(coeff_widget_key, coeff_val)
-
-        sigma_coefficient = stateful(st.slider,
-            "σ Coefficient (multiplier)", min_value=0.0, max_value=2.0, step=0.01,
-            help="Coefficient to multiply each element's base σ. Applies to all elements "
-                 "of the decision. Final σ per element = base σ × coefficient.",
-            key=coeff_widget_key,
-            on_change=lambda: save('rtd_tab_sigma_coefficient', 'rejected_transaction_tab_persistence', 'rtd_sigma_coefficient'),
-        )
-        st.session_state.rtd_scale_factor = sigma_coefficient
+        sigma_coefficient = render_coefficient_slider(RTD_CONTROLS, scale_fallback)
         for m in MECHANISMS:
             st.markdown(f"{ELEMENT_SHORT[m]}: Effective σ = Base σ (empirical from 280 "
                         f"participants) × multiplier = {bases[m]:.6g} × "
@@ -852,38 +841,7 @@ def render_rejected_transaction_defaults_tab():
     with col1:
         st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
 
-        mode_options = ["Categorical only", "Continuous only", "Compare both"]
-        current_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
-        seed_if_absent('rtd_tab_income_mode',
-                       current_mode if current_mode in mode_options else "Continuous only")
-
-        def on_rtd_income_mode_change():
-            st.session_state.rtd_income_mode = st.session_state.rtd_tab_income_mode
-            save('rtd_tab_income_mode', 'rejected_transaction_tab_persistence', 'rtd_income_mode')
-
-        income_val = restore(
-            'rtd_tab_income_mode', 'rejected_transaction_tab_persistence',
-            'rtd_income_mode', 'Continuous only')
-        if income_val not in mode_options:
-            income_val = next((o for o in mode_options if str(income_val).lower() == o.lower()),
-                              "Continuous only")
-            st.session_state.rtd_tab_income_mode = income_val
-
-        income_mode = stateful(st.radio,
-            "Income Specification for Rejected Transaction Model",
-            mode_options,
-            help="""
-            **Categorical only**: Willingness-to-Pay and Risk-Taking use fitted
-            income quintile effects (Quintiles 1-5)
-            **Continuous only**: Willingness-to-Pay and Risk-Taking use the generated
-            monetary income (z-scored)
-            **Compare both**: Run both specifications for comparison
-
-            Options List Length (Tendency to Plan) and Loyalty do not use income.
-            """,
-            key="rtd_tab_income_mode", on_change=on_rtd_income_mode_change,
-        )
-        st.session_state.rtd_income_mode = income_mode
+        render_income_mode(RTD_CONTROLS)
 
     with col2:
         st.markdown('<h4 class="subsection-header">Stochastic Component</h4>', unsafe_allow_html=True)
@@ -893,29 +851,7 @@ def render_rejected_transaction_defaults_tab():
             st.info("📊 Research Baseline always uses deterministic scores. Configure "
                     "stochastic settings for Copula / Research Specification runs.")
 
-        st.markdown("**Copula Mode:**")
-        copula_val = restore(
-            'rtd_tab_sigma_in_copula', 'rejected_transaction_tab_persistence',
-            'rtd_sigma_in_copula', False)
-        seed_if_changed('rtd_tab_sigma_in_copula', bool(copula_val))
-        sigma_in_copula = stateful(st.checkbox,
-            "Add Normal(anchor, σ) draw to Copula runs",
-            help="When enabled, Copula mode will also use the stochastic component",
-            key="rtd_tab_sigma_in_copula",
-            on_change=lambda: save('rtd_tab_sigma_in_copula', 'rejected_transaction_tab_persistence', 'rtd_sigma_in_copula'))
-        st.session_state.rtd_sigma_in_copula = sigma_in_copula
-
-        st.markdown("**Research Specification Mode:**")
-        res_val = restore(
-            'rtd_tab_sigma_enabled', 'rejected_transaction_tab_persistence',
-            'rtd_sigma_enabled', True)
-        seed_if_changed('rtd_tab_sigma_enabled', bool(res_val))
-        sigma_enabled = stateful(st.checkbox,
-            "Use Normal(anchor, σ) draw in Research Specification mode",
-            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
-            key="rtd_tab_sigma_enabled",
-            on_change=lambda: save('rtd_tab_sigma_enabled', 'rejected_transaction_tab_persistence', 'rtd_sigma_enabled'))
-        st.session_state.rtd_sigma_enabled = sigma_enabled
+        sigma_in_copula, sigma_enabled = render_stochastic_tick_boxes(RTD_CONTROLS)
 
         st.markdown("Research Baseline always uses anchor values only (deterministic).")
 
@@ -942,7 +878,7 @@ def render_rejected_transaction_defaults_tab():
     # ---- Four mechanism sub-tabs + the rank-aggregation sub-tab ----
     st.markdown('<h4 class="subsection-header">Sub-Decision Mechanisms</h4>', unsafe_allow_html=True)
     # Larger bold sub-tab labels: bold markdown in the labels
-    # plus the .st-key-rtd_subtabs font rule in app.components.get_css_styles().
+    # plus the .st-key-rtd_subtabs font rule in app.pages.css.get_css_styles().
     with st.container(key="rtd_subtabs"):
         sub_tabs = st.tabs([f"**{MECH_TITLES[m]}**" for m in MECHANISMS]
                            + [f"**{AGGREGATION_TITLE}**"])

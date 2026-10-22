@@ -8,6 +8,11 @@ import streamlit as st
 from app.state.widgets import drawn_in_previous_run, stateful
 from app.state.saved_configs import clear_decision_config
 from app.pages.decision_tabs._tab_state import restore, save, seed_if_absent
+from app.pages.decision_tabs._controls import (
+    EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, TabControls,
+    render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
+)
+from app.state.registry import CONTROL_KEYS
 import pandas as pd
 from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
 from app.seam.sentinels import donation_sigma_overall
@@ -89,7 +94,7 @@ def initialize_donation_widget_keys():
     seed_if_absent("tab_sigma_in_copula", st.session_state.get('sigma_in_copula', False))
     seed_if_absent("tab_sigma_in_research", st.session_state.get('sigma_in_research', True))
 
-    # (tab_sigma_coefficient_stochastic is seeded by render_donation_sigma_controls,
+    # (tab_sigma_coefficient_stochastic is seeded by _controls.render_sigma_controls,
     # right before the slider and only in a run that draws it: seeded here it would
     # carry 1.0 - the quintile branch's coefficient - into a key no widget draws,
     # which then wins over the stored coefficient when the slider comes back.)
@@ -105,149 +110,35 @@ def initialize_donation_widget_keys():
             research_defaults()['quintile_scale_factors'])
 
 
-def render_donation_sigma_controls(mode_suffix: str):
-    """
-    Render sigma strategy controls (overall vs quintile) for donation_default.
+def _after_income_mode_change():
+    """After the income-mode radio changes: reload the coefficient set of the new
+    mode and drop a pinned donation configuration (it was run in the old mode)."""
+    reload_coefficients_for_income_mode()
+    clear_decision_config('donation_default')
 
-    Args:
-        mode_suffix: the widget-key suffix; the tab passes 'stochastic' (one set of
-            σ controls shared by every population mode)
-    """
-    # Base sigma values per quintile (from empirical data)
-    BASE_SIGMAS = {
-        '1': 5.705052,   # Level 1 (€12)
-        '2': 3.069326,   # Level 2 (€32)
-        '3': 3.532226,   # Level 3 (€72)
-        '4': 12.219622,  # Level 4 (€128)
-        '5': 16.854622,  # Level 5 (€200)
-    }
 
-    LEVEL_LABELS = {
-        '1': 'Level 1 (€12)',
-        '2': 'Level 2 (€32)',
-        '3': 'Level 3 (€72)',
-        '4': 'Level 4 (€128)',
-        '5': 'Level 5 (€200)',
-    }
-
-    # Restore sigma strategy from storage
-    strategy_widget_key = f'donation_tab_sigma_strategy_{mode_suffix}'
-    strategy_storage_key = f'sigma_strategy_{mode_suffix}'
-    current_strategy = st.session_state.get('donation_sigma_strategy', 'overall')
-
-    restore(
-        strategy_widget_key, 'donation_tab_persistence',
-        strategy_storage_key,
-        current_strategy
-    )
-
-    def on_strategy_change():
-        """Handle sigma strategy changes."""
-        new_strategy = st.session_state[strategy_widget_key]
-        save(strategy_widget_key, 'donation_tab_persistence', strategy_storage_key)
-        st.session_state.donation_sigma_strategy = new_strategy
-
-    sigma_strategy = stateful(st.radio,
-        "Apply σ uniformly or per income level?",
-        options=['overall', 'quintile'],
-        format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
-        key=strategy_widget_key,
-        on_change=on_strategy_change,
-        horizontal=True
-    )
-    st.session_state.donation_sigma_strategy = sigma_strategy
-
-    st.markdown("---")
-
-    if sigma_strategy == 'overall':
-        # OVERALL MODE: Single slider
-        st.markdown(f"Base σ = {BASE_SIGMA_OVERALL:.4f} (empirical from 280 participants)")
-
-        # Restore coefficient widget value
-        coeff_widget_key = f'tab_sigma_coefficient_{mode_suffix}'
-        coeff_storage_key = f'sigma_coefficient_{mode_suffix}'
-
-        restore(
-            coeff_widget_key, 'donation_tab_persistence',
-            coeff_storage_key,
-            1.0
-        )
-
-        sigma_coefficient = stateful(st.slider,
-            "σ Coefficient (multiplier)",
-            min_value=0.0,
-            max_value=2.0,
-            step=0.01,
-            help=f"Coefficient to multiply the base σ. Final σ = {BASE_SIGMA_OVERALL:.4f} × coefficient",
-            key=coeff_widget_key,
-            on_change=lambda: save(coeff_widget_key, 'donation_tab_persistence', coeff_storage_key)
-        )
-        st.session_state.sigma_coefficient = sigma_coefficient
-
-        effective_sigma = BASE_SIGMA_OVERALL * sigma_coefficient
-        st.markdown(f"Effective σ = {BASE_SIGMA_OVERALL:.4f} × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
-        st.session_state.sigma_value_ui = effective_sigma
-
-    else:
-        # QUINTILE MODE: 5 sliders (one per income level)
-        # Warn user that quintile sigma only applies to categorical mode
-        current_income_mode = st.session_state.get('income_spec_mode', 'categorical only')
-        if 'continuous' in str(current_income_mode).lower() and 'compare' not in str(current_income_mode).lower():
-            st.warning(
-                "**Continuous mode uses overall σ.** "
-                "Per-quintile σ values are based on categorical budget levels and are "
-                "not applicable to the continuous income specification. "
-                f"The simulation will use the overall σ ({BASE_SIGMA_OVERALL:.4f} × coefficient) for continuous runs."
-            )
-        elif 'compare' in str(current_income_mode).lower():
-            st.info(
-                "**Note:** Per-quintile σ values will only apply to the **categorical** run. "
-                f"The continuous run will use the overall σ ({BASE_SIGMA_OVERALL:.4f} × coefficient)."
-            )
-        st.markdown("**Per-Quintile σ Coefficients**")
-        st.markdown("Each level has its own base σ from empirical data:")
-
-        quintile_coefficients = {}
-
-        for level in ['1', '2', '3', '4', '5']:
-            # Get current value for this level
-            current_scale = st.session_state.donation_quintile_scale_factors.get(level, 1.0)
-            current_scale = max(0.0, min(float(current_scale), 2.0))
-
-            # Restore from storage
-            storage_key = f'donation_sigma_quintile_{level}_{mode_suffix}'
-            widget_key = f'donation_tab_sigma_q{level}_{mode_suffix}'
-
-            restore(
-                widget_key, 'donation_tab_persistence',
-                storage_key,
-                current_scale
-            )
-
-            base_sigma = BASE_SIGMAS[level]
-
-            col_slider, col_result = st.columns([3, 1])
-            with col_slider:
-                q_coeff = stateful(st.slider,
-                    f"{LEVEL_LABELS[level]} (base σ={base_sigma:.2f})",
-                    min_value=0.0,
-                    max_value=2.0,
-                    step=0.01,
-                    key=widget_key,
-                    on_change=lambda l=level, wk=widget_key, sk=storage_key: save(wk, 'donation_tab_persistence', sk)
-                )
-            with col_result:
-                effective = base_sigma * q_coeff
-                st.metric("Effective σ", f"{effective:.2f}")
-
-            quintile_coefficients[level] = q_coeff
-
-        # Save quintile scale factors to session state
-        st.session_state.donation_quintile_scale_factors = quintile_coefficients
-
-        # Set sigma_value_ui to indicate stochastic is enabled (using overall sigma as fallback display)
-        st.session_state.sigma_value_ui = BASE_SIGMA_OVERALL
-        st.session_state.sigma_coefficient = 1.0  # Default coefficient for overall fallback
+#: The tab's shared controls (decision_tabs._controls): keys from the registry,
+#: σ constants and the tab's own wording.
+DONATION_CONTROLS = TabControls(
+    keys=CONTROL_KEYS['donation_default'],
+    research_storage='sigma_in_research',
+    income_storage='income_spec_mode',
+    income_label="Income Mode for Donation Model",
+    income_help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
+    income_options=["categorical only", "continuous only", "Compare both"],
+    income_default='categorical only',
+    income_seed=None,
+    after_income_change=_after_income_mode_change,
+    strategy_header=False,
+    strategy_label="Apply σ uniformly or per income level?",
+    base_sigma=BASE_SIGMA_OVERALL,
+    effective_base=BASE_SIGMA_OVERALL,
+    overall_summary="{base:.4f} × coefficient",
+    coefficient_fallback=1.0,
+    quintile_level_fallback=1.0,
+    base_sigmas=EMPIRICAL_BASE_SIGMAS,
+    level_labels=LEVEL_LABELS,
+)
 
 
 def render_donation_default_tab():
@@ -305,35 +196,7 @@ def render_donation_default_tab():
         
         # Income specification selector
         st.markdown('<h4 class="subsection-header">Income Specification</h4>', unsafe_allow_html=True)
-
-        def on_income_spec_mode_change():
-            """Handle income spec mode changes"""
-            setattr(st.session_state, 'income_spec_mode', st.session_state.page2_tab_income_spec_mode)
-            save('page2_tab_income_spec_mode', 'donation_tab_persistence', 'income_spec_mode')
-            reload_coefficients_for_income_mode()
-            clear_decision_config('donation_default')
-
-        # Restore income spec mode
-        income_val = restore(
-            'page2_tab_income_spec_mode', 'donation_tab_persistence',
-            'income_spec_mode',
-            'categorical only'
-        )
-
-        # Ensure index matches logic if needed, but for radio string value is enough if in options
-        # If value not in options, default to categorical
-        if income_val not in ["categorical only", "continuous only", "Compare both"]:
-            income_val = "categorical only"
-
-        income_spec_mode = stateful(st.radio,
-            "Income Mode for Donation Model",
-            ["categorical only", "continuous only", "Compare both"],
-            help="Choose income treatment: categorical (5 categories), continuous (linear), or Compare both",
-            key="page2_tab_income_spec_mode",
-            on_change=on_income_spec_mode_change
-        )
-        # Ensure session state is synced if we just restored a value
-        st.session_state.income_spec_mode = income_spec_mode
+        render_income_mode(DONATION_CONTROLS)
     
     with col2:
         # Stochastic component option
@@ -343,41 +206,19 @@ def render_donation_default_tab():
             st.info("📊 Research Baseline always uses anchor values only (deterministic). "
                     "Configure stochastic settings below for Copula / Research Specification runs.")
 
-        # --- Copula sigma checkbox (always visible) ---
-        st.markdown("**Copula Mode:**")
-        restore(
-            'tab_sigma_in_copula', 'donation_tab_persistence',
-            'sigma_in_copula',
-            False
-        )
-        sigma_in_copula = stateful(st.checkbox,
-            "Add Normal(anchor, σ) draw to Copula runs",
-            help="When enabled, Copula mode will also use the stochastic component",
-            key="tab_sigma_in_copula",
-            on_change=lambda: save('tab_sigma_in_copula', 'donation_tab_persistence', 'sigma_in_copula')
-        )
-        st.session_state.sigma_in_copula = sigma_in_copula
-
-        # --- Research Specification sigma checkbox (always visible) ---
-        st.markdown("**Research Specification Mode:**")
-        restore(
-            'tab_sigma_in_research', 'donation_tab_persistence',
-            'sigma_in_research',
-            True
-        )
-        sigma_in_research = stateful(st.checkbox,
-            "Use Normal(anchor, σ) draw in Research Specification mode",
-            help="When enabled, adds stochastic variation via Normal(anchor, σ) draws.",
-            key="tab_sigma_in_research",
-            on_change=lambda: save('tab_sigma_in_research', 'donation_tab_persistence', 'sigma_in_research')
-        )
-        st.session_state.sigma_in_research = sigma_in_research
+        sigma_in_copula, sigma_in_research = render_stochastic_tick_boxes(DONATION_CONTROLS)
 
         st.markdown("Research Baseline always uses anchor values only (deterministic).")
 
         # --- Shared sigma controls (strategy, coefficient, quintiles) ---
         if sigma_in_copula or sigma_in_research:
-            render_donation_sigma_controls('stochastic')
+            sigma_strategy, sigma_coefficient = render_sigma_controls(DONATION_CONTROLS)
+            if sigma_strategy == 'overall':
+                st.session_state.sigma_value_ui = BASE_SIGMA_OVERALL * sigma_coefficient
+            else:
+                # Set sigma_value_ui to indicate stochastic is enabled (using overall sigma as fallback display)
+                st.session_state.sigma_value_ui = BASE_SIGMA_OVERALL
+                st.session_state.sigma_coefficient = 1.0  # Default coefficient for overall fallback
         else:
             st.info("Stochastic component disabled for all modes - using anchor values directly")
         

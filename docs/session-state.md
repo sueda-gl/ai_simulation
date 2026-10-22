@@ -47,8 +47,10 @@ be named: `st.session_state.x`, `st.session_state["x"]`, `.get`, `.pop`,
 `.setdefault`, `"x" in st.session_state`, `getattr`/`hasattr`/`setattr`/`delattr`,
 and every `key=` handed to a Streamlit call or to `stateful()`. A key held in a
 variable counts when the variable is bound to a literal or an f-string, or loops (a
-`for` statement or a comprehension) over a literal list of them. Then it checks both
-directions:
+`for` statement or a comprehension) over a literal list of them. In the two modules
+that draw the same widgets for several tabs (§8) a key is an f-string over a
+per-tab row of the registry's own table, and the test expands it to one concrete
+key per tab. Then it checks both directions:
 
 * every key the code touches has a registry entry, so you cannot add a key quietly;
 * every registry entry is touched by the code, so a key that leaves the app has to
@@ -120,15 +122,24 @@ reads before `seed` / `base_seed`). It is written unconditionally right after th
 widget call, on every render, so the two cannot drift apart while the tab is open:
 
 ```python
-restore('di_tab_sigma_enabled', 'disclose_income_tab_persistence', 'sigma_enabled', True)
+# decision_tabs/_controls.py, drawn for the Disclose Income tab with
+# keys = CONTROL_KEYS['disclose_income'] (wp='di_tab_', sp='di_', research='sigma_enabled')
+research_widget_key = f'{keys.wp}{keys.research}'        # di_tab_sigma_enabled
+research_canonical_key = f'{keys.sp}{keys.research}'     # di_sigma_enabled
+restore(research_widget_key, keys.storage, spec.research_storage, True)
 sigma_enabled = stateful(st.checkbox,
-                         "Use Normal(anchor, σ) draw in Research Specification mode",
-                         key="di_tab_sigma_enabled", on_change=..., ...)
-st.session_state.di_sigma_enabled = sigma_enabled
+                         f"Use Normal({noun}, σ) draw in Research Specification mode",
+                         key=research_widget_key, on_change=..., ...)
+st.session_state[research_canonical_key] = sigma_enabled
 ```
 
 (`stateful()` refuses `value=` / `index=` / `default=`: the widget's value lives in
-the key, which `restore` seeds, §2 layer 3.)
+the key, which `restore` seeds, §2 layer 3.) The four modelled tabs draw their
+stochastic controls and their income-mode radio through this one component,
+`app/pages/decision_tabs/_controls.py`, each with its own `TabControls` spec (its
+keys, its σ constants, its wording); the Disclose Income and Disclose Documents
+tabs share their intercept override, resets and action buttons the same way
+(`_disclosure.py`, a `DisclosureTab` spec each).
 
 Registry categories: `page1-mirror`, `page2-mirror`. Page 1's canonical layer is
 mostly one object rather than one key per value: `sim_params`, a
@@ -183,8 +194,8 @@ culled - in front of the dict entry. That is why Page 2 no longer pre-seeds the
 tabs' keys (`initialize_page2_widget_keys` only mirrors the canonical keys, §2 layer
 2, for the Overview tab that is drawn before the decision tabs), why each tab seeds
 its own keys right before its widgets, and why a reset writes only the keys of the
-widgets the same run draws (the Disclose Documents per-quintile sliders drop their
-keys on a reset and are seeded again on their next draw). The one exception keeps
+widgets the same run draws (the Disclose Income / Documents per-quintile sliders
+drop their keys on a reset and are seeded again on their next draw). The one exception keeps
 its guard elsewhere: the Donation intercept reset writes both intercept keys, the
 one the income mode draws and the one it does not, so those two inputs are seeded
 from the typed override not only while their key is absent but every time they come
@@ -326,7 +337,7 @@ initialisers are what put it back.
 
 | Operation | What it deletes | Then |
 |---|---|---|
-| A decision tab's **Reset Config to Defaults** (Disclose Income, Disclose Documents, Decision 4) | every key starting with `di_`, `dd_` or `rtd_` (whichever tab), plus that tab's persistence dict. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists | Decision 4 calls `initialize_rtd_session_state()`; Disclose Income / Documents write the reset widget keys and canonical keys from the file (`_apply_config_to_widget_keys`), and the tab's `initialize_*_session_state()` runs next in the same run |
+| A decision tab's **Reset Config to Defaults** (Disclose Income, Disclose Documents, Decision 4) | every key starting with `di_`, `dd_` or `rtd_` (whichever tab), plus that tab's persistence dict. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists | Decision 4 calls `initialize_rtd_session_state()`; Disclose Income / Documents write the reset widget keys and canonical keys from the file (`_disclosure.apply_config_to_widget_keys`, plus the tab's own `_apply_extra_widget_keys`), and the tab's `initialize_*_session_state()` runs next in the same run |
 | Decision 4's per-element reset | only `rtd_intercept_{mech}` and its widget key (for Flexibility also `rtd_flex_observed_weight` and its slider key), plus those entries in the persistence dict | same; σ is decision-wide and deliberately untouched |
 | Page 1's **Reset to Default Values** | every `purchasing_limit_{i}`, `purchasing_limits_temp` and the five widget keys that pass `value=` (the three "Maximum Value" text inputs, `uniform_purchasing_limit_input`, `show_individual_agents_checkbox`); every other Page-1 widget key is *written* | `sim_params` fields go back to the `SimulationParameters` dataclass defaults and the Page-1 session values to `models.SESSION_DEFAULTS`; the widget keys are written from `page1_widget_values`, the same mapping `initialize_widget_keys` seeds a fresh session from |
 | The Overview's **Reset All Defaults** | for every unselected decision, its `{decision_name}_default_*` and `_priority_template` keys (and the `_default_param_*` checkbox keys), plus their `_persistent_defaults` entries | `models.initialize_default_decision_parameters` seeds them again at the top of the next run |
@@ -347,13 +358,34 @@ the test rather than slipping past it:
 * `key` — the parameter of `state.widgets.sync_widget_key` (every `stateful()`
   widget's key), of `save_to_persistent_storage` / `restore_from_persistent_storage`
   and of the Decision-4 download helper; the loop variable of the Disclose Income /
-  Documents initialisers, the prefix resets and the Clear Results wipe;
+  Documents initialisers, the prefix resets (`_disclosure.apply_pending_reset`,
+  Decision 4) and the Clear Results wipe;
 * `k` — the per-category purchasing-limit key on Page 1, bound in a lambda default;
 * `chart_key` — the plotly key the shared Decision-4 chart helpers receive;
 * `widget_key`, `storage_dict_name` — the parameters of the tabs' persistence helpers
   (`decision_tabs/_tab_state.py`: `restore`, `save`, `seed_if_absent`,
   `seed_if_changed`): the widget key and the `*_tab_persistence` dict they read and
-  write. Every caller still binds its widget key literally (`key=`).
+  write. Every caller still binds its widget key literally (`key=`), or through
+  the registry's key-parameter table below.
+
+**Keys built from the registry's per-tab tables.** Two modules draw the same
+widgets for several tabs: `decision_tabs/_controls.py` (the four modelled tabs'
+stochastic controls and income-mode radio) and `decision_tabs/_disclosure.py` (the
+Disclose Income / Documents intercept override, resets and buttons). They name
+their keys with f-strings over a row of `registry.CONTROL_KEYS` /
+`registry.DISCLOSURE_KEYS` — `f"{keys.wp}sigma_coefficient{keys.suffix}"` is
+`tab_sigma_coefficient_stochastic` on the Donation tab and
+`rtd_tab_sigma_coefficient` on Decision 4 — and read those rows from the registry,
+so the keys the app uses *are* the table's values. `registry.KEY_PARAMETER_TABLES`
+maps each module to its table; the test expands every such f-string of the module
+over every row (a placeholder `{<name>.<field>}` whose last segment is a field of
+the row; `{level}` stays a family placeholder) and holds each expansion against the
+registry, which keeps one row per concrete key as for every other key. An
+expansion the registry does not hold fails the test like any other unregistered
+key; a dotted placeholder that is not a field, or any such placeholder in a module
+without a table, is a dynamic key and is refused unless it is in
+`DYNAMIC_KEY_VARIABLES` (`tests/test_session_key_registry.py` has a negative test
+for each).
 
 ---
 

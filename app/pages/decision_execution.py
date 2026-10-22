@@ -77,6 +77,61 @@ def donation_income_mode_from_settings():
     return st.session_state.get('income_spec_mode', 'categorical only')
 
 
+#: One row per decision the complete-run gate checks, in the order it checks them
+#: (and the order of the blocking issues it reports). ``block_type`` is the name
+#: the screens key their warnings on; ``income_mode`` reads the decision's live
+#: income mode; ``saved_info`` is what a pinned record of the decision contributes
+#: to the success message ("Using saved configuration(s): ...").
+class GateDecision:
+    __slots__ = ("name", "block_type", "income_mode", "saved_info")
+
+    def __init__(self, name, block_type, income_mode, saved_info):
+        self.name, self.block_type = name, block_type
+        self.income_mode, self.saved_info = income_mode, saved_info
+
+
+def _saved_income_mode(config):
+    """A pinned Disclose Income / Disclose Documents record's income mode: the one
+    under ``params`` first, then the top-level one."""
+    return config.get('params', {}).get('income_mode', config.get('income_mode', 'Unknown'))
+
+
+def _saved_rtd_info(config):
+    """A pinned Decision 4 record: "<population> + <income mode>", the top-level
+    income mode first (the reverse of _saved_income_mode's order)."""
+    return (f"{config.get('population_mode', 'Unknown')} + "
+            f"{config.get('income_mode', config.get('params', {}).get('income_mode', 'Unknown'))}")
+
+
+def _saved_donation_info(config):
+    """A pinned Donation record: "<population> + <income mode>"; a record without a
+    population mode reports the session's."""
+    pop_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
+    inc_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
+    return f"{pop_mode} + {inc_mode}"
+
+
+GATE_DECISIONS = (
+    GateDecision('disclose_income', 'disclose_income',
+                 lambda: st.session_state.get('di_income_mode', 'Categorical only'),
+                 _saved_income_mode),
+    GateDecision('disclose_documents', 'disclose_documents',
+                 lambda: st.session_state.get('dd_income_mode', 'Categorical only'),
+                 _saved_income_mode),
+    GateDecision('rejected_transaction_defaults', 'rejected_transaction_defaults',
+                 lambda: st.session_state.get('rtd_income_mode', 'Continuous only'),
+                 _saved_rtd_info),
+    GateDecision('donation_default', 'donation_config',
+                 donation_income_mode_from_settings,
+                 _saved_donation_info),
+)
+
+#: The order of the parts of the success message: Donation Default comes second,
+#: not last as in the checks.
+GATE_SUCCESS_ORDER = ('disclose_income', 'donation_default', 'disclose_documents',
+                      'rejected_transaction_defaults')
+
+
 def can_run_complete_simulation():
     """
     Determine if complete simulation can run based on configuration state.
@@ -90,6 +145,9 @@ def can_run_complete_simulation():
     
     Accumulates ALL blocking issues instead of returning on the first one, so the
     UI can display all conflicts at once.
+
+    One check per row of GATE_DECISIONS; tests/test_complete_run_gate.py pins
+    every outcome.
     
     Returns:
         tuple: (can_run: bool, reason: str, config_count: int, block_type: str or None, blocking_issues: list)
@@ -116,131 +174,42 @@ def can_run_complete_simulation():
         if decision_name not in selected_decisions:
             selected_decisions = list(selected_decisions) + [decision_name]
     
-    # ========================================================================
-    # CALCULATE ALL COUNTS UPFRONT (shared between disclose_income and donation_default)
-    # ========================================================================
-    
     # Population modes: "Compare all" generates 3, others generate 1
     population_mode = st.session_state.get('population_mode', 'Copula (synthetic)')
     population_count = 3 if population_mode == "Compare all" else 1
-    
-    # Disclose income modes: "Compare both" generates 2, others generate 1
-    di_income_mode = st.session_state.get('di_income_mode', 'Categorical only')
-    di_income_count = 2 if ('compare' in str(di_income_mode).lower() or 'both' in str(di_income_mode).lower()) else 1
-
-    # Disclose documents income modes: "Compare both" generates 2, others generate 1
-    dd_income_mode = st.session_state.get('dd_income_mode', 'Categorical only')
-    dd_income_count = 2 if ('compare' in str(dd_income_mode).lower() or 'both' in str(dd_income_mode).lower()) else 1
-
-    # Donation default income modes: "Compare both" generates 2, others generate 1
-    # Donation Default's own income mode (see donation_income_mode_from_settings)
-    donation_income_mode = donation_income_mode_from_settings()
-    
-    donation_income_count = 2 if ('compare' in str(donation_income_mode).lower() or 'both' in str(donation_income_mode).lower()) else 1
-    
-    # ========================================================================
-    # CHECK DISCLOSE_INCOME (only if selected)
-    # ========================================================================
-    
-    disclose_income_selected = 'disclose_income' in selected_decisions
-    di_total_configs = population_count * di_income_count
-    has_disclose_income_config = False
-    di_saved_mode = None
-    
-    if disclose_income_selected:
-        # Check if user has a saved disclose_income config
-        if 'disclose_income' in configs:
-            di_config = configs['disclose_income']
-            has_disclose_income_config = True
-            di_saved_mode = di_config.get('params', {}).get('income_mode', 
-                di_config.get('income_mode', 'Unknown'))
-        
-        # If multiple configs and no saved selection, add to blocking issues
-        if di_total_configs > 1 and not has_disclose_income_config:
-            blocking_issues.append({
-                'decision': 'disclose_income',
-                'block_type': 'disclose_income',
-                'config_count': di_total_configs,
-                'reason': f"Disclose Income has {di_total_configs} configurations (population: {population_count}, income: {di_income_count}) - please run disclose_income only and select one"
-            })
-    
-    # ========================================================================
-    # CHECK DISCLOSE_DOCUMENTS (only if selected) - mirrors disclose_income
-    # ========================================================================
-
-    disclose_documents_selected = 'disclose_documents' in selected_decisions
-    dd_total_configs = population_count * dd_income_count
-    has_disclose_documents_config = False
-    dd_saved_mode = None
-
-    if disclose_documents_selected:
-        if 'disclose_documents' in configs:
-            ddc = configs['disclose_documents']
-            has_disclose_documents_config = True
-            dd_saved_mode = ddc.get('params', {}).get('income_mode',
-                ddc.get('income_mode', 'Unknown'))
-
-        if dd_total_configs > 1 and not has_disclose_documents_config:
-            blocking_issues.append({
-                'decision': 'disclose_documents',
-                'block_type': 'disclose_documents',
-                'config_count': dd_total_configs,
-                'reason': f"Disclose Documents has {dd_total_configs} configurations (population: {population_count}, income: {dd_income_count}) - please run disclose_documents only and select one"
-            })
 
     # ========================================================================
-    # CHECK REJECTED_TRANSACTION_DEFAULTS (only if selected) - mirrors disclose_income
+    # CHECK EVERY GATED DECISION (only if selected)
     # ========================================================================
 
-    rtd_income_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
-    rtd_income_count = 2 if ('compare' in str(rtd_income_mode).lower() or 'both' in str(rtd_income_mode).lower()) else 1
-    rtd_selected = 'rejected_transaction_defaults' in selected_decisions
-    rtd_total_configs = population_count * rtd_income_count
-    has_rtd_config = False
-    rtd_saved_info = None
+    checks = {}   # decision name -> (selected, total_configs, has_config, saved_info)
+    for gate in GATE_DECISIONS:
+        title = GATE_BLOCK_TYPE_TITLES[gate.block_type]
+        # Income modes: "Compare both" generates 2, others generate 1
+        income_mode = gate.income_mode()
+        income_count = 2 if ('compare' in str(income_mode).lower() or 'both' in str(income_mode).lower()) else 1
 
-    if rtd_selected:
-        if 'rejected_transaction_defaults' in configs:
+        selected = gate.name in selected_decisions
+        total_configs = population_count * income_count
+        has_config = False
+        saved_info = None
+
+        if selected:
             # Every stored config is an explicit "Use This Config" selection.
-            rc = configs['rejected_transaction_defaults']
-            has_rtd_config = True
-            rtd_saved_info = (f"{rc.get('population_mode', 'Unknown')} + "
-                              f"{rc.get('income_mode', rc.get('params', {}).get('income_mode', 'Unknown'))}")
+            if gate.name in configs:
+                has_config = True
+                saved_info = gate.saved_info(configs[gate.name])
 
-        if rtd_total_configs > 1 and not has_rtd_config:
-            blocking_issues.append({
-                'decision': 'rejected_transaction_defaults',
-                'block_type': 'rejected_transaction_defaults',
-                'config_count': rtd_total_configs,
-                'reason': f"Rejected Transaction Defaults has {rtd_total_configs} configurations (population: {population_count}, income: {rtd_income_count}) - please run rejected_transaction_defaults only and select one"
-            })
+            # If multiple configs and no saved selection, add to blocking issues
+            if total_configs > 1 and not has_config:
+                blocking_issues.append({
+                    'decision': gate.name,
+                    'block_type': gate.block_type,
+                    'config_count': total_configs,
+                    'reason': f"{title} has {total_configs} configurations (population: {population_count}, income: {income_count}) - please run {gate.name} only and select one"
+                })
 
-    # ========================================================================
-    # CHECK DONATION_DEFAULT (only if selected)
-    # ========================================================================
-
-    donation_default_selected = 'donation_default' in selected_decisions
-    donation_total_configs = population_count * donation_income_count
-    has_donation_config = False
-    donation_saved_info = None
-    
-    if donation_default_selected:
-        # Check if user has a saved donation_default config
-        if 'donation_default' in configs:
-            config = configs['donation_default']
-            has_donation_config = True
-            pop_mode = config.get('population_mode', st.session_state.get('population_mode', 'Unknown'))
-            inc_mode = config.get('donation_income_mode', config.get('income_spec_mode', 'Unknown'))
-            donation_saved_info = f"{pop_mode} + {inc_mode}"
-        
-        # If multiple configs and no saved selection, add to blocking issues
-        if donation_total_configs > 1 and not has_donation_config:
-            blocking_issues.append({
-                'decision': 'donation_default',
-                'block_type': 'donation_config',
-                'config_count': donation_total_configs,
-                'reason': f"Donation Default has {donation_total_configs} configurations (population: {population_count}, income: {donation_income_count}) - please run donation_default only and select one"
-            })
+        checks[gate.name] = (selected, total_configs, has_config, saved_info)
     
     # ========================================================================
     # DETERMINE RESULT
@@ -257,34 +226,24 @@ def can_run_complete_simulation():
         
         return (False, combined_reasons, max_config_count, primary_block_type, blocking_issues)
     
-    # No blocking issues - build success message
+    # No blocking issues - build success message: one part per selected and saved
+    # decision, in GATE_SUCCESS_ORDER
+    titles = {gate.name: GATE_BLOCK_TYPE_TITLES[gate.block_type] for gate in GATE_DECISIONS}
     config_parts = []
-    
-    # Show disclose_income config if selected and saved
-    if has_disclose_income_config and di_saved_mode:
-        config_parts.append(f"Disclose Income: {di_saved_mode}")
-    
-    # Show donation_default config if selected and saved
-    if has_donation_config and donation_saved_info:
-        config_parts.append(f"Donation Default: {donation_saved_info}")
-
-    # Show disclose_documents config if selected and saved
-    if has_disclose_documents_config and dd_saved_mode:
-        config_parts.append(f"Disclose Documents: {dd_saved_mode}")
-
-    # Show rejected_transaction_defaults config if selected and saved
-    if has_rtd_config and rtd_saved_info:
-        config_parts.append(f"Rejected Transaction Defaults: {rtd_saved_info}")
+    for name in GATE_SUCCESS_ORDER:
+        selected, total_configs, has_config, saved_info = checks[name]
+        if has_config and saved_info:
+            config_parts.append(f"{titles[name]}: {saved_info}")
 
     # Determine total config count for display
-    total_configs = max(di_total_configs if disclose_income_selected else 1,
-                       donation_total_configs if donation_default_selected else 1,
-                       dd_total_configs if disclose_documents_selected else 1,
-                       rtd_total_configs if rtd_selected else 1)
+    total_configs = max(total if selected else 1
+                        for selected, total, _, _ in checks.values())
     
     if config_parts:
         return (True, f"Using saved configuration(s): {', '.join(config_parts)}", total_configs, None, [])
-    elif not disclose_income_selected and not donation_default_selected:
+    elif not checks['disclose_income'][0] and not checks['donation_default'][0]:
+        # neither Disclose Income nor Donation Default selected - a Disclose
+        # Documents / Decision 4-only selection says this too
         return (True, "Using default values for all decisions", 1, None, [])
     else:
         return (True, "Single configuration", 1, None, [])
@@ -397,13 +356,12 @@ GATE_BLOCK_TYPE_TITLES = {
 GATE_ISSUE_COUNT_HELP = "{} configuration issue(s) detected"
 
 
-def blocking_issue_text(screen, i, block_type, reason):
-    """The warning of issue `i` (its `block_type` and `reason`) on `screen` when
-    SEVERAL issues block the complete run."""
-    if screen == "results":
-        # an issue of any other block type is the donation_config one
-        title = GATE_BLOCK_TYPE_TITLES.get(block_type, "Donation Default")
-        return f"""
+# The texts are ``str.format`` templates over ``{i}`` (the issue number),
+# ``{title}`` (GATE_BLOCK_TYPE_TITLES) and ``{reason}`` (the gate's reason).
+# Every text keeps the trailing whitespace of the screen's original; Streamlit
+# strips it. tests/test_complete_run_gate.py pins each one.
+
+_ISSUE_RESULTS = """
 **Issue {i}: {title}**
 
 {reason}
@@ -412,8 +370,8 @@ def blocking_issue_text(screen, i, block_type, reason):
 1. Run **{title} Only** from the {title} tab
 2. Click **"Use This Config"** on the result you want to use
                     """
-    if block_type == "disclose_income":
-        return f"""
+
+_ISSUE_DISCLOSE_INCOME = """
 **Issue {i}: Disclose Income**
 
 {reason}
@@ -423,8 +381,8 @@ def blocking_issue_text(screen, i, block_type, reason):
 2. Run **disclose_income only** and select one configuration
 3. Or change to **"Categorical only"** or **"Continuous only"** mode
                         """
-    if block_type == "rejected_transaction_defaults":
-        return f"""
+
+_ISSUE_RTD = """
 **Issue {i}: Rejected Transaction Defaults**
 
 {reason}
@@ -434,8 +392,8 @@ def blocking_issue_text(screen, i, block_type, reason):
 2. Run **rejected_transaction_defaults only** and select one configuration ("Use This Config")
 3. Or change its Income Specification to **"Categorical only"** or **"Continuous only"**
                         """
-    if block_type == "disclose_documents" and screen == "tab":
-        return f"""
+
+_ISSUE_DISCLOSE_DOCUMENTS_TAB = """
 **Issue {i}: Disclose Documents**
 
 {reason}
@@ -445,8 +403,8 @@ def blocking_issue_text(screen, i, block_type, reason):
 2. Run **disclose_documents only** and select one configuration
 3. Or change to **"Categorical only"** or **"Continuous only"** mode
                         """
-    if block_type == "disclose_documents":
-        return f"""
+
+_ISSUE_DISCLOSE_DOCUMENTS = """
 **Issue {i}: Disclose Documents**
 
 {reason}
@@ -455,8 +413,8 @@ def blocking_issue_text(screen, i, block_type, reason):
 1. Go to the **Disclose Documents** tab
 2. Run **disclose_documents only** and select one configuration
                         """
-    # donation_config block type
-    return f"""
+
+_ISSUE_DONATION = """
 **Issue {i}: Donation Default**
 
 {reason}
@@ -466,14 +424,7 @@ def blocking_issue_text(screen, i, block_type, reason):
 2. Run **donation_default only** and select one configuration
                         """
 
-
-def configuration_required_text(screen, block_type, reason):
-    """The warning on `screen` when exactly ONE issue blocks the complete run:
-    `block_type` and `reason` are the gate's."""
-    if screen == "results":
-        if block_type in GATE_BLOCK_TYPE_TITLES:
-            title = GATE_BLOCK_TYPE_TITLES[block_type]
-            return f"""
+_REQUIRED_RESULTS = """
 ⚠️ **{title} Configuration Required**
 
 {reason}
@@ -483,14 +434,14 @@ def configuration_required_text(screen, block_type, reason):
 2. Click **"Use This Config"** on the result you want to use
 3. Return here to run complete simulation
                 """
-        return f"""
+
+_REQUIRED_RESULTS_UNKNOWN = """
 ⚠️ **Configuration Issue**
 
 {reason}
                 """
-    if screen == "overview":
-        if block_type == "disclose_income":
-            return f"""
+
+_REQUIRED_OVERVIEW_DISCLOSE_INCOME = """
 ⚠️ **Disclose Income Configuration Required**
 
 {reason}
@@ -500,8 +451,8 @@ def configuration_required_text(screen, block_type, reason):
 2. Change "Income Specification for Disclosure Model" from "Compare both" to either **"Categorical only"** or **"Continuous only"**
 3. Return here to run complete simulation
                     """
-        if block_type == "rejected_transaction_defaults":
-            return f"""
+
+_REQUIRED_OVERVIEW_RTD = """
 ⚠️ **Rejected Transaction Defaults Configuration Required**
 
 {reason}
@@ -512,8 +463,8 @@ def configuration_required_text(screen, block_type, reason):
    or change its Income Specification to **"Categorical only"** / **"Continuous only"**
 3. Return here to run complete simulation
                     """
-        if block_type == "disclose_documents":
-            return f"""
+
+_REQUIRED_OVERVIEW_DISCLOSE_DOCUMENTS = """
 ⚠️ **Disclose Documents Configuration Required**
 
 {reason}
@@ -523,8 +474,8 @@ def configuration_required_text(screen, block_type, reason):
 2. Run **disclose_documents only** and select one configuration (or change "Income Specification for Disclosure Model" from "Compare both" to **"Categorical only"** or **"Continuous only"**)
 3. Return here to run complete simulation
                     """
-        if block_type == "donation_config":
-            return f"""
+
+_REQUIRED_OVERVIEW_DONATION = """
 ⚠️ **Multiple Donation Configurations Detected**
 
 {reason}
@@ -535,9 +486,8 @@ def configuration_required_text(screen, block_type, reason):
 3. Select your preferred configuration from results
 4. Return here to run complete simulation
                     """
-    elif screen == "tab":
-        if block_type == "disclose_income":
-            return f"""
+
+_REQUIRED_TAB_DISCLOSE_INCOME = """
 ⚠️ **Disclose Income Configuration Required**
 
 {reason}
@@ -550,8 +500,8 @@ def configuration_required_text(screen, block_type, reason):
 
 This ensures all decisions produce a single result set.
                     """
-        if block_type == "disclose_documents":
-            return f"""
+
+_REQUIRED_TAB_DISCLOSE_DOCUMENTS = """
 ⚠️ **Disclose Documents Configuration Required**
 
 {reason}
@@ -564,8 +514,8 @@ This ensures all decisions produce a single result set.
 
 This ensures all decisions produce a single result set.
                     """
-        if block_type == "rejected_transaction_defaults":
-            return f"""
+
+_REQUIRED_TAB_RTD = """
 ⚠️ **Rejected Transaction Defaults Configuration Required**
 
 {reason}
@@ -579,8 +529,8 @@ This ensures all decisions produce a single result set.
 
 This ensures all decisions produce a single result set.
                     """
-        if block_type == "donation_config":
-            return f"""
+
+_REQUIRED_TAB_DONATION = """
 ⚠️ **Multiple Donation Configurations Detected**
 
 {reason}
@@ -594,12 +544,67 @@ This ensures all decisions produce a single result set.
 
 This ensures all decisions use consistent settings.
                     """
-    # an unknown block type: say what is wrong without naming a decision
-    return f"""
+
+_REQUIRED_UNKNOWN = """
 ⚠️ **Configuration Issue**
 
 {reason}
                     """
+
+#: The warning of one of SEVERAL blocking issues: screen -> block type -> text.
+#: A block type missing from a screen's row takes the row's ``None`` entry; a
+#: screen missing here reads as "overview".
+GATE_ISSUE_TEXTS = {
+    "results": {None: _ISSUE_RESULTS},
+    "overview": {"disclose_income": _ISSUE_DISCLOSE_INCOME,
+                 "rejected_transaction_defaults": _ISSUE_RTD,
+                 "disclose_documents": _ISSUE_DISCLOSE_DOCUMENTS,
+                 None: _ISSUE_DONATION},
+    "tab": {"disclose_income": _ISSUE_DISCLOSE_INCOME,
+            "rejected_transaction_defaults": _ISSUE_RTD,
+            "disclose_documents": _ISSUE_DISCLOSE_DOCUMENTS_TAB,
+            None: _ISSUE_DONATION},
+}
+
+#: The warning when exactly ONE issue blocks the run: screen -> block type -> text.
+#: A block type missing from a screen's row takes the row's ``None`` entry; a
+#: screen missing here says what is wrong without naming a decision.
+GATE_REQUIRED_TEXTS = {
+    "results": {**{block_type: _REQUIRED_RESULTS for block_type in GATE_BLOCK_TYPE_TITLES},
+                None: _REQUIRED_RESULTS_UNKNOWN},
+    "overview": {"disclose_income": _REQUIRED_OVERVIEW_DISCLOSE_INCOME,
+                 "rejected_transaction_defaults": _REQUIRED_OVERVIEW_RTD,
+                 "disclose_documents": _REQUIRED_OVERVIEW_DISCLOSE_DOCUMENTS,
+                 "donation_config": _REQUIRED_OVERVIEW_DONATION,
+                 None: _REQUIRED_UNKNOWN},
+    "tab": {"disclose_income": _REQUIRED_TAB_DISCLOSE_INCOME,
+            "disclose_documents": _REQUIRED_TAB_DISCLOSE_DOCUMENTS,
+            "rejected_transaction_defaults": _REQUIRED_TAB_RTD,
+            "donation_config": _REQUIRED_TAB_DONATION,
+            None: _REQUIRED_UNKNOWN},
+}
+
+
+def _gate_text(table, screen, block_type, fallback, **fields):
+    row = table.get(screen, fallback)
+    template = row.get(block_type, row[None])
+    # an issue of any other block type is the donation_config one
+    title = GATE_BLOCK_TYPE_TITLES.get(block_type, "Donation Default")
+    return template.format(title=title, **fields)
+
+
+def blocking_issue_text(screen, i, block_type, reason):
+    """The warning of issue `i` (its `block_type` and `reason`) on `screen` when
+    SEVERAL issues block the complete run (GATE_ISSUE_TEXTS)."""
+    return _gate_text(GATE_ISSUE_TEXTS, screen, block_type, GATE_ISSUE_TEXTS["overview"],
+                      i=i, reason=reason)
+
+
+def configuration_required_text(screen, block_type, reason):
+    """The warning on `screen` when exactly ONE issue blocks the complete run:
+    `block_type` and `reason` are the gate's (GATE_REQUIRED_TEXTS)."""
+    return _gate_text(GATE_REQUIRED_TEXTS, screen, block_type, {None: _REQUIRED_UNKNOWN},
+                      reason=reason)
 
 
 def render_blocking_issues(screen, reason, block_type, blocking_issues):
