@@ -89,8 +89,9 @@ disagrees with its own data, ask the prof.
 
 ### Where a modelled decision lives: Decision 2, layer by layer
 
-Open each Decision 2 file once before you start. Each line: Decision 2 today -> the example name
-for Decision 5.
+Decision 2 is the pattern to copy. The list below gives, for each piece, Decision 2's real file
+or name on the left and the name the same piece would have for Decision 5 on the right. Open the
+Decision 2 files once before you start.
 
 * **Document**: not in the repository ->
   `docs/reference/decisions/Decision 5 - Vendor Choice Weights <date>.docx`
