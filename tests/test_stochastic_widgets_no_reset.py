@@ -12,10 +12,12 @@ Two things are covered here.
    Disclose Documents (2), Donation Default (3) and Rejected Transaction
    Defaults (4) - must never move the app off Page 2, never drop the selected
    decisions and never raise. Covered: both checkboxes per tab, the sigma-mode
-   radios (uniform <-> per-quintile), the sigma-coefficient and per-quintile
-   sliders, and the same toggles after a Page 1 round trip, after a population
-   mode change, after an income-specification change and after the per-element
-   and whole-decision reset buttons.
+   radios (uniform <-> per-quintile), the sigma-coefficient, anchor-mix and
+   per-quintile sliders, and the same toggles after a Page 1 round trip, after a
+   population mode change, after an income-specification change and after the
+   whole-decision, per-element, reload, intercept and adjustment reset buttons
+   (RESET_BUTTONS; the Disclose Documents reset is clicked but not driven
+   afterwards, RESET_BUTTONS_NOT_DRIVABLE_AFTERWARDS).
 
 2. The crash that CAN take the app down (and therefore send the user back to a
    fresh session on Page 1) in the original repo: config/decisions.yaml was

@@ -5,7 +5,7 @@ API" warning on Page 1 or Page 2.
 Streamlit prints that warning when a widget gets a `value=` / `index=` default AND its
 key was written through st.session_state earlier in the same script run - which is
 how Page 1 seeds its widget keys (`initialize_widget_keys`) and how the decision tabs
-restore theirs (`restore_widget_from_storage`, `restore_from_persistent_storage`).
+restore theirs (`_tab_state.restore`, `restore_from_persistent_storage`).
 Those widgets are now driven by the session-state key only.
 
 Streamlit shows the warning once per PROCESS (a module-level flag), so checking the

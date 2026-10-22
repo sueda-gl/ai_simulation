@@ -93,7 +93,8 @@ def doc_final(reference, mode, pids):
 # --------------------------------------------------------------------- reference integrity
 
 def test_frozen_reference_matches_the_doc_reimplementation():
-    """If the reference .dta is present, the frozen CSV is exactly what the script derives."""
+    """The frozen CSV is exactly what experiments/d3_doc_reference.py derives from the .dta
+    at PROF_DTA (required: fails when missing unless COOPECON_ALLOW_DTA_SKIP=1)."""
     require_reference_file(PROF_DTA, "PROF_DTA in tests/test_donation_default_doc.py")
     import importlib.util
     spec = importlib.util.spec_from_file_location(
@@ -121,7 +122,7 @@ def test_frozen_reference_matches_the_doc_reimplementation():
 @pytest.mark.parametrize("mode", MODES)
 def test_config_coefficients_equal_the_doc(config, mode):
     assert config["regression_coefficients"][mode] == DOC_REPORTED[mode]
-    for key, value in DOC_COEFFICIENTS[mode].items():  # module fallbacks mirror the doc too
+    for key, value in DOC_COEFFICIENTS[mode].items():  # the module's copy, read from the same file
         assert value == DOC_REPORTED[mode][key]
     if mode == "categorical":  # the older flat block carries the categorical set
         legacy = config["regression"]
@@ -191,7 +192,7 @@ def test_copula_model_carries_study_program_only():
 @pytest.mark.parametrize("mode", MODES)
 def test_engine_reproduces_doc_at_shift0_sigma0(reference, participants, profile, mode):
     agents, pids = participants
-    got, engine = run_engine(profile, agents, mode, shift=0.0)
+    got, _ = run_engine(profile, agents, mode, shift=0.0)
     want = doc_final(reference, mode, pids)
     diff = np.abs(got - want)
     assert int((diff < TOL).sum()) == 280, f"max |code - doc| = {diff.max():.3e}"
@@ -253,6 +254,6 @@ def test_noise_gate_and_population_rescale(participants):
 def test_app_default_shift_floors_then_rescales(participants):
     """Default shift -4.0: anchors below 4 floor at 0, the rest divide by the population max."""
     agents, _ = participants
-    got, engine = run_engine("baseline", agents, "categorical", shift=-4.0)
+    got, _ = run_engine("baseline", agents, "categorical", shift=-4.0)
     assert got.max() == 1.0 and got.min() == 0.0
     assert 0.0 <= got.min() and np.all(got <= 1.0)

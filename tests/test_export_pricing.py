@@ -13,7 +13,6 @@ Agent Documentation 2026-10-07.docx, Transaction-Level export and Decision 8):
 from datetime import datetime
 
 import numpy as np
-import pandas as pd
 import pytest
 
 from app.reports import build_agent_level_dataframe, build_transaction_level_dataframe

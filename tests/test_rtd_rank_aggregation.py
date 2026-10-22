@@ -13,29 +13,31 @@ complete-ranking cases (Kemeny alone 7.7%, Schulze 0.0%, Copeland 43.3%, Footrul
 UNCHANGED in rev 040926-2; the inputs it reconciles moved, because rev 040926-2
 corrected the Loyalty Agreeableness weight and adopted the Flexibility O/N/A
 coefficients and the segment -> option-list direction (all four mechanism lists now
-equal Stata_File_Decision4_050926.dta's stored choice1..5_* columns directly).
+equal Stata_File_Decision4_050926.dta's stored choice1..5_* columns directly). The
+aggregation is fed COMPLETE rankings (each element's priority sequence rotated to start
+at its segment's first choice), not the truncated element lists.
 """
 import copy
-from itertools import permutations
-from typing import Dict, Optional, Sequence
+from typing import Dict
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from src.decisions.rtd_rank_aggregation import (
-    ALL_PERMS, KEMENY_STATUSES, N_OPTIONS, OPTIONS, STAGES,
+    ALL_PERMS, KEMENY_STATUSES, OPTIONS, STAGES,
     aggregate_rankings, apply_output_rules, collapse_to_groups, copeland_scores,
     footrule_positions, integrate_default_list, kemeny_optimal_set, kemeny_phase,
     kendall_tau_distance, pairwise_matrix, refine_by_copeland, refine_by_footrule,
     schulze_weak_order,
 )
 from src.decisions.rejected_transaction_defaults import (
-    MECHANISMS, OPTION_CODES, PRIORITY_SEQUENCES, RANKING_KEYS,
+    OPTION_CODES, PRIORITY_SEQUENCES, RANKING_KEYS,
     compute_rtd_population_stats, rejected_transaction_defaults,
 )
 
 from conftest import load_decisions_yaml   # gold / sim_config: conftest fixtures
+from helpers.d4_reference import agent_state
 
 # The literature review's worked example (four complete rankings).
 LIT_EXAMPLE = [[1, 2, 3, 4, 5], [2, 1, 3, 5, 4], [1, 3, 2, 4, 5], [2, 3, 1, 5, 4]]
@@ -291,30 +293,19 @@ def test_hand_case_partial_input_absent_options_tied_at_bottom():
 # ---------------------------------------------------------------------------
 # Reference statistics from the document / V1 report (random complete rankings)
 # ---------------------------------------------------------------------------
-def simulate_stage_shares(n_cases: int = 100_000, n_rankings: int = 4, seed: int = 0,
-                          last_resort: str = "random",
-                          partial_sequences: Optional[Sequence[Sequence[int]]] = None) -> Dict:
+def simulate_stage_shares(n_cases: int = 100_000, n_rankings: int = 4, seed: int = 0) -> Dict:
     """
-    Run the cascade on random inputs and tabulate the shares settled at each stage,
-    the Kemeny status shares and the Kemeny-optimality rate.
-
-    partial_sequences=None : n_rankings uniformly random COMPLETE permutations per
-                             case (the document's evaluation design).
-    partial_sequences given: one input per sequence, each a uniformly random TAIL
-                             (length 1..5) of that priority sequence - the shape of
-                             the actual mechanism outputs.
+    Run the cascade on n_rankings uniformly random COMPLETE permutations per case (the
+    document's evaluation design) and tabulate the shares settled at each stage, the
+    Kemeny status shares and the Kemeny-optimality rate.
     """
     rng = np.random.default_rng(seed)
     settled = {s: 0 for s in STAGES}
     status = {s: 0 for s in KEMENY_STATUSES}
     optimal = 0
     for _ in range(n_cases):
-        if partial_sequences is None:
-            inputs = [list(rng.permutation(OPTIONS)) for _ in range(n_rankings)]
-        else:
-            inputs = [list(seq[N_OPTIONS - int(rng.integers(1, N_OPTIONS + 1)):])
-                      for seq in partial_sequences]
-        res = aggregate_rankings(inputs, rng=rng, last_resort=last_resort)
+        inputs = [list(rng.permutation(OPTIONS)) for _ in range(n_rankings)]
+        res = aggregate_rankings(inputs, rng=rng, last_resort="random")
         settled[res["settled_by"]] += 1
         status[res["kemeny_status"]] += 1
         optimal += int(res["is_kemeny_optimal"])
@@ -350,16 +341,6 @@ def params():
     return dict(cfg["rejected_transaction_defaults"])
 
 
-def _agent_state(row):
-    return {
-        "ExtraversionBig5": row["extraversionbig5"], "Agreeable": row["agreeable"],
-        "NeuroticismBig5": row["neuroticismbig5"], "ConscientiousnessBig5": row["conscientiousnessbig5"],
-        "OpennessBig5": row["opennessbig5"], "Education": row["education"],
-        "Assigned Allowance Level": row["assignedallowancelevel"], "income": row["income"],
-        "stdactions": row["stdactions"],
-    }
-
-
 def _run(gold, params, sim_config, aggregation=None, stochastic=False, seed=1234):
     p = copy.deepcopy(params)
     p.setdefault("stochastic", {})
@@ -367,7 +348,7 @@ def _run(gold, params, sim_config, aggregation=None, stochastic=False, seed=1234
     p["stochastic"]["in_copula"] = False
     if aggregation is not None:
         p["aggregation"] = aggregation
-    agents_df = pd.DataFrame([_agent_state(r) for _, r in gold.iterrows()])
+    agents_df = pd.DataFrame([agent_state(r) for _, r in gold.iterrows()])
     incomes = gold["income"].tolist()
     seeds = np.random.default_rng(seed).integers(0, 1_000_000_000, len(gold))
     offset = 4000
@@ -378,7 +359,7 @@ def _run(gold, params, sim_config, aggregation=None, stochastic=False, seed=1234
     out = []
     for i, (_, r) in enumerate(gold.iterrows()):
         rng = np.random.default_rng(int(seeds[i]) + offset)
-        out.append(rejected_transaction_defaults(_agent_state(r), p, rng, sim,
+        out.append(rejected_transaction_defaults(agent_state(r), p, rng, sim,
                                                  pop_context="documentation"))
     return out
 
@@ -467,7 +448,7 @@ def test_default_template_path_ignores_aggregation(gold, params, sim_config):
     sim["default_decisions_list"] = ["rejected_transaction_defaults"]
     sim["default_decisions"] = {"rejected_transaction_defaults": {
         "type": "prioritized_selection", "priority_template": ["current_vendor_pn", "forgo_transaction"]}}
-    out = rejected_transaction_defaults(_agent_state(gold.iloc[0]), p, np.random.default_rng(0), sim)
+    out = rejected_transaction_defaults(agent_state(gold.iloc[0]), p, np.random.default_rng(0), sim)
     assert out == {"rejected_transaction_defaults": ["current_vendor_pn", "forgo_transaction"]}
 
 
@@ -480,7 +461,7 @@ def test_complete_ranking_for_segment_rotates_the_priority_sequence():
     weighted factor score and the resulting first choice" - the priority sequence
     rotated to start at that segment's first choice."""
     from src.decisions.rejected_transaction_defaults import (
-        _complete_ranking_for_segment, _ranking_for_segment, PRIORITY_SEQUENCES)
+        _complete_ranking_for_segment, _ranking_for_segment)
 
     assert _complete_ranking_for_segment('loyalty', 5) == [3, 1, 4, 5, 2]
     assert _complete_ranking_for_segment('loyalty', 3) == [4, 5, 2, 3, 1]

@@ -1,9 +1,14 @@
 """Golden runs: the parity net for refactoring.
 
-A fixed set of runs goes through the same path the app uses (session snapshot ->
-run plan -> execute), and every result frame, vendor list and export builder output
-is compared, cell by cell, with the copy stored under tests/golden/. A refactor that
-moves a single number, column or row fails here.
+A fixed set of runs - the six complete runs (three populations x two income modes),
+each modelled decision alone in Copula and in Research Baseline, and Research
+Specification with exactly 280 agents - goes through the same path the app uses
+(session snapshot -> run plan -> execute). Every result frame and vendor list is
+compared, cell by cell, with the copy stored under tests/golden/<scenario>/; for the
+six 40-agent complete runs so is the output of the thirteen export builders in
+``export_frames`` (frames and records; the downloaded files' content hashes are
+recorded by tests/test_golden_screens.py). A refactor that moves a single number,
+column or row fails here.
 
 To regenerate the golden files after an INTENDED change:
 
@@ -81,7 +86,7 @@ def _frames(name, obj):
 
 
 def export_frames(df, sim_params):
-    """Every export builder the results page offers, built from one result frame."""
+    """The thirteen frame / record export builders below, built from one result frame."""
     from app.reports import (
         build_agent_level_dataframe, build_agent_level_purchases, build_bid_value_export,
         build_donation_default_export, build_donation_transaction_export,

@@ -416,28 +416,43 @@ Run either snippet from the repository root with the virtual environment active.
 ## 8. Tests
 
 ```bash
-pip install pytest               # not in requirements.txt
-pytest tests/ -q -m "not slow"   # engine, seam, boundary: about 30 seconds
-pytest tests/ -q                 # everything: about two minutes; everything passes
+pip install pytest                      # not in requirements.txt
+pytest tests/ -q -m "not slow"          # engine, seam, boundary: 444 tests, about 35 seconds
+pytest tests/ -q                        # everything: 714 tests, about 2.5 minutes; everything passes
 ```
+
+Run them from the repository root (`pytest.ini` puts the root on the import path;
+`python -m pytest` works too).
 
 `slow` (registered in `pytest.ini`) marks every test module that drives the app
 through Streamlit `AppTest` or the browser model (`tests/browser_sim.py`), or runs the
 simulation in a subprocess. A module is marked as a whole, so the fast run also leaves
-out the fast tests of such a module (the Decision 4 reference-parity file has one
-`AppTest` test, for example); run the full suite before you commit.
+out the fast tests of such a module; run the full suite before you commit.
 
-Four kinds of test live in `tests/`:
+`tests/README.md` lists every module in one line: what it covers, what it is pinned
+against, fast or slow. Five kinds of test live in `tests/`:
 
 * **Reference parity.** The modelled decisions against frozen reference extracts in
   `data/` (`stata_d1_verification.csv`, `stata_d4_verification.csv`,
   `stata_d4_flexibility_verification.csv`, `d3_doc_reference.csv`, `stata_incomes.csv`),
   participant by participant.
+* **Golden parity nets.** Recorded from the app itself: `tests/test_golden_runs.py`
+  (15 runs through the run plan: every result frame, vendor list and thirteen export
+  builders, under `tests/golden/<scenario>/`), `tests/test_golden_screens.py` (24
+  journeys through the real app: every element, table and download, under
+  `tests/golden_screens/`) and `tests/test_complete_run_gate.py` (every outcome and text
+  of the complete-run gate, `tests/golden/complete_run_gate.json.gz`). After an intended
+  change re-record with `GOLDEN_UPDATE=1 pytest tests/<module> -q`, review
+  `git diff --stat`, and commit the new files with the change.
 * **Seam.** The run plan built from a session snapshot, Monte-Carlo parity with a
-  single run, the session-key registry.
+  single run, the session-key registry, `config/decisions.yaml` as the single source of
+  every constant.
 * **Screens.** Streamlit `AppTest` drives the real pages: widget keys, resets, the
   Decision 4 layouts and wording. These are the slow ones.
 * **Boundary.** The import rules of §6.
+
+Fixtures several modules share live in `tests/conftest.py`, plain helper functions in
+`tests/helpers/`, the pinned on-screen wording in `tests/ui_strings.py`.
 
 **Four parity tests also read the original Stata `.dta` files and fail when they are
 missing**, naming the file and the constant that points at it; with

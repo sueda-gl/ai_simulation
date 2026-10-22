@@ -32,6 +32,7 @@ from app.pages.results.visualizations.transaction_viz import (
     _RTD_ELEMENT_SHEETS,
     _RTD_OPTION_LINES,
 )
+from helpers.apptest import all_captions, all_markdown, rtd_tab_and_results_script
 from ui_strings import (
     CATEGORICAL_TREATMENT, CONTINUOUS_TREATMENT, DOWNLOAD_D4_AGENT_LEVEL,
     DOWNLOAD_D4_ALL_ELEMENTS, DOWNLOAD_FLEXIBILITY, DOWNLOAD_INTEGRATED, DOWNLOAD_LOYALTY,
@@ -363,32 +364,6 @@ def test_choice_columns_mirror_the_model_ranking_and_blank_beyond_length(rtd_fra
 # ---------------------------------------------------------------------------
 # B - run shapes, end to end
 # ---------------------------------------------------------------------------
-def _rtd_app_script():
-    """Decision 4 tab + (once results exist) the results page, end to end."""
-    import streamlit as st
-    from app.models import initialize_session_state
-
-    initialize_session_state()
-    st.session_state.population_mode = 'Research Baseline'
-    st.session_state.n_agents = 60
-
-    from app.pages.decision_tabs.rejected_transaction import (
-        render_rejected_transaction_defaults_tab)
-    render_rejected_transaction_defaults_tab()
-
-    if st.session_state.get('simulation_results'):
-        from app.pages.results.main_results import render_single_run_results
-        render_single_run_results()
-
-
-def _all_markdown(at):
-    return "\n".join(str(m.value) for m in at.markdown)
-
-
-def _all_captions(at):
-    return [str(c.value) for c in at.caption]
-
-
 def _download_labels(at):
     return [str(e.label) for e in at.get("download_button")]
 
@@ -402,7 +377,7 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     """The three individual Decision 4 run shapes, in one session."""
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(_rtd_app_script)
+    at = AppTest.from_function(rtd_tab_and_results_script)
     at.run(timeout=600)
     assert not at.exception
 
@@ -417,13 +392,13 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     assert at.session_state['rtd_run_element'] == 'loyalty'
     assert at.session_state['custom_decisions'] == ['rejected_transaction_defaults']
 
-    md = _all_markdown(at)
+    md = all_markdown(at)
     assert RTD_SECTION_TITLES['loyalty'] in md
     for other in ('ttp', 'wtp', 'risk_taking', 'flexibility'):
         assert RTD_SECTION_TITLES[other] not in md
     assert INTEGRATED_SECTION not in md
     # Min/Max-only caption, rendered once (one element section)
-    captions = _all_captions(at)
+    captions = all_captions(at)
     assert sum(c.startswith("Min ") and "· Max " in c for c in captions) == 1
     assert not any("· SD " in c for c in captions)
     # five option lines under the single allocation chart
@@ -449,13 +424,13 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     assert not at.exception
     assert at.session_state['rtd_run_element'] is None
 
-    md = _all_markdown(at)
+    md = all_markdown(at)
     for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'):
         assert RTD_SECTION_TITLES[mech] in md, mech
     assert INTEGRATED_SECTION in md
     # the descriptive paragraph and the "elements are not shown" caption are gone
     assert "presents each customer's final pre-selected default list" not in md
-    assert "The individual elements' results are not shown" not in "\n".join(_all_captions(at))
+    assert "The individual elements' results are not shown" not in "\n".join(all_captions(at))
     # no tie statistics, no truncation table, no most-common-lists table in this run
     assert TIE_STATS_SECTION not in md
     assert "Stage that settled the ranking" not in md
@@ -464,7 +439,7 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     assert "List cut by" not in md
     # one Min/Max caption per element section, five option-line blocks (5 elements +
     # the integrated first-option chart)
-    captions = _all_captions(at)
+    captions = all_captions(at)
     assert sum(c.startswith("Min ") and "· Max " in c for c in captions) == 5
     assert _option_line_counts(at) == [6, 6, 6, 6, 6]
     # D4-only export/overview: agent-level workbook only, D4 metrics
@@ -493,7 +468,7 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     assert not at.exception
     assert at.session_state['rtd_run_element'] == 'aggregation'
 
-    md = _all_markdown(at)
+    md = all_markdown(at)
     for mech in ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility'):
         assert RTD_SECTION_TITLES[mech] not in md, mech
     assert INTEGRATED_SECTION in md
@@ -503,7 +478,7 @@ def test_apptest_per_element_run_then_whole_run_then_aggregation_run():
     assert "Stage that settled the ranking" in md
     assert "Kemeny-optimal for" in md
     # no element score charts -> no Min/Max captions
-    assert not any(c.startswith("Min ") for c in _all_captions(at))
+    assert not any(c.startswith("Min ") for c in all_captions(at))
     # the integrated allocation chart still carries the option explanations
     assert _option_line_counts(at) == [1, 1, 1, 1, 1]
     # A.3: the aggregation run's headline metric
@@ -520,13 +495,13 @@ def test_apptest_ttp_element_run_keeps_the_options_list_length_metric():
     """A.3: the Options List Length element run keeps the headline metric (+min/max)."""
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(_rtd_app_script)
+    at = AppTest.from_function(rtd_tab_and_results_script)
     at.run(timeout=600)
     at.button(key='rtd_run_ttp_btn').click().run(timeout=600)
     assert not at.exception
     assert at.session_state['rtd_run_element'] == 'ttp'
 
-    md = _all_markdown(at)
+    md = all_markdown(at)
     assert RTD_SECTION_TITLES['ttp'] in md
     for other in ('loyalty', 'wtp', 'risk_taking', 'flexibility'):
         assert RTD_SECTION_TITLES[other] not in md
@@ -545,7 +520,7 @@ def test_apptest_compare_both_renders_income_free_elements_once():
     income treatment."""
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(_rtd_app_script)
+    at = AppTest.from_function(rtd_tab_and_results_script)
     at.session_state['rtd_income_mode'] = 'Compare both'
     at.run(timeout=600)
     assert not at.exception
@@ -555,11 +530,11 @@ def test_apptest_compare_both_renders_income_free_elements_once():
     assert at.session_state['rtd_run_element'] == 'loyalty'
     assert sorted(at.session_state['simulation_results'].keys()) == ['categorical', 'continuous']
 
-    md = _all_markdown(at)
+    md = all_markdown(at)
     assert md.count(RTD_SECTION_TITLES['loyalty']) == 1
     assert "Income-Independent Elements" in md
     assert any("identical for both income specifications" in c.lower()
-               for c in _all_captions(at))
+               for c in all_captions(at))
     for other in ('ttp', 'wtp', 'risk_taking', 'flexibility'):
         assert RTD_SECTION_TITLES[other] not in md
     assert "Transaction-Level" not in md
@@ -582,13 +557,13 @@ def test_apptest_compare_both_repeats_income_dependent_elements():
     treatment - one section per result key."""
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(_rtd_app_script)
+    at = AppTest.from_function(rtd_tab_and_results_script)
     at.session_state['rtd_income_mode'] = 'Compare both'
     at.run(timeout=600)
     at.button(key='rtd_run_wtp_btn').click().run(timeout=600)
     assert not at.exception
 
-    md = _all_markdown(at)
+    md = all_markdown(at)
     assert md.count(RTD_SECTION_TITLES['wtp']) == 2
     assert "Income-Independent Elements" not in md
     for other in ('ttp', 'loyalty', 'risk_taking', 'flexibility'):

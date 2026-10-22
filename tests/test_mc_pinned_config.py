@@ -23,6 +23,7 @@ import pytest
 from app.seam.mc import pinned_config_caption, population_mode_name
 from src.contract.plan import SubRun
 
+from helpers.apptest import all_captions
 from test_mc_plan_parity import _assert_same_rows
 from ui_strings import (MC_PINNED_CAPTION_1500_SPEC, MC_PINNED_CAPTION_280_BASELINE,
                         SAVED_CONFIG_CAPTION_PREFIX)
@@ -96,10 +97,6 @@ def captured_repetitions(monkeypatch):
     return captured
 
 
-def _captions(at):
-    return [str(c.value) for c in at.caption]
-
-
 def test_pinned_config_mc_first_repetition_is_the_pinned_complete_run(captured_repetitions):
     from streamlit.testing.v1 import AppTest
 
@@ -145,7 +142,7 @@ def test_pinned_config_mc_first_repetition_is_the_pinned_complete_run(captured_r
     assert sub_run.decision_config_patches["rejected_transaction_defaults"][
         "intercepts"]["loyalty"] == pytest.approx(0.3)
     assert custom == ("rejected_transaction_defaults",)
-    assert CAPTION in _captions(at)
+    assert CAPTION in all_captions(at)
 
     # its first repetition (runs = 1) is the complete run, agent by agent
     repetition, = captured_repetitions["frames"]
@@ -186,7 +183,7 @@ def test_without_a_pinned_config_mc_uses_page_1(captured_repetitions):
     (sub_run, seed, n_agents, _), = captured_repetitions["calls"]
     assert seed == at.session_state['base_seed'] and n_agents is None
     assert sub_run.n_agents == 1000 and sub_run.population == "copula"
-    assert not any(c.startswith(SAVED_CONFIG_CAPTION_PREFIX) for c in _captions(at))
+    assert not any(c.startswith(SAVED_CONFIG_CAPTION_PREFIX) for c in all_captions(at))
 
 
 def test_pinned_config_caption_wording():

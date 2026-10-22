@@ -15,9 +15,10 @@ continuous matches 280/280, categorical matches 279/280 with the single mismatch
 (a near-threshold case), and the fs scores agree within FS_TOL_ANDREI. The app default beta0
 stays 0.75.
 
-The corrected Stata columns are frozen in data/stata_d1_verification.csv so the test runs
-without the reference .dta; if the .dta is present locally we also check the frozen CSV
-still equals it.
+The corrected Stata columns are frozen in data/stata_d1_verification.csv, so the parity
+tests run without the reference .dta; test_frozen_csv_equals_professor_dta checks that the
+frozen CSV still equals the .dta at PROF_DTA, and fails when that file is missing unless
+COOPECON_ALLOW_DTA_SKIP=1.
 """
 import os
 import copy
@@ -54,12 +55,8 @@ FROZEN_COLS = [
 
 
 def _load_stata():
-    """Prefer the frozen CSV extract; fall back to the reference .dta."""
-    if os.path.exists(FROZEN):
-        return pd.read_csv(FROZEN, float_precision="round_trip")
-    if os.path.exists(PROF_DTA):
-        return pd.read_stata(PROF_DTA)[FROZEN_COLS]
-    pytest.skip("neither data/stata_d1_verification.csv nor the professor's Decision 1 .dta is present")
+    """The corrected Stata columns, frozen in data/stata_d1_verification.csv (in git)."""
+    return pd.read_csv(FROZEN, float_precision="round_trip")
 
 
 @pytest.fixture(scope="module")

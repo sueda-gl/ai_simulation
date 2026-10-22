@@ -1,7 +1,9 @@
 """
 The Decision 4 results page, driven through Streamlit's AppTest: element subtitles,
 the selected-configuration summary, the score charts, the complete-run section, the
-"Use This Config" flow and the comparison layouts.
+"Use This Config" flow and the comparison layouts. Pinned against the Decision 4 display
+specification (and, for the Research Baseline options-list-length chart, the length
+distribution 20/92/95/57/14/2 of Stata_File_Decision4_050926.dta).
 
 Merged from six files (2026-10-21) - test_rtd_combined_run_display.py,
 test_rtd_comparison_layout_ui.py, test_rtd_config_selection.py,
@@ -9,8 +11,12 @@ test_rtd_element_subtitle.py, test_rtd_element_summary.py and
 test_rtd_score_chart_matches_stats.py. Each section below keeps its file's
 description (as a comment), app script, helpers, tests and parametrisations. The two
 complete-run tests share one module-scoped run (``combined_run``): their setups were
-identical. The three ``_app_script`` functions differed, so each keeps its own under
-a section prefix.
+identical. Three of the files each had an app script named ``_app_script``; they
+differed, so each keeps its own under a section prefix (``_subtitle_app_script``,
+``_summary_app_script``, ``_score_chart_app_script``). The comparison-layout file's
+single-mode and Compare-both scripts were identical to each other and to
+tests/test_rtd_batch4_ui.py's; all three now use
+``helpers.apptest.rtd_tab_and_results_script``.
 """
 import numpy as np
 import pandas as pd
@@ -22,6 +28,7 @@ from app.reports.rtd import (
     rtd_summary_metric_keys,
 )
 from src.decisions.rejected_transaction_defaults import _RESCALE
+from helpers.apptest import all_markdown, rtd_tab_and_results_script
 from ui_strings import (
     CATEGORICAL_TREATMENT, CONTINUOUS_TREATMENT, D4_SUBTITLE_AGGREGATION,
     D4_SUBTITLE_FLEXIBILITY, D4_SUBTITLE_LOYALTY, D4_SUBTITLE_RISK_TAKING, D4_SUBTITLE_TTP,
@@ -217,24 +224,6 @@ def _rtd_compare_all_app_script():
 
     initialize_session_state()
     st.session_state.population_mode = 'Compare all'
-    st.session_state.n_agents = 60
-
-    from app.pages.decision_tabs.rejected_transaction import (
-        render_rejected_transaction_defaults_tab)
-    render_rejected_transaction_defaults_tab()
-
-    if st.session_state.get('simulation_results'):
-        from app.pages.results.main_results import render_single_run_results
-        render_single_run_results()
-
-
-def _rtd_single_mode_app_script():
-    """Decision 4 tab in a plain single mode + the results page."""
-    import streamlit as st
-    from app.models import initialize_session_state
-
-    initialize_session_state()
-    st.session_state.population_mode = 'Research Baseline'
     st.session_state.n_agents = 60
 
     from app.pages.decision_tabs.rejected_transaction import (
@@ -496,7 +485,7 @@ def test_apptest_single_mode_summary_first_unchanged():
     at the top, BEFORE the '📋 Decision Results' section."""
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(_rtd_single_mode_app_script)
+    at = AppTest.from_function(rtd_tab_and_results_script)
     at.session_state['rtd_tab_income_mode'] = 'Continuous only'
     at.session_state['rtd_income_mode'] = 'Continuous only'
     at.run(timeout=600)
@@ -522,31 +511,13 @@ def test_apptest_single_mode_summary_first_unchanged():
 # ---------------------------------------------------------------------------
 # (d) A selected configuration replaces the comparison with that config alone
 # ---------------------------------------------------------------------------
-def _rtd_compare_both_app_script():
-    """Decision 4 tab in a single population mode with Compare-both income + results."""
-    import streamlit as st
-    from app.models import initialize_session_state
-
-    initialize_session_state()
-    st.session_state.population_mode = 'Research Baseline'
-    st.session_state.n_agents = 60
-
-    from app.pages.decision_tabs.rejected_transaction import (
-        render_rejected_transaction_defaults_tab)
-    render_rejected_transaction_defaults_tab()
-
-    if st.session_state.get('simulation_results'):
-        from app.pages.results.main_results import render_single_run_results
-        render_single_run_results()
-
-
 def test_apptest_selected_config_hides_the_other_configurations():
     """(B.5b) Once "Use This Config" has stored a configuration, the Decision 4 results
     show ONLY that configuration (all its elements and its integrated results) and the
     Excel export covers only it."""
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(_rtd_compare_both_app_script)
+    at = AppTest.from_function(rtd_tab_and_results_script)
     at.session_state['rtd_income_mode'] = 'Compare both'
     at.run(timeout=600)
     assert not at.exception
@@ -599,7 +570,7 @@ def test_apptest_income_free_element_run_overview_above_graphs():
     element renders once, and both income treatments keep a "Use This Config" button."""
     from streamlit.testing.v1 import AppTest
 
-    at = AppTest.from_function(_rtd_compare_both_app_script)
+    at = AppTest.from_function(rtd_tab_and_results_script)
     at.session_state['rtd_income_mode'] = 'Compare both'
     at.run(timeout=600)
     assert not at.exception
@@ -699,10 +670,6 @@ def _rtd_config_app_script():
             'block_type': block_type, 'issues': [i['decision'] for i in issues]}
 
 
-def _all_markdown(at):
-    return "\n".join(str(m.value) for m in at.markdown)
-
-
 def _success_texts(at):
     return [str(e.value) for e in at.success]
 
@@ -731,12 +698,12 @@ def test_apptest_select_display_apply_and_clear():
     assert result_key == 'continuous'            # tab default income mode
     select_btn = at.button(key=f'rtd_inline_select_{result_key}')
     assert select_btn is not None
-    assert "4. Rejected Transaction Defaults" not in _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
+    assert "4. Rejected Transaction Defaults" not in all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
     # no "Quick Summary" caption next to the button
     captions = [str(c.value) for c in at.caption]
     assert not any(c.startswith("📊 Quick Summary") for c in captions)
     # no "Run Complete Simulation" offer before a configuration is selected
-    assert "🚀 Run Complete Simulation" not in _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[0]
+    assert "🚀 Run Complete Simulation" not in all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[0]
 
     # select it
     select_btn.click().run(timeout=600)
@@ -762,13 +729,13 @@ def test_apptest_select_display_apply_and_clear():
     unselect_btn = at.button(key=f'rtd_inline_unselect_{result_key}')
     assert unselect_btn is not None and SELECTED_LABEL in str(unselect_btn.label)
     assert at.button(key='rtd_tab_unselect_btn') is not None                    # on the Decision 4 tab too
-    page2 = _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
+    page2 = all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
     assert "4. Rejected Transaction Defaults" in page2
     assert any("Rejected Transaction Defaults Configuration" in t and "Research Baseline + Continuous only" in t
                for t in _success_texts(at))
     # like disclose_income: the results page now shows the selected configuration
     # (with Clear) and offers "Run Complete Simulation" right there
-    results_md = _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[0]
+    results_md = all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[0]
     assert "🚀 Run Complete Simulation" in results_md
     assert at.button(key='run_complete_from_results') is not None
     assert at.button(key='clear_rtd_selection') is not None
@@ -803,7 +770,7 @@ def test_apptest_select_display_apply_and_clear():
     assert not at.exception
     at.run(timeout=600)
     assert 'rejected_transaction_defaults' not in at.session_state['selected_decision_configs']
-    assert "4. Rejected Transaction Defaults" not in _all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
+    assert "4. Rejected Transaction Defaults" not in all_markdown(at).split("PAGE2_SAVED_CONFIGS_MARKER")[-1]
     # the results-page complete-simulation offer disappears with the selection
     button_keys = [b.key for b in at.button]
     assert 'run_complete_from_results' not in button_keys

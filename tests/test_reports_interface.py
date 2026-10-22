@@ -1,13 +1,15 @@
 """
 The interface of the ``app/reports`` modules that had no test of their own: what each
 builder returns (a frame, records, bytes), the sheet names of its workbook and the
-columns it promises. The values are pinned by the golden tests
-(tests/test_golden_runs.py); these tests pin the shape.
+columns it promises. These tests pin the shape; the values of thirteen frame / record
+builders are pinned by tests/test_golden_runs.py (``export_frames``), and the
+downloaded files' content hashes by tests/test_golden_screens.py.
 
 The builders that take a results frame get one 30-agent Research Baseline engine run
 (every decision, seed 42), with the transaction ids assigned as app.seam.execute does.
 ``mc``, ``preview``, ``timestamps`` and ``xlsx`` take no results frame; they get small
-inputs of the documented shape.
+inputs of the documented shape (the timestamps test also converts the run's request
+times).
 """
 import io
 from datetime import datetime

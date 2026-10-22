@@ -9,7 +9,6 @@ fields (an old session), they fall back to the live values, the only ones it has
 """
 import dataclasses
 
-import pandas as pd
 import pytest
 
 from app.models import SimulationParameters

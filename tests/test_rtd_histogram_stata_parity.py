@@ -8,6 +8,11 @@ earlier version of the app rounded (-> 17 bins) and so drew a different figure.
 
 The frozen reference is data/stata_d4_verification.csv, the 280 participants' values
 exported from Stata_File_Decision4_050926.dta.
+
+Also pinned: the app caps the bin count at the 280-participant value (RTD_MAX_BINS = 16;
+rtd_bin_count / rtd_stata_bins in app/reports/rtd.py), and the results-page chart
+(app/pages/results/visualizations/transaction_viz.py) draws those 16 bars on a Density
+axis.
 """
 import math
 

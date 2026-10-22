@@ -13,15 +13,22 @@ orchestrators' `original_data`), and src.engine.income.get_agent_income() finds 
 already cached.
 
 What this pins down:
-  (a) merged['income'] equals the reference income participant-by-participant;
+  (a) merged['income'] equals the reference income participant-by-participant (the
+      frozen data/stata_incomes.csv, and the .dta at PROF_DTA itself - that test fails
+      when the file is missing unless COOPECON_ALLOW_DTA_SKIP=1);
   (b) a Research Baseline Decision-4 run (all intercepts 0, deterministic) reproduces
-      the .dta's WTP_calculated15 168/82/26/3/1 and RT_calculated15 20/100/110/46/4
-      distributions AND the stored choice1..5 columns 280/280, NaN pattern included -
-      the income-free elements (TTP, Loyalty, Flexibility) are unaffected, and
-      z_net_income (sample SD) reproduces the .dta column to float32 tolerance;
+      the frozen extract of the .dta (data/stata_d4_verification.csv and
+      data/stata_d4_flexibility_verification.csv): WTP_calculated15 168/82/26/3/1 and
+      RT_calculated15 20/100/110/46/4 distributions AND the stored choice1..5 columns
+      280/280, NaN pattern included - the income-free elements (TTP, Loyalty,
+      Flexibility) are unaffected, and z_net_income (sample SD) reproduces the .dta
+      column to float32 tolerance;
   (c) COPULA populations are untouched: copula-sampled agents carry no income column,
       so income is still drawn from the Page-1 distribution, bit-identical to the
-      behaviour before the change (values pinned below for seed 42).
+      behaviour before the change (values pinned below for seed 42);
+  (d) the same run in categorical income reproduces the document's recomputed WTP / RT
+      segments and choice lists 280/280, and the file's stored categorical scores
+      (RT 280/280; WTP 279/280 - participant 716, the file's raw-`agreeable` error).
 """
 import os
 

@@ -11,7 +11,6 @@ The numbers do not change: Decision 4 still runs continuous.
 import pytest
 
 from app.seam import build_plan as bp
-from app.seam.config_repo import get_config_repo
 from test_build_plan import ALL, base_state
 
 pytestmark = pytest.mark.slow

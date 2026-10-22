@@ -77,9 +77,7 @@ def test_baseline_agent_k_is_participant_k_mod_280(n):
 
 
 def _spec_positions(n, seed):
-    """Row positions of the Research Specification agents (via the Participant IDs)."""
-    ids = _participant_ids()
-    pos = {pid: i for i, pid in enumerate(ids)}
+    """Row positions, in original_data(), of the Research Specification agents."""
     agents = sample_agents("documentation", n, seed)
     rows = original_data().reset_index(drop=True)
     # match each agent row to its participant row (rows are unique per participant)
@@ -207,10 +205,10 @@ def _full_run(pop, n, sigma_off=True):
     return engine.run_simulation(n, 42, None, agents_df=sample_agents(pop, n, 42))
 
 
-@pytest.mark.parametrize("n", [280])
-def test_spec_sigma_off_equals_baseline_row_for_row(n):
+def test_spec_sigma_off_equals_baseline_row_for_row():
     """At N = 280 both modes hold the 280 in file order, so with every sigma off they
     agree row for row (at other N, Specification samples randomly)."""
+    n = 280
     spec, base = _full_run("documentation", n), _full_run("baseline", n)
     assert list(spec.columns) == list(base.columns)
     assert len(spec) == len(base) == n

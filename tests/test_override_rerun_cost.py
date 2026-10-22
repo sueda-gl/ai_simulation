@@ -2,7 +2,8 @@
 Reported problem: "When clicking a few times to change the Override value for any of the
 decision elements, the simulation page freezes/blanks for a few seconds."
 
-Three causes, three guards:
+Three causes, three guards, and a fourth section for the Donation intercept inputs
+(the +/- click loss, fixed in 8fe282e):
 
 1. Every Page-2 rerun re-parsed config/decisions.yaml - fourteen times with
    Decisions 1-4 selected (~0.06 s each, ~80 % of the rerun). `read_yaml_file`

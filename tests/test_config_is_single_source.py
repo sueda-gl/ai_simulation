@@ -1,7 +1,9 @@
 """
 config/decisions.yaml is the ONLY source of every constant of the four modelled decisions.
 
-(a) No module under src/decisions carries a literal copy of a value that is in its
+(a) None of the four decision modules (src/decisions/disclose_income_stochastic.py,
+    disclose_documents_stochastic.py, donation_default.py,
+    rejected_transaction_defaults.py) carries a literal copy of a value that is in its
     decision's YAML block under the same key. The scan is deliberately narrow, so that
     an unrelated number can never trip it:
 
@@ -19,8 +21,9 @@ config/decisions.yaml is the ONLY source of every constant of the four modelled 
     only used in arithmetic (``100.0 / 112.0``) is not scanned.
 
 (b) Deleting a required key from a copy of the decision's block and running the
-    decision on one agent raises a KeyError naming the decision and the dotted key.
-    The same run on the full block succeeds, so it is the deletion that raises.
+    decision on one agent raises MissingDecisionKey (a KeyError) naming the decision
+    and the dotted key. The same run on the full block succeeds, so it is the deletion
+    that raises.
 
 (c) The two file readers in src/config.py the tabs use (``donation_adjustment_shift``,
     ``rtd_sigma_coefficient_defaults``) raise, naming the key, when the file lacks it.
@@ -33,7 +36,6 @@ merged over the file's, tests/test_rtd_rank_aggregation.py) - (b) does not delet
 import ast
 import copy
 import math
-from pathlib import Path
 
 import numpy as np
 import pandas as pd

@@ -1,25 +1,32 @@
 """
 Plan-builder tests for the UI -> engine seam (app/seam/build_plan.py).
 
-Two kinds of checks:
+Three kinds of checks:
 
-1. Pure plan tests: dict snapshots go in, and the result keys, sub-run order,
-   messages (verbatim), decisions_to_run, default_decisions_list and the
-   saved-configuration expectations come out as specified.
+1. Contract and pure plan tests: the run-plan contract (src/contract/plan.py: patch
+   merging, result hashing, sub-run validation) and the session snapshot; then dict
+   snapshots go in, and the result keys, sub-run order, messages (verbatim),
+   decisions_to_run, default_decisions_list and the saved-configuration expectations
+   come out as specified.
 
-2. Parity with the pre-seam mapping code: the six ``_apply_*`` functions of
-   the original ``app/simulation.py`` (commit 80ee344, extracted with
-   ``git show`` and executed against a stub ``st.session_state``) are run on a
-   fake orchestrator, and the seam's patches - applied to a fresh copy of
+2. Parity with the pre-seam mapping code: the original ``app/simulation.py``'s
+   seven ``_apply_*`` functions, ``apply_selected_donation_config`` and
+   ``collect_decision_settings`` at commit 80ee344, and its two Decision 4
+   ``_apply_*`` functions at e973a99 (the September 2026 work), are extracted with
+   ``git show`` and executed against a stub ``st.session_state`` on a fake
+   orchestrator. The seam's patches - applied to a fresh copy of
    config/decisions.yaml - must produce the same decision blocks, except for
    exactly the deltas the specification prescribes (flat coefficient set,
-   one sigma constant, sigma_enabled default on, no dead keys).
+   one sigma constant, sigma_enabled default on, no dead keys). Without the git
+   history (``git show`` fails) these parity tests skip.
+
+3. End to end: a configuration pinned from an individual run is reproduced by a
+   complete run through ``execute``; a pin that no longer reproduces is reported
+   (``verify_saved_expectations``).
 """
 import copy
 import re
 import subprocess
-import sys
-import textwrap
 from types import SimpleNamespace
 
 import numpy as np
@@ -27,12 +34,12 @@ import pandas as pd
 import pytest
 
 from src.contract.plan import (
-    Replace, RunPlan, SavedExpectation, SubRun, UiMessage, apply_patches, deep_merge_patch,
+    Replace, SavedExpectation, SubRun, UiMessage, apply_patches, deep_merge_patch,
     hash_result_columns,
 )
 from src.engine.core import DECISION_ORDER
 from app.seam import build_plan as bp
-from app.seam.config_repo import DecisionsConfig, get_config_repo
+from app.seam.config_repo import get_config_repo
 from app.seam.execute import configure_engine, execute, verify_saved_expectations
 from app.seam.snapshot import SessionSnapshot, take_snapshot
 

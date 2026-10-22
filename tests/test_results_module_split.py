@@ -1,8 +1,10 @@
 """The results modules after the split of app/components.py and transaction_viz.py.
 
-* ``app/components.py`` no longer exists; nothing under app/ or tests/ imports it.
+* ``app/components.py`` no longer exists; nothing in app_enhanced_new.py or under app/,
+  tests/ or scripts/ imports it.
 * ``viz_helpers.yes_no_pie`` replaced four token-identical copies of the Y/N pie;
-  it must keep drawing exactly the figure those copies drew.
+  it must keep drawing exactly the figure those copies drew (their ``px.pie`` call,
+  re-typed here, on a golden Disclose Income frame).
 """
 import ast
 import gzip

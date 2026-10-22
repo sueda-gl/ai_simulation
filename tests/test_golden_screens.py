@@ -10,7 +10,8 @@ they download, fails here with the first differing element named.
 
 The journeys after the first eleven (tab controls, overrides across navigation,
 "Compare both" and Decision 4 element runs, "Use This Config", Monte Carlo, several
-vendors, the income distributions, a Page-1 edit after a run, Live mode) drive the
+vendors, the income distributions, a Page-1 edit after a run, Live mode, a pinned
+Disclose Documents configuration) drive the
 app through tests/browser_sim.py and take a snapshot after every interaction; each
 snapshot also lists the widgets a real browser would show with a different value
 than the script holds (``browser_mismatches``).

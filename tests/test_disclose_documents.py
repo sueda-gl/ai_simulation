@@ -1,16 +1,18 @@
 """
-Validation tests for Decision 2: Disclose Documents.
+Decision 2 (Disclose Documents) against the CORRECTED reference Stata results (two
+document coefficient errors fixed, intercept beta0 = -0.75, the shipped value).
 
-The deterministic privacy-calculus model is validated against the CORRECTED reference
-Stata Decision 2 results (two document coefficient errors fixed + intercept beta0 = -0.75):
-- CATEGORICAL: 76/280 = 27.14% disclosure (every per-allowance-level cell).
+The deterministic privacy-calculus score (compute_dd_score) must reproduce:
+- CATEGORICAL: 76/280 = 27.14% disclosure, and every per-allowance-level cell;
 - CONTINUOUS:  63/280 = 22.50% disclosure, using the FROZEN income realization
   (data/stata_incomes.csv == the reference file's `income` column). Continuous income is a
   fresh random draw at simulation time, so it is only reproducible bit-for-bit against
-  the frozen income (see notes.md).
+  the frozen income.
 
-If the corrected reference `.dta` is present locally, we also assert the model matches its
-`disclosedoc_cont` / `disclosedoc_categorical` columns participant-by-participant.
+It must also match the reference .dta's `disclosedoc_cont` / `disclosedoc_categorical`
+columns participant-by-participant; that test reads the file at PROF_DTA and fails when
+it is missing unless COOPECON_ALLOW_DTA_SKIP=1. The platform gate and the default
+short-circuit are in tests/test_disclose_documents_gate.py.
 """
 import os
 import copy
@@ -19,7 +21,7 @@ import pandas as pd
 import pytest
 
 from src.decisions.disclose_documents_stochastic import (
-    compute_dd_score, compute_continuous_dd_stats, disclose_documents_stochastic,
+    compute_dd_score, compute_continuous_dd_stats,
 )
 
 from conftest import REPO, load_decisions_yaml, require_reference_file

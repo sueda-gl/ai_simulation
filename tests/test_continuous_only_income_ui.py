@@ -11,8 +11,9 @@ lowercase donation-tab label) while these decisions sync the capitalized
 the *_categorical keys and rendered only "results not available" captions -
 an empty results page. "Compare both" (and "Categorical only") worked.
 
-Fixed by normalizing the check case-insensitively in
-app/pages/results/comparisons.py and app/pages/results/main_results.py.
+The check is now case-insensitive: ``RunContext.income_type``
+(app/pages/results/run_context.py), which the comparison grid in
+app/pages/results/comparisons.py reads.
 
 Second bug (user report, screenshots): in SINGLE population mode an individual
 disclose_income (or disclose_documents) run rendered its full results once in
@@ -22,10 +23,11 @@ generic income-type overview ("📊 Simulation Overview" +
 "Simulation Overview (Continuous)" + "📊 Disclose Income Analysis
 (Continuous)") - the same histogram/statistics/classification twice. This
 affected both "Continuous only" and "Categorical only" (it predates the
-case-sensitivity fix). Fixed in main_results.py by skipping the generic
-overview for individual single-mode runs whose decision-specific section
-already rendered; comparison modes ("Compare all" / "Compare both") and the
-Decision 4 summary-first layout are unchanged.
+case-sensitivity fix). Fixed in app/pages/results/main_results.py
+(render_single_run_results) by skipping the generic overview for individual
+single-mode runs whose decision-specific section already rendered; comparison
+modes ("Compare all" / "Compare both") and the Decision 4 summary-first layout are
+unchanged.
 """
 import pytest
 

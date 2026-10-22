@@ -16,8 +16,9 @@ form in which a session-state key can be named, and holds the result against
   have its own entry;
 * every key marked as an engine input is one ``app/seam`` actually names.
 
-The scan is deliberately syntactic - it never imports the app, so it stays
-green without Streamlit and cannot be fooled by an import-time side effect.
+The scan is deliberately syntactic - it imports only ``app.state.registry`` (plain
+data, no Streamlit), so it stays green without Streamlit and cannot be fooled by an
+import-time side effect.
 """
 
 import ast

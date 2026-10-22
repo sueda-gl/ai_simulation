@@ -24,8 +24,11 @@ Also tested: the population-stats hook's bit-for-bit RNG replication of the
 per-agent decision function's draws, sigma-slider semantics (scale 0 == deterministic),
 seeded reproducibility, the per-element intercepts' FIXED-CUTOFF semantics (beta=0
 bit-identical; nonzero beta shifts scores, draws AND allocations across the
-beta0-free-anchored cutoffs), and an AppTest end-to-end run through the app's
-session-state plumbing.
+beta0-free-anchored cutoffs), the categorical-income scores against the document's
+cond() construction, and an AppTest run that sets the tab's session key
+rtd_intercept_ttp and applies it through app.simulation._apply_rejected_transaction_config
+(a compat wrapper over app.seam.build_plan.build_rejected_transaction_patch, the seam's
+Decision 4 patch builder).
 """
 import numpy as np
 import pandas as pd
@@ -38,6 +41,7 @@ from src.decisions.rejected_transaction_defaults import (
 )
 
 from conftest import load_decisions_yaml   # gold / sim_config: conftest fixtures
+from helpers.d4_reference import agent_state
 
 pytestmark = pytest.mark.slow
 
@@ -95,23 +99,9 @@ def params():
     return cfg["rejected_transaction_defaults"]
 
 
-def _agent_state(row) -> dict:
-    return {
-        "ExtraversionBig5": row["extraversionbig5"],
-        "Agreeable": row["agreeable"],
-        "NeuroticismBig5": row["neuroticismbig5"],
-        "ConscientiousnessBig5": row["conscientiousnessbig5"],
-        "OpennessBig5": row["opennessbig5"],
-        "Education": row["education"],
-        "Assigned Allowance Level": row["assignedallowancelevel"],
-        "income": row["income"],
-        "stdactions": row["stdactions"],   # Flexibility observed anchor
-    }
-
-
 @pytest.fixture(scope="module")
 def all_scores(gold, params, sim_config):
-    return [compute_rtd_scores(_agent_state(r), params, sim_config)
+    return [compute_rtd_scores(agent_state(r), params, sim_config)
             for _, r in gold.iterrows()]
 
 
@@ -443,7 +433,7 @@ def _run_model(gold, model_params, sim_config, stochastic=False, in_copula=False
     if intercepts is not None:
         p["intercepts"] = dict(intercepts)
 
-    agents_df = pd.DataFrame([_agent_state(r) for _, r in gold.iterrows()])
+    agents_df = pd.DataFrame([agent_state(r) for _, r in gold.iterrows()])
     incomes = gold["income"].tolist()
     rng_seeds = np.random.default_rng(seed).integers(0, 1_000_000_000, len(gold))
     offset = 4000   # decision_index * 1000 stand-in
@@ -457,7 +447,7 @@ def _run_model(gold, model_params, sim_config, stochastic=False, in_copula=False
     for i, (_, r) in enumerate(gold.iterrows()):
         rng = np.random.default_rng(int(rng_seeds[i]) + offset)
         results.append(rejected_transaction_defaults(
-            _agent_state(r), p, rng, sim, pop_context=pop_context))
+            agent_state(r), p, rng, sim, pop_context=pop_context))
     return results
 
 
@@ -799,9 +789,9 @@ def test_intercepts_shift_stochastic_draws_and_rebinning(gold, model_params, sim
 def test_extreme_intercepts_saturate_boundary_bins(gold, model_params, sim_config):
     """Extreme intercepts saturate every agent at the boundary bins without errors.
     +/-5 fully saturates ttp (raw composite range ~0.21) and risk_taking; the standardized-scale shifts of loyalty (5 z-units vs
-    a 6.43 range) and WTP (5*sd0 ~0.73 of its long-tailed range) do not, so full
-    saturation is asserted at +/-8 for both (the model imposes no bound) and +/-5 is
-    asserted to shift weakly and stay valid, incl. under stochastic. Rankings follow
+    a 7.08 range) and WTP (5*sd0 ~0.73 of its long-tailed range) do not, so full
+    saturation is asserted at +/-8 for both (the model imposes no bound) and WTP at
+    +/-5 is asserted to shift weakly and stay valid, incl. under stochastic. Rankings follow
     the 2026-09-16 direction (segment 5 -> the FULL sequence, segment 1 -> the last
     option only)."""
     base = _run_model(gold, model_params, sim_config, stochastic=False)
@@ -870,7 +860,7 @@ def test_default_template_path_unchanged(gold, model_params, sim_config):
                "type": "prioritized_selection",
                "priority_template": ["current_vendor_pn", "forgo_transaction"]}}}
     rng = np.random.default_rng(0)
-    out = rejected_transaction_defaults(_agent_state(gold.iloc[0]), model_params, rng, sim)
+    out = rejected_transaction_defaults(agent_state(gold.iloc[0]), model_params, rng, sim)
     assert out["rejected_transaction_defaults"] == ["current_vendor_pn", "forgo_transaction"]
     assert "rtd_wtp_segment" not in out
 
@@ -895,7 +885,7 @@ DOC_RT_CAT_DUMMIES = {1: 0.0, 2: 0.0026128, 3: 0.0050555, 4: 0.0092738, 5: 0.017
 
 # Segment distributions of the 280 verification agents under the categorical
 # scores (derived once from the frozen CSV via the doc construction). WTP
-# segment 4 is GENUINELY EMPTY: the level-5 dummy (+1.822843) opens a gap in
+# segment 4 is GENUINELY EMPTY: the level-5 dummy (+1.822471) opens a gap in
 # the score range that the equal-width bins map to an unpopulated bin.
 EXPECTED_WTP_CAT_DIST = {1: 67, 2: 102, 3: 57, 5: 54}
 EXPECTED_RT_CAT_DIST = {1: 21, 2: 103, 3: 109, 4: 43, 5: 4}
@@ -916,7 +906,7 @@ def cat_model_params(cat_params):
 
 @pytest.fixture(scope="module")
 def cat_scores(gold, cat_params, sim_config):
-    return [compute_rtd_scores(_agent_state(r), cat_params, sim_config)
+    return [compute_rtd_scores(agent_state(r), cat_params, sim_config)
             for _, r in gold.iterrows()]
 
 
@@ -989,7 +979,7 @@ def test_continuous_mode_unchanged_by_explicit_key(gold, params, sim_config, all
     """income_mode='continuous' (explicit) == income_mode absent == gold columns."""
     p = dict(params)
     p["income_mode"] = "continuous"
-    explicit = [compute_rtd_scores(_agent_state(r), p, sim_config)
+    explicit = [compute_rtd_scores(agent_state(r), p, sim_config)
                 for _, r in gold.iterrows()]
     for key in ("ttp", "loyalty", "wtp", "risk_taking"):
         np.testing.assert_array_equal(np.array([s[key] for s in explicit]),
@@ -1073,11 +1063,12 @@ def test_categorical_stochastic_rng_replication(gold, cat_model_params, sim_conf
 
 
 # ---------------------------------------------------------------------------
-# End-to-end through the app plumbing (streamlit AppTest): the Decision-4 tab
-# widget (key rtd_tab_intercept_ttp) writes st.session_state['rtd_intercept_ttp'],
-# which app.simulation._apply_rejected_transaction_config copies into
-# params['intercepts']['ttp'] for the orchestrator run - so setting the session
-# key exercises the exact path a user takes through the tab.
+# Through the app's session state (streamlit AppTest): the Decision-4 tab widget
+# (key rtd_tab_intercept_ttp) writes st.session_state['rtd_intercept_ttp']; the script
+# applies it with app.simulation._apply_rejected_transaction_config, a compat wrapper
+# over build_rejected_transaction_patch (the builder a real run reaches through
+# build_run_plan -> build_decision_patches), and runs the Engine on 80 Research
+# Baseline participants.
 # ---------------------------------------------------------------------------
 def _apptest_rtd_script():
     import streamlit as st

@@ -16,8 +16,9 @@ file reproduces with FLEX_COEFFS) and the segment -> option-list direction
 == 1 takes only Option 5). The choice lists are therefore asserted DIRECTLY against
 the stored columns, NaN pattern included. Also tested: stdactions z-scoring
 constants, beta4 fixed-cutoff semantics, the neutral fallback when stdactions is
-absent, the stochastic layer's RNG replication, the copula trait, and the
-aggregation now receiving the document's four inputs.
+absent, the stochastic layer (same-seed reproducibility, the sigma used, draws inside
+the population hook's s_min / s_max, sigma scale 0 == deterministic, the binned anchor),
+the copula trait, and the aggregation now receiving the document's four inputs.
 """
 import copy
 import os
@@ -30,11 +31,12 @@ from src.decisions.rejected_transaction_defaults import (
     DEFAULT_Z_SCORING, FLEX_ANCHOR_WEIGHTS, FLEX_COEFFS, MECHANISMS,
     PRIORITY_SEQUENCES,
     SIGMA_OVERALL, SIGMA_FACTORS, MEAN_STDACTIONS,
-    compute_rtd_population_stats, compute_rtd_scores, flex_anchored_score,
+    compute_rtd_population_stats, flex_anchored_score,
     rejected_transaction_defaults,
 )
 
 from conftest import REPO, load_decisions_yaml
+from helpers.d4_reference import agent_state
 
 FLEX_CSV = os.path.join(REPO, "data", "stata_d4_flexibility_verification.csv")
 
@@ -66,18 +68,6 @@ def sim_config(flexgold):
                              "sd": float(flexgold["income"].std(ddof=1))}}
 
 
-def _agent_state(row, with_stdactions=True):
-    s = {
-        "ExtraversionBig5": row["extraversionbig5"], "Agreeable": row["agreeable"],
-        "NeuroticismBig5": row["neuroticismbig5"], "ConscientiousnessBig5": row["conscientiousnessbig5"],
-        "OpennessBig5": row["opennessbig5"], "Education": row["education"],
-        "Assigned Allowance Level": row["assignedallowancelevel"], "income": row["income"],
-    }
-    if with_stdactions:
-        s["stdactions"] = row["stdactions"]
-    return s
-
-
 def _run(flexgold, params, sim_config, stochastic=False, seed=1234, intercepts=None,
          with_stdactions=True, scale=1.0, anchor=None):
     p = copy.deepcopy(params)
@@ -91,7 +81,7 @@ def _run(flexgold, params, sim_config, stochastic=False, seed=1234, intercepts=N
             mcfg["anchor"] = anchor
     if intercepts is not None:
         p["intercepts"] = dict(intercepts)
-    agents_df = pd.DataFrame([_agent_state(r, with_stdactions) for _, r in flexgold.iterrows()])
+    agents_df = pd.DataFrame([agent_state(r, with_stdactions) for _, r in flexgold.iterrows()])
     incomes = flexgold["income"].tolist()
     seeds = np.random.default_rng(seed).integers(0, 1_000_000_000, len(flexgold))
     offset = 4000
@@ -102,7 +92,7 @@ def _run(flexgold, params, sim_config, stochastic=False, seed=1234, intercepts=N
     out = []
     for i, (_, r) in enumerate(flexgold.iterrows()):
         rng = np.random.default_rng(int(seeds[i]) + offset)
-        out.append(rejected_transaction_defaults(_agent_state(r, with_stdactions), p, rng, sim,
+        out.append(rejected_transaction_defaults(agent_state(r, with_stdactions), p, rng, sim,
                                                  pop_context="documentation"))
     return out, sim
 
@@ -249,7 +239,8 @@ def test_flexibility_choice_lists_match_stata_columns(flexgold, results):
 def test_other_mechanisms_unaffected_by_flexibility(flexgold, results):
     """TTP and Risk-Taking still reproduce the .dta bins (their inputs are unchanged);
     the flexibility computation only appends outputs."""
-    # the flexibility extract carries no TTP/RT columns; check against the June extract
+    # the flexibility extract carries no TTP/RT columns; check against the main extract of
+    # the same 050926 file
     gold = pd.read_csv(os.path.join(REPO, "data", "stata_d4_verification.csv"))
     assert (gold["participantid"].values == flexgold["participantid"].values).all()
     assert (np.array([r["rtd_choice_length"] for r in results]) == gold["choice_length_deterministic"].values).all()

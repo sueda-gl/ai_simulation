@@ -1,12 +1,19 @@
 """
-Unit tests for Category-First income generation architecture.
+Category-first income generation (src/engine/income.py): an agent's income is drawn
+inside the quintile of the Page-1 income distribution that its Assigned Allowance
+Level names, once per agent.
 
 Tests verify:
-1. Correct percentile boundaries for each distribution type
-2. One-time income generation per agent (caching)
+1. The four quintile boundaries of each distribution (lognormal, generalised gamma,
+   Dagum), at or below the maximum when one is set
+2. One-time income generation per agent (cached in the agent state)
 3. Logical consistency between Assigned Allowance Level and generated income
-4. Donation regression stability on 12-200 scale
-5. Dual income variable generation (income + actual_allowance)
+   (level 1 in the bottom quintile, level 5 in the top, mean income rising with the level)
+4. Dual income variable generation (income + actual_allowance, levels 1-5 ->
+   12 / 32 / 72 / 128 / 200) and the level -> percentile-range mapping
+5. A missing Assigned Allowance Level raises ValueError
+
+The reference is the specification's rule, not a data file.
 """
 
 import pytest
@@ -15,10 +22,8 @@ from src.engine.income import (
     get_agent_income,
     get_actual_allowance,
     get_percentile_boundaries,
-    ALLOWANCE_CREDIT_MAPPING,
     _get_percentile_range_for_level
 )
-from src.decisions.donation_default import donation_default
 
 
 class TestPercentileBoundaries:
@@ -365,7 +370,4 @@ class TestEdgeCases:
             # Should have also generated actual_allowance
             assert agent_state['actual_allowance'] == 72.0
 
-
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
 

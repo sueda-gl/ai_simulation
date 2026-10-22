@@ -20,6 +20,7 @@ tests/test_rtd_batch4_ui.py); no simulation is started, so the run is cheap.
 import pytest
 
 from app.pages.decision_tabs import rejected_transaction as rtd_tab
+from helpers.apptest import all_markdown
 
 pytestmark = pytest.mark.slow
 
@@ -46,10 +47,6 @@ def tab():
     at.run(timeout=300)
     assert not at.exception
     return at
-
-
-def _md(at):
-    return "\n".join(str(m.value) for m in at.markdown)
 
 
 def _latex(at):
@@ -81,7 +78,7 @@ def test_flexibility_binning_formula_has_no_z(tab):
     for forbidden in (r"z_{Anchored", "z_Anchored", r"z_{obs\_Flex", r"z_{calc\_Flex",
                       "z_anchored_flexibility"):
         assert forbidden not in tex, forbidden
-    assert "z_Anchored" not in _md(tab)
+    assert "z_Anchored" not in all_markdown(tab)
 
 
 def test_anchored_flexibility_line_and_plain_sentence(tab):
@@ -92,7 +89,7 @@ def test_anchored_flexibility_line_and_plain_sentence(tab):
             r" + W_{CFlex} \times CalculatedFlexibility_i"
             r" = 0.25 \times ObservedFlexibility_i + 0.75 \times CalculatedFlexibility_i") in tex
     assert r"\times Flexibility_i" not in tex
-    md = _md(tab)
+    md = all_markdown(tab)
     assert "ObservedFlexibility is the observed flexibility variable stdactions" in md
     # the standardization sentence follows the ObservedFlexibility
     # sentence in the text itself (not in a tooltip)
@@ -118,7 +115,7 @@ def test_segment_mapping_direction_is_mirrored():
 
 
 def test_mapping_tables_rendered_with_black_headers(tab):
-    md = _md(tab)
+    md = all_markdown(tab)
     # rendered as an HTML table (st.dataframe headers are gray)
     assert 'color:#000000;font-weight:600' in md
     assert not list(tab.dataframe), "no st.dataframe on the tab (gray column titles)"
@@ -137,7 +134,7 @@ def test_mapping_tables_rendered_with_black_headers(tab):
 def test_other_tab_tables_also_black_headed(tab):
     """The aggregation inputs table and (in categorical income mode) the income
     effects table use the same black-header rendering."""
-    md = _md(tab)
+    md = all_markdown(tab)
     assert 'Priority sequence' in md and 'Mechanism' in md
     assert 'Option 3 > Option 1 > Option 4 > Option 5 > Option 2' in md   # loyalty inputs
 
@@ -146,7 +143,7 @@ def test_other_tab_tables_also_black_headed(tab):
     at.session_state['rtd_income_mode'] = 'Categorical only'
     at.run(timeout=300)
     assert not at.exception
-    cat_md = _md(at)
+    cat_md = all_markdown(at)
     assert 'Quintile' in cat_md and 'β_income_q' in cat_md
     assert 'color:#000000;font-weight:600' in cat_md
     assert not list(at.dataframe)
@@ -156,7 +153,7 @@ def test_other_tab_tables_also_black_headed(tab):
 # 3. Option explanations in black markdown, not gray captions
 # ---------------------------------------------------------------------------
 def test_option_labels_are_markdown_not_captions(tab):
-    md, captions = _md(tab), _captions(tab)
+    md, captions = all_markdown(tab), _captions(tab)
     for label in ("Option 1: higher price category, same vendor",
                   "Option 2: other vendor at lower PN price",
                   "Option 3: current vendor at PN price",
@@ -173,7 +170,7 @@ def test_option_labels_are_markdown_not_captions(tab):
 # 4. Stochastic component wording
 # ---------------------------------------------------------------------------
 def test_stochastic_component_text(tab):
-    md = _md(tab)
+    md = all_markdown(tab)
     assert (
         "If stochastic enabled: AnchoredFlexibility_i ~ Normal(μ = anchor, σ) where "
         "the anchor is the continuous AnchoredFlexibility_i score and σ = base σ × "
@@ -199,7 +196,7 @@ def test_stochastic_component_text(tab):
 # 5. No "Advanced: stochastic anchor" remnant anywhere on the tab
 # ---------------------------------------------------------------------------
 def test_no_advanced_stochastic_anchor_section(tab):
-    haystack = _md(tab) + _captions(tab) + _helps(tab)
+    haystack = all_markdown(tab) + _captions(tab) + _helps(tab)
     for forbidden in ("Advanced: stochastic anchor", "Advanced: Stochastic Anchor",
                       "binned anchor", "Binned anchor"):
         assert forbidden not in haystack, forbidden
@@ -213,7 +210,7 @@ def test_no_advanced_stochastic_anchor_section(tab):
 # 6. Aggregation sub-tab text + run button + no enable checkbox
 # ---------------------------------------------------------------------------
 def test_aggregation_subtab_wording(tab):
-    md = _md(tab)
+    md = all_markdown(tab)
     # sub-tab labels are bold markdown (larger bold tab text)
     assert "6. Integrated Default List (Rank Aggregation)" in [
         str(t.label).strip('*') for t in tab.tabs]
@@ -239,7 +236,7 @@ def test_aggregation_subtab_wording(tab):
 
 
 def test_aggregation_kendall_tau_and_phases(tab):
-    md = _md(tab)
+    md = all_markdown(tab)
     assert (
         "The distance between two rankings is measured by the Kendall-tau distance: "
         "the number of option pairs that the two rankings order differently. With five "
@@ -265,15 +262,16 @@ def test_stage_shares_expander_and_constant_removed(tab):
     assert not hasattr(rtd_tab, 'DOC_STAGE_SHARES')
     labels = [str(e.label) for e in tab.expander]
     assert not any("Share of cases settled at each stage" in l for l in labels)
-    assert "100,000" not in _md(tab)
+    assert "100,000" not in all_markdown(tab)
 
 
 def test_aggregation_enable_checkbox_removed_but_flag_true(tab):
     checkbox_keys = [c.key for c in tab.checkbox]
     assert 'rtd_tab_aggregation_enabled' not in checkbox_keys
-    assert "Integrate the mechanism rankings into one default list" not in _md(tab)
+    assert "Integrate the mechanism rankings into one default list" not in all_markdown(tab)
     assert "Settings" not in [str(m.value) for m in tab.markdown]
-    # app/simulation.py still reads the flag; it is always on now
+    # the seam (app/seam/build_plan.py) and the saved configuration
+    # (app/state/saved_configs.py) still read the flag; it is always on now
     assert tab.session_state['rtd_aggregation_enabled'] is True
 
 
@@ -281,7 +279,7 @@ def test_aggregation_run_button(tab):
     btn = tab.button(key='rtd_run_aggregation_btn')
     assert btn is not None
     assert str(btn.label) == "🔬 Run Integrated Default List Only"
-    md = _md(tab)
+    md = all_markdown(tab)
     assert ("This run presents the integrated default list results together with the "
             "tie-resolution statistics: the share of agents with initial ties after "
             "Kemeny and the stage at which the ties were settled.") in md
@@ -334,7 +332,7 @@ def test_aggregation_run_button_sets_element_flag():
 #    documentation, not on the simulation page)
 # ---------------------------------------------------------------------------
 def test_running_the_whole_decision_paragraph_is_gone(tab):
-    md = _md(tab)
+    md = all_markdown(tab)
     assert "Running the whole decision" not in md
     assert not any(str(m.value).startswith("Run Rejected Transaction Defaults Only presents")
                    for m in tab.markdown)
@@ -347,7 +345,7 @@ def test_intercept_override_is_compact_and_beside_the_anchor_mix(tab):
     """The Anchor Mix slider and the Intercept Override were too
     wide - they now sit in two columns next to each other (Flexibility sub-tab), the
     intercept control stacked vertically without its old three-column layout."""
-    md = _md(tab)
+    md = all_markdown(tab)
     assert md.count("**Intercept Override**") == 5          # one per element sub-tab
     assert "Research Default (β₄): **0.0000**" in md
     assert "**Anchor Mix**" in md
