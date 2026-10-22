@@ -1,8 +1,9 @@
 # Reference documents
 
 The platform documentation is the source of truth for the model and for every exported
-number. When the code and a document disagree, the document wins; the few deliberate
-deviations are listed in [`../README.md`](../README.md) §9.
+number. When the code and a document disagree, the document wins; the choices the code
+makes where the documents leave room are in [`../README.md`](../README.md) §9, its
+known limits in §10.
 Newer versions of these files replace the copies here; keep the date in the file name.
 
 | File | Date | What it is |

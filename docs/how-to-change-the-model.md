@@ -19,14 +19,15 @@ does not.
 pytest tests/ -q                       # everything passes before you start
 ```
 
-Two tests pin the behaviour cell by cell and must be read as "did anything move":
+Three tests pin the behaviour cell by cell and must be read as "did anything move":
 
 | Test | Pins | Takes |
 |---|---|---|
-| `tests/test_golden_runs.py` | fifteen fixed runs: every result frame, the vendor list, and every export builder's output | 4 s |
-| `tests/test_golden_screens.py` | eleven journeys through the real app: every element on screen and every download after every click | 15 s |
+| `tests/test_golden_runs.py` | fifteen fixed runs: every result frame, the vendor list, and the output of thirteen export builders (on the six complete runs) | 4 s |
+| `tests/test_golden_screens.py` | 24 journeys through the real app: every element on screen and every download after every click | 40 s |
+| `tests/test_complete_run_gate.py` | every outcome and text of the gate on "Run Complete Simulation" | 2 s |
 
-Both compare against the copies in `tests/golden/` and `tests/golden_screens/`.
+All three compare against the copies in `tests/golden/` and `tests/golden_screens/`.
 
 * A **refactor** must leave them green. If one fails, the refactor changed behaviour:
   find out why before going on.
@@ -36,7 +37,8 @@ Both compare against the copies in `tests/golden/` and `tests/golden_screens/`.
   columns moved:
 
   ```bash
-  GOLDEN_UPDATE=1 pytest tests/test_golden_runs.py tests/test_golden_screens.py -q
+  GOLDEN_UPDATE=1 pytest tests/test_golden_runs.py tests/test_golden_screens.py \
+      tests/test_complete_run_gate.py -q
   git add tests/golden tests/golden_screens
   ```
 
@@ -69,10 +71,11 @@ tests import by name (`PRIORITY_SEQUENCES`, `SIGMA_OVERALL`, `DEFAULT_Z_SCORING`
 `FLEX_COEFFS` in `src/decisions/rejected_transaction_defaults.py`, `DOC_COEFFICIENTS`
 in `donation_default.py`, ...) are read from the file at import through the one loader
 in `src/config.py`; there is nothing to keep in step. Change the YAML; cite the
-document revision the value comes from in the YAML comment. (The only reads that
-tolerate an absent key are two Decision 4 blocks whose meaning existing tests pin:
-`intercepts`, where an absent element is 0, and `aggregation`, where a partial block is
-merged over the file's.)
+document revision the value comes from in the YAML comment. (Only switches tolerate an
+absent key - `income_mode` falls back to categorical, on Decision 4 to continuous; an
+absent `stochastic` block means no noise and an absent `sigma_strategy` overall - and
+two Decision 4 blocks whose meaning existing tests pin: `intercepts`, where an absent
+element is 0, and `aggregation`, where a partial block is merged over the file's.)
 
 Then: the decision's reference test tells you whether the new value reproduces the
 reference file (if the reference moved too, regenerate the extract first), and the
@@ -82,7 +85,7 @@ has a default on the tab as well: see §3.
 ## 2. Change a decision's equation or rule
 
 The code of a decision is one module, `src/decisions/<name>.py` (Decisions 1 and 2:
-`<name>_stochastic.py`), with one function of the decision's name:
+`<name>_stochastic.py`), with one function of the module's name:
 
 ```python
 def my_decision(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
@@ -99,18 +102,20 @@ def my_decision(agent_state: dict, params: dict, rng, simulation_config: dict = 
 What it returns becomes columns of the results frame and is merged into
 `agent_state` for the decisions after it.
 
-Rules the tests enforce:
+Rules (the first is enforced by `tests/test_import_boundary.py`):
 
 * **Never `import streamlit`, never `from app… import …`**, not even inside a
   function. A value that lives in the UI reaches the engine through `simulation_config`.
-* Do nothing at import time.
+* Do nothing at import time beyond reading the module's own YAML block through
+  `file_block` (§1).
 * Raise on bad input; never substitute a placeholder and continue.
 * Use the shared helpers in `src/decisions/_shared.py` (z-scoring, the categorical
   intercept lookup, income-mode normalisation) and the one noise gate
   `should_use_stochastic` in `src/utils/stochastic.py`, rather than a private copy.
 * If the rule needs a **population-level** statistic (a median, a maximum over all
   agents), compute it in Pass 1: add a hook in `Engine._compute_population_stats`
-  (`src/engine/core.py`) and store the result on `simulation_config`. Decision 3's
+  (`src/engine/core.py`), store the result on `simulation_config` and add its key to
+  `RUN_SCRATCH_KEYS`, which clears it at the start of every run. Decision 3's
   population maximum and Decision 4's score ranges are the patterns to copy.
 * **Do not change the order of `DECISION_ORDER`** in `src/engine/core.py`. A
   decision's position seeds its random numbers; moving one changes every later
@@ -123,19 +128,28 @@ Then the routine of §0, and a new reference extract for a modelled decision.
 A setting the user can change on a decision tab travels through four places, in this
 order. Add or change all four.
 
-1. **The widget**, in `app/pages/decision_tabs/<decision>.py`, written through
-   `stateful(st.<widget>, …, key=…)` with a `<prefix>_tab_` key, and mirrored every
-   render into the canonical key the seam reads (`di_intercept`, `dd_intercept`,
-   `rtd_intercept_<mechanism>`, …). [`session-state.md`](session-state.md) explains
-   the layers and the naming.
+1. **The widget**, in the decision's tab module under `app/pages/decision_tabs/`
+   (Decision 4: `rejected_transaction.py`), or once for the four modelled tabs in the
+   shared `_controls.py` if it is a stochastic control or the income-mode radio
+   (Disclose Income / Documents' intercept override and resets: `_disclosure.py`).
+   It is drawn through `stateful(st.<widget>, …, key=…)` with a `*_tab_*` key, seeded
+   right before the widget by `_tab_state.restore`, and mirrored every render into
+   the canonical key the seam reads (`di_sigma_enabled`, `rtd_intercept_<mechanism>`,
+   …). [`session-state.md`](session-state.md) explains the layers and the naming.
 2. **The registry**, `app/state/registry.py`: one `KeySpec` per key, with
-   `engine_input=True` for the canonical key. `tests/test_session_key_registry.py`
-   refuses an unregistered key and a registered key nothing uses.
+   `engine_input=True` for the canonical key, and the widget → canonical pair in
+   `TAB_WIDGET_CANONICAL`; a key the shared component builds is a field of the tab's
+   `CONTROL_KEYS` / `DISCLOSURE_KEYS` row. `tests/test_session_key_registry.py`
+   refuses an unregistered key, a registered key nothing uses and a restored widget
+   missing from the table.
 3. **The seam**, `app/seam/build_plan.py`: the canonical key becomes a patch on the
-   decision's YAML block. For a scalar, add one row to `SCALAR_FIELDS` (session key,
-   path in a saved configuration, path in the YAML block, optional transform). The
-   donation coefficient set and the Decision 4 per-mechanism sigma are the two
-   explicit special cases next to it. An absent key must mean the tab's own default,
+   decision's YAML block. For a scalar of Decisions 1, 2 or 4, add one row to
+   `SCALAR_FIELDS` (session key, path in a saved configuration, path in the YAML
+   block, optional transform); the income mode goes through `INCOME_MODE_RULES` and
+   the σ settings are copied by key prefix (`di_`, `dd_`, `rtd_`). Decision 3 has its
+   own `build_donation_patch`; the donation coefficient set, a saved Decision 4
+   record's intercepts, the Flexibility anchor mix and Decision 4's per-mechanism
+   sigma are the explicit special cases. An absent key must mean the tab's own default,
    never "off": the same visible settings must give the same numbers whether or not
    the tab was opened.
 4. **The YAML default**, `config/decisions.yaml`, which is also what the tab's reset
@@ -148,9 +162,10 @@ regenerate it once the screen is what you intend.
 
 When a decision is not selected, it runs with the default in
 `src/contract/defaults.py` (`DEFAULT_DECISION_VALUES`, and the one-line
-`DEFAULT_DECISION_DESCRIPTIONS` the Overview tab shows). A decision reads its default
-from `simulation_config['default_decisions'][<name>]`; Decisions 11, 12 and 13 are
-the pattern. The Overview tab's editor for these defaults is
+`DEFAULT_DECISION_DESCRIPTIONS` the results page shows for a decision that ran with
+its default). A decision reads its default from
+`simulation_config['default_decisions'][<name>]`; Decisions 11, 12 and 13 are the
+pattern. The Overview tab's editor for these defaults is
 `app/pages/decision_tabs/default_config.py`, and the shapes it knows are
 `random_probability`, `checkbox_selection`, `radio_selection`,
 `prioritized_selection` and a plain constant.
@@ -166,8 +181,12 @@ stochastic:
   sigma_quintile: {'1': …, '2': …, '3': …, '4': …, '5': …}
   sigma_value: 0              # the Research tick box writes σ here
   scale_factor: 1.0           # the σ coefficient slider
-  in_copula: false            # the "draw in Copula mode" tick box
+  quintile_scale_factors: {'1': 1.0, …}   # the per-quintile sliders
+  in_copula: false            # the "draw to Copula runs" tick box
 ```
+
+(Decision 4: `sigma_value` and `in_copula` at the top, the rest per element under
+`mechanisms.<element>`.)
 
 The one rule that decides whether noise is added is `should_use_stochastic()` in
 `src/utils/stochastic.py`: Copula draws iff `in_copula`, Research Specification
@@ -214,16 +233,19 @@ changed columns and elements.
 
 Decisions 9 and 10 are the live example: the documentation calls them
 transaction-level, the per-request choice and bid value are drawn inside Decision 6,
-and the per-agent values the two slots still produce are read by nothing. Retiring a
-slot is a behaviour change, not a refactor, because of the random-number scheme:
+and the per-agent values the two slots still produce are read by nothing outside the
+two slots. Retiring a slot is a behaviour change, not a refactor, because of the
+random-number scheme:
 
 * removing an entry from `DECISION_ORDER` shifts the position, and so the seed, of
   every decision after it. Check which of those decisions actually draw from `rng`
   (Decisions 11, 12 and 13 do not), and expect the others to move;
 * the results frame loses the slot's columns, so every pinned configuration whose
   hash covered them stops reproducing;
-* the same name must leave `DEFAULT_DECISION_VALUES`, `DECISION_VISUALIZATIONS`, the
-  Overview tab and the registry; `tests/test_decision_order.py` ties them together.
+* the same name must leave `DEFAULT_DECISION_VALUES` / `DEFAULT_DECISION_DESCRIPTIONS`,
+  `DECISION_VISUALIZATIONS`, the Overview tab and the registry;
+  `tests/test_decision_order.py` holds the engine order, the screens' and the seam's
+  `ALL_DECISIONS` and the two default tables together (not the charts or the Overview).
 
 Get the change ruled from the documentation, make it, regenerate the golden copies,
 and say in the commit which columns and which decisions moved.
@@ -232,7 +254,9 @@ and say in the commit which columns and which decisions moved.
 
 Append it at the **end** of `DECISION_ORDER`, so every existing stream keeps its
 offset; give it a module (§2), a YAML block (§1), an entry in
-`DEFAULT_DECISION_VALUES` (§4), a tab and a `SCALAR_FIELDS` row if it is configurable
-(§3), and a renderer plus report builders (§6). The import-boundary test picks the
-new module up by itself. Expected result on a fixed-seed run before and after:
-every existing column identical, the new columns added.
+`DEFAULT_DECISION_VALUES` and `DEFAULT_DECISION_DESCRIPTIONS` (§4), a tab, registry
+keys and a patch builder called from `build_decision_patches`
+(`app/seam/build_plan.py`) if it is configurable (§3), and a renderer plus report
+builders (§6). The import-boundary test picks the new module up by itself. Expected
+result on a fixed-seed run before and after: every existing column identical, the
+new columns added.

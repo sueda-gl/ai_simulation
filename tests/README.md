@@ -5,14 +5,13 @@ which reference. This page is the map.
 
 ```bash
 pip install pytest                                   # not in requirements.txt
-.venv/bin/python -m pytest tests/ -q -m "not slow"   # 444 tests, about 35 seconds
-.venv/bin/python -m pytest tests/ -q                 # 714 tests, about 2.5 minutes
+.venv/bin/python -m pytest tests/ -q -m "not slow"   # 444 tests, about 40 seconds
+.venv/bin/python -m pytest tests/ -q                 # 714 tests, about 3 minutes
 ```
 
-Run from the repository root and through `python -m pytest`: that puts the root on
-`sys.path`, so `tests/conftest.py` can import `app` and `src`. A bare `pytest` does
-not (`pytest.ini` sets no `pythonpath`) and stops at `ModuleNotFoundError: No module
-named 'app'`.
+Run from the repository root: `pytest.ini` puts the root on `sys.path`
+(`pythonpath = .`), so `tests/conftest.py` can import `app` and `src` whether you
+call `pytest` or `python -m pytest`.
 
 `slow` (registered in `pytest.ini`) is set per module (`pytestmark = pytest.mark.slow`)
 on every module that drives the real app through Streamlit `AppTest` or

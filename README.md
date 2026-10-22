@@ -122,7 +122,7 @@ src/                  THE ENGINE - pure simulation, never imports Streamlit or a
   engine/postprocess.py  global transaction IDs
   contract/plan.py       RunPlan / SubRun / RunMetadata - one run, described as data
   contract/defaults.py   what each decision does when it is NOT selected
-  decisions/             one module per decision (+ *_stochastic for Decisions 1 and 2)
+  decisions/             one module per decision (Decisions 1 and 2: *_stochastic.py)
   data/participants.py   the 280 experiment participants (read lazily, cached)
   trait_engine.py        samples synthetic agents from the copula model
   vendor_attribute_generator.py   vendor attributes and the shared vendor score
@@ -134,6 +134,7 @@ app/                  THE STREAMLIT APP
   seam/                  session snapshot -> run plan -> execute (no Streamlit)
   state/saved_configs.py the "Use This Config" store
   state/registry.py      every session-state key: its layer, default, initialiser (see docs/session-state.md)
+  state/widgets.py       stateful(): keyed widgets the browser shows with their session value
   reports/               every exported number, frame and workbook (no Streamlit)
   pages/                 the screens: page1, page2 + decision_tabs/, results/
   models.py              SimulationParameters and session-state initialisation
@@ -172,7 +173,7 @@ once:
 
 ```bash
 pip install pytest
-pytest tests/          # about two minutes; everything passes
+pytest tests/          # 714 tests, about 3 minutes; everything passes
 ```
 
 Four parity tests additionally read the original Stata `.dta` files and **fail

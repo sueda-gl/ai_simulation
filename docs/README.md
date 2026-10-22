@@ -14,7 +14,7 @@ that documentation disagree, the documentation wins.
 
 ## 1. The four layers
 
-Each layer may use the one above it, never the other way round.
+Each layer may use the layers above it, never the other way round.
 
 ```
   src/engine  +  src/contract  +  src/decisions   THE ENGINE       (no Streamlit)
@@ -23,8 +23,13 @@ Each layer may use the one above it, never the other way round.
               |
   app/state   +  app/reports                      STORES & REPORTS (reports: no Streamlit)
               |
-  app/pages                                       THE SCREENS      (all the Streamlit)
+  app/pages + app/models.py + app/simulation.py   THE SCREENS      (Streamlit)
 ```
+
+A test enforces the engine's rule and the reports' (§6); the seam keeps its rule by
+convention. One import goes the other way: `app/state/saved_configs.py` imports
+`app/models.py` and, inside a function, `RunContext` from `app/pages/results/`, so a
+pin records the run on screen (§5).
 
 ### The engine, `src/`
 
@@ -52,33 +57,47 @@ Everything needed to produce numbers, and nothing else.
   quantities, drawn once per run.
 * **`src/engine/postprocess.py`** — the global transaction IDs, assigned after a run so
   every export numbers the same request the same way.
+* **`src/engine/income.py`**, `customer_type.py`, `config_access.py`, `log.py` — an
+  agent's income (drawn inside its Assigned Allowance Level), the Discount / Fixed /
+  Regular customer type, `get_simulation_param` (how a decision reads a Page-1 value)
+  and the console log prefix.
 * **`src/decisions/<name>.py`** — one module per decision. Every decision function has
   the same shape:
 
   ```python
-  def my_decision(agent_state: dict, params: dict, rng, simulation_config: dict = None) -> dict:
+  def my_decision(agent_state: dict, params: dict, rng, simulation_config: dict = None, **kwargs) -> dict:
       ...
       return {"my_decision": value}
   ```
 
   The four *modelled* decisions (`donation_default`, `disclose_income`,
-  `disclose_documents`, `rejected_transaction_defaults`) also receive `pop_context=`,
-  the population mode's name, because that is what switches their noise on or off.
-  Decisions 1 and 2 live in `<name>_stochastic.py`.
+  `disclose_documents`, `rejected_transaction_defaults`) also receive `pop_context=`
+  (in `**kwargs`), the population mode's name, because that is what switches their
+  noise on or off. Decisions 1 and 2 live in `<name>_stochastic.py` (function
+  `<name>_stochastic`). Two modules are not decisions: `_shared.py` (`require`, the
+  z-scoring, categorical-intercept and income-mode helpers of Decisions 1-4) and
+  `rtd_rank_aggregation.py` (Decision 4's ranking cascade).
 * **`src/contract/plan.py`** — the frozen description of one run (§2): `RunPlan`,
   `SubRun`, `RunMetadata`, `SavedExpectation`, the deep-merge rules for configuration
   patches, and the hash that proves a pinned configuration was reproduced.
 * **`src/contract/defaults.py`** — what each decision does when the user does *not*
   select it. Both the seam and the screens need it, so it lives where nothing imports
   Streamlit.
+* **`src/contract/columns.py`** — the `rtd_consensus_*` → `rtd_integrated_*` renaming
+  every export, the agent details and the CLI apply (outputs say "integrated").
 * **`src/data/participants.py`** — the 280 experiment participants, read from the two
-  workbooks in `data/` the first time they are asked for, then cached. Nothing happens
-  at import time.
+  workbooks in `data/` the first time they are asked for, then cached, with two columns
+  merged in: `stdactions` and the reference income (`data/stata_stdactions.csv`,
+  `data/stata_incomes.csv`) that the research modes run with. Nothing happens at
+  import time.
 * **`src/trait_engine.py`** — samples synthetic agents from the fitted copula in
   `config/trait_model.pkl`. Retrain only with `scripts/train_copula.py`, and only if
   the experiment data or the master trait list changes.
 * **`src/config.py`** — the one loader of the two YAML files (`read_yaml_file`, the
   path constants, `DecisionsConfig`); the engine and the seam both load through it.
+* **`src/vendor_attribute_generator.py`** — vendor quality, sustainability, proximity
+  and the one vendor score the engine and the exports share.
+* **`src/utils/stochastic.py`** — `should_use_stochastic`, the one noise gate (§4).
 
 ### The seam, `app/seam/`
 
@@ -88,8 +107,10 @@ Streamlit, no globals, no writes to session state.
 * **`snapshot.py`** — `take_snapshot(st.session_state)`: a read-only copy, taken once
   per click. Everything downstream reads the copy, so nothing a run does can feed
   back into it.
-* **`config_repo.py`** — `DecisionsConfig`: the two YAML files, loaded once and never
-  written. `fresh_decisions_dict()` hands out a deep copy for one engine run to patch.
+* **`config_repo.py`** — `get_config_repo()`: the process-wide `DecisionsConfig`
+  (defined in `src/config.py`, re-exported here), the two YAML files loaded once and
+  never written. `fresh_decisions_dict()` hands out a deep copy for one engine run to
+  patch.
 * **`sentinels.py`** — the sigma constants, read from the configuration file rather
   than spelled as literals in the app.
 * **`build_plan.py`** — `build_run_plan(snapshot, config_repo) -> RunPlan`: resolves
@@ -98,8 +119,9 @@ Streamlit, no globals, no writes to session state.
   screen shows before the run. A pure function: the same snapshot always yields the
   same plan.
 * **`execute.py`** — `execute(plan) -> {result_key: DataFrame}`: for each sub-run,
-  samples the agents, builds a fresh `Engine`, applies the patches and the Page-1
-  parameters, runs it, then assigns the global transaction IDs.
+  samples the agents, builds a fresh `Engine` on a patched copy of the two files (the
+  plan's patches and Page-1 parameters), runs it, then assigns the global transaction
+  IDs.
 * **`mc.py`** — Monte Carlo on the same plan: picks the sub-run a study repeats and
   replays it with another seed (`run_mc_repetition`); the CLI's `--plan-file` reads
   a sub-run stored with `write_mc_plan_file`.
@@ -112,6 +134,8 @@ Streamlit, no globals, no writes to session state.
 * **`app/state/registry.py`** — every session-state key the screens use, with its
   default and initialiser; `tests/test_session_key_registry.py` keeps it honest. See
   [`session-state.md`](session-state.md).
+* **`app/state/widgets.py`** — `stateful()`, the wrapper every keyed widget whose value
+  lives in session state is drawn through, so the browser shows that value too.
 * **`app/reports/*.py`** — every number, table, preview frame and Excel/CSV byte string
   the screens show or offer for download. These take their inputs as arguments and
   return frames or bytes; they never import Streamlit, so an export can be built and
@@ -123,9 +147,15 @@ Streamlit, no globals, no writes to session state.
   vendors, thresholds; `page1_income_histogram.py` draws its income distribution
   preview.
 * `css.py` — the global CSS (`get_css_styles`), injected by `app_enhanced_new.py` on
-  every script run.
+  every script run; `navigation.py` — the buttons between the three pages.
 * `page2_decisions.py` + `decision_tabs/` — Page 2: the Overview tab and one tab per
-  configurable decision.
+  selected decision (a module of its own for Decisions 1-4 and 10, a placeholder in
+  `generic_decision.py` for most others; `default_config.py` is the Overview's editor
+  for unselected decisions).
+  The four modelled tabs draw their stochastic controls and income-mode radio through
+  `_controls.py` and seed their widget keys through `_tab_state.py` (see
+  [`session-state.md`](session-state.md) §2); Disclose Income / Documents also share
+  `_disclosure.py`.
 * `decision_execution.py` — the Run buttons (`run_individual_decision`,
   `run_combined_simulation`, the per-tab `render_simulation_buttons`) and the gate that
   disables "Run Complete Simulation" while a selected decision would produce several
@@ -180,10 +210,10 @@ Take "🚀 Run Complete Simulation" on Page 2.
         |-- build_run_plan(snapshot, config)    app/seam/build_plan.py   (pure)
         |-- for message in plan.messages: st.info / st.caption / st.success
         |-- execute(plan)                       app/seam/execute.py
-        |        for each SubRun:
+        |        for each SubRun (run_sub_run):
         |          sample_agents(population, n, seed)
-        |          Engine(PROFILES[population])           <- fresh yaml load
-        |          configure_engine(...)                  <- patches + Page-1 params
+        |          build_engine(...)                      <- fresh yaml copy + patches
+        |            -> Engine(PROFILES[population])         + Page-1 params
         |          engine.run_simulation(n, seed, decisions, agents_df)
         |        then assign_global_transaction_ids(...) on every result
         |-- verify_saved_expectations(...)      re-hash each pinned decision's columns;
@@ -199,8 +229,10 @@ Take "🚀 Run Complete Simulation" on Page 2.
 
 Three things to notice.
 
-**One snapshot, one plan.** The session state is read once, at the top. A test can
-hand the builder a plain dictionary instead of a Streamlit session.
+**One snapshot, one plan.** The session state is read once, at the top (the seed
+resolution, `get_simulation_seed_from_configs`, reads the same keys live right after,
+before anything is written). A test can hand the builder a plain dictionary instead
+of a Streamlit session.
 
 **A plan is data.** `RunPlan` is a frozen dataclass: it can be printed, stored,
 compared, or built by hand. A `SubRun` is one engine run producing one key in the
@@ -270,7 +302,8 @@ every later result. See [`how-to-change-the-model.md`](how-to-change-the-model.m
 
 ## 4. The three population modes
 
-They differ in exactly four fields, all in `src/engine/profile.py`:
+Besides their name and console log prefix they differ in exactly four fields, all in
+`src/engine/profile.py`:
 
 | field | Copula | Research Specification | Research Baseline |
 |---|---|---|---|
@@ -290,8 +323,8 @@ research modes give the same rows (`tests/test_research_cyclic_population.py`).
 `pop_context` is what the four modelled decisions use to decide whether to add noise.
 The single rule is `should_use_stochastic()` in `src/utils/stochastic.py`:
 
-* `copula` → noise iff the decision's `stochastic.in_copula` flag is on (the "Use
-  Normal(anchor, σ) draw in Copula mode" tick box);
+* `copula` → noise iff the decision's `stochastic.in_copula` flag is on (the "Add
+  Normal(anchor, σ) draw to Copula runs" tick box);
 * `documentation` → noise iff `stochastic.sigma_value > 0` (the Research tick box
   writes the σ there);
 * `baseline` → never.
@@ -319,11 +352,11 @@ metadata plus the result frames and asks *it* every question about the run: its
 shape, and its Page 1 values (`ctx.param(name)`, `ctx.platform_markup`,
 `ctx.periods`, ...). It deliberately does **not** read the live Page-1 / Page-2
 widgets or `st.session_state.sim_params`: those describe the run being configured
-next, not the one on screen. So editing Page 1 after a run and returning to the
-results page via "View Results" shows the run's summary, bidding explanation and
-exports unchanged (the `page1_edit_after_run` golden journey pins this). Metadata
-written before these fields existed falls back to the live values, the only ones
-such a session has.
+next, not the one on screen (the one exception is listed in §10). So editing Page 1
+after a run and returning to the results page via "View Results" shows the run's
+summary, bidding explanation and exports unchanged (the `page1_edit_after_run`
+golden journey pins this). Metadata written before these fields existed falls back
+to the live values, the only ones such a session has.
 
 "Use This Config" (`app/state/saved_configs.py`) pins from the same `RunContext`:
 the run's seed, agent count, population mode and income mode, not the live widgets.
@@ -417,8 +450,8 @@ Run either snippet from the repository root with the virtual environment active.
 
 ```bash
 pip install pytest                      # not in requirements.txt
-pytest tests/ -q -m "not slow"          # engine, seam, boundary: 444 tests, about 35 seconds
-pytest tests/ -q                        # everything: 714 tests, about 2.5 minutes; everything passes
+pytest tests/ -q -m "not slow"          # engine, seam, boundary: 444 tests, about 40 seconds
+pytest tests/ -q                        # everything: 714 tests, about 3 minutes; everything passes
 ```
 
 Run them from the repository root (`pytest.ini` puts the root on the import path;
@@ -479,11 +512,12 @@ The reasons behind behaviour that looks odd at first sight.
   decision is shown as an error, never reported as a save.
 * **The results page shows the run, not the widgets.** Every Page 1 value the page
   and the exports need (markup, price range, market price, periods, duration, vendor
-  price bounds, the agent count) comes from `RunMetadata.simulation_params` through
-  `RunContext`; the same holds for the Decision 4 element flag and the donation anchor
-  mix. A Page 1 edit after a run changes the next run, never the one on screen.
+  price bounds) comes from `RunMetadata.simulation_params` and the agent count from
+  `RunMetadata.n_agents`, both through `RunContext`; the same holds for the Decision 4
+  element flag and the donation anchor mix. A Page 1 edit after a run changes the next
+  run, never the one on screen.
 * **Page 1 reports an income maximum that is not above the minimum.** The three
-  "b - Maximum Value ($)" fields accept any number; a value at or below the minimum
+  income "Maximum Value ($)" fields accept any number; a value at or below the minimum
   shows one error and the discount-threshold widget is drawn as if no maximum were
   set (the engine only clamps incomes to the maximum, so the run itself never failed -
   only the screen used to).
@@ -527,3 +561,6 @@ The reasons behind behaviour that looks odd at first sight.
 * Decision 4's five segments are equal slices between a population's lowest and
   highest score, so copula and research populations are cut on different windows. This
   follows the specification.
+* The results page's "Default Behavior" line for a random-probability default decision
+  (`viz_helpers.get_dynamic_description`) reads the live Overview probability, not the
+  run's: change it after a run and the line changes, the run's numbers do not.

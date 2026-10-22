@@ -60,8 +60,9 @@ key per tab. Then it checks both directions:
 
 It also checks that the `is_widget` and `write_only` flags still match reality, that
 every `engine_input` key is one the seam actually names, and that no key is covered
-by two equally specific family patterns. The test never imports the app, so it stays
-green without Streamlit installed and cannot be fooled by an import-time side effect.
+by two equally specific family patterns. The test imports only the registry (and
+`conftest.py` the Streamlit-free seam), never a screen, so it stays green without
+Streamlit installed and cannot be fooled by an import-time side effect.
 
 ---
 
@@ -109,10 +110,10 @@ convention: Page 1 uses `*_input` / `*_slider` / `page1_*`, the decision tabs us
 `rtd_tab_intercept_{mech}`). The exceptions are the intercept and shift inputs
 (`override_categorical_intercept`, `override_continuous_intercept`,
 `override_adjustment_shift`, `di_override_intercept`, `dd_override_intercept`), the
-Disclose Income anchor sliders (`di_wopb_widget`, `di_wpb_widget`), the buttons, and
-on Page 1 `single_vendor_carryover`, `show_individual_agents_checkbox` and
-`purchasing_limit_{i}`. The Overview's default-decision widgets bind the layer-3 keys
-themselves (category `defaults`).
+Disclose Income anchor sliders (`di_wopb_widget`, `di_wpb_widget`), the buttons, the
+Decision 4 `rtd_subtabs` container, and on Page 1 `single_vendor_carryover`,
+`show_individual_agents_checkbox` and `purchasing_limit_{i}`. The Overview's
+default-decision widgets bind the layer-3 keys themselves (category `defaults`).
 
 ### Layer 2 — the canonical key
 
@@ -145,8 +146,8 @@ tabs share their intercept override, resets and action buttons the same way
 weakness - Streamlit drops the key of a widget that is not drawn - is covered by
 layer 2: the canonical key is never dropped and holds the last rendered value, so
 `_tab_state.restore` (`app/pages/decision_tabs/_tab_state.py`), called right before
-every tab widget, seeds the key from it. `registry.TAB_WIDGET_CANONICAL` is the
-table it reads: widget key → (canonical key, entry), where the entry is `None` for
+every widget the table lists, seeds the key from it. `registry.TAB_WIDGET_CANONICAL`
+is the table it reads: widget key → (canonical key, entry), where the entry is `None` for
 a flat key and `'1'`..`'5'` for the per-quintile sliders, which map to entries of
 `di_` / `dd_` / `rtd_quintile_scale_factors`; the Decision 4 intercept inputs map
 to `rtd_intercept_{mech}`, the Flexibility anchor slider to
@@ -155,7 +156,8 @@ to `rtd_intercept_{mech}`, the Flexibility anchor slider to
 σ coefficient slider to `donation_sigma_coefficient_setting` - a key of its own,
 because `sigma_coefficient`, the engine input, is deliberately 1.0 while the σ mode
 is `quintile` (the Donation tab writes it after the σ controls: the slider's value
-in overall mode, 1.0 otherwise), so it cannot say what the hidden slider showed.
+in overall mode, 1.0 in quintile mode), so it cannot say what the hidden slider
+showed.
 Every tab restores in the same order:
 
 1. the live widget key, if it is still there;
@@ -175,8 +177,10 @@ widget key did not. Until 2026-10-22 each tab kept a *fourth* place for this, a
 `*_tab_persistence` dict written only from the widgets' `on_change` callbacks and
 read before the canonical key; it only ever held what the canonical key held (the
 canonical key is rewritten by every render, the dict only by a change), so the four
-dicts are gone and the seeded widgets have no callbacks (the two radios keep one,
-to mirror their canonical key before the Overview reads it in the same run).
+dicts and the callbacks that filled them are gone. The callbacks that remain do
+something else: the two radios mirror their canonical key before the Overview reads
+it in the same run, Decision 4's intercept inputs and Flexibility slider write
+theirs, and the intercept / adjustment override inputs save the typed value.
 `tests/test_session_key_registry.py` holds `TAB_WIDGET_CANONICAL` to the
 `CONTROL_KEYS` rows, to the registry rows and to every `restore()` call in `app/`.
 
@@ -208,6 +212,8 @@ typed override not only while their key is absent but every time they come back
 after not being drawn (`donation_default._seed_intercept_input`, which asks the
 render log of `app/state/widgets.py`) - the run in which the value is pushed to the
 browser anyway, so a steady rerun still writes nothing.
+
+Registry categories: `page1-mirror`, `page2-mirror`.
 
 ### Layer 3 — `_persistent_defaults`
 
@@ -244,7 +250,7 @@ that are not settings at all:
 |---|---|---|
 | `navigation` | which screen renders | `page` |
 | `saved-config` | the "Use This Config" pins | `selected_decision_configs` |
-| `run-flag` | what the click that started a run recorded (the run itself travels as a `RunRequest`, not through session state) | `custom_decisions`, `default_decisions` |
+| `run-flag` | what the click that started a run recorded (the run itself travels as a `RunRequest`, not through session state); also the Donation tab's one-shot reset flags | `custom_decisions`, `default_decisions`, `_reset_config_to_defaults_flag` |
 | `results` | run output, and the chart / download widgets that show it | `simulation_results`, `mc_results`, `vendors`, `_run_metadata` |
 
 `selected_decision_configs` deserves its own note: one entry per decision the user
@@ -335,15 +341,15 @@ feature that no screen offers any more. The priority chains still have a slot fo
 
 ## 7. Bulk operations
 
-Five places delete keys wholesale. They matter because they are the only way a key
-disappears (besides Streamlit dropping an undrawn widget's key), and the registry's
-initialisers are what put it back.
+Five places delete keys wholesale, and the Donation tab's reset deletes one. They
+matter because they are the only way a key disappears (besides Streamlit dropping an
+undrawn widget's key), and the registry's initialisers are what put it back.
 
 | Operation | What it deletes | Then |
 |---|---|---|
-| A decision tab's **Reset Config to Defaults** (Disclose Income, Disclose Documents, Decision 4) | every key starting with `di_`, `dd_` or `rtd_` (whichever tab): widget keys and canonical keys alike. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists | Decision 4 calls `initialize_rtd_session_state()`; Disclose Income / Documents write the reset widget keys and canonical keys from the file (`_disclosure.apply_config_to_widget_keys`, plus the tab's own `_apply_extra_widget_keys`), and the tab's `initialize_*_session_state()` runs next in the same run. A widget key the reset does not write (the σ coefficient, σ-mode and per-quintile sliders) is seeded from the reset canonical key on its next draw |
+| A decision tab's **Reset Config to Defaults** (Disclose Income, Disclose Documents; on Decision 4 **Reset Decision 4 Settings to Defaults**) | every key starting with `di_`, `dd_` or `rtd_` (whichever tab): widget keys and canonical keys alike. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists | Decision 4 calls `initialize_rtd_session_state()`; Disclose Income / Documents write the reset widget keys and canonical keys from the file (`_disclosure.apply_config_to_widget_keys`, plus the tab's own `_apply_extra_widget_keys`), and the tab's `initialize_*_session_state()` runs next in the same run. A widget key the reset does not write (the per-quintile sliders, and on Disclose Income also the σ coefficient and σ mode) is seeded from the reset canonical key on its next draw |
 | Decision 4's per-element reset | only `rtd_intercept_{mech}` and its widget key (for Flexibility also `rtd_flex_observed_weight` and its slider key) | same; σ is decision-wide and deliberately untouched |
-| The Donation tab's **Reset Config to Defaults** | only `donation_sigma_coefficient_setting`; otherwise it *writes*: the intercept, adjustment, income-mode and σ tick-box widget keys, and the canonical σ-mode and quintile dicts (the σ sliders' widget keys are left alone: a drawn slider keeps its value, a hidden one comes back at its default, §2) | `_reset_config_to_defaults_flag` is consumed at the top of the tab in the next run |
+| The Donation tab's **Reset Config to Defaults** | only `donation_sigma_coefficient_setting`; otherwise it *writes*: the intercept, adjustment, income-mode, anchor-weight and σ tick-box widget keys, the canonical income mode, σ mode and quintile dict, and empties the two override-value dicts (the σ controls' widget keys, mode radio and sliders, are left alone: a drawn control keeps its value, a hidden one comes back at its default, §2) | `_reset_config_to_defaults_flag` is consumed at the top of the tab in the next run |
 | Page 1's **Reset to Default Values** | every `purchasing_limit_{i}`, `purchasing_limits_temp` and the five widget keys that pass `value=` (the three "Maximum Value" text inputs, `uniform_purchasing_limit_input`, `show_individual_agents_checkbox`); every other Page-1 widget key is *written* | `sim_params` fields go back to the `SimulationParameters` dataclass defaults and the Page-1 session values to `models.SESSION_DEFAULTS`; the widget keys are written from `page1_widget_values`, the same mapping `initialize_widget_keys` seeds a fresh session from |
 | The Overview's **Reset All Defaults** | for every unselected decision, its `{decision_name}_default_*` and `_priority_template` keys (and the `_default_param_*` checkbox keys), plus their `_persistent_defaults` entries | `models.initialize_default_decision_parameters` seeds them again at the top of the next run |
 | **Clear Results** on the results page | *every* key in `st.session_state` | calls `models.initialize_session_state()` and stays on the results page |
@@ -369,11 +375,11 @@ the test rather than slipping past it:
 * `chart_key` — the plotly key the shared Decision-4 chart helpers receive;
 * `widget_key`, `canonical_key` — the tabs' seeding helpers
   (`decision_tabs/_tab_state.py`: `restore`, `seed_if_absent`,
-  `seed_if_changed`): the widget key they are handed, and the canonical key
-  `restore` looks it up in `TAB_WIDGET_CANONICAL`. Every caller still binds its
-  widget key literally (`key=`), or through the registry's key-parameter table
-  below, and every canonical key of the table is written literally next to its
-  widget; the test holds the table to both.
+  `seed_if_changed`; `widget_key` also in `donation_default._seed_intercept_input`):
+  the widget key they are handed, and the canonical key `restore` looks it up in
+  `TAB_WIDGET_CANONICAL`. Every caller still binds its widget key literally (`key=`),
+  or through the registry's key-parameter table below, and every canonical key of the
+  table is written literally next to its widget; the test holds the table to both.
 
 **Keys built from the registry's per-tab tables.** Two modules draw the same
 widgets for several tabs: `decision_tabs/_controls.py` (the four modelled tabs'
