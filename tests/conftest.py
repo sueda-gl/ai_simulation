@@ -4,7 +4,7 @@ Fixtures and helpers shared by the test modules.
 Only what several modules had as IDENTICAL copies lives here; a module whose copy
 differed keeps its own (a module-level fixture of the same name overrides the one
 below). Plain helpers are imported explicitly - ``from conftest import REPO`` - the
-way the modules already import ``browser_sim`` and each other.
+way the modules import ``browser_sim`` and ``helpers``.
 """
 import os
 from pathlib import Path

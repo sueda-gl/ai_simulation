@@ -59,8 +59,8 @@ def _apply_rejected_transaction_config(orchestrator, pop_mode: str, inc_mode: st
     Apply Decision 4 (rejected_transaction_defaults) configuration to an
     orchestrator/engine IN PLACE, from the current session state.
 
-    Compat wrapper (tests/test_rejected_transaction_defaults.py,
-    tests/test_rtd_batch4_ui.py) over the seam's pure patch builder:
+    Compat wrapper (used by tests/test_rejected_transaction_defaults.py) over the
+    seam's pure patch builder:
     ``app.seam.build_plan.build_rejected_transaction_patch``.
     """
     if not hasattr(orchestrator, 'config') or 'rejected_transaction_defaults' not in orchestrator.config:

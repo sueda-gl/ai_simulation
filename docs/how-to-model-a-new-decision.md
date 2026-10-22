@@ -259,9 +259,7 @@ with the keys the module must refuse to run without. The file's scan flags a `.g
 dict literal or a module-level number that copies a block value (0, 1 and −1 never count).
 
 Each run gets a patched deep copy of the file (`apply_patches`, `src/contract/plan.py`; README
-§7); nothing in `app/` writes the file
-(`tests/test_stochastic_widgets_no_reset.py::test_no_yaml_writer_under_app` and
-`::test_no_ui_action_writes_the_config_file`).
+§7); nothing in `app/` writes the file.
 
 ## 3. The decision module
 
@@ -571,8 +569,7 @@ The seam turns the canonical keys into a patch on the decision's block, in
   returns.
 
 Then add the new canonical keys, with the tab's defaults, to `base_state` in
-`tests/test_build_plan.py` (the session the seam tests and the golden runs start from), and a test
-of the patch.
+`tests/helpers/seam.py` (the session the golden runs start from), and a test of the patch.
 
 ## 7. The results page and the exports
 
@@ -610,9 +607,8 @@ Decision 5's own workbook it lists today `Agent ID`, `Honesty_Humility`,
 exactly; in the Agent-Level sheet, only when the row carries them, as Decision 4 does
 (`if 'rtd_choice_length' in row:` in `app/reports/agent_level.py`).
 
-Then update `tests/test_reports_interface.py::test_vendor_report_interface` with the new columns
-and sheets, add a missing-value case to `tests/test_export_missing_values.py`, and add every new
-table builder to `export_frames` in `tests/test_golden_runs.py`, so the golden net covers it.
+Then add a missing-value case to `tests/test_export_missing_values.py`, and add every new table
+builder to `export_frames` in `tests/test_golden_runs.py`, so the golden net covers it.
 
 ### 7.4 The export of a "Run X Only" run
 
@@ -658,10 +654,8 @@ the owner first. Then add the decision to:
      `TAB_WIDGETS` row (σ mode radio, per-level slider pattern, income radio, the two tick boxes,
      the reset button); a tab with other controls needs its own journey in `JOURNEYS`. An income
      radio's keys go in the tuple in `_complete`, which the continuous complete-run journey sets.
-   * Lists that do not fail when forgotten, but then miss the new tab: `DECISIONS` and the widget
-     lists in `tests/test_stochastic_widgets_no_reset.py`, the decision list in
-     `tests/test_no_widget_default_warning.py`, `TABS` in `tests/test_browser_state.py`, and
-     `DECISIONS` in `tests/test_complete_run_gate.py` if you added a gate row.
+   * `DECISIONS` in `tests/test_complete_run_gate.py`, if you added a gate row: a list that does
+     not fail when forgotten, but then misses the new decision.
 3. **Read every failure before you re-record.** When the change is what you intend:
 
    ```bash
@@ -742,8 +736,8 @@ Names are Decision 5's; replace them for another decision.
 18. [ ] Seam rows; `build_vendor_choice_weights_patch` in `build_decision_patches`; `base_state`
     updated (§6.6).
 19. [ ] Results view rewritten; it reads only `RunContext` (§7.1).
-20. [ ] Report builders in `app/reports/`: exact columns, `N/A` and money rules; interface and
-    missing-value tests updated (§7.2, §7.3).
+20. [ ] Report builders in `app/reports/`: exact columns, `N/A` and money rules; missing-value
+    test updated (§7.2, §7.3).
 21. [ ] Focused "Run X Only" export, if the documentation describes one (§7.4).
 22. [ ] Pins, gate and comparisons, only if agreed with the owner (§7.5).
 23. [ ] Golden scenarios, screen journeys and the other test lists extended (§8).

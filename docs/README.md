@@ -322,7 +322,7 @@ and the first 160. Research Specification samples randomly, seeded by the run se
 subset without replacement below 280, all 280 at 280, a bootstrap above. In both modes
 every agent is its own agent for the random numbers, so Research Specification noise
 differs between two copies of one participant. At N = 280 with every σ off the two
-research modes give the same rows (`tests/test_research_cyclic_population.py`).
+research modes give the same rows.
 
 `pop_context` is what the four modelled decisions use to decide whether to add noise.
 The single rule is `should_use_stochastic()` in `src/utils/stochastic.py`:
@@ -461,8 +461,8 @@ Run either snippet from the repository root with the virtual environment active.
 
 ```bash
 pip install pytest                      # not in requirements.txt
-pytest tests/ -q -m "not slow"          # engine, seam, boundary: 493 tests, about 40 seconds
-pytest tests/ -q                        # everything: 767 tests, about 3 minutes; everything passes
+pytest tests/ -q -m "not slow"          # engine, seam, boundary: 406 tests, about 35 seconds
+pytest tests/ -q                        # everything: 470 tests, about 70 seconds; everything passes
 ```
 
 Run them from the repository root (`pytest.ini` puts the root on the import path;
@@ -473,8 +473,8 @@ through Streamlit `AppTest` or the browser model (`tests/browser_sim.py`), or ru
 simulation in a subprocess. A module is marked as a whole, so the fast run also leaves
 out the fast tests of such a module; run the full suite before you commit.
 
-`tests/README.md` lists every module in one line: what it covers, what it is pinned
-against, fast or slow. Five kinds of test live in `tests/`:
+`tests/README.md` lists every module in one line, by kind: what it covers, what it is
+pinned against, and whether it is slow. Four kinds of test live in `tests/`:
 
 * **Reference parity.** The modelled decisions against frozen reference extracts in
   `data/` (`stata_d1_verification.csv`, `stata_d4_verification.csv`,
@@ -488,12 +488,10 @@ against, fast or slow. Five kinds of test live in `tests/`:
   of the complete-run gate, `tests/golden/complete_run_gate.json.gz`). After an intended
   change re-record with `GOLDEN_UPDATE=1 pytest tests/<module> -q`, review
   `git diff --stat`, and commit the new files with the change.
-* **Seam.** The run plan built from a session snapshot, Monte-Carlo parity with a
-  single run, the session-key registry, `config/decisions.yaml` as the single source of
-  every constant.
-* **Screens.** Streamlit `AppTest` drives the real pages: widget keys, resets, the
-  Decision 4 layouts and wording. These are the slow ones.
-* **Boundary.** The import rules of §6.
+* **Rules.** `config/decisions.yaml` as the single source of every constant, one
+  decision order, the session-key registry, the import rules of §6.
+* **Exports.** The customer price and the vendor score across the exports, and the one
+  rule for a missing value (§9).
 
 Fixtures several modules share live in `tests/conftest.py`, plain helper functions in
 `tests/helpers/`, the pinned on-screen wording in `tests/ui_strings.py`.

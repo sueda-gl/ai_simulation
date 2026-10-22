@@ -223,8 +223,7 @@ changed columns and elements.
   in `config/trait_requirements.yaml`. Retrain only if the experiment data or the
   trait list changes, and expect every copula number to move.
 * The research sampling rule (Specification random and seeded, Baseline in file
-  order cycling) is `src/engine/sampling.py` and is pinned by
-  `tests/test_research_cyclic_population.py`.
+  order cycling) is `src/engine/sampling.py`.
 
 ## 8. Retire a decision
 

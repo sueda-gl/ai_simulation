@@ -36,7 +36,7 @@ import streamlit as st
 from app.state.widgets import stateful
 from app.state.saved_configs import clear_decision_config, get_decision_config
 # The module, not the function: the Run buttons look run_individual_decision up at
-# call time, so a test can stub it (tests/test_rtd_tab_text_ui.py).
+# call time, so a test can stub it.
 from app.pages import decision_execution
 from app.pages.decision_execution import render_simulation_buttons
 from app.pages.decision_tabs._tab_state import restore, seed_if_changed

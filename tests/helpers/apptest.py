@@ -1,5 +1,5 @@
-"""Readers for a Streamlit ``AppTest`` page, and the Decision 4 app script that
-tests/test_rtd_batch4_ui.py and tests/test_rtd_results_ui.py both drive."""
+"""Readers for a Streamlit ``AppTest`` page, and the Decision 4 app script (the tab
+plus the results page) a test can drive."""
 
 
 def all_markdown(at):

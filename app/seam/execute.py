@@ -64,8 +64,7 @@ def apply_simulation_settings(simulation_config: dict, sub_run: SubRun,
 
     if sub_run.decision_settings:
         # Both keys, the same object: the engine reads default_decisions; random_decisions
-        # is kept because df.attrs['simulation_config'] carries it (pinned by the legacy
-        # parity in tests/test_build_plan.py)
+        # is kept because df.attrs['simulation_config'] carries it
         simulation_config["random_decisions"] = sub_run.decision_settings
         simulation_config["default_decisions"] = sub_run.decision_settings
 

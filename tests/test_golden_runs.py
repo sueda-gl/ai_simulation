@@ -27,7 +27,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from test_build_plan import base_state, plan_for  # the app's session-snapshot shape
+from helpers.seam import base_state, plan_for  # the app's session-snapshot shape
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 UPDATE = os.environ.get("GOLDEN_UPDATE") == "1"
