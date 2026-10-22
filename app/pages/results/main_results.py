@@ -399,7 +399,7 @@ def render_single_run_results():
                 # Default decision - show gear icon
                 # Single decision - show content directly (better UX)
                 st.markdown(f'<h4 class="subsection-header">🔧 {decision_title} (Default Values)</h4>', unsafe_allow_html=True)
-                default_description = get_dynamic_description(decision)
+                default_description = get_dynamic_description(decision, ctx)
                 st.info("This decision used default values since it was not selected for customization")
                 st.write(f"**Default Behavior:** {default_description}")
                 render_rtd_compare_both_note(decision, ctx)
