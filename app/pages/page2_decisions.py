@@ -63,7 +63,8 @@ def initialize_page2_widget_keys():
     if 'tab_anchor_weight' in st.session_state:
         st.session_state.anchor_observed_weight = st.session_state.tab_anchor_weight
     elif 'anchor_observed_weight' not in st.session_state:
-        st.session_state.anchor_observed_weight = 0.75
+        st.session_state.anchor_observed_weight = float(
+            get_config_repo().decision('donation_default')['anchor_weights']['observed'])
     
     # ALWAYS sync income spec mode
     if 'page2_tab_income_spec_mode' in st.session_state:
@@ -573,9 +574,11 @@ def render_selected_rejected_transaction_config_display():
                     st.metric(label, f"{float(intercepts.get(mech, 0.0)):.4f}")
             flex_anchor = params.get('flexibility_anchor') or {}
             if flex_anchor:
+                # a weight the record lacks is the file's (rejected_transaction_defaults.flexibility_anchor)
+                file_flex = get_config_repo().decision('rejected_transaction_defaults')['flexibility_anchor']
                 st.caption(f"Flexibility anchor mix: W_OFlex = "
-                           f"{float(flex_anchor.get('observed_weight', 0.25)):.2f} observed · "
-                           f"W_CFlex = {float(flex_anchor.get('calculated_weight', 0.75)):.2f} calculated")
+                           f"{float(flex_anchor.get('observed_weight', file_flex['observed_weight'])):.2f} observed · "
+                           f"W_CFlex = {float(flex_anchor.get('calculated_weight', file_flex['calculated_weight'])):.2f} calculated")
 
             det_col1, det_col2 = st.columns(2)
             with det_col1:

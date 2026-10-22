@@ -8,6 +8,7 @@ import streamlit as st
 from src.contract.plan import RunRequest
 from app.simulation import run_full_simulation, run_monte_carlo_study
 from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
+from app.seam.config_repo import get_config_repo
 # Used below; page1_common_params.py and the results pages also import some from here.
 from app.state.saved_configs import (
     clear_decision_config,
@@ -308,7 +309,9 @@ def current_donation_configuration():
     try:
         stochastic_params = get_current_stochastic_params()
     except Exception:
-        # Fallback: create minimal stochastic structure
+        # Fallback: create minimal stochastic structure; the anchor mix is the
+        # file's (donation_default.anchor_weights), never a copy of it
+        file_anchor = get_config_repo().decision('donation_default')['anchor_weights']
         stochastic_params = {
             'stochastic': {
                 'sigma_value': DONATION_SIGMA_OVERALL,
@@ -317,8 +320,8 @@ def current_donation_configuration():
                 'sigma_in_research': True
             },
             'anchor_weights': {
-                'observed': 0.75,
-                'predicted': 0.25
+                'observed': float(file_anchor['observed']),
+                'predicted': float(file_anchor['predicted'])
             }
         }
 

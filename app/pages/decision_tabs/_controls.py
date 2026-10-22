@@ -8,9 +8,12 @@ in Research Specification runs), the σ-mode radio (uniform / per quintile), the
 with their metrics, and the income-mode radio. Until 2026-10-22 each tab carried
 its own copy, with small drifts between the copies. This module draws them once;
 every drift is a parameter of :class:`TabControls`, so each tab still renders
-what it rendered, except the σ figures, which the owner has since set to two
-decimals on every tab (the remaining drifts are listed on the fields; harmonising
-them is an owner decision, not a refactoring).
+what it rendered, except what the owner has since harmonised: the σ figures at
+two decimals on every tab, and (owner decisions 2a and 2b, 2026-10-22) the
+"**σ mode**" header on all four tabs and the radio's question "Apply σ uniformly
+or per budget level?" on all four (the Donation tab had no header and asked
+"... per income level?"). The remaining drifts are listed on the fields;
+harmonising them is an owner decision, not a refactoring.
 
 Keys
 ----
@@ -44,15 +47,9 @@ from app.pages.decision_tabs._tab_state import restore, seed_if_absent, seed_if_
 
 LEVELS = ('1', '2', '3', '4', '5')
 
-#: Per-quintile base σ shown by the Donation Default and Disclose Income tabs
-#: (display only: the model takes its σ from config/decisions.yaml).
-EMPIRICAL_BASE_SIGMAS = {
-    '1': 5.705052,   # Level 1 (€12)
-    '2': 3.069326,   # Level 2 (€32)
-    '3': 3.532226,   # Level 3 (€72)
-    '4': 12.219622,  # Level 4 (€128)
-    '5': 16.854622,  # Level 5 (€200)
-}
+# The per-quintile base σ a tab shows (``TabControls.base_sigmas``) is read by each
+# tab from its own block of config/decisions.yaml (``stochastic.sigma_quintile``);
+# this module carries no copy (the former EMPIRICAL_BASE_SIGMAS, until 2026-10-22).
 
 LEVEL_LABELS = {
     '1': 'Level 1 (€12)',
@@ -93,12 +90,9 @@ class TabControls:
     #: coefficient) - a no-op while the stored value is already normalised
     coerce: bool = False
 
-    # -- σ-mode radio --------------------------------------------------------
-    #: the "**σ mode**" line above the radio (Disclose Income / Documents, Decision 4;
-    #: not on the Donation tab)
-    strategy_header: bool = True
-    #: "Apply σ uniformly or per budget level?" ("... per income level?" on the Donation tab)
-    strategy_label: str = "Apply σ uniformly or per budget level?"
+    # -- σ-mode radio: no parameters. The "**σ mode**" header and the question
+    # "Apply σ uniformly or per budget level?" are the same on all four tabs
+    # (owner decisions 2a and 2b, 2026-10-22).
 
     # -- coefficient slider and quintile sliders -----------------------------
     # Every σ on screen (base, effective, per-quintile base in the slider labels
@@ -211,8 +205,7 @@ def render_strategy_radio(spec):
     """The σ-mode radio (uniform / per quintile) and the rule below it; writes
     the canonical strategy key and returns 'overall' or 'quintile'."""
     keys = spec.keys
-    if spec.strategy_header:
-        st.markdown("**σ mode**")
+    st.markdown("**σ mode**")
 
     strategy_widget_key = f'{keys.dp}tab_sigma_strategy{keys.suffix}'
     strategy_canonical_key = f'{keys.dp}sigma_strategy'
@@ -228,7 +221,7 @@ def render_strategy_radio(spec):
         st.session_state[strategy_canonical_key] = st.session_state[strategy_widget_key]
 
     sigma_strategy = stateful(st.radio,
-        spec.strategy_label,
+        "Apply σ uniformly or per budget level?",
         options=['overall', 'quintile'],
         format_func=lambda x: 'Uniformly (single σ for all)' if x == 'overall' else 'Quintiles (σ per budget level)',
         key=strategy_widget_key,

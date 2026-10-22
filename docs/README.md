@@ -539,7 +539,15 @@ The reasons behind behaviour that looks odd at first sight.
   its `pop_context` switches the other three gates off.
 * **A standalone Disclose Documents run forces Decision 1 first, with its default
   probability**, because eligibility for documents depends on income disclosure. The
-  plan lists it in `default_decisions_list` and the screen says so.
+  plan lists it in `default_decisions_list` and the screen says so. When the engine is
+  asked for Decision 2 without Decision 1's output (a direct engine call; the app's
+  plan never does this), the engine applies the platform documentation's rule - "If
+  Decision 1 is not run prior to Decision 2, the eligibility gets determined randomly on
+  a 50% basis" (COOPECON AI Agent Documentation 2026-10-07, Decision 2, Eligibility
+  Gate): the disclosure condition is a Bernoulli(0.5) draw from the agent's Decision 2
+  stream (`disclose_documents.gate.probability_without_decision_1` in
+  `config/decisions.yaml`), drawn first, before the σ draw, combined with the same
+  income threshold; the never-eligible agents are `NA` (exported as N/A).
 * **Decision 3 rescales by the population maximum of the floored draws**, so the
   maximum is computed in Pass 1 by replaying every agent's Decision-3 stream.
 * **With a single vendor, Page 1 sets both price bounds to the market price.** The

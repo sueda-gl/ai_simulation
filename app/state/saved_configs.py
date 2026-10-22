@@ -274,7 +274,8 @@ def get_current_disclose_income_params():
             # must report the same sigma the run would use.
             'sigma_enabled': st.session_state.get('di_sigma_enabled', True),
             'sigma_in_copula': st.session_state.get('di_sigma_in_copula', False),
-            'scale_factor': st.session_state.get('di_scale_factor', 1.0),
+            'scale_factor': st.session_state.get(
+                'di_scale_factor', _file_value('disclose_income', 'stochastic', 'scale_factor')),
             'sigma_strategy': st.session_state.get('di_sigma_strategy', 'overall'),
             'quintile_scale_factors': st.session_state.get('di_quintile_scale_factors', {})
         }

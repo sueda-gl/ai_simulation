@@ -7,7 +7,7 @@ import copy
 import streamlit as st
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
-from app.seam.config_repo import DEFAULT_DECISIONS_PATH, read_yaml_file
+from app.seam.config_repo import DEFAULT_DECISIONS_PATH, get_config_repo, read_yaml_file
 from src.engine.core import DECISION_ORDER
 import numpy as np
 from app.seam.sentinels import donation_sigma_overall
@@ -144,7 +144,8 @@ SESSION_DEFAULTS = {
     'sigma_in_research': True,  # Enable sigma in Research mode by default
     'sigma_value_ui': DONATION_SIGMA_OVERALL,  # Static empirical SD value
     'sigma_coefficient': 1.0,  # Coefficient to multiply the static SD (0-2)
-    'anchor_observed_weight': 0.75,
+    # the file's donation_default.anchor_weights.observed (no copy of the value here)
+    'anchor_observed_weight': float(get_config_repo().decision('donation_default')['anchor_weights']['observed']),
     'n_agents': 1000,
     'seed': 42,
     'n_runs': 10,

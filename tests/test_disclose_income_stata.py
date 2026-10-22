@@ -8,12 +8,15 @@ model kept in the *_err columns is NOT the reference.
 
 The model uses exactly the constants of the Decision 1 document of 11 Feb 2026 (revision
 110226_Final, with the corrected Extraversion weight): Extraversion 0.00680238, level
-intercepts 0.0089007 ... -0.0145324, composite SDs 0.025040462 / 0.7984211971. That document
-applies the Extraversion weight typo fix 641.15 -> 645.15; the reference .dta does not, so the
-two runs differ slightly. These tests DOCUMENT that known, accepted difference: with beta0 = 0.1,
-continuous matches 280/280, categorical matches 279/280 with the single mismatch participant 848
-(a near-threshold case), and the fs scores agree within FS_TOL_ANDREI. The app default beta0
-stays 0.75.
+intercepts 0.0089007 ... -0.0145324, weighted_disclosure_categorical SD 0.025040462. That
+document applies the Extraversion weight typo fix 641.15 -> 645.15; the reference .dta does
+not, so the two runs differ slightly. These tests DOCUMENT that known, accepted difference:
+with beta0 = 0.1, continuous matches 280/280, categorical matches 279/280 with the single
+mismatch participant 848 (a near-threshold case), and the fs scores agree within
+FS_TOL_ANDREI. The anchored_pb SD is NOT a document value: since 2026-10-22 it is the sample
+SD (ddof=1, Stata `egen std()`) of anchored_pb over the 280 of the reference .dta,
+0.7971466806 (the 0.7984211971 used before had no source), so it equals the .dta's own
+column to ~1e-8. The app default beta0 stays 0.75.
 
 The corrected Stata columns are frozen in data/stata_d1_verification.csv, so the parity
 tests run without the reference .dta; test_frozen_csv_equals_professor_dta checks that the
@@ -39,12 +42,13 @@ PROF_DTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data"
 
 STATA_BETA0 = 0.1        # `gen beta0 = 0.1` in the corrected reference Stata code
 APP_DEFAULT_BETA0 = 0.75  # the app's research default (kept)
-# Measured max |fs_model - fs_stata| with the 11 Feb 2026 document's constants: 0.003414 (categorical)
-# and 0.003373 (continuous), both at participant 838. The bound sits just above that.
+# Measured max |fs_model - fs_stata| with the 11 Feb 2026 document's constants and the
+# data-derived anchored_pb SD: 0.003341 (categorical) and 0.003301 (continuous), both at
+# participant 838 (0.003414 / 0.003373 with the sourceless 0.7984211971). The bound sits just above.
 FS_TOL_ANDREI = 3.5e-3
 KNOWN_CATEGORICAL_MISMATCHES = [848]  # model Y (fs +0.00046) vs Stata N (fs -0.00022)
-SEPTEMBER_SD_CATEGORICAL = 0.025040462
-SEPTEMBER_SD_ANCHORED_PB = 0.7984211971
+SEPTEMBER_SD_CATEGORICAL = 0.025040462   # the 11 Feb 2026 document's value (reflects the Extraversion fix)
+DATA_SD_ANCHORED_PB = 0.7971466806       # sample SD of anchored_pb over the 280 (config/decisions.yaml comment)
 
 FROZEN_COLS = [
     "participantid", "assignedallowancelevel", "income", "income_high", "income_high_cat",
@@ -139,17 +143,20 @@ def test_continuous_matches_stata_280_of_280(merged, di_params):
                                rtol=0, atol=FS_TOL_ANDREI)
 
 
-def test_composite_sds_are_september_values(stata, di_params):
-    """The fixed composite SDs are the 11 Feb 2026 document's values, not Stata's `egen std()`
-    of the reference .dta (0.0250386349 / 0.7971466830) -- the documented, accepted difference."""
+def test_composite_sds(stata, di_params):
+    """weighted_disclosure_categorical's SD is the 11 Feb 2026 document's value, not Stata's
+    `egen std()` of the reference .dta (0.0250386349) -- the documented, accepted difference
+    (the Extraversion fix). anchored_pb's SD is the data-derived value: the sample SD of the
+    .dta's own anchored_prosocial_behavior column (float32: 0.7971466830), to ~1e-8."""
     cz = di_params["composite_z_scoring"]
     assert cz["weighted_disclosure_categorical"]["sd"] == SEPTEMBER_SD_CATEGORICAL
-    assert cz["anchored_pb"]["sd"] == SEPTEMBER_SD_ANCHORED_PB
+    assert cz["anchored_pb"]["sd"] == DATA_SD_ANCHORED_PB
     # the difference from the .dta is small (< 0.2%) and is the accepted one
     assert cz["weighted_disclosure_categorical"]["sd"] == pytest.approx(
         stata["weighted_disclosure_categorical"].astype(float).std(ddof=1), rel=2e-3)
+    # computed from the data: equal to the .dta column's sample SD to float32 precision
     assert cz["anchored_pb"]["sd"] == pytest.approx(
-        stata["anchored_prosocial_behavior"].astype(float).std(ddof=1), rel=2e-3)
+        stata["anchored_prosocial_behavior"].astype(float).std(ddof=1), abs=1e-7)
 
 
 def test_september_constants(di_params):

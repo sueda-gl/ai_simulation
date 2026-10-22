@@ -17,6 +17,7 @@ import pytest
 
 from app.models import SimulationParameters
 from app.seam.build_plan import donation_anchor_weights, simulation_params_snapshot
+from app.seam.config_repo import get_config_repo
 from app.simulation import _run_metadata_dict
 from conftest import start_app
 from src.contract.plan import RunMetadata
@@ -103,9 +104,13 @@ def test_metadata_snapshot_is_a_plain_copy_of_the_page1_parameters():
 
 
 def test_anchor_weight_is_the_slider_unless_a_pinned_donation_record_overrides_it():
-    assert donation_anchor_weights({"anchor_observed_weight": 0.6}, None) == {"observed": 0.6, "predicted": 0.4}
+    repo = get_config_repo()
+    assert donation_anchor_weights({"anchor_observed_weight": 0.6}, None, repo) == {"observed": 0.6, "predicted": 0.4}
+    # absent from the session: the file's donation_default.anchor_weights.observed, not a copy
+    file_observed = repo.decision("donation_default")["anchor_weights"]["observed"]
+    assert donation_anchor_weights({}, None, repo) == {"observed": file_observed, "predicted": 1 - file_observed}
     pinned = {"stochastic_params": {"anchor_weights": {"observed": 0.9, "predicted": 0.1}}}
-    assert donation_anchor_weights({"anchor_observed_weight": 0.6}, pinned) == {"observed": 0.9, "predicted": 0.1}
+    assert donation_anchor_weights({"anchor_observed_weight": 0.6}, pinned, repo) == {"observed": 0.9, "predicted": 0.1}
 
 
 def test_readers_use_the_run_metadata_not_the_live_widgets():

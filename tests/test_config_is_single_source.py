@@ -346,6 +346,21 @@ def test_disclose_documents_missing_key_raises(dotted):
     _assert_names_decision_and_key(e, "disclose_documents", dotted)
 
 
+def test_disclose_documents_gate_probability_is_read_strictly():
+    """Without Decision 1's output the gate reads gate.probability_without_decision_1 (the
+    platform documentation's 50% rule) from the block; the key missing raises, naming it."""
+    sim = {"discount_income_threshold": 12500.0, "income_stats": {"mean": 5000.0, "sd": 1000.0}}
+    agent = {k: v for k, v in D2_AGENT.items() if k != "disclose_income"}
+    out = disclose_documents_stochastic(dict(agent), _d2_params(), np.random.default_rng(0), sim,
+                                        pop_context="documentation")
+    assert out["disclose_documents"] in ("Y", "N", "NA")
+    dotted = "gate.probability_without_decision_1"
+    with pytest.raises(MissingDecisionKey) as e:
+        disclose_documents_stochastic(dict(agent), _d2_params(dotted), np.random.default_rng(0), sim,
+                                      pop_context="documentation")
+    _assert_names_decision_and_key(e, "disclose_documents", dotted)
+
+
 D3_AGENT = {"Honesty_Humility": 3.5, "Assigned Allowance Level": 3, "Group_experiment": "NoSub",
             "TWT+Sospeso [=AW2+AX2]{Periods 1+2}": 20.0, "Study Program": "CLEAM"}
 D3_SIM = {"simulation": {"income_distribution": "lognormal", "lognormal_mu": 10.0,

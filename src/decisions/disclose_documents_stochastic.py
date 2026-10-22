@@ -30,8 +30,16 @@ CONTINUOUS income: picont = max_income - income. Because z(picont) = -z(income) 
 `income_stats` and a runtime composite-stats hook (compute_continuous_dd_stats), exactly
 mirroring how disclose_income handles continuous income.
 
-ELIGIBILITY GATE (platform logic; SEPARATE from the model): returns "NA" unless the agent
-disclosed income (disclose_income == "Y") AND has income below the discount threshold.
+ELIGIBILITY GATE (platform logic; SEPARATE from the model; one function, is_eligible):
+returns "NA" unless the agent disclosed income AND has income below the discount
+threshold. The disclosure condition is Decision 1's output when Decision 1 ran before
+(agent_state['disclose_income'] == "Y"); when Decision 2 runs WITHOUT Decision 1's output
+the platform documentation rules "If Decision 1 is not run prior to Decision 2, the
+eligibility gets determined randomly on a 50% basis" (COOPECON AI Agent Documentation
+2026-10-07, Decision 2, Eligibility Gate): the condition is then a
+Bernoulli(params['gate']['probability_without_decision_1']) draw from the agent's Decision 2
+rng, the FIRST draw of the stream (before the income lookup and the sigma draw). Until
+2026-10-22 the model ran ungated for everyone in that case.
 NOTE: the document's validation tables are the UNGATED model over all 280 participants;
 use compute_dd_score() for that. The gate is applied at simulation time only.
 """
@@ -236,6 +244,44 @@ def _apply_stochastic(dd_det: float, params: Dict, pop_context: str,
     return float(rng.normal(dd_det, sigma_scaled)), sigma_scaled
 
 
+def is_eligible(agent_state: Dict[str, Any], params: Dict[str, Any],
+                simulation_config: Optional[Dict[str, Any]], rng: np.random.Generator) -> bool:
+    """The platform's ELIGIBILITY GATE: eligible = disclosed income AND income below the
+    discount threshold. One rule for both ways Decision 2 can be reached.
+
+    The disclosure condition:
+      * Decision 1 ran before (``'disclose_income' in agent_state``: a complete run, and
+        the app's standalone Disclose Documents run, whose plan forces Decision 1 first):
+        ``agent_state['disclose_income'] == 'Y'``. No random draw.
+      * Decision 2 without Decision 1's output (a direct engine call with
+        ``single_decision='disclose_documents'``): the platform documentation's rule,
+        "If Decision 1 is not run prior to Decision 2, the eligibility gets determined
+        randomly on a 50% basis" (COOPECON AI Agent Documentation 2026-10-07, Decision 2,
+        Eligibility Gate) - a Bernoulli(``gate.probability_without_decision_1``) draw from
+        ``rng``, this agent's Decision 2 stream; the probability is read strictly from
+        config/decisions.yaml.
+
+    DRAW ORDER (part of the reproducibility contract): the Bernoulli draw is the FIRST draw
+    from ``rng``, before the income lookup (which draws only when the orchestrator has not
+    cached the income) and before the sigma draw, so an eligible agent's sigma draw is the
+    stream's next value after the gate; with Decision 1's output the gate draws nothing
+    and the sigma draw is the stream's first value, as before.
+
+    The income threshold is the same in both cases: ``income < discount_income_threshold``
+    (Page 1; 12500 when absent).
+    """
+    if 'disclose_income' in agent_state:
+        disclosed = agent_state['disclose_income'] == 'Y'
+    else:
+        probability = require(params, DECISION, 'gate', 'probability_without_decision_1')
+        disclosed = bool(rng.random() < probability)
+    if not disclosed:
+        return False
+    income = get_agent_income(agent_state, simulation_config, rng)
+    threshold = get_simulation_param(simulation_config, 'discount_income_threshold', 12500.0)
+    return income < threshold
+
+
 def _analytic_columns(score: Dict[str, Any], final_value: float, sigma_used: float) -> Dict[str, Any]:
     """Build the export/inspection columns from a computed DD score.
 
@@ -276,7 +322,9 @@ def disclose_documents_stochastic(
     Decision 2: Disclose Documents (gated, simulation entry point).
 
     Flow:
-      1. ELIGIBILITY GATE -> "NA" unless disclose_income=="Y" AND income < threshold.
+      1. ELIGIBILITY GATE (is_eligible) -> "NA" unless the agent disclosed income (Decision
+         1's output, or the documented Bernoulli(0.5) draw when Decision 1 has not run)
+         AND income < threshold.
       2. DEFAULT short-circuit -> if 'disclose_documents' is unconfigured (in
          default_decisions_list), eligible agents get a simple random Y/N (preserves the
          prior placeholder behaviour).
@@ -296,28 +344,16 @@ def disclose_documents_stochastic(
     score = compute_dd_score(agent_state, params, simulation_config)
     model_y = 1 if score['dd_deterministic'] > 0 else 0
 
-    # ---- STEP 1: ELIGIBILITY GATE (only when disclose_income was actually computed) -----
-    # In a COMBINED run, disclose_income (Decision 1) runs first and writes agent_state
-    # ['disclose_income'], so the platform gate applies: NA unless the agent disclosed income
-    # AND has income below the discount threshold.
-    # In a STANDALONE disclose_documents run (e.g. the compare-all config-selection workflow),
-    # disclose_income has NOT run, so there is no income-disclosure status to gate on. We then
-    # compute the UNGATED model for all agents - matching the document's validation tables, which
-    # apply the privacy-calculus model to every participant (high-income agents simply score ~0%).
-    if 'disclose_income' in agent_state:
-        if agent_state['disclose_income'] != 'Y':
-            agent_state['disclose_documents'] = 'NA'
-            return {'disclose_documents': 'NA', 'disclose_documents_model_y': model_y,
-                    'customer_type': get_customer_type(agent_state, simulation_config),
-                    **_analytic_columns(score, score['dd_deterministic'], 0.0)}
-
-        income = get_agent_income(agent_state, simulation_config, rng)
-        threshold = get_simulation_param(simulation_config, 'discount_income_threshold', 12500.0)
-        if income >= threshold:
-            agent_state['disclose_documents'] = 'NA'
-            return {'disclose_documents': 'NA', 'disclose_documents_model_y': model_y,
-                    'customer_type': get_customer_type(agent_state, simulation_config),
-                    **_analytic_columns(score, score['dd_deterministic'], 0.0)}
+    # ---- STEP 1: ELIGIBILITY GATE (is_eligible: one rule for both entry conditions) ------
+    # Decision 1's output when it ran before (a complete run; the app's standalone Disclose
+    # Documents run forces Decision 1 first), else the platform documentation's 50% rule as a
+    # Bernoulli draw - the first draw from this agent's Decision 2 rng - then the income
+    # threshold. The never-eligible outcome is 'NA' (exported as N/A).
+    if not is_eligible(agent_state, params, simulation_config, rng):
+        agent_state['disclose_documents'] = 'NA'
+        return {'disclose_documents': 'NA', 'disclose_documents_model_y': model_y,
+                'customer_type': get_customer_type(agent_state, simulation_config),
+                **_analytic_columns(score, score['dd_deterministic'], 0.0)}
 
     # ---- STEP 2: DEFAULT short-circuit (DD unconfigured) -------------------
     if 'disclose_documents' in sim.get('default_decisions_list', []):

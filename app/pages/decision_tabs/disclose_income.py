@@ -13,7 +13,7 @@ from app.state.saved_configs import clear_decision_config
 from app.pages.decision_execution import render_simulation_buttons
 from app.pages.decision_tabs._tab_state import restore, seed_if_absent
 from app.pages.decision_tabs._controls import (
-    EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, MODE_OPTIONS, TabControls,
+    LEVEL_LABELS, MODE_OPTIONS, TabControls,
     render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
 )
 from app.pages.decision_tabs._disclosure import (
@@ -44,6 +44,18 @@ def _load_base_sigma_overall():
 BASE_SIGMA_OVERALL = _load_base_sigma_overall()
 
 
+def _load_base_sigmas():
+    """{level: σ}: ``stochastic.sigma_quintile`` of the ``disclose_income`` block of
+    config/decisions.yaml (read-only), the way the Disclose Documents tab reads its own."""
+    stochastic = get_config_repo().decision('disclose_income')['stochastic']
+    return {str(level): float(sigma) for level, sigma in stochastic['sigma_quintile'].items()}
+
+
+# Per-quintile base σ shown by the slider labels and the metrics, loaded once at
+# import; display only (the model reads the same keys from its params).
+BASE_SIGMAS = _load_base_sigmas()
+
+
 def research_default_config():
     """The tab's research defaults: the ``disclose_income`` block of
     config/decisions.yaml, read fresh (the file is read-only).
@@ -70,7 +82,7 @@ def initialize_disclose_income_session_state():
         'di_wopb': anchor_weights['observed_prosocial'],
         'di_wpb': anchor_weights['prosocial_weight'],
         'di_sigma_enabled': True,
-        'di_scale_factor': stochastic.get('scale_factor', 1.0),
+        'di_scale_factor': stochastic['scale_factor'],   # the file's value (0.1), read strictly
         'di_sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
         'di_income_mode': config.get('income_mode', 'categorical'),
     }
@@ -81,7 +93,7 @@ def initialize_disclose_income_session_state():
 
     # Initialize quintile scale factors
     if 'di_quintile_scale_factors' not in st.session_state:
-        default_scale = stochastic.get('scale_factor', 1.0)
+        default_scale = stochastic['scale_factor']
         quintile_scales = stochastic.get('quintile_scale_factors', {
             '1': default_scale, '2': default_scale, '3': default_scale,
             '4': default_scale, '5': default_scale
@@ -111,7 +123,7 @@ DI_CONTROLS = TabControls(
     income_seed='match',
     after_income_change=lambda: clear_decision_config('disclose_income'),
     base_sigma=BASE_SIGMA_OVERALL,
-    base_sigmas=EMPIRICAL_BASE_SIGMAS,
+    base_sigmas=BASE_SIGMAS,
     level_labels=LEVEL_LABELS,
 )
 

@@ -13,6 +13,12 @@ It must also match the reference .dta's `disclosedoc_cont` / `disclosedoc_catego
 columns participant-by-participant; that test reads the file at PROF_DTA and fails when
 it is missing unless COOPECON_ALLOW_DTA_SKIP=1. The platform gate and the default
 short-circuit are in tests/test_disclose_documents_gate.py.
+
+The parity below is of the UNGATED model: every test calls compute_dd_score (the score
+alone, no gate, no draw) on each of the 280 with no Decision 1 output, as the document's
+validation tables do. The simulation entry point's eligibility gate - and its rule
+without Decision 1 (a Bernoulli(0.5) draw per the platform documentation, since
+2026-10-22) - never enters these runs, so the 280/280 parity is unaffected by it.
 """
 import os
 import copy

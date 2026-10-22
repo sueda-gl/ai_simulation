@@ -465,9 +465,11 @@ _PAGE2_MIRRORS = (
     _row("sigma_value_ui", 9.8995, P2_INIT, "page2-mirror",
          notes="display-only product of the sigma constant and the coefficient; "
                "the seam recomputes it from the one constant rather than reading it."),
-    _row("anchor_observed_weight", 0.75, MODELS_DEFAULTS, "page2-mirror",
+    _row("anchor_observed_weight", "<config/decisions.yaml donation_default.anchor_weights.observed>",
+         MODELS_DEFAULTS, "page2-mirror",
          engine_input=True,
-         notes="donation anchor split; mirrors tab_anchor_weight."),
+         notes="donation anchor split; mirrors tab_anchor_weight. Read from the file "
+               "(0.75 there); no copy of the value in the app since 2026-10-22."),
     _row("donation_sigma_strategy", "overall", DON_INIT, "page2-mirror",
          engine_input=True, notes="'overall' | 'quintile'"),
     _row("donation_quintile_scale_factors", {"1": 1.0, "2": 1.0, "3": 1.0,
@@ -522,19 +524,21 @@ _PAGE2_MIRRORS = (
 )
 
 _DI_MIRRORS = _rows((
-    ("di_intercept", "<config/decisions.yaml intercept, else 0.75>"),
-    ("di_wopb", "<anchor_weights.observed_prosocial, else 0.25>"),
-    ("di_wpb", "<anchor_weights.prosocial_weight, else 0.50>"),
+    ("di_intercept", "<config/decisions.yaml intercept>", "read strictly; a key the file lacks raises"),
+    ("di_wopb", "<anchor_weights.observed_prosocial>", "read strictly"),
+    ("di_wpb", "<anchor_weights.prosocial_weight>", "read strictly"),
     ("di_income_mode", "<config income_mode, else 'categorical'>"),
     ("di_sigma_enabled", True, "the tab default is ON, so an absent key must read True too"),
     ("di_sigma_in_copula", False),
     ("di_sigma_strategy", "<stochastic.sigma_strategy, else 'overall'>"),
-    ("di_scale_factor", "<stochastic.scale_factor, else 1.0>"),
+    ("di_scale_factor", "<stochastic.scale_factor>",
+     "read strictly (the file says 0.1; the former 'else 1.0' fallback contradicted it); "
+     "the saved-config store falls back to the same file value"),
     ("di_quintile_scale_factors", "<stochastic.quintile_scale_factors, else all scale_factor>"),
 ), DI_INIT, "page2-mirror", engine_input=True)
 
 _DD_MIRRORS = _rows((
-    ("dd_intercept", "<config/decisions.yaml intercept, else the research default>"),
+    ("dd_intercept", "<config/decisions.yaml intercept>", "read strictly; a key the file lacks raises"),
     ("dd_income_mode", "<config income_mode, else 'Categorical only'>"),
     ("dd_sigma_enabled", True, "the tab default is ON, so an absent key must read True too"),
     ("dd_sigma_in_copula", False),
@@ -551,7 +555,7 @@ _RTD_MIRRORS = _rows((
     ("rtd_quintile_scale_factors", "<config stochastic.mechanisms.*.quintile_scale_factors (all 0.5)>"),
     ("rtd_intercept_{mech}", "<config intercepts[mech], else 0.0>",
      "mech in ttp / loyalty / wtp / risk_taking / flexibility"),
-    ("rtd_flex_observed_weight", "<config flexibility_anchor.observed_weight, else 0.25>",
+    ("rtd_flex_observed_weight", "<config flexibility_anchor.observed_weight>",
      "Flexibility Anchor Mix W_OFlex (September 2026); W_CFlex = 1 - W_OFlex"),
     ("rtd_aggregation_enabled", True,
      "Section-6 rank aggregation; always on - no widget renders it (September 2026)"),
@@ -579,7 +583,7 @@ _DONATION_WIDGETS = _rows((
      "seeded by _controls.render_sigma_controls right before the slider (not by the "
      "initialiser: the key must not be written in a run that does not draw the slider); "
      "the seam multiplies the one sigma constant by this slider"),
-    ("tab_anchor_weight", "<anchor_observed_weight, else 0.75>"),
+    ("tab_anchor_weight", "<anchor_observed_weight, else the file's donation_default.anchor_weights.observed>"),
     ("donation_tab_sigma_strategy_stochastic", "<donation_sigma_strategy>"),
     ("donation_tab_sigma_q{level}_stochastic", "<donation_quintile_scale_factors[level]>"),
     ("override_categorical_intercept", "<the current categorical intercept>"),

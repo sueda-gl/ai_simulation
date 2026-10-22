@@ -529,12 +529,16 @@ def session_donation_coefficient_set(snapshot: Mapping, income_mode: str) -> Opt
     }
 
 
-def donation_anchor_weights(snapshot: Mapping, saved: Optional[Mapping]) -> Dict[str, Any]:
+def donation_anchor_weights(snapshot: Mapping, saved: Optional[Mapping],
+                            config_repo: DecisionsConfig) -> Dict[str, Any]:
     """The donation anchor weights a run uses: the tab slider
-    (``anchor_observed_weight``), overridden by a pinned donation record's.
-    Shared by the Decision 3 patch and the run metadata (the results page shows
-    the run's mix, not the live slider)."""
-    anchor_observed = snapshot.get("anchor_observed_weight", 0.75)
+    (``anchor_observed_weight``; absent from the session -> the file's
+    ``donation_default.anchor_weights.observed``), overridden by a pinned donation
+    record's. Shared by the Decision 3 patch and the run metadata (the results
+    page shows the run's mix, not the live slider)."""
+    anchor_observed = snapshot.get(
+        "anchor_observed_weight",
+        config_repo.decision("donation_default")["anchor_weights"]["observed"])
     anchor_weights: Dict[str, Any] = {"observed": anchor_observed, "predicted": 1 - anchor_observed}
     if saved:
         anchor_weights.update(((saved.get("stochastic_params") or {}).get("anchor_weights") or {}))
@@ -593,7 +597,7 @@ def build_donation_patch(snapshot: Mapping, config_repo: DecisionsConfig,
         stochastic["quintile_scale_factors"] = copy.deepcopy(snapshot["donation_quintile_scale_factors"])
 
     # Anchor weights: the tab slider, overridden by the saved record
-    anchor_weights = donation_anchor_weights(snapshot, saved)
+    anchor_weights = donation_anchor_weights(snapshot, saved, config_repo)
 
     patch: Dict[str, Any] = {
         "regression": {"income_mode": actual_inc_mode},
@@ -1329,7 +1333,7 @@ def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFa
         simulation_params=simulation_params_snapshot(snapshot.get("sim_params")),
         rtd_run_element=snapshot.get("rtd_run_element"),
         anchor_observed_weight=donation_anchor_weights(
-            snapshot, facts.saved_configs.get("donation_default"))["observed"],
+            snapshot, facts.saved_configs.get("donation_default"), config_repo)["observed"],
         # a copy: the snapshot is shallow, so its lists are the live session's
         default_decision_settings=copy.deepcopy(facts.decision_settings),
     )

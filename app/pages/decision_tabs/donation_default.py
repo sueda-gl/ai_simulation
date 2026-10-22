@@ -9,7 +9,7 @@ from app.state.widgets import drawn_in_previous_run, stateful
 from app.state.saved_configs import clear_decision_config
 from app.pages.decision_tabs._tab_state import restore, seed_if_absent
 from app.pages.decision_tabs._controls import (
-    EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, LEVELS, TabControls,
+    LEVEL_LABELS, LEVELS, TabControls,
     render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
 )
 from app.state.registry import CONTROL_KEYS
@@ -31,6 +31,18 @@ def _load_base_sigma_overall():
 # Single sigma constant: donation_default.stochastic.sigma_overall from
 # config/decisions.yaml, loaded once at import. The file is never written.
 BASE_SIGMA_OVERALL = _load_base_sigma_overall()
+
+
+def _load_base_sigmas():
+    """{level: σ}: ``stochastic.sigma_quintile`` of the ``donation_default`` block of
+    config/decisions.yaml (read-only), the way the Disclose Documents tab reads its own."""
+    stochastic = read_yaml_file(CONFIG_PATH)['donation_default']['stochastic']
+    return {str(level): float(sigma) for level, sigma in stochastic['sigma_quintile'].items()}
+
+
+# Per-quintile base σ shown by the slider labels and the metrics, loaded once at
+# import; display only (the model reads the same keys from its params).
+BASE_SIGMAS = _load_base_sigmas()
 
 
 def research_defaults():
@@ -127,13 +139,11 @@ DONATION_CONTROLS = TabControls(
     income_default='categorical only',
     income_seed=None,
     after_income_change=_after_income_mode_change,
-    strategy_header=False,
-    strategy_label="Apply σ uniformly or per income level?",
     base_sigma=BASE_SIGMA_OVERALL,
     overall_summary="{base:.2f} × coefficient",
     coefficient_fallback=1.0,
     quintile_level_fallback=1.0,
-    base_sigmas=EMPIRICAL_BASE_SIGMAS,
+    base_sigmas=BASE_SIGMAS,
     level_labels=LEVEL_LABELS,
 )
 
