@@ -6,11 +6,13 @@ renders and offers for download. The vendors list and the timestamp
 configuration come in as arguments; nothing in this module imports Streamlit or
 touches session state.
 """
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 
+from app.reports._common import (
+    group_experiment_skipping_blanks, money, money_or_missing, purchase_requests_of,
+    request_time, sort_chronologically, vendors_by_id_and_str,
+)
 from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import apply_bid_price_formatting, period_sheets, to_xlsx_bytes
 
@@ -20,17 +22,14 @@ def collect_bid_values(df):
     all_bids = []
 
     for idx, row in df.iterrows():
-        requests = row.get('purchase_requests', [])
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict):
-                    bid_val = req.get('bid_value')
-                    # Only include actual numeric bid values (not "N/A")
-                    if bid_val != 'N/A' and bid_val is not None:
-                        try:
-                            all_bids.append(float(bid_val))
-                        except (ValueError, TypeError):
-                            pass
+        for _, req in purchase_requests_of(row):
+            bid_val = req.get('bid_value')
+            # Only include actual numeric bid values (not "N/A")
+            if bid_val != 'N/A' and bid_val is not None:
+                try:
+                    all_bids.append(float(bid_val))
+                except (ValueError, TypeError):
+                    pass
 
     return all_bids
 
@@ -80,14 +79,8 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
     # Use centralized timestamp converter
     ts_converter = TimestampConverter(base_time, duration_hours, periods)
 
-    # Build vendor lookup
-    vendor_lookup = {}
-    if vendors_data:
-        for vendor in vendors_data:
-            vendor_id = vendor.get('vendor_id')
-            if vendor_id is not None:
-                vendor_lookup[vendor_id] = vendor
-                vendor_lookup[str(vendor_id)] = vendor
+    # Build vendor lookup (int and string keys)
+    vendor_lookup = vendors_by_id_and_str(vendors_data)
 
     for idx, row in df.iterrows():
         # Get agent information
@@ -99,13 +92,7 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
         study_program = row.get('Study Program', '')
 
         # Group_experiment with fallbacks
-        group_experiment = row.get('Group_experiment', '')
-        if group_experiment == '' or pd.isna(group_experiment):
-            group_experiment = row.get('group', '')
-        if group_experiment == '' or pd.isna(group_experiment):
-            group_experiment = row.get('group_experiment', '')
-        if pd.isna(group_experiment):
-            group_experiment = ''
+        group_experiment = group_experiment_skipping_blanks(row)
 
         twt_sospeso = row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan)
 
@@ -116,16 +103,8 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
         elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
             income = round(row['actual_allowance'], 2)
 
-        # Get purchase requests
-        purchase_requests = row.get('purchase_requests', [])
-        if not isinstance(purchase_requests, list):
-            continue
-
         # Process each purchase request - only include BID transactions
-        for req_idx, request in enumerate(purchase_requests):
-            if not isinstance(request, dict):
-                continue
-
+        for req_idx, request in purchase_requests_of(row):
             # Check if this is a BID transaction
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
             bid_value = request.get('bid_value', 'N/A')
@@ -157,10 +136,7 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
                     vendor_price = vendor_lookup[str(lookup_key)].get('price', np.nan)
 
             # Get timestamp
-            timestamp_hours = request.get('timestamp_hours', np.nan)
-            ts_result = ts_converter.convert(timestamp_hours)
-            period = ts_result['period']
-            request_datetime = ts_result['datetime']
+            ts_result, period, request_datetime = request_time(ts_converter, request)
 
             # Build record
             record = {
@@ -174,8 +150,8 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
                 'income': income,
                 'Vendor ID': f"Vendor {int(vendor_id)}" if vendor_id is not None and not pd.isna(vendor_id) else '',
                 # money columns are stored rounded to two decimals
-                'Vendor Price': float(f"{vendor_price:.2f}") if not pd.isna(vendor_price) else vendor_price,
-                'Bid Value': float(f"{bid_value_numeric:.2f}"),
+                'Vendor Price': money_or_missing(vendor_price),
+                'Bid Value': money(bid_value_numeric),
                 'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,
                 '_sort_datetime': request_datetime  # Hidden for sorting
@@ -183,13 +159,8 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
 
             bid_records.append(record)
 
-    # Sort by timestamp
-    if bid_records:
-        bid_records.sort(key=lambda x: x['_sort_datetime'] if isinstance(x['_sort_datetime'], datetime) else datetime.min)
-
-        # Remove hidden sort column
-        for record in bid_records:
-            record.pop('_sort_datetime', None)
+    # Sort by timestamp (drops the hidden sort column)
+    sort_chronologically(bid_records)
 
     return bid_records
 

@@ -11,6 +11,10 @@ from collections import Counter
 
 import pandas as pd
 
+from app.reports._common import (
+    column_first, group_experiment_or_blank, income_category_or_na, income_rounded_or_blank,
+    money, purchase_requests_of, rounded_or_blank,
+)
 from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import to_xlsx_bytes
 
@@ -50,17 +54,14 @@ def count_requests_by_customer_type(df):
     customer_type_counts = {'Regular': 0, 'Fixed': 0, 'Discount': 0}
 
     for idx, row in df.iterrows():
-        purchase_requests = row.get('purchase_requests', [])
-        if isinstance(purchase_requests, list):
-            for req in purchase_requests:
-                if isinstance(req, dict):
-                    customer_type = req.get('customer_type', 'regular')
-                    # Normalize to title case
-                    if isinstance(customer_type, str):
-                        customer_type = customer_type.capitalize()
+        for _, req in purchase_requests_of(row):
+            customer_type = req.get('customer_type', 'regular')
+            # Normalize to title case
+            if isinstance(customer_type, str):
+                customer_type = customer_type.capitalize()
 
-                    if customer_type in customer_type_counts:
-                        customer_type_counts[customer_type] += 1
+            if customer_type in customer_type_counts:
+                customer_type_counts[customer_type] += 1
 
     return customer_type_counts
 
@@ -154,30 +155,9 @@ def requests_and_completed_frame(period_labels, requests_per_period):
 
 
 def customer_type_quantity_stats_frame(type_quantities, periods) -> pd.DataFrame:
-    """Per-customer-type version of the purchase-quantity statistics table."""
-    type_stats_desc = type_quantities.describe()
-
-    return pd.DataFrame({
-        'Metric': ['Mean', 'Std Dev', 'Min', 'Max', 'Median', '25th %ile', '75th %ile'],
-        'Purchase Requests per Term': [
-            f"{type_stats_desc['mean']:.2f}",
-            f"{type_stats_desc['std']:.2f}",
-            f"{int(type_stats_desc['min'])}",
-            f"{int(type_stats_desc['max'])}",
-            f"{type_stats_desc['50%']:.2f}",
-            f"{type_stats_desc['25%']:.2f}",
-            f"{type_stats_desc['75%']:.2f}"
-        ],
-        'Purchase Requests per Period': [
-            f"{type_stats_desc['mean']/periods:.2f}",
-            f"{type_stats_desc['std']/periods:.2f}",
-            f"{int(type_stats_desc['min'])/periods:.2f}",
-            f"{int(type_stats_desc['max'])/periods:.2f}",
-            f"{type_stats_desc['50%']/periods:.2f}",
-            f"{type_stats_desc['25%']/periods:.2f}",
-            f"{type_stats_desc['75%']/periods:.2f}"
-        ]
-    })
+    """Per-customer-type version of the purchase-quantity statistics table (the
+    same table as `quantity_stats_frame`, for one customer type's quantities)."""
+    return quantity_stats_frame(type_quantities, periods)
 
 
 def income_category_stats_frame(df_with_category) -> pd.DataFrame:
@@ -298,35 +278,32 @@ def build_transaction_export(df, base_time, duration_hours, periods):
     ts_converter = TimestampConverter(base_time, duration_hours, periods)
 
     for idx, row in df.iterrows():
-        purchase_requests = row.get('purchase_requests', [])
-        if isinstance(purchase_requests, list):
-            for req in purchase_requests:
-                if isinstance(req, dict):
-                    # Get timestamp_hours and convert using centralized utilities
-                    timestamp_hours = req.get('timestamp_hours', 0.0)
-                    ts_result = ts_converter.convert(timestamp_hours)
+        for _, req in purchase_requests_of(row):
+            # Get timestamp_hours (0.0 when absent) and convert using centralized utilities
+            timestamp_hours = req.get('timestamp_hours', 0.0)
+            ts_result = ts_converter.convert(timestamp_hours)
 
-                    period = ts_result['period']
-                    timestamp_str = ts_result['formatted']
+            period = ts_result['period']
+            timestamp_str = ts_result['formatted']
 
-                    # the bid value is money: stored rounded to two decimals ('N/A' stays)
-                    bid_value = req.get('bid_value', 'N/A')
-                    try:
-                        bid_value = float(f"{float(bid_value):.2f}")
-                    except (ValueError, TypeError):
-                        pass
+            # the bid value is money: stored rounded to two decimals ('N/A' stays)
+            bid_value = req.get('bid_value', 'N/A')
+            try:
+                bid_value = money(float(bid_value))
+            except (ValueError, TypeError):
+                pass
 
-                    transactions.append({
-                        'transaction_id': req.get('transaction_id'),
-                        'Agent ID': req.get('customer_id', idx + 1),
-                        'vendorID': req.get('vendorID', 1),
-                        'platformProductID': req.get('platformProductID', 1),
-                        'purchase type': req.get('platformPrice', 'N/A'),
-                        'purchase_bid_value': bid_value,
-                        'Purchase Timestamp': timestamp_str,
-                        'Period': period,
-                        'timestamp_hours': timestamp_hours  # Keep for sorting
-                    })
+            transactions.append({
+                'transaction_id': req.get('transaction_id'),
+                'Agent ID': req.get('customer_id', idx + 1),
+                'vendorID': req.get('vendorID', 1),
+                'platformProductID': req.get('platformProductID', 1),
+                'purchase type': req.get('platformPrice', 'N/A'),
+                'purchase_bid_value': bid_value,
+                'Purchase Timestamp': timestamp_str,
+                'Period': period,
+                'timestamp_hours': timestamp_hours  # Keep for sorting
+            })
 
     if len(transactions) == 0:
         return None
@@ -345,8 +322,7 @@ def build_transaction_export(df, base_time, duration_hours, periods):
     # If IDs were pre-assigned (central system), use them. Otherwise generate them.
     if 'transaction_id' in transactions_df.columns and not transactions_df['transaction_id'].isnull().all():
         # Move transaction_id to first column
-        cols = ['transaction_id'] + [c for c in transactions_df.columns if c != 'transaction_id']
-        transactions_df = transactions_df[cols]
+        transactions_df = column_first(transactions_df, 'transaction_id')
     else:
         # Fallback: Generate sequential IDs if missing
         if 'transaction_id' in transactions_df.columns:
@@ -374,43 +350,15 @@ def build_agent_level_purchases(df, periods, duration_hours):
         agent_id = row.get('agent_id', idx + 1)
 
         # Agent Traits (matching disclose income export)
-        # Honesty_Humility
-        honesty_humility = ''
-        if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
-            honesty_humility = round(row['Honesty_Humility'], 2)
-
+        honesty_humility = rounded_or_blank(row, 'Honesty_Humility')
         allowance_level = row.get('Assigned Allowance Level', '')
-
-        # Study Program
         study_program = row.get('Study Program', '')
+        group_experiment = group_experiment_or_blank(row)
+        twt_sospeso = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        income = income_rounded_or_blank(row)
 
-        # Group_experiment (with fallbacks)
-        group_experiment = ''
-        if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
-            group_experiment = row['Group_experiment']
-        elif 'group' in row and pd.notna(row['group']):
-            group_experiment = row['group']
-        elif 'group_experiment' in row and pd.notna(row['group_experiment']):
-            group_experiment = row['group_experiment']
-
-        # TWT+Sospeso
-        twt_sospeso = ''
-        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
-            twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
-
-        # Income
-        income = ''
-        if 'income' in row and pd.notna(row['income']):
-            income = round(row['income'], 2)
-        elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
-            income = round(row['actual_allowance'], 2)
-
-        income_category_raw = row.get('income_category', '')
         # Handle None/NaN/empty - display as 'N/A' for Regular customers who don't have income categories
-        if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
-            income_category = 'N/A'
-        else:
-            income_category = income_category_raw
+        income_category = income_category_or_na(row)
 
         # Get customer type - try direct column first, then purchase_requests as fallback
         customer_type = ''
@@ -517,12 +465,9 @@ def collect_timestamps(df):
     all_timestamps = []
 
     for idx, row in df.iterrows():
-        requests = row.get('purchase_requests', [])
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict):
-                    if 'timestamp_hours' in req:
-                        all_timestamps.append(req['timestamp_hours'])
+        for _, req in purchase_requests_of(row):
+            if 'timestamp_hours' in req:
+                all_timestamps.append(req['timestamp_hours'])
 
     return all_timestamps
 
@@ -532,16 +477,13 @@ def count_requests_by_customer_type_lower(df):
     customer_type_counts = Counter()
 
     for idx, row in df.iterrows():
-        requests = row.get('purchase_requests', [])
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict):
-                    # Get customer_type from request (lowercase: discount, fixed, regular)
-                    customer_type = req.get('customer_type', 'regular')
-                    if isinstance(customer_type, str):
-                        # Normalize to lowercase for counting
-                        customer_type = customer_type.lower()
-                        customer_type_counts[customer_type] += 1
+        for _, req in purchase_requests_of(row):
+            # Get customer_type from request (lowercase: discount, fixed, regular)
+            customer_type = req.get('customer_type', 'regular')
+            if isinstance(customer_type, str):
+                # Normalize to lowercase for counting
+                customer_type = customer_type.lower()
+                customer_type_counts[customer_type] += 1
 
     return customer_type_counts
 

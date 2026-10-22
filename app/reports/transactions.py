@@ -19,6 +19,12 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 
+from app.reports._common import (
+    agent_id_column, column_or_blank, group_experiment_or_blank, income_category_or_na,
+    income_rounded_or_blank, money, purchase_now_price, purchase_requests_of,
+    request_customer_type, request_time, rounded_column_or_blank, rounded_or_blank,
+    vendor_price_from, vendors_by_id_and_str,
+)
 from app.reports.xlsx import apply_transaction_price_formatting, period_sheets, to_xlsx_bytes
 
 
@@ -56,15 +62,8 @@ def build_purchase_vs_bid_export(
     # reads them off the session's sim_params / vendors).
     vendors_data = vendors
 
-    # Build vendor lookup dictionary for quick access
-    vendor_lookup = {}
-    if vendors_data:
-        for vendor in vendors_data:
-            vendor_id = vendor.get('vendor_id')
-            if vendor_id is not None:
-                # Store with both int and string keys to ensure lookup works
-                vendor_lookup[vendor_id] = vendor
-                vendor_lookup[str(vendor_id)] = vendor
+    # Build vendor lookup dictionary for quick access (int and string keys)
+    vendor_lookup = vendors_by_id_and_str(vendors_data)
     
     # Centralized timestamp converter, built by the caller (it reads its base
     # time, period duration and period count off session state)
@@ -74,71 +73,28 @@ def build_purchase_vs_bid_export(
         agent_id = row.get('agent_id', idx + 1)
         
         # Agent Traits (matching disclose income export)
-        # Honesty_Humility
-        honesty_humility = ''
-        if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
-            honesty_humility = round(row['Honesty_Humility'], 2)
-        
+        honesty_humility = rounded_or_blank(row, 'Honesty_Humility')
         allowance_level = row.get('Assigned Allowance Level', np.nan)
-        
-        # Study Program
         study_program = row.get('Study Program', '')
-        
-        # Group_experiment (with fallbacks)
-        group_experiment = ''
-        if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
-            group_experiment = row['Group_experiment']
-        elif 'group' in row and pd.notna(row['group']):
-            group_experiment = row['group']
-        elif 'group_experiment' in row and pd.notna(row['group_experiment']):
-            group_experiment = row['group_experiment']
-        
-        # TWT+Sospeso
-        twt_sospeso = ''
-        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
-            twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
-        
-        # Income
-        income = ''
-        if 'income' in row and pd.notna(row['income']):
-            income = round(row['income'], 2)
-        elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
-            income = round(row['actual_allowance'], 2)
+        group_experiment = group_experiment_or_blank(row)
+        twt_sospeso = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        income = income_rounded_or_blank(row)
         
         # Income category - Regular customers don't have this (assigned in Decision 6 only for Discount/Fixed)
-        income_category_raw = row.get('income_category', np.nan)
         # Use 'N/A' for empty/missing income_category (e.g., regular customers who didn't disclose income)
-        if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
-            income_category = 'N/A'
-        else:
-            income_category = income_category_raw
-        
-        # Get purchase requests
-        purchase_requests = row.get('purchase_requests', [])
-        if not isinstance(purchase_requests, list):
-            continue
+        income_category = income_category_or_na(row)
         
         # Process each purchase request
-        for req_idx, request in enumerate(purchase_requests):
-            if not isinstance(request, dict):
-                continue
-            
+        for _, request in purchase_requests_of(row):
             # Get customer type from request
-            customer_type = request.get('customer_type', request.get('customerType', 'regular'))
-            if isinstance(customer_type, str):
-                customer_type_display = customer_type.capitalize()
-            else:
-                customer_type_display = 'Regular'
+            customer_type, customer_type_display = request_customer_type(request)
             
             # Only include regular customers for this export
             if customer_type.lower() != 'regular':
                 continue
             
             # Get timestamp and convert using centralized utilities
-            timestamp_hours = request.get('timestamp_hours', np.nan)
-            ts_result = ts_converter.convert(timestamp_hours)
-            
-            period = ts_result['period']
+            ts_result, period, _ = request_time(ts_converter, request)
             timestamp_str = ts_result['formatted']
             sort_key = ts_result['timestamp_hours'] if not pd.isna(ts_result['timestamp_hours']) else 0.0
             
@@ -146,22 +102,9 @@ def build_purchase_vs_bid_export(
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
             bid_value = request.get('bid_value', 'N/A')
             
-            # Get vendor price for this request's vendor
+            # Get vendor price for this request's vendor (float 1.0 is looked up as vendor 1)
             vendor_id = request.get('vendorID', request.get('vendor_id'))
-            
-            # Normalize vendor_id for lookup (handle float 1.0 -> int 1)
-            lookup_key = vendor_id
-            if isinstance(vendor_id, float) and vendor_id.is_integer():
-                lookup_key = int(vendor_id)
-                
-            vendor_price = None
-            if lookup_key is not None:
-                # Try direct lookup first
-                if lookup_key in vendor_lookup:
-                    vendor_price = vendor_lookup[lookup_key].get('price')
-                # Try string lookup if not found
-                elif str(lookup_key) in vendor_lookup:
-                    vendor_price = vendor_lookup[str(lookup_key)].get('price')
+            vendor_price = vendor_price_from(vendor_lookup, vendor_id)
             
             # Get Transaction ID (pre-assigned by central system)
             transaction_id = request.get('transaction_id')
@@ -169,12 +112,10 @@ def build_purchase_vs_bid_export(
             # Calculate customer price based on vendor's actual price
             # Formula: Customer Price (PN) = (1 + price_range) × (1 + platform_markup) × vendor_price
             if vendor_price is not None:
-                baseline_price = (1 + platform_markup) * vendor_price
-                pn_price = (1 + price_range) * baseline_price
+                pn_price = purchase_now_price(vendor_price, platform_markup, price_range)
             else:
                 # Fallback to market_price if vendor price not available
-                baseline_price = (1 + platform_markup) * market_price
-                pn_price = (1 + price_range) * baseline_price
+                pn_price = purchase_now_price(market_price, platform_markup, price_range)
             
             # Only include PN and BID for regular customers
             if platform_price == 'PN':
@@ -192,7 +133,7 @@ def build_purchase_vs_bid_export(
             
             # Show price for both PN and BID customers
             # Format to 2 decimal places for display
-            display_customer_price = float(f"{customer_price:.2f}")
+            display_customer_price = money(customer_price)
             
             # Build record
             record = {
@@ -208,7 +149,7 @@ def build_purchase_vs_bid_export(
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
                 'Vendor': vendor_id,
-                'Vendor Price': float(f"{vendor_price:.2f}") if vendor_price is not None else vendor_price,  # money: two decimals
+                'Vendor Price': money(vendor_price) if vendor_price is not None else vendor_price,  # money: two decimals
                 'Purchase Timestamp': timestamp_str,
                 'Period': period,
                 'Customer Price': display_customer_price,
@@ -244,15 +185,12 @@ def purchase_vs_bid_request_counts(df):
     regular_requests = []
 
     for idx, row in df.iterrows():
-        requests = row.get('purchase_requests', [])
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict):
-                    platform_price = req.get('platformPrice')
+        for _, req in purchase_requests_of(row):
+            platform_price = req.get('platformPrice')
 
-                    # Count only PN and BID for regular customers
-                    if platform_price in ['PN', 'BID']:
-                        regular_requests.append(platform_price)
+            # Count only PN and BID for regular customers
+            if platform_price in ['PN', 'BID']:
+                regular_requests.append(platform_price)
 
     # Count regular customer choices
     regular_counts = Counter(regular_requests)
@@ -350,57 +288,15 @@ def prepare_priority_lists_export(df: pd.DataFrame, decision_data) -> pd.DataFra
     # Create export dataframe
     export_df = pd.DataFrame()
     
-    # Agent ID
-    if 'agent_id' in df.columns:
-        export_df['Agent ID'] = df['agent_id']
-    elif 'index' in df.columns:
-        export_df['Agent ID'] = df['index'] + 1  # Convert 0-based to 1-based
-    else:
-        export_df['Agent ID'] = range(1, len(df) + 1)
-    
-    # Honesty_Humility
-    if 'Honesty_Humility' in df.columns:
-        export_df['Honesty_Humility'] = df['Honesty_Humility'].round(2)
-    else:
-        export_df['Honesty_Humility'] = ''
-    
-    # Assigned Allowance Level
-    if 'Assigned Allowance Level' in df.columns:
-        export_df['Assigned Allowance Level'] = df['Assigned Allowance Level']
-    elif 'income_category' in df.columns:
-        export_df['Assigned Allowance Level'] = df['income_category']
-    else:
-        export_df['Assigned Allowance Level'] = ''
-    
-    # Study Program
-    if 'Study Program' in df.columns:
-        export_df['Study Program'] = df['Study Program']
-    else:
-        export_df['Study Program'] = ''
-    
-    # Group_experiment
-    if 'Group_experiment' in df.columns:
-        export_df['Group_experiment'] = df['Group_experiment']
-    elif 'group' in df.columns:
-        export_df['Group_experiment'] = df['group']
-    elif 'group_experiment' in df.columns:
-        export_df['Group_experiment'] = df['group_experiment']
-    else:
-        export_df['Group_experiment'] = ''
-    
-    # TWT+Sospeso
-    if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
-        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'].round(2)
-    else:
-        export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
-    
-    # Income
-    if 'income' in df.columns:
-        export_df['income'] = df['income'].round(2)
-    elif 'actual_allowance' in df.columns:
-        export_df['income'] = df['actual_allowance'].round(2)
-    else:
-        export_df['income'] = ''
+    # Agent ID, then the agent traits (first column present, else blank)
+    export_df['Agent ID'] = agent_id_column(df)
+    export_df['Honesty_Humility'] = rounded_column_or_blank(df, 'Honesty_Humility')
+    export_df['Assigned Allowance Level'] = column_or_blank(df, 'Assigned Allowance Level', 'income_category')
+    export_df['Study Program'] = column_or_blank(df, 'Study Program')
+    export_df['Group_experiment'] = column_or_blank(df, 'Group_experiment', 'group', 'group_experiment')
+    export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_column_or_blank(
+        df, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+    export_df['income'] = rounded_column_or_blank(df, 'income', 'actual_allowance')
     
     # Priority columns (1-5)
     for priority_pos in range(1, 6):

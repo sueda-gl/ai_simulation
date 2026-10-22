@@ -7,6 +7,11 @@ bounds are parameters, so nothing here imports Streamlit or touches session stat
 import numpy as np
 import pandas as pd
 
+from app.reports._common import (
+    all_present, documents_disclosed_code, income_category_or_na, income_disclosed_flag,
+    money, money_or_missing, proximity_scores_or_empty, purchase_requests_of,
+    rejected_default_priorities, round2_or_nan,
+)
 from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
 
 
@@ -20,6 +25,11 @@ def _vendor_score(vendor, weights, proximity, price_min, price_max):
         vendor, weights, float(proximity),
         price_min_config=price_min, price_max_config=price_max,
     )['integrated_score']
+
+
+def _option_list_or_na(options):
+    """An option list as 'a > b > c' (option numbers); 'N/A' when it is not a list."""
+    return ' > '.join(str(o) for o in options) if isinstance(options, list) else 'N/A'
 
 
 def build_agent_level_dataframe(
@@ -108,10 +118,9 @@ def build_agent_level_dataframe(
         if pd.isna(income) or income is None:
             income = row.get('actual_allowance', np.nan)
         
-        agent_record['income'] = round(income, 2) if not pd.isna(income) else np.nan
+        agent_record['income'] = round2_or_nan(income)
         # Income category - use 'N/A' for empty/missing values (e.g., regular customers who didn't disclose income)
-        income_category_raw = row.get('income_category', np.nan)
-        agent_record['income_category'] = 'N/A' if (pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None) else income_category_raw
+        agent_record['income_category'] = income_category_or_na(row)
 
         # Disclose Income calculated columns
         # Check if disclose_income was actually calculated (not defaulted) by checking for calculated columns
@@ -149,16 +158,12 @@ def build_agent_level_dataframe(
             agent_record['DI_i'] = 'N/A'
 
         # Decision 1: Disclose Income (convert Y/N to 1/0 for consistency)
-        disclose_income_raw = row.get('disclose_income', '')
-        agent_record['disclose_income'] = 1 if disclose_income_raw == 'Y' else 0
+        agent_record['disclose_income'] = income_disclosed_flag(row)
         
         # Decision 2: Disclose Documents & Customer Type
         # Three-state outcome: Y=disclosed (1), N=asked-but-declined (0), NA=never-eligible (gated out).
         # Preserve NA so the qualified-disclosure denominator is recoverable (do NOT collapse N and NA to 0).
-        disclose_documents_raw = row.get('disclose_documents', '')
-        agent_record['disclose_documents'] = (
-            1 if disclose_documents_raw == 'Y' else (0 if disclose_documents_raw == 'N' else 'NA')
-        )
+        agent_record['disclose_documents'] = documents_disclosed_code(row)
         agent_record['customer_type'] = row.get('customer_type', '')
         
         # Decision 3: Donation Default (exclude raw/intermediate columns)
@@ -166,24 +171,8 @@ def build_agent_level_dataframe(
         # NOTE: donation_default_raw_pos is intentionally excluded
         
         # Decision 4: Rejected Transaction Defaults - Split list into 5 priority columns
-        rejected_defaults = row.get('rejected_transaction_defaults', '')
-        
-        # Parse if it's a string representation of a list
-        if isinstance(rejected_defaults, str) and rejected_defaults.startswith('['):
-            try:
-                import ast
-                rejected_defaults = ast.literal_eval(rejected_defaults)
-            except:
-                rejected_defaults = []
-        elif not isinstance(rejected_defaults, list):
-            rejected_defaults = [rejected_defaults] if rejected_defaults else []
-        
-        # Create 5 priority columns
-        for priority_num in range(1, 6):
-            if isinstance(rejected_defaults, list) and len(rejected_defaults) >= priority_num:
-                agent_record[f'rejected_transaction_{priority_num}_choice'] = rejected_defaults[priority_num - 1]
-            else:
-                agent_record[f'rejected_transaction_{priority_num}_choice'] = 'N/A'
+        for priority_num, choice in enumerate(rejected_default_priorities(row), start=1):
+            agent_record[f'rejected_transaction_{priority_num}_choice'] = choice
 
         # Decision 4 MODEL outputs (five trait-based sub-decision elements + the
         # Section-6 rank aggregation; present only when Decision 4 ran as a custom
@@ -231,25 +220,18 @@ def build_agent_level_dataframe(
                 agent_record[f'{export_name}_segment_deterministic'] = row.get(
                     f'rtd_{mech_col}_segment_deterministic', np.nan)
                 agent_record[f'{export_name}_segment'] = row.get(f'rtd_{mech_col}_segment', np.nan)
-                ranking = row.get(f'rtd_{mech_col}_ranking', None)
-                agent_record[f'{export_name}_ranking'] = (
-                    ' > '.join(str(o) for o in ranking) if isinstance(ranking, list) else 'N/A'
-                )
+                agent_record[f'{export_name}_ranking'] = _option_list_or_na(
+                    row.get(f'rtd_{mech_col}_ranking', None))
             # -- 6. Section-6 rank aggregation: the integrated default list (option
             # numbers, after the list-length and Option-5 truncation), the integrated
             # ranking it was cut from, and the tie-break diagnostics. Headers say
             # "integrated", never "consensus".
             if 'rtd_default_list' in row:
-                default_list = row.get('rtd_default_list', None)
-                agent_record['rtd_default_list'] = (
-                    ' > '.join(str(o) for o in default_list) if isinstance(default_list, list) else 'N/A'
-                )
-                consensus = row.get('rtd_consensus_ranking', None)
+                agent_record['rtd_default_list'] = _option_list_or_na(row.get('rtd_default_list', None))
                 # Exported as rtd_integrated_ranking ("integrated", not "consensus", in
                 # the Excel outputs); the model columns keep their names.
-                agent_record['rtd_integrated_ranking'] = (
-                    ' > '.join(str(o) for o in consensus) if isinstance(consensus, list) else 'N/A'
-                )
+                agent_record['rtd_integrated_ranking'] = _option_list_or_na(
+                    row.get('rtd_consensus_ranking', None))
                 agent_record['rtd_integrated_kemeny_status'] = row.get('rtd_consensus_kemeny_status', 'N/A')
                 agent_record['rtd_integrated_n_kemeny_optimal'] = row.get('rtd_consensus_n_kemeny_optimal', np.nan)
                 agent_record['rtd_integrated_is_kemeny_optimal'] = row.get('rtd_consensus_is_kemeny_optimal', 'N/A')
@@ -286,14 +268,7 @@ def build_agent_level_dataframe(
         agent_record['most_selected_vendor'] = row.get('preferred_vendor', np.nan)
         
         # Vendor proximity scores
-        proximity_scores = row.get('vendor_proximity_scores', {})
-        if not isinstance(proximity_scores, dict):
-            proximity_scores = {}
-            
-        # Get purchase requests for weighted averages
-        purchase_requests = row.get('purchase_requests', [])
-        if not isinstance(purchase_requests, list):
-            purchase_requests = []
+        proximity_scores = proximity_scores_or_empty(row)
             
         # Calculate Weighted Averages based on Purchase Requests
         # If requests exist, average is weighted by the number of requests to each vendor
@@ -314,43 +289,41 @@ def build_agent_level_dataframe(
                         return v
             return None
 
-        # 1. Try to calculate from actual requests
-        if purchase_requests:
-            for req in purchase_requests:
-                if isinstance(req, dict):
-                    v_id = req.get('vendorID')
-                    vendor = get_vendor_by_id(v_id)
-                    
-                    if vendor:
-                        count_requests += 1
-                        
-                        # Attributes
-                        v_price = vendor.get('price', np.nan)
-                        v_quality = vendor.get('quality', np.nan)
-                        v_sust = vendor.get('sustainability', np.nan)
-                        
-                        # Proximity (specific to this agent-vendor pair)
-                        v_prox = np.nan
-                        if v_id is not None:
-                            v_prox = proximity_scores.get(str(int(v_id)), np.nan)
-                            if pd.isna(v_prox) and str(v_id) in proximity_scores:
-                                v_prox = proximity_scores[str(v_id)]
-                        
-                        # Add to sums (handle NaNs by skipping or treating as 0? skipping attribute specific sums)
-                        if not pd.isna(v_price): sum_price += v_price
-                        if not pd.isna(v_quality): sum_quality += v_quality
-                        if not pd.isna(v_sust): sum_sust += v_sust
-                        if not pd.isna(v_prox): sum_prox += float(v_prox)
-                        
-                        # Score of this transaction's vendor, with the shared formula
-                        if not (pd.isna(v_price) or pd.isna(v_quality) or pd.isna(v_sust) or pd.isna(v_prox)):
-                            sum_score += _vendor_score(vendor, vendor_weights, v_prox,
-                                                       price_min_config, price_max_config)
+        # 1. Try to calculate from actual requests (the agent's purchase requests)
+        for _, req in purchase_requests_of(row):
+            v_id = req.get('vendorID')
+            vendor = get_vendor_by_id(v_id)
+
+            if vendor:
+                count_requests += 1
+
+                # Attributes
+                v_price = vendor.get('price', np.nan)
+                v_quality = vendor.get('quality', np.nan)
+                v_sust = vendor.get('sustainability', np.nan)
+
+                # Proximity (specific to this agent-vendor pair)
+                v_prox = np.nan
+                if v_id is not None:
+                    v_prox = proximity_scores.get(str(int(v_id)), np.nan)
+                    if pd.isna(v_prox) and str(v_id) in proximity_scores:
+                        v_prox = proximity_scores[str(v_id)]
+
+                # Add to sums (handle NaNs by skipping or treating as 0? skipping attribute specific sums)
+                if not pd.isna(v_price): sum_price += v_price
+                if not pd.isna(v_quality): sum_quality += v_quality
+                if not pd.isna(v_sust): sum_sust += v_sust
+                if not pd.isna(v_prox): sum_prox += float(v_prox)
+
+                # Score of this transaction's vendor, with the shared formula
+                if all_present(v_price, v_quality, v_sust, v_prox):
+                    sum_score += _vendor_score(vendor, vendor_weights, v_prox,
+                                               price_min_config, price_max_config)
 
         # 2. Assign Averages (avg_vendor_price is money: stored rounded to two decimals)
         if count_requests > 0:
             agent_record['avg_vendor_proximity'] = sum_prox / count_requests
-            agent_record['avg_vendor_price'] = float(f"{sum_price / count_requests:.2f}")
+            agent_record['avg_vendor_price'] = money(sum_price / count_requests)
             agent_record['avg_vendor_quality'] = sum_quality / count_requests
             agent_record['avg_vendor_sustainability'] = sum_sust / count_requests
             agent_record['avg_vendor_score'] = sum_score / count_requests
@@ -369,13 +342,13 @@ def build_agent_level_dataframe(
                 if pref_vendor_id is not None:
                     v_prox = proximity_scores.get(str(int(pref_vendor_id)), np.nan)
                 
-                agent_record['avg_vendor_price'] = float(f"{v_price:.2f}") if not pd.isna(v_price) else v_price
+                agent_record['avg_vendor_price'] = money_or_missing(v_price)
                 agent_record['avg_vendor_quality'] = v_quality
                 agent_record['avg_vendor_sustainability'] = v_sust
                 agent_record['avg_vendor_proximity'] = float(v_prox) if not pd.isna(v_prox) else np.nan
                 
                 # Calculate single score
-                if not (pd.isna(v_price) or pd.isna(v_quality) or pd.isna(v_sust) or pd.isna(v_prox)):
+                if all_present(v_price, v_quality, v_sust, v_prox):
                     agent_record['avg_vendor_score'] = _vendor_score(
                         vendor, vendor_weights, v_prox, price_min_config, price_max_config)
                 else:

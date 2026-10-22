@@ -6,11 +6,14 @@ renders and offers for download. The pricing parameters, the vendors list and
 the configured price bounds are explicit arguments; nothing in this module
 imports Streamlit or touches session state.
 """
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 
+from app.reports._common import (
+    all_present, group_experiment_or_blank, income_rounded_or_blank, money, money_or_missing,
+    number_chronologically, proximity_scores_or_empty, purchase_now_price, purchase_requests_of,
+    request_time, request_vendor, rounded_or_blank, vendor_weights_or_equal, vendors_by_id,
+)
 from app.reports.xlsx import apply_vendor_price_formatting, period_sheets, to_xlsx_bytes
 from app.reports.timestamps import TimestampConverter
 from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
@@ -86,11 +89,7 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
     ts_converter = TimestampConverter(base_time, duration_hours, periods)
 
     # Build vendor lookup dictionary for quick access
-    vendor_lookup = {}
-    if vendors_data:
-        for vendor in vendors_data:
-            vendor_id = vendor.get('vendor_id')
-            vendor_lookup[vendor_id] = vendor
+    vendor_lookup = vendors_by_id(vendors_data)
 
     # Iterate through each agent
     for idx, row in df.iterrows():
@@ -98,73 +97,28 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
         agent_id = row.get('agent_id', idx + 1)
 
         # Agent Traits (matching disclose income export)
-        # Honesty_Humility
-        honesty_humility = ''
-        if 'Honesty_Humility' in row and pd.notna(row['Honesty_Humility']):
-            honesty_humility = round(row['Honesty_Humility'], 2)
-
+        honesty_humility = rounded_or_blank(row, 'Honesty_Humility')
         allowance_level = row.get('Assigned Allowance Level', np.nan)
-
-        # Study Program
         study_program = row.get('Study Program', '')
-
-        # Group_experiment (with fallbacks)
-        group_experiment = ''
-        if 'Group_experiment' in row and pd.notna(row['Group_experiment']):
-            group_experiment = row['Group_experiment']
-        elif 'group' in row and pd.notna(row['group']):
-            group_experiment = row['group']
-        elif 'group_experiment' in row and pd.notna(row['group_experiment']):
-            group_experiment = row['group_experiment']
-
-        # TWT+Sospeso
-        twt_sospeso = ''
-        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in row and pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']):
-            twt_sospeso = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2)
-
-        # Income
-        income = ''
-        if 'income' in row and pd.notna(row['income']):
-            income = round(row['income'], 2)
-        elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
-            income = round(row['actual_allowance'], 2)
+        group_experiment = group_experiment_or_blank(row)
+        twt_sospeso = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        income = income_rounded_or_blank(row)
 
         # Get vendor proximity scores for this agent
-        proximity_scores = row.get('vendor_proximity_scores', {})
-        if not isinstance(proximity_scores, dict):
-            proximity_scores = {}
+        proximity_scores = proximity_scores_or_empty(row)
 
         # Get vendor choice weights for score calculation
-        vendor_weights = row.get('vendor_choice_weights', {})
-        if not isinstance(vendor_weights, dict):
-            vendor_weights = {
-                'price': 0.25,
-                'quality': 0.25,
-                'proximity': 0.25,
-                'sustainability': 0.25
-            }
+        vendor_weights = vendor_weights_or_equal(row)
 
-        # Get purchase requests for this agent
-        purchase_requests = row.get('purchase_requests', [])
-        if not isinstance(purchase_requests, list):
-            continue
-
-        # Process each purchase request
-        for req_idx, request in enumerate(purchase_requests):
-            if not isinstance(request, dict):
-                continue
-
+        # Process each purchase request of this agent
+        for req_idx, request in purchase_requests_of(row):
             # Extract request data
             # Use global transaction_id assigned by simulation.py (snake_case), with fallback
             transaction_id = request.get('transaction_id', request.get('transactionID', request.get('request_id', f"T{agent_id}_{req_idx+1}")))
             vendor_id = request.get('vendorID', np.nan)
 
             # Get timestamp and convert using centralized utilities
-            timestamp_hours = request.get('timestamp_hours', np.nan)
-            ts_result = ts_converter.convert(timestamp_hours)
-
-            period = ts_result['period']
-            request_datetime = ts_result['datetime']
+            ts_result, period, request_datetime = request_time(ts_converter, request)
 
             # Determine customer type from request or agent
             customer_type = request.get('customer_type', request.get('customerType', 'Regular'))
@@ -172,30 +126,19 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
             if isinstance(customer_type, str):
                 customer_type = customer_type.capitalize()
 
-            # Get vendor attributes
-            vendor_price = np.nan
-            vendor_quality = np.nan
-            vendor_sustainability = np.nan
-            vendor_proximity = np.nan
+            # Get vendor attributes (and the proximity for this agent-vendor pair)
             vendor_integrated_score = np.nan
+            vendor, vendor_price, vendor_quality, vendor_sustainability, vendor_proximity = \
+                request_vendor(vendor_lookup, vendor_id, proximity_scores)
 
-            if not pd.isna(vendor_id) and vendor_id in vendor_lookup:
-                vendor = vendor_lookup[vendor_id]
-                vendor_price = vendor.get('price', np.nan)
-                vendor_quality = vendor.get('quality', np.nan)
-                vendor_sustainability = vendor.get('sustainability', np.nan)
-
-                # Get proximity for this agent-vendor pair
-                vendor_proximity = proximity_scores.get(str(int(vendor_id)), np.nan)
-
-                # Calculate vendor integrated score
-                if not pd.isna(vendor_price) and not pd.isna(vendor_quality) and \
-                   not pd.isna(vendor_sustainability) and not pd.isna(vendor_proximity):
-                    vendor_integrated_score = calculate_vendor_score(
-                        vendor, vendor_weights, vendor_proximity, vendors_data,
-                        price_min_config=price_min_config,
-                        price_max_config=price_max_config
-                    )
+            # Calculate vendor integrated score
+            if vendor is not None and all_present(
+                    vendor_price, vendor_quality, vendor_sustainability, vendor_proximity):
+                vendor_integrated_score = calculate_vendor_score(
+                    vendor, vendor_weights, vendor_proximity, vendors_data,
+                    price_min_config=price_min_config,
+                    price_max_config=price_max_config
+                )
 
             # Get platform price type for this request
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
@@ -207,8 +150,7 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
             if not pd.isna(vendor_price):
                 if platform_price == 'PN':
                     # PN price: apply both platform markup and price range
-                    baseline_price = (1 + platform_markup) * vendor_price
-                    customer_paid_price = (1 + price_range) * baseline_price
+                    customer_paid_price = purchase_now_price(vendor_price, platform_markup, price_range)
                 elif platform_price == 'BID' and bid_value != 'N/A':
                     # BID: customer pays their bid value
                     try:
@@ -219,7 +161,7 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
             # Format for display - show 2 decimal places for both PN and BID
             # For Fixed/Discount customers, show 'N/A' as their pricing uses a different mechanism
             if (platform_price == 'PN' or platform_price == 'BID') and not pd.isna(customer_paid_price):
-                display_customer_paid_price = float(f"{customer_paid_price:.2f}")
+                display_customer_paid_price = money(customer_paid_price)
             else:
                 # N/A for Fixed/Discount customers (income-based pricing not calculated here)
                 display_customer_paid_price = 'N/A'
@@ -252,7 +194,7 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
                 'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,
                 'Selected Vendor': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else np.nan,
-                'Vendor Price': float(f"{vendor_price:.2f}") if not pd.isna(vendor_price) else vendor_price,  # money: two decimals
+                'Vendor Price': money_or_missing(vendor_price),  # money: two decimals
                 'Quality': vendor_quality,
                 'Sustainability': vendor_sustainability,
                 'Proximity': vendor_proximity,
@@ -263,15 +205,9 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
 
             purchase_request_records.append(record)
 
-    # Sort records by timestamp in chronological order
-    if purchase_request_records:
-        purchase_request_records.sort(key=lambda x: x.get('_sort_datetime', datetime.min))
-
-        # Assign unique Purchase Request IDs (1, 2, 3, ...) based on chronological order
-        # This ensures each request has a unique ID that reflects its position in the timeline
-        for idx, record in enumerate(purchase_request_records):
-            record['Purchase Request ID'] = idx + 1
-            record.pop('_sort_datetime', None)  # Remove temporary sorting column
+    # Sort records by timestamp in chronological order and assign unique Purchase
+    # Request IDs (1, 2, 3, ...) in that order (the temporary sort column is dropped)
+    number_chronologically(purchase_request_records)
 
     return purchase_request_records
 
@@ -301,10 +237,7 @@ def build_vendor_choice_weights_export(df, decision_data):
             row_data['Agent ID'] = idx + 1
 
         # Add Honesty_Humility
-        if 'Honesty_Humility' in df.columns:
-            row_data['Honesty_Humility'] = round(row['Honesty_Humility'], 2) if pd.notna(row['Honesty_Humility']) else ''
-        else:
-            row_data['Honesty_Humility'] = ''
+        row_data['Honesty_Humility'] = rounded_or_blank(row, 'Honesty_Humility')
 
         # Add Assigned Allowance Level
         if 'Assigned Allowance Level' in df.columns:
@@ -331,10 +264,7 @@ def build_vendor_choice_weights_export(df, decision_data):
             row_data['Group_experiment'] = ''
 
         # Add TWT+Sospeso
-        if 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}' in df.columns:
-            row_data['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = round(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'], 2) if pd.notna(row['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']) else ''
-        else:
-            row_data['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = ''
+        row_data['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
 
         # Add income
         if 'income' in df.columns:
@@ -372,6 +302,32 @@ def vendor_choice_weights_xlsx(export_df: pd.DataFrame) -> bytes:
 # ---------------------------------------------------------------------------
 # vendor selection statistics
 # ---------------------------------------------------------------------------
+def _is_completed(req):
+    """Whether a purchase request counts as a completed transaction
+    ('transactionCompleted', else 'completed', else 'transaction_completed'; True
+    when the request carries none of them)."""
+    completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
+    return completed or completed == 1
+
+
+def _agents_for_vendor(vendor_counts, vid):
+    """Agents per vendor `vid` from the value counts (looked up as given, then as a float)."""
+    count = 0
+    if vid in vendor_counts.index:
+        count = vendor_counts[vid]
+    elif float(vid) in vendor_counts.index:
+        count = vendor_counts[float(vid)]
+    return count
+
+
+def _count_for_vendor(counts, vid):
+    """counts[vid], else counts[float(vid)] when the first gives 0, else 0."""
+    count = counts.get(vid, 0)
+    if count == 0:
+        count = counts.get(float(vid), 0)
+    return count
+
+
 def count_vendor_requests(df):
     """Purchase-request and completed-transaction counts, overall and per vendor."""
     total_purchase_requests = 0
@@ -393,8 +349,7 @@ def count_vendor_requests(df):
                             vendor_pr_counts[vendor_id] = vendor_pr_counts.get(vendor_id, 0) + 1
 
                             # Count transaction if completed
-                            completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
-                            if completed or completed == 1:
+                            if _is_completed(req):
                                 total_transactions_completed += 1
                                 vendor_tx_counts[vendor_id] = vendor_tx_counts.get(vendor_id, 0) + 1
 
@@ -465,39 +420,15 @@ def vendor_agent_count_series(vendor_ids, vendor_counts):
     
     for vid in vendor_ids:
         chart_x.append(f"Vendor {vid}")
-        
-        # Get count
-        count = 0
-        if vid in vendor_counts.index:
-            count = vendor_counts[vid]
-        elif float(vid) in vendor_counts.index:
-            count = vendor_counts[float(vid)]
-        chart_y.append(count)
+        chart_y.append(_agents_for_vendor(vendor_counts, vid))
 
     return chart_x, chart_y
 
 
 def count_requests_per_vendor(df):
-    """Per-vendor purchase-request / transaction counts used by the breakdown tables."""
-    vendor_purchase_requests = {}
-    vendor_transactions = {}
-
-    if 'purchase_requests' in df.columns:
-        for idx, row in df.iterrows():
-            requests = row.get('purchase_requests', [])
-            if isinstance(requests, list):
-                for req in requests:
-                    if isinstance(req, dict):
-                        vendor_id = req.get('vendorID')
-                        if not pd.isna(vendor_id):
-                            # Count purchase request
-                            vendor_purchase_requests[vendor_id] = vendor_purchase_requests.get(vendor_id, 0) + 1
-
-                            # Count transaction if completed
-                            completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
-                            if completed or completed == 1:
-                                vendor_transactions[vendor_id] = vendor_transactions.get(vendor_id, 0) + 1
-
+    """Per-vendor purchase-request / transaction counts used by the breakdown tables
+    (the per-vendor half of `count_vendor_requests`)."""
+    _, _, vendor_purchase_requests, vendor_transactions = count_vendor_requests(df)
     return vendor_purchase_requests, vendor_transactions
 
 
@@ -520,22 +451,9 @@ def build_selection_breakdown(vendor_ids, vendor_counts, vendor_purchase_request
     """Rows of the '📈 Selection Breakdown' table."""
     breakdown_data = []
     for vid in vendor_ids:
-        # Get agent count
-        agent_count = 0
-        if vid in vendor_counts.index:
-            agent_count = vendor_counts[vid]
-        elif float(vid) in vendor_counts.index:
-            agent_count = vendor_counts[float(vid)]
-
-        # Get request count
-        pr_count = vendor_purchase_requests.get(vid, 0)
-        if pr_count == 0:
-            pr_count = vendor_purchase_requests.get(float(vid), 0)
-
-        # Get transaction count
-        tx_count = vendor_transactions.get(vid, 0)
-        if tx_count == 0:
-            tx_count = vendor_transactions.get(float(vid), 0)
+        agent_count = _agents_for_vendor(vendor_counts, vid)
+        pr_count = _count_for_vendor(vendor_purchase_requests, vid)
+        tx_count = _count_for_vendor(vendor_transactions, vid)
 
         # Calculate completion rate for this vendor (% of requests completed)
         completion_rate = f"{(tx_count/pr_count)*100:.1f}%" if pr_count > 0 else "0.0%"
@@ -561,52 +479,48 @@ def collect_period_data(df, duration_hours):
     period_data = {}
 
     for idx, row in df.iterrows():
-        requests = row.get('purchase_requests', [])
         agent_id = row.get('agent_id', idx + 1)
 
-        if isinstance(requests, list):
-            for req in requests:
-                if isinstance(req, dict):
-                    vendor_id = req.get('vendorID')
+        for _, req in purchase_requests_of(row):
+            vendor_id = req.get('vendorID')
 
-                    # Get period from timestamp_hours or period field
-                    timestamp_hours = req.get('timestamp_hours', np.nan)
-                    if not pd.isna(timestamp_hours):
-                        # FIXED: Use actual duration_hours instead of hardcoded 24
-                        period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else np.nan
-                    else:
-                        period = req.get('period', np.nan)
+            # Get period from timestamp_hours or period field
+            timestamp_hours = req.get('timestamp_hours', np.nan)
+            if not pd.isna(timestamp_hours):
+                # FIXED: Use actual duration_hours instead of hardcoded 24
+                period = int(timestamp_hours // duration_hours) + 1 if timestamp_hours >= 0 else np.nan
+            else:
+                period = req.get('period', np.nan)
 
-                    if not pd.isna(vendor_id) and not pd.isna(period):
-                        # Normalize vendor_id and period
-                        try:
-                            vendor_id_key = int(vendor_id)
-                            period_key = int(period)
-                        except (ValueError, TypeError):
-                            continue
+            if not pd.isna(vendor_id) and not pd.isna(period):
+                # Normalize vendor_id and period
+                try:
+                    vendor_id_key = int(vendor_id)
+                    period_key = int(period)
+                except (ValueError, TypeError):
+                    continue
 
-                        # Initialize period if not exists
-                        if period_key not in period_data:
-                            period_data[period_key] = {}
+                # Initialize period if not exists
+                if period_key not in period_data:
+                    period_data[period_key] = {}
 
-                        # Initialize vendor if not exists for this period
-                        if vendor_id_key not in period_data[period_key]:
-                            period_data[period_key][vendor_id_key] = {
-                                'agents': set(),
-                                'requests': 0,
-                                'transactions': 0
-                            }
+                # Initialize vendor if not exists for this period
+                if vendor_id_key not in period_data[period_key]:
+                    period_data[period_key][vendor_id_key] = {
+                        'agents': set(),
+                        'requests': 0,
+                        'transactions': 0
+                    }
 
-                        # Add agent to set (for unique count)
-                        period_data[period_key][vendor_id_key]['agents'].add(agent_id)
+                # Add agent to set (for unique count)
+                period_data[period_key][vendor_id_key]['agents'].add(agent_id)
 
-                        # Count purchase request
-                        period_data[period_key][vendor_id_key]['requests'] += 1
+                # Count purchase request
+                period_data[period_key][vendor_id_key]['requests'] += 1
 
-                        # Count transaction if completed
-                        completed = req.get('transactionCompleted', req.get('completed', req.get('transaction_completed', True)))
-                        if completed or completed == 1:
-                            period_data[period_key][vendor_id_key]['transactions'] += 1
+                # Count transaction if completed
+                if _is_completed(req):
+                    period_data[period_key][vendor_id_key]['transactions'] += 1
 
     return period_data
 
@@ -860,7 +774,7 @@ def build_vendor_period_details(vendors_data, avg_proximity_per_vendor, vendor_i
                     'Vendor ID': f"Vendor {vendor_id}",
                     'Period': int(period),
                     'Quantity Offered': qty,
-                    'Price': float(f"{price:.2f}") if not pd.isna(price) else price,   # money: two decimals
+                    'Price': money_or_missing(price),   # money: two decimals
                     'Quality': quality,
                     'Sustainability': sustainability,
                     'Average Proximity': avg_prox,
@@ -873,7 +787,7 @@ def build_vendor_period_details(vendors_data, avg_proximity_per_vendor, vendor_i
                 'Vendor ID': f"Vendor {vendor_id}",
                 'Period': 1,
                 'Quantity Offered': qty,
-                'Price': float(f"{price:.2f}") if not pd.isna(price) else price,   # money: two decimals
+                'Price': money_or_missing(price),   # money: two decimals
                 'Quality': quality,
                 'Sustainability': sustainability,
                 'Average Proximity': avg_prox,

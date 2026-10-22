@@ -6,11 +6,15 @@ pricing parameters and the base time / period duration / period count of its
 `TimestampConverter` are parameters; nothing here imports Streamlit or touches
 session state.
 """
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 
+from app.reports._common import (
+    all_present, documents_disclosed_code, income_category_or_na, income_disclosed_flag,
+    money, money_or_missing, number_chronologically, proximity_scores_or_empty,
+    purchase_requests_of, rejected_default_priorities, request_time, request_vendor,
+    round2_or_nan, vendor_weights_or_equal, vendors_by_id,
+)
 from app.reports.timestamps import TimestampConverter
 from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
 
@@ -77,11 +81,7 @@ def build_transaction_level_dataframe(
     market_pn_price = (1 + price_range) * (1 + platform_markup) * market_price
     
     # Build vendor lookup
-    vendor_lookup = {}
-    if vendors_data:
-        for vendor in vendors_data:
-            vendor_id = vendor.get('vendor_id')
-            vendor_lookup[vendor_id] = vendor
+    vendor_lookup = vendors_by_id(vendors_data)
     
     for idx, row in df.iterrows():
         # Get agent-level data
@@ -97,44 +97,20 @@ def build_transaction_level_dataframe(
         income = row.get('income', row.get('actual_allowance', np.nan))
 
         # Income category - use 'N/A' for empty/missing values (e.g., regular customers who didn't disclose income)
-        income_category_raw = row.get('income_category', np.nan)
-        income_category = 'N/A' if (pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None) else income_category_raw
+        income_category = income_category_or_na(row)
         agent_donation_default = row.get('donation_default', np.nan)
 
         # Decision 1: Income disclosed (convert Y/N to 1/0)
-        disclose_income_raw = row.get('disclose_income', '')
-        income_disclosed = 1 if disclose_income_raw == 'Y' else 0
+        income_disclosed = income_disclosed_flag(row)
 
-        # Decision 2: Documents disclosed. Preserve the three-state outcome:
-        # Y=disclosed (1), N=asked-but-declined (0), NA=never-eligible. Do NOT collapse N and NA to 0.
-        disclose_documents_raw = row.get('disclose_documents', '')
-        documents_disclosed = (
-            1 if disclose_documents_raw == 'Y' else (0 if disclose_documents_raw == 'N' else 'NA')
-        )
+        # Decision 2: Documents disclosed (1 / 0 / 'NA': N and NA are not collapsed)
+        documents_disclosed = documents_disclosed_code(row)
 
         # Decision 4: Rejected Transaction Defaults - 5 priority columns
-        rejected_defaults = row.get('rejected_transaction_defaults', '')
-        if isinstance(rejected_defaults, str) and rejected_defaults.startswith('['):
-            try:
-                import ast
-                rejected_defaults = ast.literal_eval(rejected_defaults)
-            except:
-                rejected_defaults = []
-        elif not isinstance(rejected_defaults, list):
-            rejected_defaults = [rejected_defaults] if rejected_defaults else []
+        priority_choices = rejected_default_priorities(row)
 
-        # Create 5 priority values
-        priority_choices = []
-        for priority_num in range(1, 6):
-            if isinstance(rejected_defaults, list) and len(rejected_defaults) >= priority_num:
-                priority_choices.append(rejected_defaults[priority_num - 1])
-            else:
-                priority_choices.append('N/A')
-
-        # Decision 5: Vendor Choice Weights
-        vendor_weights = row.get('vendor_choice_weights', {})
-        if not isinstance(vendor_weights, dict):
-            vendor_weights = {'price': 0.25, 'quality': 0.25, 'proximity': 0.25, 'sustainability': 0.25}
+        # Decision 5: Vendor Choice Weights (also used for the vendor score below)
+        vendor_weights = vendor_weights_or_equal(row)
         weight_price = vendor_weights.get('price', np.nan)
         weight_quality = vendor_weights.get('quality', np.nan)
         weight_proximity = vendor_weights.get('proximity', np.nan)
@@ -144,80 +120,45 @@ def build_transaction_level_dataframe(
         rejected_transaction_option = row.get('rejected_transaction_option', '')
         
         # Get vendor proximity scores for this agent
-        proximity_scores = row.get('vendor_proximity_scores', {})
-        if not isinstance(proximity_scores, dict):
-            proximity_scores = {}
-        
-        # Get vendor choice weights for score calculation
-        vendor_weights = row.get('vendor_choice_weights', {})
-        if not isinstance(vendor_weights, dict):
-            vendor_weights = {
-                'price': 0.25,
-                'quality': 0.25,
-                'proximity': 0.25,
-                'sustainability': 0.25
-            }
-        
-        # Get purchase requests
-        purchase_requests = row.get('purchase_requests', [])
-        if not isinstance(purchase_requests, list):
-            continue
+        proximity_scores = proximity_scores_or_empty(row)
         
         # Process each purchase request
-        for req_idx, request in enumerate(purchase_requests):
-            if not isinstance(request, dict):
-                continue
-            
+        for req_idx, request in purchase_requests_of(row):
             # Transaction identification
             request_id = request.get('request_id', req_idx + 1)
             # Use global transaction_id if available (assigned by simulation.py), otherwise fallback
             transaction_id = request.get('transaction_id', f"A{agent_id}_R{request_id}")
             
             # Timing - use centralized timestamp converter
-            timestamp_hours = request.get('timestamp_hours', np.nan)
-            ts_result = ts_converter.convert(timestamp_hours)
-            period = ts_result['period']
-            request_datetime = ts_result['datetime']
-            purchase_date = ts_result['date']
-            purchase_time = ts_result['time']
+            ts_result, period, request_datetime = request_time(ts_converter, request)
             
             # Vendor information - use centralized scoring function
             vendor_id = request.get('vendorID', np.nan)
-            vendor_price = np.nan
-            vendor_quality = np.nan
-            vendor_sustainability = np.nan
-            vendor_proximity = np.nan
             vendor_price_score = np.nan
             vendor_quality_score = np.nan
             vendor_sustainability_score = np.nan
             vendor_proximity_score = np.nan
             vendor_integrated_score = np.nan
 
-            if not pd.isna(vendor_id) and vendor_id in vendor_lookup:
-                vendor = vendor_lookup[vendor_id]
-                vendor_price = vendor.get('price', np.nan)
-                vendor_quality = vendor.get('quality', np.nan)
-                vendor_sustainability = vendor.get('sustainability', np.nan)
-                vendor_proximity = proximity_scores.get(str(int(vendor_id)), np.nan)
-                
-                # Use centralized scoring function for consistency
-                if not pd.isna(vendor_price) and not pd.isna(vendor_quality) and \
-                   not pd.isna(vendor_sustainability) and not pd.isna(vendor_proximity):
-                    
-                    score_result = calculate_vendor_score_with_breakdown(
-                        vendor=vendor,
-                        weights=vendor_weights,
-                        proximity=vendor_proximity,
-                        all_vendors=list(vendor_lookup.values()),
-                        price_min_config=price_min_config,
-                        price_max_config=price_max_config
-                    )
-                    
-                    vendor_price_score = score_result['norm_price']
-                    vendor_quality_score = score_result['norm_quality']
-                    vendor_sustainability_score = score_result['norm_sustainability']
-                    vendor_proximity_score = score_result['norm_proximity']
-                    vendor_integrated_score = score_result['integrated_score']
+            vendor, vendor_price, vendor_quality, vendor_sustainability, vendor_proximity = \
+                request_vendor(vendor_lookup, vendor_id, proximity_scores)
+            # Use centralized scoring function for consistency
+            if vendor is not None and all_present(
+                    vendor_price, vendor_quality, vendor_sustainability, vendor_proximity):
+                score_result = calculate_vendor_score_with_breakdown(
+                    vendor=vendor,
+                    weights=vendor_weights,
+                    proximity=vendor_proximity,
+                    all_vendors=list(vendor_lookup.values()),
+                    price_min_config=price_min_config,
+                    price_max_config=price_max_config
+                )
+
+                vendor_price_score = score_result['norm_price']
+                vendor_quality_score = score_result['norm_quality']
+                vendor_sustainability_score = score_result['norm_sustainability']
+                vendor_proximity_score = score_result['norm_proximity']
+                vendor_integrated_score = score_result['integrated_score']
             
             pn_price = ((1 + price_range) * (1 + platform_markup) * vendor_price
                         if not pd.isna(vendor_price) else market_pn_price)
@@ -254,19 +195,19 @@ def build_transaction_level_dataframe(
             # - For Bid: bid_value (if numeric)
             # - For Discount/Fixed: 'N/A' (actual price calculated by separate algorithm)
             if purchase_request_type in ['Purchase Now', 'Bid']:
-                display_customer_price = float(f"{customer_price:.2f}")
+                display_customer_price = money(customer_price)
             else:
                 display_customer_price = 'N/A'
 
             # Bid value as stored: two decimals; N/A for non-Bid transactions
             if purchase_request_type == 'Bid':
                 try:
-                    display_bid_value = float(f"{float(bid_value):.2f}")
+                    display_bid_value = money(float(bid_value))
                 except (ValueError, TypeError):
                     display_bid_value = bid_value
             else:
                 display_bid_value = 'N/A'
-            display_vendor_price = float(f"{vendor_price:.2f}") if not pd.isna(vendor_price) else vendor_price
+            display_vendor_price = money_or_missing(vendor_price)
             
             # Donation information
             # Priority: request-level > agent-level
@@ -291,7 +232,7 @@ def build_transaction_level_dataframe(
                 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
 
                 # ===== INCOME & CUSTOMER INFO (matched to Agent-Level names) =====
-                'income': round(income, 2) if not pd.isna(income) else np.nan,
+                'income': round2_or_nan(income),
                 'income_category': income_category,
 
                 # ===== DECISION 1: Disclose Income (1/0 format, matched to Agent-Level) =====
@@ -355,15 +296,7 @@ def build_transaction_level_dataframe(
             
             transaction_records.append(transaction_record)
     
-    # Sort by timestamp
-    if transaction_records:
-        transaction_records.sort(key=lambda x: x.get('_sort_datetime', datetime.min))
-        
-        # Assign unique Purchase Request IDs based on sorted order and remove sort key
-        for idx, record in enumerate(transaction_records):
-            record['Purchase Request ID'] = idx + 1
-            record.pop('_sort_datetime', None)  # Remove hidden sort key
-            if 'Transaction ID' in record:
-                del record['Transaction ID']
+    # Sort by timestamp, assign unique Purchase Request IDs in that order, drop the sort key
+    number_chronologically(transaction_records)
     
     return pd.DataFrame(transaction_records)

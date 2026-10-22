@@ -14,11 +14,14 @@ The workbook plumbing (`to_xlsx_bytes`) and the donation number formatter
 live in `app/reports/xlsx.py`; this module imports them rather than
 keeping its own copy.
 """
-from datetime import datetime
-
 import numpy as np
 import pandas as pd
 
+from app.reports._common import (
+    agent_id_renamed, column_first, group_experiment_skipping_blanks, income_category_or_na,
+    money, purchase_now_price, purchase_requests_of, request_customer_type, request_time,
+    sort_chronologically, vendor_price_from, vendors_by_id_and_str,
+)
 from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import apply_donation_price_formatting, period_sheets, to_xlsx_bytes
 from src.contract.columns import rename_consensus_columns
@@ -97,10 +100,7 @@ def build_donation_default_export(df: pd.DataFrame, export_columns: list) -> pd.
     export_df = df[export_columns].copy()
 
     # Rename agent_id to 'Agent ID' for clarity
-    if 'agent_id' in export_df.columns:
-        export_df = export_df.rename(columns={'agent_id': 'Agent ID'})
-
-    return export_df
+    return agent_id_renamed(export_df)
 
 
 def build_donation_default_xlsx(export_df: pd.DataFrame) -> bytes:
@@ -161,20 +161,13 @@ def build_donation_transaction_export(
     # Use centralized timestamp converter for consistent handling
     ts_converter = TimestampConverter(base_time, duration_hours, periods)
 
-    # Build vendor lookup dictionary for quick access
-    vendor_lookup = {}
-    if vendors:
-        for vendor in vendors:
-            vendor_id = vendor.get('vendor_id')
-            if vendor_id is not None:
-                vendor_lookup[vendor_id] = vendor
-                vendor_lookup[str(vendor_id)] = vendor
+    # Build vendor lookup dictionary for quick access (int and string keys)
+    vendor_lookup = vendors_by_id_and_str(vendors)
 
     # Customer Price rule (COOPECON AI Agent Documentation 2026-10-07): Purchase Now =
     # (1 + price_range) x (1 + platform_markup) x vendor_price, Bid = the bid value,
     # Fixed / Discount = N/A. The market price is the fallback when no vendor is named.
-    baseline_price = (1 + platform_markup) * market_price
-    pn_price = (1 + price_range) * baseline_price
+    pn_price = purchase_now_price(market_price, platform_markup, price_range)
 
     for idx, row in df.iterrows():
         # Get agent information
@@ -190,21 +183,11 @@ def build_donation_transaction_export(
         income_value = row.get('income', np.nan)
 
         # Group_experiment with fallbacks (handle various column naming conventions)
-        group_experiment = row.get('Group_experiment', '')
-        if group_experiment == '' or pd.isna(group_experiment):
-            group_experiment = row.get('group', '')
-        if group_experiment == '' or pd.isna(group_experiment):
-            group_experiment = row.get('group_experiment', '')
-        if pd.isna(group_experiment):
-            group_experiment = ''
+        group_experiment = group_experiment_skipping_blanks(row)
         # ====================================================================
 
-        income_category_raw = row.get('income_category', np.nan)
         # Use 'N/A' for empty/missing income_category (e.g., regular customers who didn't disclose income)
-        if pd.isna(income_category_raw) or income_category_raw == '' or income_category_raw is None:
-            income_category = 'N/A'
-        else:
-            income_category = income_category_raw
+        income_category = income_category_or_na(row)
 
         # Get AGENT-LEVEL donation rates (used as fallback only)
         agent_default_rate = row.get('donation_default', np.nan)
@@ -221,57 +204,27 @@ def build_donation_transaction_export(
         except (ValueError, TypeError):
             agent_final_rate = agent_default_rate
 
-        # Get purchase requests
-        purchase_requests = row.get('purchase_requests', [])
-        if not isinstance(purchase_requests, list):
-            continue
-
         # Process each purchase request
-        for req_idx, request in enumerate(purchase_requests):
-            if not isinstance(request, dict):
-                continue
-
+        for _, request in purchase_requests_of(row):
             # Get customer type from request
-            customer_type = request.get('customer_type', request.get('customerType', 'regular'))
-            if isinstance(customer_type, str):
-                customer_type_display = customer_type.capitalize()
-            else:
-                customer_type_display = 'Regular'
+            customer_type, customer_type_display = request_customer_type(request)
 
             # Get timestamp and convert using centralized utilities
-            timestamp_hours = request.get('timestamp_hours', np.nan)
-            ts_result = ts_converter.convert(timestamp_hours)
-
-            period = ts_result['period']
-            request_datetime = ts_result['datetime']
-            purchase_date = ts_result['date']
-            purchase_time = ts_result['time']
+            ts_result, period, request_datetime = request_time(ts_converter, request)
 
             # Determine Purchase Request Type and Customer Price
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
             bid_value = request.get('bid_value', 'N/A')
             transaction_id = request.get('transaction_id')
 
-            # Lookup specific vendor price
+            # Lookup specific vendor price (float 1.0 is looked up as vendor 1)
             vendor_id = request.get('vendorID', request.get('vendor_id'))
-
-            # Normalize vendor_id for lookup (handle float 1.0 -> int 1)
-            lookup_key = vendor_id
-            if isinstance(vendor_id, float) and vendor_id.is_integer():
-                lookup_key = int(vendor_id)
-
-            vendor_price = None
-            if lookup_key is not None:
-                if lookup_key in vendor_lookup:
-                    vendor_price = vendor_lookup[lookup_key].get('price')
-                elif str(lookup_key) in vendor_lookup:
-                    vendor_price = vendor_lookup[str(lookup_key)].get('price')
+            vendor_price = vendor_price_from(vendor_lookup, vendor_id)
 
             # PN price from the vendor's own price when the request names a vendor
             current_pn_price = pn_price  # market-price fallback
             if vendor_price is not None:
-                v_baseline = (1 + platform_markup) * vendor_price
-                current_pn_price = (1 + price_range) * v_baseline
+                current_pn_price = purchase_now_price(vendor_price, platform_markup, price_range)
 
             if platform_price == 'DISCOUNT' or customer_type.lower() == 'discount':
                 purchase_request_type = 'Discount'
@@ -317,7 +270,7 @@ def build_donation_transaction_export(
             # Stored rounded to two decimals, like every money column of every export
             # Use np.nan instead of 'N/A' string to avoid mixed types in the column (Arrow compatibility)
             if purchase_request_type in ['PN', 'Bid']:
-                display_customer_price = float(f"{customer_price:.2f}")
+                display_customer_price = money(customer_price)
             else:
                 display_customer_price = np.nan
 
@@ -348,13 +301,8 @@ def build_donation_transaction_export(
 
             transaction_records.append(record)
 
-    # Sort all records by timestamp in chronological order
-    if transaction_records:
-        transaction_records.sort(key=lambda x: x['_sort_datetime'] if isinstance(x['_sort_datetime'], datetime) else datetime.min)
-
-        # Remove the hidden sorting column before returning
-        for record in transaction_records:
-            record.pop('_sort_datetime', None)
+    # Sort all records by timestamp in chronological order (drops the hidden sort column)
+    sort_chronologically(transaction_records)
 
     return transaction_records
 
@@ -480,8 +428,7 @@ def donation_all_configs_frame(results_dict) -> pd.DataFrame:
     
     # Reorder columns to put Agent ID first
     if 'Agent ID' in combined_df.columns:
-        cols = ['Agent ID'] + [col for col in combined_df.columns if col != 'Agent ID']
-        combined_df = combined_df[cols]
+        combined_df = column_first(combined_df, 'Agent ID')
 
     return combined_df
 
@@ -494,12 +441,10 @@ def donation_single_export_frame(df) -> pd.DataFrame:
     df_export = rename_consensus_columns(df.copy())
     
     # Rename agent_id to 'Agent ID' for clarity
-    if 'agent_id' in df_export.columns:
-        df_export = df_export.rename(columns={'agent_id': 'Agent ID'})
+    df_export = agent_id_renamed(df_export)
     
     # Reorder columns to put Agent ID first
     if 'Agent ID' in df_export.columns:
-        cols = ['Agent ID'] + [col for col in df_export.columns if col != 'Agent ID']
-        df_export = df_export[cols]
+        df_export = column_first(df_export, 'Agent ID')
 
     return df_export

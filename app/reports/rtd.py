@@ -16,6 +16,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from app.reports._common import CONFIG_SHEET_NAMES, copy_present_columns
 from app.reports.xlsx import to_xlsx_bytes
 
 # Per-element sheet / section names for the Decision 4 exports.
@@ -176,11 +177,17 @@ def rtd_element_inputs_frame(df, mech):
     return out
 
 
+def _choice_columns(out, lists, prefix):
+    """<prefix>1..<prefix>5 columns: each list's option at that position (blank beyond
+    the list's length)."""
+    for pos in range(1, 6):
+        out[f'{prefix}{pos}'] = lists.apply(
+            lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
+
+
 def rtd_choice_columns(out, rankings):
     """choice1..choice5 columns (option numbers; blank beyond the list length)."""
-    for pos in range(1, 6):
-        out[f'choice{pos}'] = rankings.apply(
-            lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
+    _choice_columns(out, rankings, 'choice')
 
 
 def rtd_list_str(lst):
@@ -194,10 +201,20 @@ def _rtd_flex_intermediates(out, df):
     """Flexibility intermediates in Stata naming: the calculated IVW score and its
     population z (z_stdactions travels with the inputs; the anchored score and its z
     follow as Flexibility_score / z_Flexibility)."""
-    for src, dst in (('rtd_flex_ivw', 'Flexibility_calculated_ivw'),
-                     ('rtd_flex_z_ivw', 'z_Flexibility_calculated_ivw')):
-        if src in df.columns:
-            out[dst] = df[src]
+    copy_present_columns(out, df, (('rtd_flex_ivw', 'Flexibility_calculated_ivw'),
+                                   ('rtd_flex_z_ivw', 'z_Flexibility_calculated_ivw')))
+
+
+def _rtd_ranking_columns(out, df, col_key, stata):
+    """A ranking element's score, z-score (when present), deterministic segment (when
+    present) and final segment, under the Stata names <stata>_score, z_<stata>,
+    <stata>_segment_deterministic and <stata>_segment."""
+    out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
+    if f'rtd_{col_key}_z' in df.columns:
+        out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
+    if f'rtd_{col_key}_segment_deterministic' in df.columns:
+        out[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
+    out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
 
 
 def prepare_rtd_element_export(df, mech):
@@ -209,23 +226,16 @@ def prepare_rtd_element_export(df, mech):
     sheet in the whole-decision workbook."""
     out = rtd_element_inputs_frame(df, mech)
     if mech == 'ttp':
-        for src, dst in (('rtd_weighted_ttp', 'weighted_ttp'),
-                         ('rtd_weighted_ttp06', 'weighted_ttp06'),
-                         ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
-                         ('rtd_choice_length', 'choice_length'),
-                         ('rtd_sigma_used_ttp', 'sigma_used_ttp')):
-            if src in df.columns:
-                out[dst] = df[src]
+        copy_present_columns(out, df, (('rtd_weighted_ttp', 'weighted_ttp'),
+                                       ('rtd_weighted_ttp06', 'weighted_ttp06'),
+                                       ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
+                                       ('rtd_choice_length', 'choice_length'),
+                                       ('rtd_sigma_used_ttp', 'sigma_used_ttp')))
         return out
     col_key, stata = RTD_STATA_NAMES[mech]
     if mech == 'flexibility':
         _rtd_flex_intermediates(out, df)
-    out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
-    if f'rtd_{col_key}_z' in df.columns:
-        out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
-    if f'rtd_{col_key}_segment_deterministic' in df.columns:
-        out[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
-    out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
+    _rtd_ranking_columns(out, df, col_key, stata)
     if f'rtd_sigma_used_{col_key}' in df.columns:
         out[f'sigma_used_{stata}'] = df[f'rtd_sigma_used_{col_key}']
     rtd_choice_columns(out, df[f'rtd_{col_key}_ranking'])
@@ -265,18 +275,13 @@ def prepare_rtd_integrated_export(df):
     if not categorical:
         # categorical WTP / RT use the budget-level dummies instead of z_net_income
         z_inputs.append('income')
-    for col in z_inputs:
-        src, dst = RTD_INPUT_Z[col]
-        if src in df.columns:
-            out[dst] = df[src]
+    copy_present_columns(out, df, [RTD_INPUT_Z[col] for col in z_inputs])
 
     # ---- 1. Options List Length ----
-    for src, dst in (('rtd_weighted_ttp', 'weighted_ttp'),
-                     ('rtd_weighted_ttp06', 'weighted_ttp06'),
-                     ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
-                     ('rtd_choice_length', 'choice_length')):
-        if src in df.columns:
-            out[dst] = df[src]
+    copy_present_columns(out, df, (('rtd_weighted_ttp', 'weighted_ttp'),
+                                   ('rtd_weighted_ttp06', 'weighted_ttp06'),
+                                   ('rtd_choice_length_deterministic', 'choice_length_deterministic'),
+                                   ('rtd_choice_length', 'choice_length')))
 
     # ---- 2-5. Ranking elements ----
     for mech in ('loyalty', 'wtp', 'risk_taking', 'flexibility'):
@@ -287,28 +292,19 @@ def prepare_rtd_integrated_export(df):
             _rtd_flex_intermediates(out, df)
             if 'rtd_z_stdactions' in df.columns:
                 out['z_stdactions'] = df['rtd_z_stdactions']
-        out[f'{stata}_score'] = df[f'rtd_{col_key}_score']
-        if f'rtd_{col_key}_z' in df.columns:
-            out[f'z_{stata}'] = df[f'rtd_{col_key}_z']
-        if f'rtd_{col_key}_segment_deterministic' in df.columns:
-            out[f'{stata}_segment_deterministic'] = df[f'rtd_{col_key}_segment_deterministic']
-        out[f'{stata}_segment'] = df[f'rtd_{col_key}_segment']
+        _rtd_ranking_columns(out, df, col_key, stata)
         out[f'{stata}_list'] = df[f'rtd_{col_key}_ranking'].apply(rtd_list_str)
 
     # ---- 6. Integration ----
     if 'rtd_default_list' in df.columns:
         out['integrated_ranking'] = df['rtd_consensus_ranking'].apply(rtd_list_str)
-        for src, dst in (('rtd_consensus_kemeny_status', 'kemeny_status'),
-                         ('rtd_consensus_n_kemeny_optimal', 'n_kemeny_optimal'),
-                         ('rtd_consensus_is_kemeny_optimal', 'is_kemeny_optimal'),
-                         ('rtd_consensus_settled_by', 'settled_by'),
-                         ('rtd_consensus_truncated_by', 'truncated_by'),
-                         ('rtd_default_list_length', 'default_list_length')):
-            if src in df.columns:
-                out[dst] = df[src]
-        for pos in range(1, 6):
-            out[f'final_choice{pos}'] = df['rtd_default_list'].apply(
-                lambda lst, p=pos: lst[p - 1] if isinstance(lst, list) and len(lst) >= p else np.nan)
+        copy_present_columns(out, df, (('rtd_consensus_kemeny_status', 'kemeny_status'),
+                                       ('rtd_consensus_n_kemeny_optimal', 'n_kemeny_optimal'),
+                                       ('rtd_consensus_is_kemeny_optimal', 'is_kemeny_optimal'),
+                                       ('rtd_consensus_settled_by', 'settled_by'),
+                                       ('rtd_consensus_truncated_by', 'truncated_by'),
+                                       ('rtd_default_list_length', 'default_list_length')))
+        _choice_columns(out, df['rtd_default_list'], 'final_choice')
     return out
 
 
@@ -357,12 +353,7 @@ def rtd_model_xlsx_bytes(sheets):
 # ---------------------------------------------------------------------------
 
 # Result key -> sheet-name prefix used when one workbook holds several configurations.
-RTD_CONFIG_SHEET_PREFIXES = {
-    'copula_categorical': 'Copula_Cat', 'copula_continuous': 'Copula_Cont',
-    'research_spec_categorical': 'ResSpec_Cat', 'research_spec_continuous': 'ResSpec_Cont',
-    'research_baseline_categorical': 'ResBase_Cat', 'research_baseline_continuous': 'ResBase_Cont',
-    'categorical': 'Cat', 'continuous': 'Cont',
-}
+RTD_CONFIG_SHEET_PREFIXES = {**dict(CONFIG_SHEET_NAMES), 'categorical': 'Cat', 'continuous': 'Cont'}
 
 
 def rtd_config_sheet_prefix(config_key):

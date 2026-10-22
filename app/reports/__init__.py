@@ -24,6 +24,10 @@ The modules, and what each one holds:
 * ``app.reports.vendor`` -- Decisions 5/8 vendor scoring, selection and proximity tables;
 * ``app.reports.xlsx`` -- workbook plumbing (to_xlsx_bytes, period_sheets) and the six price formatters.
 
+``app.reports._common`` holds the small helpers the builders share (the two-decimal
+money rule, vendor lookups, the agent-trait and request readers, record sorting); it
+is internal and not re-exported.
+
 Every public name of every module is re-exported here, so callers can import
 either ``from app.reports import build_agent_level_dataframe`` or
 ``from app.reports.agent_level import build_agent_level_dataframe``.
