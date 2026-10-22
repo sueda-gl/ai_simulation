@@ -184,17 +184,14 @@ theirs, and the intercept / adjustment override inputs save the typed value.
 `tests/test_session_key_registry.py` holds `TAB_WIDGET_CANONICAL` to the
 `CONTROL_KEYS` rows, to the registry rows and to every `restore()` call in `app/`.
 
-**One owner-approved behaviour change came with it (2026-10-22).** The Donation
-tab's "Reset Config to Defaults" clears nothing the σ sliders show (it writes none
-of their widget keys), and with the dict it cleared the slider's only stored value:
-a σ coefficient edited to 1.3 before the reset stayed on screen, and the run used
-1.3, until the slider was next culled (the decision unselected, a Page-1 round trip),
-when it silently came back at 1.0. The canonical key is rewritten by every render,
-so the slider now keeps 1.3 across that culling too: what the slider shows is what
-the run uses. A coefficient slider *hidden* at the reset (σ mode `quintile`) still
-comes back at the fallback 1.0, because the reset deletes
-`donation_sigma_coefficient_setting`, exactly as the quintile sliders hidden in
-overall mode come back at the file's values.
+**The Donation reset and the σ controls (2026-10-22).** The Donation tab's "Reset
+Config to Defaults" returns the σ controls to the file's defaults, as its help text
+says: it writes the canonical keys (`donation_sigma_strategy`,
+`donation_sigma_coefficient_setting`, the quintile dict) from the file and deletes
+their widget keys, which `restore()` re-seeds from the canonical values right before
+each widget is drawn (a σ control hidden at the reset is re-seeded on its next
+draw). Until that day the reset left the σ controls alone, and a coefficient edited
+before the reset silently reverted on the next navigation; both are gone.
 
 **One rule keeps the widget-first order safe: never write a widget key in a run that
 does not draw its widget.** Streamlit keeps such a write in its old session state
@@ -341,7 +338,8 @@ feature that no screen offers any more. The priority chains still have a slot fo
 
 ## 7. Bulk operations
 
-Five places delete keys wholesale, and the Donation tab's reset deletes one. They
+Five places delete keys wholesale, and the Donation tab's reset deletes its σ
+widget keys. They
 matter because they are the only way a key disappears (besides Streamlit dropping an
 undrawn widget's key), and the registry's initialisers are what put it back.
 
@@ -349,7 +347,7 @@ undrawn widget's key), and the registry's initialisers are what put it back.
 |---|---|---|
 | A decision tab's **Reset Config to Defaults** (Disclose Income, Disclose Documents; on Decision 4 **Reset Decision 4 Settings to Defaults**) | every key starting with `di_`, `dd_` or `rtd_` (whichever tab): widget keys and canonical keys alike. Disclose Income / Documents only raise `_di_/_dd_reset_to_defaults_pending` on the click and do the deletion at the top of the next run, before any of the tab's widgets exists | Decision 4 calls `initialize_rtd_session_state()`; Disclose Income / Documents write the reset widget keys and canonical keys from the file (`_disclosure.apply_config_to_widget_keys`, plus the tab's own `_apply_extra_widget_keys`), and the tab's `initialize_*_session_state()` runs next in the same run. A widget key the reset does not write (the per-quintile sliders, and on Disclose Income also the σ coefficient and σ mode) is seeded from the reset canonical key on its next draw |
 | Decision 4's per-element reset | only `rtd_intercept_{mech}` and its widget key (for Flexibility also `rtd_flex_observed_weight` and its slider key) | same; σ is decision-wide and deliberately untouched |
-| The Donation tab's **Reset Config to Defaults** | only `donation_sigma_coefficient_setting`; otherwise it *writes*: the intercept, adjustment, income-mode, anchor-weight and σ tick-box widget keys, the canonical income mode, σ mode and quintile dict, and empties the two override-value dicts (the σ controls' widget keys, mode radio and sliders, are left alone: a drawn control keeps its value, a hidden one comes back at its default, §2) | `_reset_config_to_defaults_flag` is consumed at the top of the tab in the next run |
+| The Donation tab's **Reset Config to Defaults** | only the σ controls' widget keys: `donation_tab_sigma_strategy_stochastic`, `tab_sigma_coefficient_stochastic` and `donation_tab_sigma_q{level}_stochastic`; otherwise it *writes*: the intercept, adjustment, income-mode, anchor-weight and σ tick-box widget keys (Copula off, Research Specification on), the canonical income mode, and the canonical σ mode, σ coefficient (`donation_sigma_coefficient_setting`) and quintile dict from the file's `donation_default.stochastic` (`overall`, `scale_factor`, `quintile_scale_factors`), and empties the two override-value dicts | `_reset_config_to_defaults_flag` is consumed at the top of the tab in the next run, before the tab's widgets; the σ mode radio and coefficient slider are seeded from the reset canonical keys in that run, the quintile sliders (hidden once the mode is `overall`) on their next draw |
 | Page 1's **Reset to Default Values** | every `purchasing_limit_{i}`, `purchasing_limits_temp` and the five widget keys that pass `value=` (the three "Maximum Value" text inputs, `uniform_purchasing_limit_input`, `show_individual_agents_checkbox`); every other Page-1 widget key is *written* | `sim_params` fields go back to the `SimulationParameters` dataclass defaults and the Page-1 session values to `models.SESSION_DEFAULTS`; the widget keys are written from `page1_widget_values`, the same mapping `initialize_widget_keys` seeds a fresh session from |
 | The Overview's **Reset All Defaults** | for every unselected decision, its `{decision_name}_default_*` and `_priority_template` keys (and the `_default_param_*` checkbox keys), plus their `_persistent_defaults` entries | `models.initialize_default_decision_parameters` seeds them again at the top of the next run |
 | **Clear Results** on the results page | *every* key in `st.session_state` | calls `models.initialize_session_state()` and stays on the results page |

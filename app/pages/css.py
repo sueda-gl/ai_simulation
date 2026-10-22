@@ -58,7 +58,7 @@ def get_css_styles():
     border-radius: 0 0.5rem 0.5rem 0;
 }
 /* Decision 4 sub-decision mechanism tabs (st.container(key="rtd_subtabs") on the
-   Decision 4 tab): larger bold labels (professor 2026-09-17). The label markdown may
+   Decision 4 tab): larger bold labels (requested 2026-09-17). The label markdown may
    be wrapped in a p/span/div depending on the Streamlit build, so the rule targets the
    tab and its descendants - FONT properties only, which cannot disturb the layout. */
 .st-key-rtd_subtabs [data-baseweb="tab"],

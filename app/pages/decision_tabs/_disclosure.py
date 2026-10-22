@@ -222,7 +222,7 @@ def reset_intercept_to_default(spec):
     try:
         default_intercept = current_yaml_intercept(spec)
     except Exception as e:
-        st.error(f"Error saving configuration: {e}")
+        st.error(f"Error applying the reset: {e}")
         return False
 
     # Update session state for intercept only

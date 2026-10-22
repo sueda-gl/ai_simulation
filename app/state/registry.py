@@ -454,13 +454,14 @@ _PAGE2_MIRRORS = (
                "Documents / Decision 4 twins are di_/dd_/rtd_scale_factor); "
                "TAB_WIDGET_CANONICAL seeds the slider from it.  Not an engine "
                "input: the seam reads sigma_coefficient.  The whole-tab reset "
-               "deletes it: a slider hidden by quintile mode at the reset comes "
-               "back at the fallback 1.0, a drawn slider keeps its value - and "
-               "keeps it across the next culling too, which the old persistence "
-               "dict (cleared by the reset, refilled only by a change) did not: "
-               "the slider went on showing 1.3 and the next navigation turned it "
-               "into 1.0.  Owner-approved behaviour change, 2026-10-22: what the "
-               "slider shows is what the run uses."),
+               "writes it from config/decisions.yaml "
+               "(donation_default.stochastic.scale_factor) and deletes the "
+               "slider's widget key, so the slider comes back at the file's value "
+               "whether it was drawn or hidden at the reset (owner-approved, "
+               "2026-10-22; before, the reset deleted this key and left the widget "
+               "key alone, so a drawn slider kept its value).  The slider's value "
+               "survives culling through this key: what the slider shows is what "
+               "the run uses."),
     _row("sigma_value_ui", 9.8995, P2_INIT, "page2-mirror",
          notes="display-only product of the sigma constant and the coefficient; "
                "the seam recomputes it from the one constant rather than reading it."),
@@ -701,7 +702,12 @@ _RUN_FLAGS = (
          "decision_tabs.donation_default.render_actions_and_management_section", "run-flag"),
     _row("_reset_config_to_defaults_flag", True,
          "decision_tabs.donation_default.render_actions_and_management_section",
-         "run-flag"),
+         "run-flag",
+         notes="consumed at the top of the Donation tab in the next run, before its "
+               "widgets: writes the intercept, adjustment, income-mode, anchor and σ "
+               "tick-box widget keys and the canonical σ mode, coefficient and "
+               "quintile dict, and deletes the σ mode / coefficient / quintile "
+               "widget keys (seeded again from the canonical keys on their next draw)."),
 )
 
 

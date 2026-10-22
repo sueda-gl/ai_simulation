@@ -846,7 +846,7 @@ def _render_income_distribution():
     # Income Distribution Section
     st.markdown('<h3 class="section-header">💵 Annual Income Distribution</h3>', unsafe_allow_html=True)
     st.caption("Research Baseline and Research Specification use each original participant's "
-               "income from the professor's data file; these distribution settings apply to "
+               "income from the experiment data file; these distribution settings apply to "
                "Copula populations.")
 
     stateful(st.selectbox,

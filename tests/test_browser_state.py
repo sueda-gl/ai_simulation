@@ -530,6 +530,7 @@ DONATION_KEYS = (
     "donation_sigma_strategy", "donation_quintile_scale_factors", "page2_tab_income_spec_mode",
     "income_spec_mode", "tab_sigma_in_copula", "tab_sigma_in_research", "sigma_in_copula",
     "sigma_in_research", "donation_coeff_intercept_cat", "donation_coeff_intercept_cont",
+    "donation_sigma_coefficient_setting", "sigma_coefficient",
 )
 
 # tab -> (settings it owns, widget edits, reset button)
@@ -547,13 +548,13 @@ TABS = {
         "dd_reset_btn"),
     "donation_default": (
         lambda key: key in DONATION_KEYS,
-        # Kept behaviour: this reset leaves the live σ controls alone - the σ
-        # coefficient slider and the σ strategy / quintile widgets keep their values
-        # (it writes donation_sigma_strategy, but the strategy radio's own key wins on
-        # the next render) - so they are not edited here.
+        # The σ controls are reset too (owner-approved 2026-10-22; until then this
+        # reset left the drawn σ mode radio, coefficient slider and quintile sliders
+        # at their values) - the test below covers them drawn and hidden.
         [("tab_anchor_weight", 0.6), ("override_adjustment_shift", -2.0),
          ("override_categorical_intercept", 1.0), ("tab_sigma_in_copula", True),
-         ("tab_sigma_in_research", False)],
+         ("tab_sigma_in_research", False), ("tab_sigma_coefficient_stochastic", 1.3),
+         ("donation_tab_sigma_strategy_stochastic", "quintile")],
         "reset_config_btn"),
     "rejected_transaction_defaults": (
         lambda key: key.startswith("rtd_"),
@@ -644,8 +645,93 @@ def test_reset_defaults_are_read_from_the_config():
     assert defaults["shift_value"] == donation["adjustment"]["shift_value"]
     assert defaults["anchor_observed_weight"] == donation["anchor_weights"]["observed"]
     assert defaults["sigma_strategy"] == donation["stochastic"]["sigma_strategy"]
+    assert defaults["scale_factor"] == donation["stochastic"]["scale_factor"]
     assert defaults["quintile_scale_factors"] == {
         str(k): float(v) for k, v in donation["stochastic"]["quintile_scale_factors"].items()}
+
+
+# the σ mode radio's options as the browser shows them
+SIGMA_MODE_LABEL = {"overall": "Uniformly (single σ for all)", "quintile": "Quintiles (σ per budget level)"}
+DONATION_QUINTILE_SLIDERS = tuple(f"donation_tab_sigma_q{level}_stochastic" for level in "12345")
+
+
+def _donation_sigma_at_defaults(sim, step):
+    """The Donation σ controls - shown in the browser and held server side - at the
+    file's donation_default.stochastic values (Copula off, Research Specification on)."""
+    _reset_consistent(sim, step)
+    stochastic = CONFIG["donation_default"]["stochastic"]
+    quintiles = {str(k): float(v) for k, v in stochastic["quintile_scale_factors"].items()}
+    ss = sim.at.session_state
+    assert stochastic["sigma_strategy"] == "overall"
+    assert sim.shown("donation_tab_sigma_strategy_stochastic") == SIGMA_MODE_LABEL["overall"], step
+    assert sim.element("donation_tab_sigma_strategy_stochastic").value == "overall", step
+    assert sim.shown("tab_sigma_coefficient_stochastic") == pytest.approx(stochastic["scale_factor"]), step
+    assert sim.shown("tab_sigma_in_copula") is False, step
+    assert sim.shown("tab_sigma_in_research") is True, step
+    assert ss["donation_sigma_strategy"] == "overall", step
+    assert ss["donation_sigma_coefficient_setting"] == pytest.approx(stochastic["scale_factor"]), step
+    assert ss["sigma_coefficient"] == pytest.approx(stochastic["scale_factor"]), step
+    assert ss["donation_quintile_scale_factors"] == quintiles, step
+    assert ss["sigma_in_copula"] is False and ss["sigma_in_research"] is True, step
+    for key in DONATION_QUINTILE_SLIDERS:          # hidden in 'overall' mode
+        assert not [el for el in sim._widgets() if getattr(el, "key", None) == key], (step, key)
+
+
+def _settled_state(sim):
+    """Session state without the per-run render log, and what the browser shows."""
+    state = {key: copy.deepcopy(value) for key, value in sim.at.session_state.filtered_state.items()
+             if not key.startswith("_widget_render_log")}
+    return state, dict(sim.browser)
+
+
+@pytest.mark.parametrize("mode_at_reset", ["quintile", "overall"])
+def test_donation_reset_returns_the_sigma_controls_to_the_file_defaults(mode_at_reset):
+    """The Donation tab's "Reset Config to Defaults" ("... sliders, radio buttons")
+    returns the σ mode radio, the σ coefficient slider, the five quintile sliders and
+    the two σ tick boxes to their defaults, like the other three tabs' resets - each
+    control whether it is drawn or hidden when the button is pressed (parametrised by
+    the σ mode on screen then). A plain rerun after the reset writes nothing and
+    changes nothing, and a Page-1 round trip keeps the defaults."""
+    sim = _first_draw()
+    sim.set("tab_sigma_coefficient_stochastic", 1.3)
+    sim.set("donation_tab_sigma_strategy_stochastic", "quintile")
+    sim.set("donation_tab_sigma_q2_stochastic", 1.5)
+    sim.set("donation_tab_sigma_q4_stochastic", 0.5)
+    if mode_at_reset == "overall":
+        sim.set("donation_tab_sigma_strategy_stochastic", "overall")
+        assert sim.shown("tab_sigma_coefficient_stochastic") == pytest.approx(1.3)
+    sim.set("tab_sigma_in_research", False)
+    sim.set("tab_sigma_in_copula", True)
+    _reset_consistent(sim, "edited")
+    ss = sim.at.session_state
+    assert sim.shown("donation_tab_sigma_strategy_stochastic") == SIGMA_MODE_LABEL[mode_at_reset]
+    assert ss["donation_sigma_coefficient_setting"] == pytest.approx(1.3)
+    assert ss["donation_quintile_scale_factors"] == {"1": 1.0, "2": 1.5, "3": 1.0, "4": 0.5, "5": 1.0}
+    assert sim.shown("tab_sigma_in_research") is False and sim.shown("tab_sigma_in_copula") is True
+
+    sim.click_key("reset_config_btn")
+    _donation_sigma_at_defaults(sim, "after the reset")
+
+    # a plain rerun: nothing pushed to the browser, nothing changed
+    before = _settled_state(sim)
+    sim.run()
+    _donation_sigma_at_defaults(sim, "plain rerun after the reset")
+    pushed = [getattr(el, "key", None) or el.label for el in sim._widgets() if el.proto.set_value]
+    assert not pushed, f"widgets written through the Session State API on an unchanged rerun: {pushed}"
+    assert _settled_state(sim) == before, "the plain rerun after the reset changed the session or the browser"
+
+    # Page 1 and back: the defaults stay
+    sim.click("Back to Common Parameters")
+    _reset_consistent(sim, "Page 1")
+    sim.click("Decision Parameters")
+    _donation_sigma_at_defaults(sim, "back on Page 2")
+
+    # the quintile sliders, hidden since the reset, come back at the file's values
+    sim.set("donation_tab_sigma_strategy_stochastic", "quintile")
+    _reset_consistent(sim, "σ mode quintile after the reset")
+    stochastic = CONFIG["donation_default"]["stochastic"]
+    for level, key in zip("12345", DONATION_QUINTILE_SLIDERS):
+        assert sim.shown(key) == pytest.approx(float(stochastic["quintile_scale_factors"][level])), key
 
 
 # =============================================================================

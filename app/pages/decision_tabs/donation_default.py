@@ -9,7 +9,7 @@ from app.state.widgets import drawn_in_previous_run, stateful
 from app.state.saved_configs import clear_decision_config
 from app.pages.decision_tabs._tab_state import restore, seed_if_absent
 from app.pages.decision_tabs._controls import (
-    EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, TabControls,
+    EMPIRICAL_BASE_SIGMAS, LEVEL_LABELS, LEVELS, TabControls,
     render_income_mode, render_sigma_controls, render_stochastic_tick_boxes,
 )
 from app.state.registry import CONTROL_KEYS
@@ -38,12 +38,12 @@ def research_defaults():
     config/decisions.yaml (read-only): the single source of truth for "Reset Config
     to Defaults" - it used to write its own hard-coded copies of these numbers.
 
-    Not in the file, so the reset sets them itself: the income mode and the two σ
-    tick boxes. The σ controls (mode radio, coefficient and per-quintile sliders)
-    keep their values while they are drawn: the reset writes none of their widget
-    keys, and a live widget key wins over the canonical value
-    (``_tab_state.restore``); a σ control hidden at the reset (the coefficient in
-    quintile mode, the quintile sliders in overall mode) comes back at its default."""
+    Not read here, so the reset sets them itself: the income mode and the two σ
+    tick boxes (Copula off, Research Specification on). The σ controls (mode
+    radio, coefficient and per-quintile sliders) come back at the file's
+    ``stochastic`` values: the reset writes their canonical keys from here and
+    deletes their widget keys, which the shared controls seed again from the
+    canonical keys when they are next drawn (``_tab_state.restore``)."""
     block = read_yaml_file(CONFIG_PATH)['donation_default']
     stochastic = block.get('stochastic', {})
     default_scale = float(stochastic.get('scale_factor', 1.0))
@@ -56,6 +56,7 @@ def research_defaults():
         'shift_value': float((block.get('adjustment') or {}).get('shift_value', 0.0)),
         'anchor_observed_weight': float((block.get('anchor_weights') or {}).get('observed', 0.75)),
         'sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
+        'scale_factor': default_scale,
         'quintile_scale_factors': {str(level): float(quintiles.get(level, quintiles.get(int(level), default_scale)))
                                    for level in ('1', '2', '3', '4', '5')},
     }
@@ -149,15 +150,6 @@ def render_donation_default_tab():
     if st.session_state.get('_reset_config_to_defaults_flag', False):
         st.session_state._reset_config_to_defaults_flag = False
 
-        # Forget the σ coefficient slider's canonical value: a slider drawn in this
-        # run keeps its live value (the reset writes none of the σ widget keys) and
-        # the render writes it back, so it also survives the next navigation - the
-        # owner-approved change of 2026-10-22 (the old persistence dict, cleared
-        # here and refilled only by a change, let the next navigation turn a
-        # still-displayed 1.3 into 1.0); a slider hidden by quintile mode comes
-        # back at the fallback 1.0, as before.
-        st.session_state.pop('donation_sigma_coefficient_setting', None)
-
         # Research defaults from config/decisions.yaml (read-only) - the same values
         # the first draw shows; nothing below is a hard-coded number.
         defaults = research_defaults()
@@ -176,11 +168,23 @@ def render_donation_default_tab():
         st.session_state.page2_tab_income_spec_mode = "categorical only"
         st.session_state.income_spec_mode = "categorical only"
         
-        # Reset sigma strategy (main state variable)
+        # Reset the σ controls - the mode radio, the coefficient slider and the five
+        # quintile sliders - to the file's values: write their canonical keys and
+        # delete their widget keys, which the shared controls seed again from the
+        # canonical keys right before each control is next drawn (the Disclose
+        # Income / Documents resets leave their σ widget keys to the same seeding).
+        # The widget keys are not written here: the quintile sliders are hidden once
+        # the σ mode is back at 'overall', and a widget key written in a run that
+        # does not draw its widget resurfaces, stale, once the widget is culled.
         st.session_state.donation_sigma_strategy = defaults['sigma_strategy']
-        
-        # Reset quintile scale factors
+        st.session_state.donation_sigma_coefficient_setting = defaults['scale_factor']
         st.session_state.donation_quintile_scale_factors = dict(defaults['quintile_scale_factors'])
+        for key in ('donation_tab_sigma_strategy_stochastic', 'tab_sigma_coefficient_stochastic'):
+            if key in st.session_state:
+                del st.session_state[key]
+        for level in LEVELS:
+            if f'donation_tab_sigma_q{level}_stochastic' in st.session_state:
+                del st.session_state[f'donation_tab_sigma_q{level}_stochastic']
         
         # Reset anchor weight
         st.session_state.tab_anchor_weight = defaults['anchor_observed_weight']
@@ -789,7 +793,7 @@ def apply_intercept_overrides(override_values):
         return True
         
     except Exception as e:
-        st.error(f"Error updating configuration file: {e}")
+        st.error(f"Error applying the override: {e}")
         return False
 
 
@@ -811,7 +815,7 @@ class OverrideField:
         try:
             research_defaults = self.read_defaults()
         except Exception as e:
-            st.error(f"Error updating configuration file: {e}")
+            st.error(f"Error applying the reset: {e}")
             return False
         
         return self.apply(research_defaults)
@@ -914,7 +918,7 @@ def render_actions_and_management_section():
     
     with col1:
         st.markdown("**🔄 Reset Intercept**")
-        if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True, help="Reset intercept values to research defaults and update configuration", key="reset_intercept_btn"):
+        if st.button("Reset Intercept to Default Value", type="secondary", use_container_width=True, help="Reset the intercept values to the research defaults", key="reset_intercept_btn"):
             # Reset to the research default values held in the configuration file
             success = INTERCEPT_OVERRIDE.reset_to_defaults()
             if success:
@@ -927,7 +931,7 @@ def render_actions_and_management_section():
     
     with col2:
         st.markdown("**🔄 Reset Adjustment**")
-        if st.button("Reset Adjustment to 0", type="secondary", use_container_width=True, help="Reset adjustment value to 0 and update configuration", key="reset_adjustment_btn"):
+        if st.button("Reset Adjustment to 0", type="secondary", use_container_width=True, help="Reset the adjustment value to 0", key="reset_adjustment_btn"):
             # Reset to default value of 0.0
             success = apply_adjustment_overrides({'shift_value': 0.0})
             if success:
@@ -975,7 +979,7 @@ def apply_adjustment_overrides(override_values):
         return True
         
     except Exception as e:
-        st.error(f"Error updating configuration file: {e}")
+        st.error(f"Error applying the override: {e}")
         return False
 
 

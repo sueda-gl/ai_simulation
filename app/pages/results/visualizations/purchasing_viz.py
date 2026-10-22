@@ -428,7 +428,7 @@ def _render_quantity_explanation():
            - Each request = 1 item (for defaults)
            - Timestamps randomly distributed across term duration
         
-        **Professor's Specification**: 
+        **Research Specification**: 
         "The income range is split into equal intervals. Discount and Fixed customers (who 
         disclosed their income) are assigned to income categories based on their income level. 
         Regular customers (who did not disclose income) are not assigned to income categories 
