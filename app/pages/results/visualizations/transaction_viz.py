@@ -121,9 +121,11 @@ def render_rejected_transaction_defaults(df, decision_name, decision_title, deci
     st.markdown("---")
     st.markdown("**📊 Configured Priority Options**")
     
-    # Get configured priority template for display
+    # The priority template the run used (RunContext: the run's default-decision
+    # settings), not the live Overview key, which a change after the run has moved
     priority_key = f"{decision_name}_priority_template"
-    configured_template = st.session_state.get(priority_key, ["forgo_transaction"])
+    configured_template = RunContext.from_session().default_setting(
+        decision_name, "priority_template", st.session_state.get(priority_key, ["forgo_transaction"]))
     
     col_template, col_chart = st.columns([1, 2])
     

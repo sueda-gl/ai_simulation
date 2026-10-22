@@ -8,6 +8,8 @@ config_selection.py; the store is app/state/saved_configs.py.
 """
 import streamlit as st
 
+from app.pages.results.run_context import RunContext
+
 
 def render_seed_mismatch_error(decision_name, error_info):
     """
@@ -82,7 +84,7 @@ def _disclose_income_quick_summary(result_df):
         st.caption(f"📊 Quick Summary: {len(result_df):,} agents, Y rate={y_rate:.2f}%")
 
 
-def _donation_save_args(result_key, result_df):
+def _donation_save_args(result_key, result_df, run):
     """(params, metrics, extra_data) saved with a donation_default selection."""
     from app.state.saved_configs import (
         get_current_coefficients,
@@ -93,7 +95,7 @@ def _donation_save_args(result_key, result_df):
     # Get donation-specific parameters
     coefficients = get_current_coefficients()
     stochastic_params = get_current_stochastic_params()
-    config_details = extract_configuration_details(result_key)
+    config_details = extract_configuration_details(result_key, run)
     
     params = {
         'coefficients': coefficients,
@@ -110,7 +112,7 @@ def _donation_save_args(result_key, result_df):
     return params, metrics, extra_data
 
 
-def _disclose_income_save_args(result_key, result_df):
+def _disclose_income_save_args(result_key, result_df, run):
     """(params, metrics, extra_data) saved with a disclose_income selection."""
     from app.state.saved_configs import (
         get_current_disclose_income_params,
@@ -120,7 +122,7 @@ def _disclose_income_save_args(result_key, result_df):
     # Get disclose income specific parameters
     params = get_current_disclose_income_params()
     metrics = calculate_disclose_income_metrics(result_df)
-    config_details = extract_disclose_income_configuration_details(result_key)
+    config_details = extract_disclose_income_configuration_details(result_key, run)
     
     extra_data = {
         'income_mode': config_details['income_mode']
@@ -128,7 +130,7 @@ def _disclose_income_save_args(result_key, result_df):
     return params, metrics, extra_data
 
 
-def _disclose_documents_save_args(result_key, result_df):
+def _disclose_documents_save_args(result_key, result_df, run):
     """(params, metrics, extra_data) saved with a disclose_documents selection."""
     from app.state.saved_configs import (
         get_current_disclose_documents_params,
@@ -137,12 +139,12 @@ def _disclose_documents_save_args(result_key, result_df):
     )
     params = get_current_disclose_documents_params()
     metrics = calculate_disclose_documents_metrics(result_df)
-    config_details = extract_disclose_documents_configuration_details(result_key)
+    config_details = extract_disclose_documents_configuration_details(result_key, run)
     extra_data = {'income_mode': config_details['income_mode']}
     return params, metrics, extra_data
 
 
-def _rejected_transaction_save_args(result_key, result_df):
+def _rejected_transaction_save_args(result_key, result_df, run):
     """(params, metrics, extra_data) saved with a Decision 4 selection."""
     from app.state.saved_configs import (
         get_current_rejected_transaction_params,
@@ -153,7 +155,7 @@ def _rejected_transaction_save_args(result_key, result_df):
     from app.pages.results.overview import rtd_page_element
     params = get_current_rejected_transaction_params()
     metrics = calculate_rejected_transaction_metrics(result_df)
-    details = extract_rejected_transaction_configuration_details(result_key)
+    details = extract_rejected_transaction_configuration_details(result_key, run)
     extra_data = {'income_mode': details['income_mode'],
                   'population_mode': details['population_mode'],
                   # the element this run showed (None = whole decision), so
@@ -242,11 +244,14 @@ def _render_selection_button(decision_name, result_key, result_df):
                 use_container_width=True,
                 help=spec['help']
             ):
-                params, metrics, extra_data = spec['save_args'](result_key, result_df)
+                # The run on screen (its metadata), never the live Page 1 widgets:
+                # the store takes it as an argument
+                run = RunContext.from_session().run_on_screen
+                params, metrics, extra_data = spec['save_args'](result_key, result_df, run)
                 
                 # Use unified save function with seed validation
                 success, config, error_info = save_decision_config(
-                    decision_name, result_key, result_df, params, metrics, extra_data
+                    decision_name, result_key, result_df, params, metrics, extra_data, run=run
                 )
                 
                 if success:

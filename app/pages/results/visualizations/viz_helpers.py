@@ -7,19 +7,25 @@ import streamlit as st
 import plotly.express as px
 
 
-def get_dynamic_description(decision_name):
-    """Get dynamic description for decisions showing current probability settings"""
+def get_dynamic_description(decision_name, ctx=None):
+    """Get dynamic description for decisions showing the probability the run used"""
     
     from app.pages.decision_execution import DEFAULT_DECISION_VALUES, DEFAULT_DECISION_DESCRIPTIONS
+    from app.pages.results.run_context import RunContext
     
     default_value = DEFAULT_DECISION_VALUES.get(decision_name)
     
-    # For parametric random decisions, show current probability
+    # For parametric random decisions, show the run's probability
     if isinstance(default_value, dict) and default_value.get("type") == "random_probability":
         options = default_value.get("options", ["Y", "N"])
-        # Use _default_ key (consistent with Page 2 Overview tab)
+        # The probability the run used (RunContext: the run's default-decision
+        # settings), not the live Overview slider ({decision}_default_probability_y),
+        # which a change after the run has moved
+        ctx = ctx if ctx is not None else RunContext.from_session()
         prob_key = f"{decision_name}_default_probability_y"
-        current_prob = st.session_state.get(prob_key, default_value.get("probability_y", 0.5))
+        current_prob = ctx.default_setting(
+            decision_name, "probability_y",
+            st.session_state.get(prob_key, default_value.get("probability_y", 0.5)))
         
         return f"{current_prob:.0%} chance of {options[0]}, {1-current_prob:.0%} chance of {options[1]}"
     

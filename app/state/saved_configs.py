@@ -11,7 +11,9 @@ or a test still imports from it, so those callers keep working.
 """
 
 import streamlit as st
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 from src.contract.plan import hash_result_columns  # noqa: F401 - the writer and the checker share it
 from app.seam.build_plan import get_population_mode_from_result_key
@@ -19,22 +21,26 @@ from app.seam.config_repo import get_config_repo
 from app.models import DONATION_SIGMA_OVERALL, load_donation_coefficients_from_yaml
 
 
-def _run_context():
-    """The run on screen (``RunContext`` over ``_run_metadata``): what "Use This
-    Config" pins - its seed, agent count, population and income mode - comes
-    from here, never from the live Page 1 widgets, which may have moved on since
-    the run.  (Imported lazily: app.pages.results imports this module.)"""
-    from app.pages.results.run_context import RunContext
-    return RunContext.from_session()
+@dataclass(frozen=True)
+class RunOnScreen:
+    """The run whose result "Use This Config" pins: the seed, agent count,
+    population and income mode it ran with.  The results page hands it in (from
+    its ``RunContext`` over ``_run_metadata``, ``RunContext.run_on_screen``), so
+    a pin never takes these from the live Page 1 widgets, which may have moved
+    on since the run - and the store never imports the page (stores sit below
+    the screens, docs/README.md section 1)."""
+    seed: Optional[int]
+    n_agents: Optional[int]
+    population_mode: str
+    income_mode: str
 
 
-def _run_seed_and_agents():
+def _run_seed_and_agents(run):
     """(seed, n_agents) of the run on screen.  A session without run metadata (a
     foreign session) falls back to the live Page 1 values, as the store always
     did for it."""
-    ctx = _run_context()
-    if ctx.seed is not None and ctx.n_agents is not None:
-        return ctx.seed, ctx.n_agents
+    if run.seed is not None and run.n_agents is not None:
+        return run.seed, run.n_agents
     if hasattr(st.session_state, 'sim_params') and st.session_state.sim_params.simulation_mode == "Single Run":
         seed = st.session_state.get('seed_input', st.session_state.get('seed', 42))
     else:
@@ -42,19 +48,20 @@ def _run_seed_and_agents():
     return seed, st.session_state.get('n_agents', 1000)
 
 
-def _run_population_mode():
+def _run_population_mode(run):
     """The population mode of the run on screen; the live Page 1 value only for a
     session whose run metadata does not record it."""
-    return _run_context().effective_population_mode or st.session_state.get('population_mode', 'Copula (synthetic)')
+    return run.population_mode or st.session_state.get('population_mode', 'Copula (synthetic)')
 
 
 # ==================== DONATION DEFAULT (Decision 3) CONFIG SELECTION ====================
 # The donation triplet (details / params / metrics) plus the donation-only
 # wrappers over the unified store below.
 
-def save_selected_configuration(result_key, result_df):
+def save_selected_configuration(result_key, result_df, run):
     """
     Save the selected donation configuration for later use in combined simulations.
+    ``run`` is the run on screen (``RunOnScreen``, from the results page).
 
     Returns ``save_decision_config``'s ``(success, config, error_info)`` triple:
     a seed / agent-count mismatch with an already pinned decision is NOT saved,
@@ -62,10 +69,10 @@ def save_selected_configuration(result_key, result_df):
     screen can say so instead of reporting a save that never happened.
 
     DEPRECATED: This is a wrapper for backwards compatibility.
-    New code should use: save_decision_config('donation_default', result_key, result_df, params, metrics, extra_data)
+    New code should use: save_decision_config('donation_default', result_key, result_df, params, metrics, extra_data, run=run)
     """
     # Extract configuration details from the result key
-    config_details = extract_configuration_details(result_key)
+    config_details = extract_configuration_details(result_key, run)
 
     # Get current coefficient values from session state
     coefficients = get_current_coefficients()
@@ -90,18 +97,19 @@ def save_selected_configuration(result_key, result_df):
 
     # Use unified save function; the failure travels back to the screen
     return save_decision_config(
-        'donation_default', result_key, result_df, params, metrics, extra_data
+        'donation_default', result_key, result_df, params, metrics, extra_data, run=run
     )
 
 
-def extract_configuration_details(result_key):
-    """Extract population and income mode from result key"""
+def extract_configuration_details(result_key, run):
+    """Extract population and income mode from result key (``run``: the run on
+    screen, for a single-mode key)"""
 
     # Population mode detection (the seam's parser of a Compare-all result key)
     population_mode = get_population_mode_from_result_key(result_key)
     if population_mode is None:
         # For single-mode results, the mode the RUN used (not the live widget)
-        population_mode = _run_population_mode()
+        population_mode = _run_population_mode(run)
 
     # Income mode detection
     if 'categorical' in result_key:
@@ -110,7 +118,7 @@ def extract_configuration_details(result_key):
         income_spec_mode = 'continuous only'
     else:
         # For single-mode results, the mode the RUN used (not the live widget)
-        income_spec_mode = _run_context().effective_income_mode
+        income_spec_mode = run.income_mode
 
     return {
         'population_mode': population_mode,
@@ -217,8 +225,9 @@ def clear_selected_configuration():
 
 # ==================== DISCLOSE INCOME (Decision 1) CONFIG SELECTION ====================
 
-def extract_disclose_income_configuration_details(result_key):
-    """Extract income mode from result key for disclose income"""
+def extract_disclose_income_configuration_details(result_key, run):
+    """Extract income mode from result key for disclose income (``run``: the run
+    on screen, for a single-mode key)"""
     
     # Income mode detection
     if 'categorical' in result_key.lower():
@@ -227,7 +236,7 @@ def extract_disclose_income_configuration_details(result_key):
         income_mode = 'Continuous only'
     else:
         # the mode the RUN used (not the live tab value)
-        income_mode = _run_context().effective_income_mode
+        income_mode = run.income_mode
     
     return {
         'income_mode': income_mode
@@ -290,14 +299,15 @@ def calculate_disclose_income_metrics(result_df):
     return metrics
 
 
-def extract_disclose_documents_configuration_details(result_key):
-    """Extract income mode from result key for disclose documents"""
+def extract_disclose_documents_configuration_details(result_key, run):
+    """Extract income mode from result key for disclose documents (``run``: the
+    run on screen, for a single-mode key)"""
     if 'categorical' in result_key.lower():
         income_mode = 'Categorical only'
     elif 'continuous' in result_key.lower():
         income_mode = 'Continuous only'
     else:
-        income_mode = _run_context().effective_income_mode   # the run's, not the live tab's
+        income_mode = run.income_mode   # the run's, not the live tab's
     return {'income_mode': income_mode}
 
 
@@ -368,19 +378,20 @@ def calculate_disclose_documents_metrics(result_df):
 RTD_CONFIG_MECHANISMS = ('ttp', 'loyalty', 'wtp', 'risk_taking', 'flexibility')
 
 
-def extract_rejected_transaction_configuration_details(result_key):
+def extract_rejected_transaction_configuration_details(result_key, run):
     """Income mode and population mode of a Decision 4 result cell from its result key
-    ('categorical'/'continuous' single-mode keys, 'copula_continuous' etc. Compare-all keys)."""
+    ('categorical'/'continuous' single-mode keys, 'copula_continuous' etc. Compare-all keys;
+    ``run``: the run on screen, for a single-mode key)."""
     key = str(result_key or '').lower()
     if 'categorical' in key:
         income_mode = 'Categorical only'
     elif 'continuous' in key:
         income_mode = 'Continuous only'
     else:
-        income_mode = str(_run_context().effective_income_mode)   # the run's, not the live tab's
+        income_mode = str(run.income_mode)   # the run's, not the live tab's
         if 'compare' in income_mode.lower() or 'both' in income_mode.lower():
             income_mode = 'Continuous only'   # a single cell always has one mode
-    population_mode = extract_configuration_details(result_key)['population_mode']
+    population_mode = extract_configuration_details(result_key, run)['population_mode']
     return {'income_mode': income_mode, 'population_mode': population_mode}
 
 
@@ -516,7 +527,7 @@ def get_decision_result_columns(decision_name, result_df):
     return [c for c in columns if c == decision_name]
 
 
-def save_decision_config(decision_name, result_key, result_df, params, metrics=None, extra_data=None):
+def save_decision_config(decision_name, result_key, result_df, params, metrics=None, extra_data=None, *, run):
     """
     Unified function to save a decision configuration.
     
@@ -530,6 +541,8 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
         params: Dict of decision-specific parameters (coefficients, weights, etc.)
         metrics: Optional dict of calculated metrics. If None, will use basic metrics.
         extra_data: Optional dict of additional data to store (e.g., for backwards compat)
+        run: The run on screen (``RunOnScreen``), handed in by the results page:
+            the seed, agent count and population mode the pin records
     
     Returns:
         tuple: (success: bool, config: dict or None, error_info: dict or None)
@@ -539,7 +552,7 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     """
     # The seed and agent count the run on screen used (its metadata), so the pin
     # reproduces that run even after Page 1 has been edited
-    original_seed, original_n_agents = _run_seed_and_agents()
+    original_seed, original_n_agents = _run_seed_and_agents(run)
 
     # Record what this decision produced, so a later complete simulation can
     # prove it reproduced the run the user pinned.
@@ -594,7 +607,7 @@ def save_decision_config(decision_name, result_key, result_df, params, metrics=N
     # population_mode is stored
     if decision_name in ('disclose_income', 'disclose_documents', 'rejected_transaction_defaults') \
             and 'population_mode' not in config:
-        config_details = extract_configuration_details(result_key)
+        config_details = extract_configuration_details(result_key, run)
         config['population_mode'] = config_details['population_mode']
 
     # Store in unified configs dict (SINGLE source of truth)

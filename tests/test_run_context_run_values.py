@@ -6,6 +6,10 @@ ran with; ``RunContext`` exposes them and every results reader asks RunContext. 
 contexts are built in one session whose LIVE values differ from the run's: with the
 metadata, the readers show the run's values; with metadata that predates these
 fields (an old session), they fall back to the live values, the only ones it has.
+
+The same holds for the default-decision settings (``default_decision_settings``):
+the last case runs the real app, changes a default probability on the Page 2
+Overview after the run, and the results page still describes the run's value.
 """
 import dataclasses
 
@@ -14,7 +18,9 @@ import pytest
 from app.models import SimulationParameters
 from app.seam.build_plan import donation_anchor_weights, simulation_params_snapshot
 from app.simulation import _run_metadata_dict
+from conftest import start_app
 from src.contract.plan import RunMetadata
+from ui_strings import BACK_TO_PAGE2, NEXT_TO_PAGE2, VIEW_RESULTS
 
 pytestmark = pytest.mark.slow
 
@@ -125,3 +131,46 @@ def test_metadata_without_the_run_values_falls_back_to_the_live_widgets():
     texts = _texts(at)
     assert "📊 Anchor mix: 0.30 observed | 0.70 predicted" in texts
     assert any("**Platform Markup (m)**: 20.0%" in t for t in texts)
+
+
+PVB_PROBABILITY = "purchase_vs_bid_default_probability_y"    # the Overview slider
+RUN_LINE = "**Default Behavior:** 30% chance of Purchase Now, 70% chance of bid"
+
+
+def _default_behavior_lines(at):
+    return [str(m.value) for m in at.markdown if str(m.value).startswith("**Default Behavior:**")]
+
+
+def _click(at, label_part):
+    buttons = [b for b in at.button if label_part in b.label and not b.disabled]
+    assert buttons, f"no enabled button containing {label_part!r}"
+    buttons[0].click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+
+
+def test_a_default_changed_on_the_overview_after_the_run_does_not_change_the_description():
+    """A complete run with Purchase vs Bid left on its default at 30%; afterwards the
+    Overview slider is moved to 80% and the results page is opened again WITHOUT a
+    re-run ("View Results"): the "Default Behavior" line still says 30%."""
+    at = start_app()
+    at.run()
+    at.number_input(key="n_agents_input").set_value(40).run()
+    _click(at, NEXT_TO_PAGE2)
+    at.checkbox(key="page2_select_all_checkbox").uncheck().run()
+    at.multiselect(key="page2_manual_multiselect").set_value(["rejected_transaction_defaults"]).run()
+    at.slider(key=PVB_PROBABILITY).set_value(0.3).run()
+    at.button(key="run_complete_simulation").click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert at.session_state["page"] == "results"
+    recorded = at.session_state["_run_metadata"]["default_decision_settings"]
+    assert recorded["purchase_vs_bid"]["probability_y"] == 0.3
+    assert RUN_LINE in _default_behavior_lines(at)
+
+    _click(at, BACK_TO_PAGE2)
+    at.slider(key=PVB_PROBABILITY).set_value(0.8).run()
+    assert at.session_state[PVB_PROBABILITY] == 0.8        # the live value has moved on
+    _click(at, VIEW_RESULTS)
+    assert at.session_state["page"] == "results"
+    lines = _default_behavior_lines(at)
+    assert RUN_LINE in lines
+    assert not any("80%" in line for line in lines), lines

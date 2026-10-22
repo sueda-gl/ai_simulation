@@ -214,6 +214,13 @@ class RunMetadata:
     simulation_params: Dict[str, Any] = field(default_factory=dict)
     rtd_run_element: Optional[str] = None
     anchor_observed_weight: Optional[float] = None
+    # The default-decision settings the run used: the collect_decision_settings()
+    # output every sub-run handed the engine ({decision: {'type': ..., then
+    # 'probability_y' | 'selected_params' + 'weights' | 'priority_template' |
+    # 'selected_option' | 'value'}}).  The results page shows these for a decision
+    # left on its default, never the live Overview keys a later edit has moved.
+    # None when the metadata was built without them.
+    default_decision_settings: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 @dataclass(frozen=True)

@@ -28,7 +28,12 @@ property here; the semantics are the ones the page had when it read those keys:
   donation anchor weight it ran with - never ``st.session_state.sim_params`` or the
   live keys, which a Page 1 / Page 2 edit after the run has moved on.  Metadata
   from before these were recorded (2026-10-22) falls back to the live values, the
-  only ones such a session has.
+  only ones such a session has;
+* ``default_setting(decision, name, live_value)`` is the default-decision setting
+  the run used (``RunMetadata.default_decision_settings``: the Overview tab's
+  probability, parameter selection, priority template, option or value), never
+  the live Overview key; metadata that does not record them falls back to
+  ``live_value``, the live key the caller read, as above.
 """
 import dataclasses
 from dataclasses import dataclass, field
@@ -40,6 +45,7 @@ import streamlit as st
 
 from app.models import ALL_DECISIONS
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
+from app.state.saved_configs import RunOnScreen
 
 
 def _as_plain_dict(sim_params: Any) -> Dict[str, Any]:
@@ -97,6 +103,10 @@ class RunContext:
     rtd_run_element: Optional[str] = None
     # The donation anchor weight the run used (observed share; predicted = 1 - it)
     anchor_observed_weight: float = 0.75
+    # The default-decision settings the run used ({decision: {'type': ..., ...}},
+    # ``RunMetadata.default_decision_settings``); None when the metadata does not
+    # record them (``default_setting`` then returns the caller's live value)
+    default_decision_settings: Optional[Dict[str, Dict[str, Any]]] = None
 
     # ------------------------------------------------------------ factory
     @classmethod
@@ -167,6 +177,7 @@ class RunContext:
             simulation_params=simulation_params,
             rtd_run_element=rtd_run_element,
             anchor_observed_weight=float(anchor),
+            default_decision_settings=metadata.get("default_decision_settings"),
         )
 
     # --------------------------------------------------- the run's Page 1 values
@@ -206,6 +217,26 @@ class RunContext:
     @property
     def anchor_predicted_weight(self) -> float:
         return 1 - self.anchor_observed_weight
+
+    # ------------------------------------------ the run's default-decision settings
+    def default_setting(self, decision: str, name: str, live_value: Any = None) -> Any:
+        """``name`` ('probability_y', 'selected_params', 'priority_template',
+        'selected_option' or 'value') of the default-decision settings the run gave
+        ``decision`` - not the live Overview key, which a change after the run has
+        moved.  Metadata that does not record them falls back to ``live_value``:
+        the live key as the caller read it, what the page showed before."""
+        recorded = (self.default_decision_settings or {}).get(decision) or {}
+        return recorded[name] if name in recorded else live_value
+
+    # ------------------------------------------------- what "Use This Config" pins
+    @property
+    def run_on_screen(self) -> RunOnScreen:
+        """The run's seed, agent count, population and income mode, handed to the
+        pin store (``app.state.saved_configs``), which takes them as arguments
+        instead of reaching back into this page."""
+        return RunOnScreen(seed=self.seed, n_agents=self.n_agents,
+                           population_mode=self.effective_population_mode,
+                           income_mode=self.effective_income_mode)
 
     # ----------------------------------------------------------- base time
     @property

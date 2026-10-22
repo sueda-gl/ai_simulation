@@ -207,8 +207,9 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         st.info("💡 **No donation configuration selected** - Using simple rate configuration")
         st.markdown("Select a donation configuration on Page 2 to see the full distribution")
 
-        # Use _default_value key (consistent with Page 2 for numeric defaults;
-        # read-only here - the key is initialised at app start by app.models)
+        # The default value the run used (RunContext: the run's default-decision
+        # settings), not the live Overview key ({decision}_default_value), which a
+        # change after the run has moved; read-only here
         slider_key = f"{decision_name}_default_value"
 
         # Top section: Current settings
@@ -221,7 +222,8 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
             # Calculate average of actual final donation rates
             avg_final_rate = pd.to_numeric(decision_data, errors='coerce').mean()
             if pd.isna(avg_final_rate):
-                avg_final_rate = st.session_state.get(slider_key, 0.10)  # 10% as default
+                avg_final_rate = ctx.default_setting(
+                    decision_name, "value", st.session_state.get(slider_key, 0.10))  # 10% as default
             st.metric("Final Donation Rate", f"{avg_final_rate:.2%}")
 
         with col3:

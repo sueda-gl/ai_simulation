@@ -51,9 +51,12 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
     param_names = {param[0]: param[1] for param in parameters}
     param_descriptions = {param[0]: param[2] for param in parameters}
     
-    # Use _default_ key (same as Page 2 Overview tab) for consistency
-    # (read-only here: the key is initialised at app start by app.models)
+    # The parameters the run used (RunContext: the run's default-decision settings),
+    # not the live Overview selection ({decision}_default_params), which a change
+    # after the run has moved; read-only here
     selection_key = f"{decision_name}_default_params"
+    selected_params = RunContext.from_session().default_setting(
+        decision_name, "selected_params", st.session_state.get(selection_key, []))
 
     # Top section: Current results display
     col1, col2, col3, col4 = st.columns(4)
@@ -63,7 +66,7 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
     
     with col2:
         # Show number of selected parameters
-        num_selected = len(st.session_state[selection_key])
+        num_selected = len(selected_params)
         st.metric("Active Parameters", f"{num_selected}/4")
     
     with col3:
@@ -92,8 +95,7 @@ def render_vendor_choice_weights(df, decision_name, decision_title, decision_dat
     with col_selection:
         st.markdown("**⚙️ Selected Parameters (Read-Only):**")
         
-        # Get selected parameters from session state
-        selected_params = st.session_state.get(selection_key, [])
+        # selected_params: the run's (read above)
         
         # Display active parameters
         if len(selected_params) > 0:

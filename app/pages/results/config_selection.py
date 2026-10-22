@@ -109,7 +109,8 @@ def render_configuration_selection_ui(results_dict, ctx=None):
                     key="save_single_config",
                     help="Save this configuration for use in combined simulations"
                 ):
-                    saved, _config, failure = save_selected_configuration(result_key, result_df)
+                    saved, _config, failure = save_selected_configuration(
+                        result_key, result_df, ctx.run_on_screen)
                     if saved:
                         st.success(f"✅ Configuration saved: {population_mode} + {income_spec_mode}")
                         st.rerun()

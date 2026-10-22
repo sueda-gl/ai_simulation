@@ -20,6 +20,7 @@ saved configuration's pinned agent count and population; only the seed varies
 per repetition.  The per-run statistics and the summary come from
 app/reports/mc.py, which scripts/run_mc_study.py uses as well.
 """
+import copy
 import dataclasses
 import streamlit as st
 import pandas as pd
@@ -260,6 +261,8 @@ def _run_metadata_dict(metadata: RunMetadata) -> dict:
         'simulation_params': dict(metadata.simulation_params),
         'rtd_run_element': metadata.rtd_run_element,
         'anchor_observed_weight': metadata.anchor_observed_weight,
+        # the default-decision settings the run used (the Overview tab's values)
+        'default_decision_settings': copy.deepcopy(metadata.default_decision_settings),
     }
 
 

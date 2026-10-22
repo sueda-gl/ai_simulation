@@ -5,8 +5,8 @@ which reference. This page is the map.
 
 ```bash
 pip install pytest                                   # not in requirements.txt
-.venv/bin/python -m pytest tests/ -q -m "not slow"   # 444 tests, about 40 seconds
-.venv/bin/python -m pytest tests/ -q                 # 714 tests, about 3 minutes
+.venv/bin/python -m pytest tests/ -q -m "not slow"   # 453 tests, about 40 seconds
+.venv/bin/python -m pytest tests/ -q                 # 724 tests, about 3 minutes
 ```
 
 Run from the repository root: `pytest.ini` puts the root on `sys.path`
@@ -80,7 +80,7 @@ Some modules also import from each other: `base_state` / `plan_for` / `ALL` from
 | `test_engine_helpers.py` | `should_use_stochastic`, `assign_global_transaction_ids`, `build_simulation_params`. | Their contracts. |
 | `test_export_pricing.py` | Customer Price per transaction type; one vendor score across the Agent- and Transaction-Level exports. | `docs/reference/COOPECON AI Agent Documentation 2026-10-07.docx`. |
 | `test_golden_runs.py` | 15 runs through snapshot, plan and execute: result frames, vendor lists, 13 export builders. | Golden `tests/golden/<scenario>/`. |
-| `test_import_boundary.py` | `src/` never imports `streamlit` or `app`; `app/reports/` never imports `streamlit` (subprocess and AST). | The import rules (`docs/README.md` §6). |
+| `test_import_boundary.py` | `src/` never imports `streamlit` or `app`; `app/reports/` never imports `streamlit`; `app/state/` never imports `app.pages` (subprocess and AST). | The import rules (`docs/README.md` §6). |
 | `test_no_consensus_in_outputs.py` | Exports and screens say "integrated", never "consensus". | The output wording rule. |
 | `test_reports_interface.py` | What each `app/reports` builder returns, its sheet names and promised columns. | The builders' documented shape. |
 | `test_research_cyclic_population.py` | Research Baseline cycles through the 280 in file order; Research Specification samples randomly by seed. | The specification's sampling rule. |
@@ -110,5 +110,5 @@ Some modules also import from each other: `base_state` / `plan_for` / `ALL` from
 | `test_rtd_results_ui.py` | The Decision 4 results page: subtitles, configuration summary, score charts, complete run, "Use This Config", comparison layouts. | The Decision 4 display specification. |
 | `test_rtd_sigma_coefficient_default.py` | Decision 4's sigma coefficient defaults to 0.5, in the tab, on reset and in a run. | `config/decisions.yaml`; the updated user manual. |
 | `test_rtd_tab_text_ui.py` | The Decision 4 configuration tab's wording and structure. | The review round that settled the tab's wording. |
-| `test_run_context_run_values.py` | The results page reads the run's Page 1 values, not the live widgets. | `RunMetadata`. |
+| `test_run_context_run_values.py` | The results page reads the run's Page 1 values and default-decision settings, not the live widgets. | `RunMetadata`. |
 | `test_stochastic_widgets_no_reset.py` | No stochastic control on Page 2 resets the session; no UI action writes `config/decisions.yaml`. | The reported reset glitch. |

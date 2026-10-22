@@ -8,6 +8,7 @@ The result value counts come from `app.reports.transactions`.
 import streamlit as st
 import plotly.express as px
 
+from app.pages.results.run_context import RunContext
 from app.reports.transactions import rejected_option_value_counts
 
 
@@ -28,9 +29,12 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
     # Get current option from results or session state
     value_counts, current_option = rejected_option_value_counts(decision_data)
     
-    # Use _default_selection key (same as Page 2 Overview tab) for consistency
-    # (read-only here: the key is initialised at app start by app.models)
+    # The option the run used (RunContext: the run's default-decision settings),
+    # not the live Overview radio ({decision}_default_selection), which a change
+    # after the run has moved; read-only here
     radio_key = f"{decision_name}_default_selection"
+    configured_option = RunContext.from_session().default_setting(
+        decision_name, "selected_option", st.session_state.get(radio_key, current_option))
 
     # Top section: Current results display
     col1, col2, col3, col4 = st.columns(4)
@@ -39,8 +43,7 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
         st.metric("Total Agents", f"{len(decision_data):,}")
     
     with col2:
-        # Show what's configured for NEXT simulation (from session state)
-        configured_option = st.session_state.get(radio_key, current_option)
+        # The option the run was configured with (configured_option, above)
         display_name = option_names.get(configured_option, configured_option)
         st.metric("Configured Option", display_name.split(":")[0])  # Just "Option X"
     
@@ -61,8 +64,8 @@ def render_rejected_transaction_option(df, decision_name, decision_title, decisi
     col_radio, col_viz = st.columns([1, 1])
     
     with col_radio:
-        # Get current selection from session state
-        current_selection = st.session_state.get(radio_key, current_option)
+        # The run's option (configured_option, above)
+        current_selection = configured_option
         
         # Display selected option as read-only
         st.success(f"✅ **Selected Option:**\n\n{option_names.get(current_selection, current_selection)}")

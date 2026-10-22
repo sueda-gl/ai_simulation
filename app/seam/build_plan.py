@@ -1330,6 +1330,8 @@ def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFa
         rtd_run_element=snapshot.get("rtd_run_element"),
         anchor_observed_weight=donation_anchor_weights(
             snapshot, facts.saved_configs.get("donation_default"))["observed"],
+        # a copy: the snapshot is shallow, so its lists are the live session's
+        default_decision_settings=copy.deepcopy(facts.decision_settings),
     )
 
 

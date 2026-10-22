@@ -1,5 +1,6 @@
 """
-Import-boundary tests: two layers that must stay importable without the UI.
+Import-boundary tests: two layers that must stay importable without the UI, and
+the stores that must not depend on the screens.
 
 Rule 1 -- `src/` is the engine and must not depend on the UI.
 Rule 2 -- `app/reports/` holds the report builders lifted out of the pages
@@ -9,6 +10,10 @@ Rule 2 -- `app/reports/` holds the report builders lifted out of the pages
           the whole point of the split -- the exported numbers can then be
           computed and tested outside a Streamlit script run, and a builder
           cannot quietly start reading `st.session_state` again.
+Rule 3 -- `app/state/` holds the stores (the "Use This Config" store, the
+          session-key registry, the widget wrapper). They sit below the screens
+          (docs/README.md section 1), so they must never import `app.pages`: a
+          page hands a store the values it needs as arguments.
 
 Rule 1 under test: importing ANY module under `src/` must never drag `streamlit`
 or the `app` package into `sys.modules`. The engine is the layer the CLI
@@ -45,6 +50,7 @@ from conftest import ROOT as PROJECT_ROOT
 
 SRC_ROOT = PROJECT_ROOT / "src"
 REPORTS_ROOT = PROJECT_ROOT / "app" / "reports"
+STATE_ROOT = PROJECT_ROOT / "app" / "state"
 
 # Prefer the project's own venv interpreter (that is what the app and the CLI
 # run under); fall back to the interpreter running pytest.
@@ -88,6 +94,7 @@ def _discover_modules(root):
 
 SRC_MODULES = _discover_modules(SRC_ROOT)
 REPORTS_MODULES = _discover_modules(REPORTS_ROOT)
+STATE_MODULES = _discover_modules(STATE_ROOT)
 
 
 def _import_in_fresh_subprocess(module_name):
@@ -189,31 +196,40 @@ def test_known_app_importers_are_clean(module_name):
 
 # --- static check: no UI import statement anywhere in src/, even a lazy one ---
 
+def _under(name, roots):
+    """`name` is one of `roots` or a submodule of one (`app` covers `app.pages`,
+    not `appnope`; `app.pages` covers `app.pages.results`, not `app.pages_x`)."""
+    return any(name == root or name.startswith(root + ".") for root in roots)
+
+
 def _ui_import_statements(path, roots=("streamlit", "app")):
-    """Every `import streamlit`/`import app...` in a file, at ANY nesting depth.
+    """Every import of a module under `roots` in a file, at ANY nesting depth.
 
     ast.walk descends into function and class bodies, so this also catches the
     deferred `try: from app.pages.decision_execution import ...` pattern that a
     fresh-import subprocess can never observe.
 
     `roots` narrows what counts: the report builders under app/reports/ are part
-    of `app`, so there only `streamlit` is forbidden.
+    of `app`, so there only `streamlit` is forbidden; under app/state/ only
+    `app.pages`.  A relative import is resolved against the file's package
+    first (`from ..pages import x` in app/state/ is `app.pages.x`), and
+    `from app import pages` counts as importing `app.pages`.
     """
     tree = ast.parse(path.read_text(), filename=str(path))
+    package = list(path.relative_to(PROJECT_ROOT).parent.parts)
     hits = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            names = [alias.name for alias in node.names]
+            names = [alias.name for alias in node.names if _under(alias.name, roots)]
         elif isinstance(node, ast.ImportFrom):
-            if node.level:          # relative import: cannot reach app/streamlit
-                continue
-            names = [node.module or ""]
+            base = package[:len(package) - node.level + 1] if node.level else []
+            module = ".".join(base + ([node.module] if node.module else []))
+            candidates = [module] + [f"{module}.{alias.name}" for alias in node.names]
+            names = [name for name in candidates if _under(name, roots)][:1]
         else:
             continue
         for name in names:
-            root = name.split(".")[0]
-            if root in roots:
-                hits.append(f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}: {name}")
+            hits.append(f"{path.relative_to(PROJECT_ROOT)}:{node.lineno}: {name}")
     return hits
 
 
@@ -291,5 +307,65 @@ def test_report_file_has_no_streamlit_import_statement(rel_path):
     assert hits == [], (
         "app/reports/ file imports streamlit (a lazy import inside a function "
         "counts - it breaks the first time the builder runs outside Streamlit):\n  "
+        + "\n  ".join(hits)
+    )
+
+
+# ===========================================================================
+# Rule 3: app/state/ -- the stores must not import the screens
+# ===========================================================================
+# The stores sit below the pages: a page that needs a store to record something
+# about the run on screen hands it the values (the results page passes the
+# "Use This Config" store the run's seed, agent count, population and income
+# mode, `RunContext.run_on_screen`). A store that imported `app.pages` - even
+# lazily, inside a function - would depend on the layer that depends on it.
+
+STATE_FORBIDDEN = ("app.pages",)
+
+
+def test_state_modules_were_discovered():
+    """Guard against the walk silently finding nothing (then everything 'passes')."""
+    for expected in ("app.state", "app.state.saved_configs", "app.state.registry",
+                     "app.state.widgets"):
+        assert expected in STATE_MODULES, f"{expected} missing from {STATE_MODULES}"
+
+
+@pytest.mark.parametrize("module_name", STATE_MODULES)
+def test_state_module_does_not_import_pages(module_name):
+    """No module under app/state/ may pull app.pages into a fresh interpreter."""
+    rc, leaked, out, err = _import_in_fresh_subprocess(module_name)
+
+    assert rc == 0, (
+        f"importing {module_name} in a fresh interpreter failed (rc={rc}).\n"
+        f"stderr:\n{_tail(err)}\nstdout:\n{_tail(out)}"
+    )
+    assert leaked is not None, (
+        f"probe produced no {MARKER} line for {module_name}.\n"
+        f"stdout:\n{_tail(out)}\nstderr:\n{_tail(err)}"
+    )
+    # streamlit and the rest of `app` are expected here; only the pages are forbidden
+    pages_leaked = [m for m in leaked if _under(m, STATE_FORBIDDEN)]
+    assert pages_leaked == [], (
+        f"importing {module_name} pulled the screens into sys.modules: "
+        f"{_brief(pages_leaked)}.\n"
+        "app/state/ must not depend on app/pages/ - let the page pass the values "
+        "the store needs as arguments."
+    )
+
+
+@pytest.mark.parametrize(
+    "rel_path",
+    [
+        str(p.relative_to(PROJECT_ROOT))
+        for p in sorted(STATE_ROOT.rglob("*.py"))
+        if "__pycache__" not in p.parts
+    ],
+)
+def test_state_file_has_no_pages_import_statement(rel_path):
+    """Also forbid a lazy `from app.pages... import` hidden inside a function body."""
+    hits = _ui_import_statements(PROJECT_ROOT / rel_path, roots=STATE_FORBIDDEN)
+    assert hits == [], (
+        "app/state/ file imports the screens (a lazy import inside a function "
+        "counts - the store then depends on the layer above it):\n  "
         + "\n  ".join(hits)
     )
