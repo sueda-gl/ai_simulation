@@ -8,44 +8,37 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 # Import income utilities for Category-First architecture
 from src.engine.income import get_actual_allowance, get_agent_income
-from src.utils.stochastic import get_stochastic_sigma, should_use_stochastic
-from src.decisions._shared import normalise_income_mode
+from src.utils.stochastic import should_use_stochastic
+from src.decisions._shared import normalise_income_mode, require, file_block
+
+DECISION = 'donation_default'
 
 # ---------------------------------------------------------------------------
-# Methodology-document constants. config/decisions.yaml is what the engine
-# reads; these mirror it and are used only when a params dict lacks a key (direct calls).
-# Doc: "Donation_Rate_Decision_Methodology-2-1 250925.docx", sections 3, 5 and 6.
+# Every constant of the methodology document ("Donation_Rate_Decision_Methodology-2-1
+# 250925.docx", sections 3, 5 and 6) lives in config/decisions.yaml and is read
+# strictly from ``params`` through ``require``: a missing key raises naming the
+# decision and the key; there is no module fallback.
+#
+# The names below are the FILE's values, read once at import through the one loader
+# (src/config.py), for the readers that import them by name
+# (tests/test_donation_default_doc.py). The decision never reads them.
 # ---------------------------------------------------------------------------
+_FILE = file_block(DECISION)
+# The doc's final regression tables (section 3), per income mode.
 DOC_COEFFICIENTS = {
-    'categorical': {'intercept': 1.519818, 'beta_hh': 0.6042141},
-    'continuous': {'intercept': -0.139596, 'beta_hh': 0.7840063, 'beta_income_linear': 0.0255512},
+    mode: dict(require(_FILE, DECISION, 'regression_coefficients', mode))
+    for mode in ('categorical', 'continuous')
 }
 # r(min) / r(max) of `predict predprosocial` over the 280 participants (doc section 5)
 DOC_PREDICTED_RANGE = {
-    'categorical': (-0.5084039942, 8.5422410303),
-    'continuous': (-1.2783853173, 8.7549317689),
+    mode: tuple(bounds)
+    for mode, bounds in require(_FILE, DECISION, 'scaling', 'predicted_range').items()
 }
-# r(min) / r(max) of twtsospesoaw2ax2periods12 over the 280 participants
-DOC_OBSERVED_RANGE = (0.0, 112.0)
 # Stata `encode studyprogramcategory` levels -> beta_study keys (base: G 2-year Program)
-STUDY_CATEGORY_KEYS = {
-    'G 2-year Program': 'Grad2yr',
-    'UG 3-year Program': 'UG3yr',
-    'Law 5-year Program': 'Law5yr',
-    'Incoming': 'Incoming',
-}
+STUDY_CATEGORY_KEYS = dict(require(_FILE, DECISION, 'study_program', 'category_keys'))
 # Study Program -> Study Program Category in the 280-participant data (a function: every
 # programme has exactly one category). Copula agents carry only `Study Program`.
-PROGRAM_TO_CATEGORY = {
-    'ACME': 'G 2-year Program', 'AFC': 'G 2-year Program', 'BAI': 'UG 3-year Program',
-    'BEMACS': 'UG 3-year Program', 'BESS-CLES': 'UG 3-year Program', 'BIEF': 'UG 3-year Program',
-    'BIEM': 'UG 3-year Program', 'BIG': 'UG 3-year Program', 'CLEACC': 'UG 3-year Program',
-    'CLEAM': 'UG 3-year Program', 'CLEF': 'UG 3-year Program', 'CLELI': 'G 2-year Program',
-    'CLMG': 'Law 5-year Program', 'CYBER': 'G 2-year Program', 'DES-ESS': 'G 2-year Program',
-    'DSBA': 'G 2-year Program', 'EMIT': 'G 2-year Program', 'FIN': 'G 2-year Program',
-    'GIO': 'G 2-year Program', 'IM': 'G 2-year Program', 'M': 'G 2-year Program',
-    'MM': 'G 2-year Program', 'PPA': 'G 2-year Program', 'RI': 'Incoming',
-}
+PROGRAM_TO_CATEGORY = dict(require(_FILE, DECISION, 'study_program', 'program_to_category'))
 
 # simulation_config key the engine fills in Pass 1 with max_j max(draw_j, 0) (0-100 scale)
 POPULATION_MAX_KEY = 'donation_population_max'
@@ -64,12 +57,11 @@ def study_category_key(agent_state: dict, params: dict) -> str:
     only `Study Program`; it is mapped through study_program.program_to_category. An
     unknown programme or category raises (errors raise in every mode; no silent reference category).
     """
-    sp_cfg = params.get('study_program') or {}
-    category_keys = sp_cfg.get('category_keys') or STUDY_CATEGORY_KEYS
+    category_keys = require(params, DECISION, 'study_program', 'category_keys')
     category = agent_state.get('Study Program Category')
     if _is_missing(category):
         program = agent_state.get('Study Program')
-        program_map = sp_cfg.get('program_to_category') or PROGRAM_TO_CATEGORY
+        program_map = require(params, DECISION, 'study_program', 'program_to_category')
         if program not in program_map:
             raise ValueError(f"donation_default: unknown Study Program {program!r} "
                              f"(no Study Program Category to map it to)")
@@ -108,17 +100,21 @@ def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
     # Select appropriate coefficient set based on income mode
     if 'categorical' in regression_coeffs and 'continuous' in regression_coeffs:
         coeffs = regression_coeffs[normalized_mode]
+        coeffs_path = f'regression_coefficients.{normalized_mode}'
+    elif regression_coeffs:
+        coeffs, coeffs_path = regression_coeffs, 'regression_coefficients'   # the app's flat set
     else:
-        # Flat set (what the app's patch carries) or the old regression block
-        coeffs = regression_coeffs if regression_coeffs else params.get('regression', {})
-    doc = DOC_COEFFICIENTS[normalized_mode]
+        coeffs, coeffs_path = params.get('regression', {}), 'regression'      # the old block
+
+    def coef(name):
+        return require(coeffs, DECISION, name, prefix=coeffs_path)
 
     # Start with intercept
-    predicted = coeffs.get('intercept', doc['intercept'])
+    predicted = coef('intercept')
 
     # Add group effect (map HighSub to FullSub for coefficient lookup)
     group_mapped = 'FullSub' if group == 'HighSub' else group
-    beta_group = coeffs.get('beta_group', {})
+    beta_group = coef('beta_group')
     if group_mapped in beta_group:
         predicted += beta_group[group_mapped]
 
@@ -128,31 +124,29 @@ def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
         # This ensures consistent mapping across all decisions
         actual_allowance = get_actual_allowance(agent_state, simulation_config, rng)
 
-        beta_lin = coeffs.get('beta_income_linear', DOC_COEFFICIENTS['continuous']['beta_income_linear'])
+        beta_lin = coef('beta_income_linear')
         predicted += beta_lin * actual_allowance
     else:
         # Categorical (default): i.totalallowance, level 1 (12 credits) is the reference
         income_quintiles = {1: 'Q1', 2: 'Q2', 3: 'Q3', 4: 'Q4', 5: 'Q5'}
         income_q = income_quintiles.get(int(income_level), 'Q5')
-        beta_income_q = coeffs.get('beta_income_q', {})
+        beta_income_q = coef('beta_income_q')
         if income_q in beta_income_q:
             predicted += beta_income_q[income_q]
 
     # Study programme effect: doc i.studyprogramcategorycat (reference G 2-year Program)
-    beta_study = coeffs.get('beta_study', {})
+    beta_study = coef('beta_study')
     study_category = study_category_key(agent_state, params)
     if study_category in beta_study:
         predicted += beta_study[study_category]
 
     # Honesty-humility effect: the doc's coefficient is on the RAW score, not a z-score
-    beta_hh = coeffs.get('beta_hh', doc['beta_hh'])
+    beta_hh = coef('beta_hh')
     predicted += beta_hh * hh_score
 
     # Step 2: Standardize both values to 0-100 with the 280-participant min/max (doc section 5)
-    scaling = params.get('scaling') or {}
-    obs_min, obs_max = scaling.get('observed_range', DOC_OBSERVED_RANGE)
-    pred_min, pred_max = (scaling.get('predicted_range') or {}).get(
-        normalized_mode, DOC_PREDICTED_RANGE[normalized_mode])
+    obs_min, obs_max = require(params, DECISION, 'scaling', 'observed_range')
+    pred_min, pred_max = require(params, DECISION, 'scaling', 'predicted_range', normalized_mode)
 
     s100_observed = 100 * (observed_prosocial - obs_min) / (obs_max - obs_min)
     s100_predicted = 100 * (predicted - pred_min) / (pred_max - pred_min)
@@ -163,13 +157,14 @@ def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
     s100_predicted = np.clip(s100_predicted, 0, 100)
 
     # Step 3: Compute anchor with specified weights (still in 0-100 scale)
-    weights = params['anchor_weights']
-    s100_anchor = weights['observed'] * s100_observed + weights['predicted'] * s100_predicted
+    w_observed = require(params, DECISION, 'anchor_weights', 'observed')
+    w_predicted = require(params, DECISION, 'anchor_weights', 'predicted')
+    s100_anchor = w_observed * s100_observed + w_predicted * s100_predicted
 
     # Step 3b: Apply adjustment parameter to shift the distribution
-    # (app default -4.0 in adjustment.shift_value; the doc has no shift, i.e. 0)
-    adjustment_params = params.get('adjustment', {})
-    shift_value = adjustment_params.get('shift_value', 0.0)
+    # (config/decisions.yaml adjustment.shift_value, app default -4.0; the doc has no
+    # shift, i.e. 0, which the doc reference test sets explicitly)
+    shift_value = require(params, DECISION, 'adjustment', 'shift_value')
     s100_anchor_adjusted = s100_anchor + shift_value
 
     # Step 4: Determine if we should use stochastic component.
@@ -190,22 +185,21 @@ def donation_draw(agent_state: dict, params: dict, rng: np.random.Generator,
         # Continuous mode uses a single income coefficient, so level-specific
         # sigmas are not meaningful — always fall back to overall sigma.
         if sigma_strategy == 'quintile' and normalized_mode != 'continuous':
-            # Quintile mode (categorical only): use centralized utility for level-specific sigma
+            # Quintile mode (categorical only): the level's base sigma times its scale factor
             level = int(income_level)
-            sigma_raw = get_stochastic_sigma(
-                level=level,
-                stochastic_params=stochastic_params,
-                convert_to_z_scale=False,
-            )
+            sigma_quintile = require(params, DECISION, 'stochastic', 'sigma_quintile')
+            quintile_scale_factors = require(params, DECISION, 'stochastic', 'quintile_scale_factors')
+            sigma_raw = (float(require(sigma_quintile, DECISION, str(level), prefix='stochastic.sigma_quintile'))
+                         * float(require(quintile_scale_factors, DECISION, str(level),
+                                         prefix='stochastic.quintile_scale_factors')))
         else:
             # Overall mode OR continuous income mode
-            # sigma_value should be set by simulation.py from UI's sigma_value_ui
-            # If sigma_value is 0 or not set, fall back to sigma_overall or default
-            sigma_raw = stochastic_params.get('sigma_value', 0)
+            # sigma_value is set by the seam from the tab's sigma coefficient;
+            # a sigma_value of 0 means sigma_overall * scale_factor
+            sigma_raw = require(params, DECISION, 'stochastic', 'sigma_value')
             if sigma_raw == 0:
-                # Fallback: use sigma_overall * scale_factor (like the centralized utility)
-                sigma_overall = stochastic_params.get('sigma_overall', 9.899547)
-                scale_factor = stochastic_params.get('scale_factor', 1.0)
+                sigma_overall = require(params, DECISION, 'stochastic', 'sigma_overall')
+                scale_factor = require(params, DECISION, 'stochastic', 'scale_factor')
                 sigma_raw = sigma_overall * scale_factor
 
         # Convert sigma from the 0-112 credit scale to the 0-100 anchor scale

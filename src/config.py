@@ -119,8 +119,11 @@ class DecisionsConfig:
         return copy.deepcopy(block)
 
     def donation_adjustment_shift(self) -> float:
+        """donation_default.adjustment.shift_value (the app default; the file is the only source)."""
         adjustment = self.decision("donation_default").get("adjustment") or {}
-        return float(adjustment.get("shift_value", 0.0))
+        if "shift_value" not in adjustment:
+            raise KeyError(f"donation_default.adjustment.shift_value missing from {self.decisions_path}")
+        return float(adjustment["shift_value"])
 
     # ---------------------------------------------------- Decision 4 defaults
 
@@ -141,20 +144,29 @@ def rtd_sigma_coefficient_defaults(rtd_block: Mapping) -> Tuple[float, Dict[str,
 
     The file carries the coefficients per element, but the tab applies ONE
     decision-wide set to all five elements, so the five must agree - a file in
-    which they differ is rejected instead of silently picking one. An element
-    without the keys falls back as the engine does (``scale_factor`` 1.0,
-    quintile factors = ``scale_factor``).
+    which they differ is rejected instead of silently picking one. The file is the
+    only source: an element without ``scale_factor`` or without all five
+    ``quintile_scale_factors`` raises a KeyError naming the key (the engine reads the
+    same keys strictly), as does a block without ``stochastic.mechanisms``.
     """
+    path = "rejected_transaction_defaults.stochastic.mechanisms"
     mechanisms = ((rtd_block or {}).get("stochastic") or {}).get("mechanisms") or {}
+    if not mechanisms:
+        raise KeyError(f"{path} missing from config/decisions.yaml")
     sets = {}
     for name, mech in mechanisms.items():
         mech = mech or {}
-        scale = float(mech.get("scale_factor", 1.0))
+        if "scale_factor" not in mech:
+            raise KeyError(f"{path}.{name}.scale_factor missing from config/decisions.yaml")
+        scale = float(mech["scale_factor"])
         quintiles = mech.get("quintile_scale_factors") or {}
-        sets[name] = (scale, {lvl: float(quintiles.get(lvl, quintiles.get(int(lvl), scale)))
-                              for lvl in RTD_LEVELS})
-    if not sets:
-        return 1.0, {lvl: 1.0 for lvl in RTD_LEVELS}
+        per_level = {}
+        for lvl in RTD_LEVELS:
+            key = lvl if lvl in quintiles else int(lvl)
+            if key not in quintiles:
+                raise KeyError(f"{path}.{name}.quintile_scale_factors.{lvl} missing from config/decisions.yaml")
+            per_level[lvl] = float(quintiles[key])
+        sets[name] = (scale, per_level)
     distinct = {repr(v) for v in sets.values()}
     if len(distinct) > 1:
         raise ValueError("rejected_transaction_defaults: the five elements' scale_factor / "

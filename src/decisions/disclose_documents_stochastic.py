@@ -42,17 +42,17 @@ from typing import Dict, Any, Optional, List
 from src.engine.income import get_agent_income, ALLOWANCE_CREDIT_MAPPING
 from src.engine.config_access import get_simulation_param
 from src.engine.customer_type import get_customer_type
-from src.decisions._shared import z_score_trait, categorical_intercept, normalise_income_mode
+from src.decisions._shared import z_score_trait, categorical_intercept, normalise_income_mode, require
 from src.utils.stochastic import should_use_stochastic
 
-# ---------------------------------------------------------------------------
-# Constants verified against the reference Stata file (Stata_File_Decision 2_260626 - CORRECTED.dta)
-# ---------------------------------------------------------------------------
-B_EXTRA = 0.015584630336545     # z_E coefficient (document line 404/428)
-B_NEURO = -0.024781455105683    # z_N coefficient (CORRECTED reduced-form: fixes PC-weight + Neuroticism-decimal doc errors; was -0.022306825775166)
-B_AGREE = -0.016923520441338    # z_A coefficient (CORRECTED reduced-form: fixes PC-weight doc error; was -0.016604320441445)
-B_PI = 0.14735467793568         # z_picont (Personal Incentive) coefficient
-BETA0 = -0.75                   # final intercept (betadd0; the Decision 2 document's updated default, was -0.5)
+# Every constant of the model - the reduced-form trait coefficients (verified
+# against the reference Stata file, Stata_File_Decision 2_260626 - CORRECTED.dta),
+# the intercept beta0, the z-scoring statistics, the per-level categorical
+# intercepts, the composite SDs and the sigma block - is read strictly from
+# ``params``, this decision's block of config/decisions.yaml, through ``require``;
+# a missing key raises naming the decision and the key. The module carries no copy
+# of a value that is in the file.
+DECISION = 'disclose_documents'
 
 # ---------------------------------------------------------------------------
 # MEDIATOR path coefficients (document Formulas 2 & 3, Bansal et al. 2016 SEM).
@@ -70,35 +70,34 @@ TR_AGREE = 0.0762  # Agreeableness -> Trust            (Sobel-calculated path)
 TR_NEURO = -0.0204 # Neuroticism   -> Trust            (Sobel-calculated path)
 
 # Per-allowance-LEVEL categorical intercepts (added to the trait composite before
-# standardization). Verified against the reference .dta: weighted_dd_categorical - trait_terms by level.
-#   level 1 (TA 12) +0.1464773 ; level 2 (TA 32) +0.0902694 ; level 3 (TA 72) +0.0384204
-#   level 4 (TA 128) -0.0522756 ; level 5 (TA 200) -0.2393718
-CATEGORICAL_INTERCEPTS = {
-    1: 0.1464773,
-    2: 0.0902694,
-    3: 0.0384204,
-    4: -0.0522756,
-    5: -0.2393718,
-}
-
-# Composite SDs (egen std over original 280; used to standardize the composite).
-# Categorical: matches the reference .dta exactly and is used directly.
-# Continuous: this is only a FALLBACK — the orchestrators always recompute the population SD at
+# standardization): params['categorical_intercepts'] (verified against the reference
+# .dta: weighted_dd_categorical - trait_terms by level).
+#
+# Composite SDs (egen std over original 280; used to standardize the composite):
+# params['composite_z_scoring']. Categorical: matches the reference .dta exactly and is
+# used directly. Continuous: the orchestrators always recompute the population SD at
 # runtime via compute_continuous_dd_stats and inject it as simulation_config['dd_cont_stats'],
-# so this value is overridden before any agent is scored. Recomputed for the CORRECTED
-# coefficients (std(weighted_dd_cont) ddof=1) so the fallback also matches the corrected .dta.
-SD_WEIGHTED_DD_CONT = 0.15115619105427494          # corrected coeffs (was 0.1509454399)
-SD_WEIGHTED_DD_CATEGORICAL = 0.13783441040509267   # corrected coeffs (was 0.13755775490611996)
+# so the file's value is overridden before any agent is scored.
 
 
 def _z_score_trait(value: float, trait_name: str, z_params: Dict) -> float:
     """Z-score a raw trait using fixed original-280 mean/SD from config."""
-    return z_score_trait(value, trait_name, z_params)
+    return z_score_trait(value, trait_name, z_params, DECISION)
 
 
 def _get_categorical_intercept(params: Dict, level: int) -> float:
     """Resolve the per-level categorical intercept from config (supports level_N keys)."""
-    return categorical_intercept(params, level, CATEGORICAL_INTERCEPTS, 0.0)
+    return categorical_intercept(params, level, DECISION)
+
+
+def _equation_coefficients(params: Dict):
+    """(bE, bN, bA, bPI) from params['equation_coefficients']; a missing key raises."""
+    coeffs = require(params, DECISION, 'equation_coefficients')
+
+    def c(name):
+        return require(coeffs, DECISION, name, prefix='equation_coefficients')
+
+    return c('extraversion'), c('neuroticism'), c('agreeable'), c('personal_incentive')
 
 
 def compute_dd_score(
@@ -115,13 +114,9 @@ def compute_dd_score(
 
     Returns a dict of the deterministic score plus all intermediates for export/validation.
     """
-    z_params = params.get('z_scoring', {})
-    coeffs = params.get('equation_coefficients', {})
-    bE = coeffs.get('extraversion', B_EXTRA)
-    bN = coeffs.get('neuroticism', B_NEURO)
-    bA = coeffs.get('agreeable', B_AGREE)
-    bPI = coeffs.get('personal_incentive', B_PI)
-    beta0 = params.get('intercept', BETA0)
+    z_params = require(params, DECISION, 'z_scoring')
+    bE, bN, bA, bPI = _equation_coefficients(params)
+    beta0 = require(params, DECISION, 'intercept')
 
     z_E = _z_score_trait(agent_state.get('ExtraversionBig5', 0), 'ExtraversionBig5', z_params)
     z_N = _z_score_trait(agent_state.get('NeuroticismBig5', 0), 'NeuroticismBig5', z_params)
@@ -140,7 +135,6 @@ def compute_dd_score(
     total_allowance = float(ALLOWANCE_CREDIT_MAPPING.get(level, 200))
 
     is_continuous = normalise_income_mode(params.get('income_mode', 'categorical')) == 'continuous'
-    composite_z = params.get('composite_z_scoring', {})
 
     # Agent's raw income (used to surface PersonalIncentive = max_income - income for
     # export). PersonalIncentive itself needs the population max, which is NOT visible
@@ -163,18 +157,19 @@ def compute_dd_score(
         z_income = (agent_income - income_mean) / income_sd if income_sd > 0 else 0.0
         z_picont = -z_income
         weighted_dd = trait_terms + bPI * z_picont
-        # composite stats: runtime (population) if available, else fixed config / module default
+        # composite stats: runtime (population) if available, else the file's
         if simulation_config and 'dd_cont_stats' in simulation_config:
             cstats = simulation_config['dd_cont_stats']
+            c_mean, c_sd = cstats['mean'], cstats['sd']
         else:
-            cstats = composite_z.get('weighted_dd_cont', {'mean': 0.0, 'sd': SD_WEIGHTED_DD_CONT})
+            c_mean = require(params, DECISION, 'composite_z_scoring', 'weighted_dd_cont', 'mean')
+            c_sd = require(params, DECISION, 'composite_z_scoring', 'weighted_dd_cont', 'sd')
     else:
         intercept = _get_categorical_intercept(params, level)
         weighted_dd = trait_terms + intercept
-        cstats = composite_z.get('weighted_dd_categorical', {'mean': 0.0, 'sd': SD_WEIGHTED_DD_CATEGORICAL})
+        c_mean = require(params, DECISION, 'composite_z_scoring', 'weighted_dd_categorical', 'mean')
+        c_sd = require(params, DECISION, 'composite_z_scoring', 'weighted_dd_categorical', 'sd')
 
-    c_mean = cstats.get('mean', 0.0)
-    c_sd = cstats.get('sd', 1.0)
     z_weighted_dd = (weighted_dd - c_mean) / c_sd if c_sd > 0 else weighted_dd
     dd_deterministic = beta0 + z_weighted_dd
 
@@ -230,11 +225,13 @@ def _apply_stochastic(dd_det: float, params: Dict, pop_context: str,
     strategy = stoch.get('sigma_strategy', 'overall')
     if strategy == 'quintile':
         level = int(agent_state.get('Assigned Allowance Level', 3))
-        sigma_raw = stoch.get('sigma_quintile', {}).get(str(level), stoch.get('sigma_overall', 0.1606568355))
-        scale = stoch.get('quintile_scale_factors', {}).get(str(level), stoch.get('scale_factor', 1.0))
+        sigma_raw = require(require(params, DECISION, 'stochastic', 'sigma_quintile'),
+                            DECISION, str(level), prefix='stochastic.sigma_quintile')
+        scale = require(require(params, DECISION, 'stochastic', 'quintile_scale_factors'),
+                        DECISION, str(level), prefix='stochastic.quintile_scale_factors')
     else:
-        sigma_raw = stoch.get('sigma_overall', 0.1606568355)
-        scale = stoch.get('scale_factor', 1.0)
+        sigma_raw = require(params, DECISION, 'stochastic', 'sigma_overall')
+        scale = require(params, DECISION, 'stochastic', 'scale_factor')
     sigma_scaled = float(sigma_raw) * float(scale)
     return float(rng.normal(dd_det, sigma_scaled)), sigma_scaled
 
@@ -362,12 +359,8 @@ def compute_continuous_dd_stats(
     orchestrators (after income_stats are computed) so continuous mode standardizes the
     composite using population-specific stats (matching Stata's `egen z = std(...)`).
     """
-    z_params = dd_params.get('z_scoring', {})
-    coeffs = dd_params.get('equation_coefficients', {})
-    bE = coeffs.get('extraversion', B_EXTRA)
-    bN = coeffs.get('neuroticism', B_NEURO)
-    bA = coeffs.get('agreeable', B_AGREE)
-    bPI = coeffs.get('personal_incentive', B_PI)
+    z_params = require(dd_params, DECISION, 'z_scoring')
+    bE, bN, bA, bPI = _equation_coefficients(dd_params)
 
     income_stats = simulation_config.get('income_stats', {})
     income_mean = income_stats.get('mean', 0)

@@ -59,14 +59,20 @@ expected numbers in the test to make it pass is not a verification.
 ## 1. Change a constant or coefficient
 
 Every constant lives in `config/decisions.yaml`, under the decision's block, and that
-file is the only source of truth at run time: the app never writes it, and a user's
-change travels to the engine as a patch on a fresh copy. The four modelled decision
-modules also carry module-level dictionaries of the same values (for example
-`CATEGORICAL_INTERCEPTS`, `LOYALTY_COEFFS`, `DEFAULT_Z_SCORING`, `SIGMA_OVERALL` in
-`src/decisions/rejected_transaction_defaults.py`). Those are **fallbacks**, used only
-when the YAML lacks the key. Change the YAML; change the module dictionary to the
-same value so the fallback does not lie; cite the document revision the value comes
-from in the YAML comment.
+file is the only source of truth: the app never writes it, and a user's change travels
+to the engine as a patch on a fresh copy. The four modelled decision modules read every
+constant strictly from that block (`require` in `src/decisions/_shared.py`): a key the
+block lacks raises a `KeyError` naming the decision and the dotted key path, never a
+module fallback, and `tests/test_config_is_single_source.py` fails if a module
+re-introduces a literal copy of a file value. The few module-level names the app and the
+tests import by name (`PRIORITY_SEQUENCES`, `SIGMA_OVERALL`, `DEFAULT_Z_SCORING`,
+`FLEX_COEFFS` in `src/decisions/rejected_transaction_defaults.py`, `DOC_COEFFICIENTS`
+in `donation_default.py`, ...) are read from the file at import through the one loader
+in `src/config.py`; there is nothing to keep in step. Change the YAML; cite the
+document revision the value comes from in the YAML comment. (The only reads that
+tolerate an absent key are two Decision 4 blocks whose meaning existing tests pin:
+`intercepts`, where an absent element is 0, and `aggregation`, where a partial block is
+merged over the file's.)
 
 Then: the decision's reference test tells you whether the new value reproduces the
 reference file (if the reference moved too, regenerate the extract first), and the

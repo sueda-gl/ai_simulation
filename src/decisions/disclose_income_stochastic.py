@@ -36,24 +36,19 @@ Output: "Y" if final draw > 0, "N" otherwise
 import numpy as np
 from typing import Dict, Any, Optional, List
 
-from src.decisions._shared import z_score_trait, categorical_intercept, normalise_income_mode
+from src.decisions._shared import z_score_trait, categorical_intercept, normalise_income_mode, require
 from src.utils.stochastic import should_use_stochastic
 
-
-# Level-specific intercepts for categorical mode (from regression in documentation)
-# These replace the income coefficient in categorical mode
-CATEGORICAL_INTERCEPTS = {
-    1: 0.0089007,                      # Base intercept for level 1
-    2: 0.0089007 - 0.0033655,          # = 0.0055352
-    3: 0.0089007 - 0.0065898,          # = 0.0023109
-    4: 0.0089007 - 0.0121223,          # = -0.0032216
-    5: 0.0089007 - 0.0234331,          # = -0.0145324
-}
+# Every constant (coefficients, z-scoring statistics, the per-level categorical
+# intercepts, sigma) is read strictly from ``params`` - this decision's block of
+# config/decisions.yaml - through ``require``; a missing key raises naming the
+# decision and the key. The module carries no copy of a value that is in the file.
+DECISION = 'disclose_income'
 
 
 def _z_score_trait(value: float, trait_name: str, z_params: Dict) -> float:
     """Z-score a raw trait value using population parameters from config."""
-    return z_score_trait(value, trait_name, z_params)
+    return z_score_trait(value, trait_name, z_params, DECISION)
 
 
 def _compute_religiosity_composite_raw(agent_state: Dict, params: Dict) -> float:
@@ -69,9 +64,8 @@ def _compute_religiosity_composite_raw(agent_state: Dict, params: Dict) -> float
     religious_service = agent_state.get('ReligiousService', 0)          # ordinal
     
     # Scale ReligiousService to 0-1 range
-    religiosity_params = params.get('religiosity', {})
-    rs_min = religiosity_params.get('service_min', 0)
-    rs_max = religiosity_params.get('service_max', 4)
+    rs_min = require(params, DECISION, 'religiosity', 'service_min')
+    rs_max = require(params, DECISION, 'religiosity', 'service_max')
     
     if rs_max > rs_min:
         rs_01 = (religious_service - rs_min) / (rs_max - rs_min)
@@ -126,12 +120,12 @@ def compute_pass1_values(
             - z_obs_PB: Z-scored observed prosocial behavior
             - z_* traits: All z-scored traits for later use
     """
-    z_params = params.get('z_scoring', {})
-    
+    z_params = require(params, DECISION, 'z_scoring')
+
     # ========================================================================
     # Z-score personality traits using individual trait parameters
     # ========================================================================
-    
+
     z_agreeable = _z_score_trait(agent_state.get('Agreeable', 0), 'Agreeable', z_params)
     z_openness = _z_score_trait(agent_state.get('OpennessBig5', 0), 'OpennessBig5', z_params)
     z_honesty_humility = _z_score_trait(agent_state.get('Honesty_Humility', 0), 'Honesty_Humility', z_params)
@@ -143,13 +137,16 @@ def compute_pass1_values(
     # EQUATION 1: Compute weighted_prosocial (raw, before population std)
     # ========================================================================
     
-    eq1_coeffs = params.get('equation1_coefficients', {})
-    
+    eq1_coeffs = require(params, DECISION, 'equation1_coefficients')
+
+    def eq1(name):
+        return require(eq1_coeffs, DECISION, name, prefix='equation1_coefficients')
+
     weighted_prosocial = (
-        eq1_coeffs.get('agreeable', 0.023776) * z_agreeable +
-        eq1_coeffs.get('openness', 0.016537) * z_openness +
-        eq1_coeffs.get('honesty_humility', 0.0295482) * z_honesty_humility +
-        eq1_coeffs.get('religious', 0.0677157) * z_religious
+        eq1('agreeable') * z_agreeable +
+        eq1('openness') * z_openness +
+        eq1('honesty_humility') * z_honesty_humility +
+        eq1('religious') * z_religious
     )
 
     # ========================================================================
@@ -157,10 +154,8 @@ def compute_pass1_values(
     # Per documentation: egen z_weighted_prosocial = std(weighted_prosocial)
     # ========================================================================
 
-    composite_z = params.get('composite_z_scoring', {})
-    wp_z_params = composite_z.get('weighted_prosocial', {})
-    wp_mean = wp_z_params.get('mean', 0)
-    wp_sd = wp_z_params.get('sd', 0.08608372)
+    wp_mean = require(params, DECISION, 'composite_z_scoring', 'weighted_prosocial', 'mean')
+    wp_sd = require(params, DECISION, 'composite_z_scoring', 'weighted_prosocial', 'sd')
 
     if wp_sd > 0:
         z_weighted_prosocial = (weighted_prosocial - wp_mean) / wp_sd
@@ -172,9 +167,8 @@ def compute_pass1_values(
     # ========================================================================
     
     obs_PB = agent_state.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 0)
-    twt_params = z_params.get('TWT_Sospeso', {})
-    twt_mean = twt_params.get('mean', 9.139286)
-    twt_sd = twt_params.get('sd', 9.899547)
+    twt_mean = require(z_params, DECISION, 'TWT_Sospeso', 'mean', prefix='z_scoring')
+    twt_sd = require(z_params, DECISION, 'TWT_Sospeso', 'sd', prefix='z_scoring')
     
     if twt_sd > 0:
         z_obs_PB = (obs_PB - twt_mean) / twt_sd
@@ -201,18 +195,21 @@ def compute_pass1_values(
     # DIRECT EFFECT: Compute based on income mode
     # ========================================================================
     
-    eq2_coeffs = params.get('equation2_coefficients', {})
-    
+    eq2_coeffs = require(params, DECISION, 'equation2_coefficients')
+
+    def eq2(name):
+        return require(eq2_coeffs, DECISION, name, prefix='equation2_coefficients')
+
     if normalized_mode == 'categorical':
         # CATEGORICAL MODE: Use level-specific intercepts, NO income coefficient
         level = int(agent_state.get('Assigned Allowance Level', 3))
-        intercept = categorical_intercept(params, level, CATEGORICAL_INTERCEPTS, 0.0089007)
-        
+        intercept = categorical_intercept(params, level, DECISION)
+
         direct_effect = (
             intercept +
-            eq2_coeffs.get('extraversion', 0.00680238) * z_extraversion +
-            eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
-            eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility
+            eq2('extraversion') * z_extraversion +
+            eq2('neuroticism') * z_neuroticism +
+            eq2('honesty_humility') * z_honesty_humility
             # NO income coefficient in categorical mode!
         )
     else:
@@ -230,10 +227,10 @@ def compute_pass1_values(
             z_income = 0.0
         
         direct_effect = (
-            eq2_coeffs.get('extraversion', 0.00680238) * z_extraversion +
-            eq2_coeffs.get('neuroticism', 0.0173732) * z_neuroticism +
-            eq2_coeffs.get('honesty_humility', 0.0163905) * z_honesty_humility +
-            eq2_coeffs.get('income', -0.008988) * z_income
+            eq2('extraversion') * z_extraversion +
+            eq2('neuroticism') * z_neuroticism +
+            eq2('honesty_humility') * z_honesty_humility +
+            eq2('income') * z_income
         )
     
     return {
@@ -278,8 +275,7 @@ def compute_anchored_pb(
     z_obs_PB = pass1_values['z_obs_PB']
 
     # Get anchor weight
-    anchor_weights = params.get('anchor_weights', {})
-    WOPB = anchor_weights.get('observed_prosocial', 0.25)
+    WOPB = require(params, DECISION, 'anchor_weights', 'observed_prosocial')
 
     # Compute anchored_pb using z-scored weighted_prosocial
     # Per documentation: anchored_pb = WOPB * z_obs_PB + (1-WOPB) * z_weighted_prosocial
@@ -382,18 +378,17 @@ def disclose_income_stochastic(
         is_continuous = normalise_income_mode(params.get('income_mode', 'categorical')) == 'continuous'
         
         if sigma_strategy == 'quintile' and not is_continuous:
-            # Quintile mode (categorical only): Use level-specific base sigma and scale factor
+            # Quintile mode (categorical only): level-specific base sigma and scale factor
             level = int(agent_state.get('Assigned Allowance Level', 3))
-            sigma_quintile = stochastic_params.get('sigma_quintile', {})
-            sigma_raw = sigma_quintile.get(str(level), stochastic_params.get('sigma_overall', 9.899547))
-            
-            # Get quintile-specific scale factor (falls back to overall scale_factor)
-            quintile_scale_factors = stochastic_params.get('quintile_scale_factors', {})
-            scale_factor = quintile_scale_factors.get(str(level), stochastic_params.get('scale_factor', 0.1))
+            sigma_quintile = require(params, DECISION, 'stochastic', 'sigma_quintile')
+            sigma_raw = require(sigma_quintile, DECISION, str(level), prefix='stochastic.sigma_quintile')
+            quintile_scale_factors = require(params, DECISION, 'stochastic', 'quintile_scale_factors')
+            scale_factor = require(quintile_scale_factors, DECISION, str(level),
+                                   prefix='stochastic.quintile_scale_factors')
         else:
             # Overall mode OR continuous income mode: Use single sigma and scale factor for all agents
-            sigma_raw = stochastic_params.get('sigma_overall', 9.899547)
-            scale_factor = stochastic_params.get('scale_factor', 0.1)
+            sigma_raw = require(params, DECISION, 'stochastic', 'sigma_overall')
+            scale_factor = require(params, DECISION, 'stochastic', 'scale_factor')
         
         sigma_scaled = sigma_raw * float(scale_factor)
         stochastic_anchored_pb = rng.normal(anchored_pb, sigma_scaled)
@@ -405,28 +400,25 @@ def disclose_income_stochastic(
     # Z-SCORE COMPOSITES USING ORIGINAL 280's STATISTICS (not recomputed per population)
     # ========================================================================
     
-    composite_z = params.get('composite_z_scoring', {})
-    
     # z_direct_effect: use mode-appropriate stats
     # - Categorical: fixed YAML stats from original 280 participants
     # - Continuous: runtime-computed stats (because income is stochastic)
     is_continuous = normalise_income_mode(params.get('income_mode', 'categorical')) == 'continuous'
-    
+
     if is_continuous and simulation_config and 'di_cont_de_stats' in simulation_config:
-        de_stats = simulation_config['di_cont_de_stats']
+        de_stats = simulation_config['di_cont_de_stats']   # Pass-1 population statistics
+        de_mean, de_sd = de_stats['mean'], de_stats['sd']
     else:
-        de_stats = composite_z.get('weighted_disclosure_categorical', {'mean': 0, 'sd': 0.025040462})
-    de_mean = de_stats.get('mean', 0)
-    de_sd = de_stats.get('sd', 0.025040462)
+        de_mean = require(params, DECISION, 'composite_z_scoring', 'weighted_disclosure_categorical', 'mean')
+        de_sd = require(params, DECISION, 'composite_z_scoring', 'weighted_disclosure_categorical', 'sd')
     if de_sd > 0:
         z_direct_effect = (direct_effect - de_mean) / de_sd
     else:
         z_direct_effect = direct_effect
-    
+
     # z_anchored_pb using fixed stats from original 280 (uses stochastic value)
-    ap_stats = composite_z.get('anchored_pb', {'mean': 0, 'sd': 0.7984211971})
-    ap_mean = ap_stats.get('mean', 0)
-    ap_sd = ap_stats.get('sd', 0.7984211971)
+    ap_mean = require(params, DECISION, 'composite_z_scoring', 'anchored_pb', 'mean')
+    ap_sd = require(params, DECISION, 'composite_z_scoring', 'anchored_pb', 'sd')
     if ap_sd > 0:
         z_anchored_pb = (stochastic_anchored_pb - ap_mean) / ap_sd
     else:
@@ -436,9 +428,8 @@ def disclose_income_stochastic(
     # FINAL EQUATION: DI_i
     # ========================================================================
     
-    anchor_weights = params.get('anchor_weights', {})
-    WPB = anchor_weights.get('prosocial_weight', 0.50)
-    beta_0 = params.get('intercept', 0.0)
+    WPB = require(params, DECISION, 'anchor_weights', 'prosocial_weight')
+    beta_0 = require(params, DECISION, 'intercept')
     
     # DI = β0 + (1-WPB) * z_direct_effect + WPB * z_anchored_pb * income_high
     prosocial_effect = z_anchored_pb * income_high
@@ -458,7 +449,7 @@ def disclose_income_stochastic(
     # ========================================================================
     
     # Get WOPB for export (observed prosocial weight)
-    WOPB = anchor_weights.get('observed_prosocial', 0.25)
+    WOPB = require(params, DECISION, 'anchor_weights', 'observed_prosocial')
     
     # Compute raw religious composite (non-standardized)
     religious_composite_raw = _compute_religiosity_composite_raw(agent_state, params)
@@ -502,8 +493,12 @@ def compute_continuous_de_stats(agents_df, all_incomes: List[float], di_params: 
     Returns:
         dict with 'mean' and 'sd' of continuous direct_effect across population
     """
-    z_params = di_params.get('z_scoring', {})
-    eq2_coeffs = di_params.get('equation2_coefficients', {})
+    z_params = require(di_params, DECISION, 'z_scoring')
+    eq2_coeffs = require(di_params, DECISION, 'equation2_coefficients')
+
+    def eq2(name):
+        return require(eq2_coeffs, DECISION, name, prefix='equation2_coefficients')
+
     income_stats = simulation_config.get('income_stats', {})
     income_mean = income_stats.get('mean', 0)
     income_sd = income_stats.get('sd', 1)
@@ -521,10 +516,10 @@ def compute_continuous_de_stats(agents_df, all_incomes: List[float], di_params: 
             z_income = 0.0
         
         de = (
-            eq2_coeffs.get('extraversion', 0.00680238) * z_e +
-            eq2_coeffs.get('neuroticism', 0.0173732) * z_n +
-            eq2_coeffs.get('honesty_humility', 0.0163905) * z_hh +
-            eq2_coeffs.get('income', -0.008988) * z_income
+            eq2('extraversion') * z_e +
+            eq2('neuroticism') * z_n +
+            eq2('honesty_humility') * z_hh +
+            eq2('income') * z_income
         )
         all_de.append(de)
     

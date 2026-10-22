@@ -8,7 +8,8 @@ Sources: the "Decision 4 - Rejected Transaction Defaults" design document, rev
 file `Stata_File_Decision4_050926.dta` (280 participants; frozen extracts
 data/stata_d4_verification.csv, data/stata_d4_flexibility_verification.csv). With
 every intercept at 0 the model reproduces that file 280/280 for every mechanism
-(tests/test_rejected_transaction_defaults.py). Coefficients: the constants below.
+(tests/test_rejected_transaction_defaults.py). Coefficients: config/decisions.yaml,
+read strictly from ``params`` (COEFFICIENT_KEYS below lists the keys each equation uses).
 
 Sub-decisions (doc section in brackets; priority sequences in PRIORITY_SEQUENCES):
   1. LIST LENGTH (Tendency to Plan) [1]: weighted_ttp over z-scored E/A/N/C plus
@@ -26,7 +27,7 @@ Sub-decisions (doc section in brackets; priority sequences in PRIORITY_SEQUENCES
      option only; what the .dta's choice1..5 columns store) -> rtd_<loyalty|wtp|rt|flex>_ranking.
 
 CATEGORICAL INCOME (params['income_mode']): the income term of WTP / RT is replaced
-by the doc's per-allowance-level effects (CATEGORICAL_INCOME_EFFECTS), the
+by the doc's per-allowance-level effects (params['categorical_income_effects']), the
 personality part applied at slope 1 as the doc's cond() code does; z_agreeable is
 used for every level (the .dta's level-1 WTP branch still uses the raw score, so WTP
 categorical matches 279/280). The continuous sigma constants are reused.
@@ -44,8 +45,9 @@ STOCHASTIC LAYER: Normal(anchor, sigma) per mechanism, anchored on the continuou
 operative score (raw composite for ttp/wtp, population z for the others; the
 doc-literal binned anchor via stochastic.anchor = 'binned'), re-binned on the
 population min/max of the DRAWN values. sigma = (score range / 18) * mean(stdactions
-within allowance group), the doc's sigma tables (SIGMA_FACTORS / SIGMA_OVERALL and
-the two documented arithmetic slips there). Population statistics, the draws' min/max
+within allowance group), the doc's sigma tables (config/decisions.yaml
+stochastic.mechanisms.<m>; SIGMA_FACTORS / MEAN_STDACTIONS below document their
+derivation and the two arithmetic slips there). Population statistics, the draws' min/max
 included, are computed after Pass 1 by compute_rtd_population_stats
 (src/engine/core.py), which replays each agent's decision RNG stream bit-for-bit.
 
@@ -64,8 +66,10 @@ import numpy as np
 from typing import Any, Dict, List, Optional
 
 from src.decisions.rtd_rank_aggregation import integrate_default_list
-from src.decisions._shared import z_score_trait, normalise_income_mode
+from src.decisions._shared import z_score_trait, normalise_income_mode, require, file_block
 from src.utils.stochastic import should_use_stochastic
+
+DECISION = "rejected_transaction_defaults"
 
 # ---------------------------------------------------------------------------
 # Option codes (canonical across the app - see DEFAULT_DECISION_VALUES) keyed by
@@ -79,87 +83,31 @@ OPTION_CODES = {
     5: "forgo_transaction",       # Option 5: forgo the transaction
 }
 
-# Priority sequences (highest-construct option first), verified against the .dta:
-# segment s (1..5) receives the LAST s options, sequence[5-s:] (the document's prose
-# and its rev 040926-2 Stata code; see _ranking_for_segment).
-PRIORITY_SEQUENCES = {
-    "loyalty": [3, 1, 4, 5, 2],       # doc line 609
-    "wtp": [3, 2, 1, 4, 5],           # doc line 752/1343
-    "risk_taking": [4, 2, 1, 3, 5],   # doc line 1856/2455
-    "flexibility": [2, 4, 3, 1, 5],   # doc Section 5 ("Option 2 -> 4 -> 3 -> 1 -> 5")
-}
-
 # ---------------------------------------------------------------------------
-# Equation coefficients (doc-derived, .dta-verified to <=1e-7 on all 280 rows).
+# Every constant of the model lives in config/decisions.yaml and is read strictly
+# from ``params`` through ``require`` (a missing key raises naming the decision and
+# the key; there is no module fallback):
+#   coefficients.<mechanism>.*        the five equations (doc-derived, .dta-verified
+#                                     to <=1e-7 on all 280 rows); the keys each
+#                                     equation uses are COEFFICIENT_KEYS below
+#   flexibility_anchor.*              observed_weight / calculated_weight of
+#                                     anchored_flexibility (doc: 25% observed)
+#   categorical_income_effects.*      intercept + level_2..5 dummies for WTP / RT
+#                                     (level_1, EUR 12, is the base level)
+#   z_scoring.<trait>.{mean,sd}       frozen original-280 statistics (egen std)
+#   intercepts.<mechanism>            beta0..beta4
+#   stochastic.mechanisms.<m>.*       the sigma tables
+#   aggregation.*                     the Section-6 rank aggregation settings
 # ---------------------------------------------------------------------------
-TTP_COEFFS = {
-    "extraversion": -0.0152556564,
-    "agreeable": 0.0177638642,
-    "neuroticism": 0.01959,
-    "conscientiousness": 0.00901465,
-    "education": 0.0297,            # applies to reducation = Education - 1 (0/1)
-}
-LOYALTY_COEFFS = {                   # doc rev 040926-2 section 2 (bs_weighted_loyalty)
-    "extraversion": -0.009828468,    # = 0.476815 * (-0.02061275)
-    "openness": 0.01096706,          # = 0.256046 * 0.042832382
-    "agreeable": 0.0123046,          # = 0.267139 * 0.04606063 (rev 040926-2 fixed the
-                                     # w_A typo that printed 0.67139 -> 0.03092465)
-}
-WTP_COEFFS = {                       # Hunter & Schmidt pooling (doc section 3 code)
-    "extraversion": 0.078863062,
-    "agreeable": -0.012326128,
-    "income": 0.698,
-}
-RT_COEFFS = {                        # Hunter & Schmidt pooling (doc line 2436)
-    "extraversion": 0.025942386297,
-    "openness": 0.023699214948,
-    "agreeable": -0.038734315188,
-    "conscientiousness": -0.037739440732,
-    "neuroticism": -0.025388697852,
-    "income": 0.006874197106,
-}
-FLEX_COEFFS = {                      # IVW pooling (doc rev 040926-2 Section 5 final equation)
-    "extraversion": 0.0206,          # O/N/A: the arithmetically corrected values that rev
-    "openness": 0.0294118,           # 040926-2 wrote into the document and that
-    "neuroticism": -0.04921357,      # Stata_File_Decision4_050926.dta embeds
-    "agreeable": 0.04339814,         # (Flexibility_calculated_ivw reproduces to <=1e-7,
-    "conscientiousness": 0.04811179, # segments 280/280). The earlier values 0.0293241 /
-}                                    # -0.053781925 / 0.04921357 are obsolete.
-# anchored_flexibility = observed_weight*z_stdactions + calculated_weight*z_Flexibility
-# (doc: "we start by giving the observed flexibility a weight of 25%"; .dta-verified).
-FLEX_ANCHOR_WEIGHTS = {"observed": 0.25, "calculated": 0.75}
-
-# Categorical-income effects (doc rev 040926-2 regression output, Section 3 WTP /
-# Section 4 RT; re-verified against the .dta). level_1 (EUR 12) is the base level:
-# intercept only. Config override: params['categorical_income_effects'].
-CATEGORICAL_INCOME_EFFECTS = {
-    "wtp": {                     # doc rev 040926-2 section 3 cond() code
-        "intercept": -0.691843,
-        "level_2": 0.2671588,    # EUR 32
-        "level_3": 0.5057716,    # EUR 72
-        "level_4": 0.9411747,    # EUR 128
-        "level_5": 1.822471,     # EUR 200
-    },
-    "risk_taking": {
-        "intercept": -0.0068307,
-        "level_2": 0.0026128,
-        "level_3": 0.0050555,
-        "level_4": 0.0092738,
-        "level_5": 0.0179812,
-    },
-}
-
-# Fallback z-scoring stats (frozen original-280 mean/SD, matching config/decisions.yaml
-# and Stata `egen std` on the reference .dta).
-DEFAULT_Z_SCORING = {
-    "ExtraversionBig5": {"mean": 3.557857, "sd": 0.6989565},
-    "Agreeable": {"mean": 3.546071, "sd": 0.3732712},
-    "NeuroticismBig5": {"mean": 2.702143, "sd": 0.6839657},
-    "ConscientiousnessBig5": {"mean": 3.657143, "sd": 0.5596521},
-    "OpennessBig5": {"mean": 4.060714, "sd": 0.5068274},
-    # observed flexibility: SD in the number of actions per cycle (original 280; the doc's
-    # mean 1.1863376; z_stdactionsP = egen std(stdactions), .dta-verified)
-    "stdactions": {"mean": 1.1863375902, "sd": 0.6752842665},
+COEFFICIENT_KEYS = {
+    "ttp": ("extraversion", "agreeable", "neuroticism", "conscientiousness",
+            "education"),             # education applies to reducation = Education - 1 (0/1)
+    "loyalty": ("extraversion", "openness", "agreeable"),
+    "wtp": ("extraversion", "agreeable", "income"),
+    "risk_taking": ("extraversion", "openness", "agreeable", "conscientiousness",
+                    "neuroticism", "income"),
+    "flexibility": ("extraversion", "openness", "neuroticism", "agreeable",
+                    "conscientiousness"),
 }
 
 # ---------------------------------------------------------------------------
@@ -199,13 +147,10 @@ SIGMA_FACTORS = {
     "risk_taking": 0.332208167,
     "flexibility": 0.3663568222,
 }
-SIGMA_OVERALL = {
-    "ttp": 0.395446,          # (6/18)*1.186338              (doc TTP sigma table)
-    "loyalty": 0.4665145336,  # 0.393239139*1.186338         (rev 040926-2, z scale)
-    "wtp": 0.4526575455,      # 0.3815586667*1.186338        (rev 040926-2)
-    "risk_taking": 0.39522204,    # rev 040926-2, doc-literal - see slip (a) below
-    "flexibility": 0.4346228732,  # 0.3663568222*1.1863376   (rev 040926-2 Section 5)
-}
+# The sigma values themselves (sigma_overall = factor * 1.1863376, sigma_quintile =
+# factor * mean(stdactions within group), per mechanism) live ONLY in
+# config/decisions.yaml, stochastic.mechanisms.<m>; SIGMA_OVERALL below is the file's
+# column, read at import for the readers that import it by name.
 # TWO ARITHMETIC SLIPS inside rev 040926-2's own sigma tables. Both are followed
 # DOC-LITERALLY (the document's printed tables are the operative spec) and pinned by
 # tests/test_rejected_transaction_defaults.py::
@@ -225,7 +170,6 @@ MECHANISMS = ("ttp", "loyalty", "wtp", "risk_taking", "flexibility")
 # Ranking mechanisms (aggregation inputs, in the document's order) -> short key used
 # in the rtd_* columns (rtd_<key>_ranking).
 RANKING_KEYS = {"loyalty": "loyalty", "wtp": "wtp", "risk_taking": "rt", "flexibility": "flex"}
-AGGREGATION_DEFAULTS = {"enabled": True, "mechanisms": None, "last_resort": "random"}
 
 # Rescale targets: (low, span) so rescaled = low + (span - 0.0001) * u.
 # ttp: 0..6 -> floor gives lengths 0..5; rankings: 1..5(.9999) -> floor gives 1..5.
@@ -237,17 +181,43 @@ _RESCALE = {
     "flexibility": (1.0, 5.0),
 }
 
+# ---------------------------------------------------------------------------
+# The FILE's values, read once at import through the one loader (src/config.py),
+# for the readers that import them by name: app/pages/results/visualizations/
+# transaction_viz.py (PRIORITY_SEQUENCES) and the Decision-4 tests. The decision
+# reads every constant from ``params`` (the run's patched block), never from here -
+# except the priority sequences, which the segment -> option-list mapping below
+# takes from the file (as before this module never read params['priority_sequences']).
+# ---------------------------------------------------------------------------
+_FILE = file_block(DECISION)
+# Priority sequences (highest-construct option first), verified against the .dta:
+# segment s (1..5) receives the LAST s options, sequence[5-s:] (the document's prose
+# and its rev 040926-2 Stata code; see _ranking_for_segment).
+PRIORITY_SEQUENCES = {m: list(seq) for m, seq in require(_FILE, DECISION, "priority_sequences").items()}
+FLEX_COEFFS = dict(require(_FILE, DECISION, "coefficients", "flexibility"))
+FLEX_ANCHOR_WEIGHTS = {"observed": require(_FILE, DECISION, "flexibility_anchor", "observed_weight"),
+                       "calculated": require(_FILE, DECISION, "flexibility_anchor", "calculated_weight")}
+# frozen original-280 mean/SD (the name predates the file being the only source; it is
+# NOT a fallback - the decision z-scores with params['z_scoring'])
+DEFAULT_Z_SCORING = {t: dict(stats) for t, stats in require(_FILE, DECISION, "z_scoring").items()}
+SIGMA_OVERALL = {m: require(_FILE, DECISION, "stochastic", "mechanisms", m, "sigma_overall")
+                 for m in MECHANISMS}
+# the file's Section-6 aggregation settings: what a partial params['aggregation'] block
+# is merged over (see _aggregation_settings)
+_FILE_AGGREGATION = {k: require(_FILE, DECISION, "aggregation", k)
+                     for k in ("enabled", "mechanisms", "last_resort")}
+
 
 def _z_score_trait(value: float, trait_name: str, z_params: Dict) -> float:
     """Z-score a raw trait using fixed original-280 mean/SD from config."""
-    return z_score_trait(value, trait_name, z_params, fallback=DEFAULT_Z_SCORING.get(trait_name, {}))
+    return z_score_trait(value, trait_name, z_params, DECISION)
 
 
-def _coeffs(params: Dict, mechanism: str, defaults: Dict) -> Dict:
-    cfg = (params.get("coefficients") or {}).get(mechanism)
-    if isinstance(cfg, dict):
-        return {k: float(cfg.get(k, v)) for k, v in defaults.items()}
-    return defaults
+def _coeffs(params: Dict, mechanism: str) -> Dict:
+    """The mechanism's equation coefficients, params['coefficients'][mechanism], as floats."""
+    cfg = require(params, DECISION, "coefficients", mechanism)
+    prefix = f"coefficients.{mechanism}"
+    return {k: float(require(cfg, DECISION, k, prefix=prefix)) for k in COEFFICIENT_KEYS[mechanism]}
 
 
 def _income_mode(params: Dict) -> str:
@@ -257,15 +227,11 @@ def _income_mode(params: Dict) -> str:
 
 def _categorical_income_effect(params: Dict, mechanism: str, level: int) -> float:
     """intercept + budget-level dummy for the categorical-income score (level 1 = base)."""
-    cfg = (params.get("categorical_income_effects") or {}).get(mechanism)
-    defaults = CATEGORICAL_INCOME_EFFECTS[mechanism]
-    if isinstance(cfg, dict):
-        eff = {k: float(cfg.get(k, v)) for k, v in defaults.items()}
-    else:
-        eff = defaults
-    value = eff["intercept"]
+    cfg = require(params, DECISION, "categorical_income_effects", mechanism)
+    prefix = f"categorical_income_effects.{mechanism}"
+    value = float(require(cfg, DECISION, "intercept", prefix=prefix))
     if level in (2, 3, 4, 5):
-        value += eff[f"level_{level}"]
+        value += float(require(cfg, DECISION, f"level_{level}", prefix=prefix))
     return value
 
 
@@ -291,7 +257,7 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
     Pass-1 hook has run), alongside the population-free 'flexibility_calc' and the
     agent's 'stdactions'.
     """
-    z_params = params.get("z_scoring", {})
+    z_params = require(params, DECISION, "z_scoring")
     z_E = _z_score_trait(agent_state.get("ExtraversionBig5", 0), "ExtraversionBig5", z_params)
     z_A = _z_score_trait(agent_state.get("Agreeable", 0), "Agreeable", z_params)
     z_N = _z_score_trait(agent_state.get("NeuroticismBig5", 0), "NeuroticismBig5", z_params)
@@ -315,11 +281,11 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
     else:
         z_I = (float(income) - i_mean) / i_sd
 
-    c_ttp = _coeffs(params, "ttp", TTP_COEFFS)
-    c_loy = _coeffs(params, "loyalty", LOYALTY_COEFFS)
-    c_wtp = _coeffs(params, "wtp", WTP_COEFFS)
-    c_rt = _coeffs(params, "risk_taking", RT_COEFFS)
-    c_flex = _coeffs(params, "flexibility", FLEX_COEFFS)
+    c_ttp = _coeffs(params, "ttp")
+    c_loy = _coeffs(params, "loyalty")
+    c_wtp = _coeffs(params, "wtp")
+    c_rt = _coeffs(params, "risk_taking")
+    c_flex = _coeffs(params, "flexibility")
 
     # Flexibility (Section 5): the CALCULATED score from the Big 5; its
     # population standardisation and the 25/75 anchoring with z_stdactions happen in
@@ -377,9 +343,8 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
 def _flex_weights(params: Dict):
     """(observed_weight, calculated_weight) of the flexibility anchor
     (params['flexibility_anchor']; doc defaults 0.25 / 0.75)."""
-    cfg = params.get("flexibility_anchor") or {}
-    w_obs = float(cfg.get("observed_weight", FLEX_ANCHOR_WEIGHTS["observed"]))
-    w_calc = float(cfg.get("calculated_weight", FLEX_ANCHOR_WEIGHTS["calculated"]))
+    w_obs = float(require(params, DECISION, "flexibility_anchor", "observed_weight"))
+    w_calc = float(require(params, DECISION, "flexibility_anchor", "calculated_weight"))
     return w_obs, w_calc
 
 
@@ -478,7 +443,14 @@ def _complete_ranking_for_segment(mechanism: str, segment: int) -> List[int]:
 
 
 def _intercept(params: Dict, mechanism: str) -> float:
-    """The element's configured intercept (params['intercepts'][mechanism]; 0 absent)."""
+    """The element's configured intercept, params['intercepts'][mechanism].
+
+    An absent block, an absent element or a null is 0: the reference tests pin a run
+    with no 'intercepts' key (and one with a partial block) as bit-identical to
+    explicit zeros, the Stata file's own setting (test_zero_intercepts_bit_identical,
+    test_categorical_intercepts_apply_same_way). This is the one key of this decision
+    that is not read strictly.
+    """
     return float((params.get("intercepts") or {}).get(mechanism, 0.0) or 0.0)
 
 
@@ -524,14 +496,14 @@ def _intercept_raw_shift(mechanism: str, intercept: float, pop_m: Dict,
 def _resolve_sigma(stoch_m: Dict, agent_state: Dict, mechanism: str) -> float:
     """Resolve sigma * scale for one mechanism (overall or per-allowance-group)."""
     strategy = stoch_m.get("sigma_strategy", "overall")
+    prefix = f"stochastic.mechanisms.{mechanism}"
     if strategy == "quintile":
         level = int(agent_state.get("Assigned Allowance Level", 3))
-        default_q = SIGMA_FACTORS[mechanism] * MEAN_STDACTIONS.get(level, MEAN_STDACTIONS["overall"])
-        sigma_raw = float(stoch_m.get("sigma_quintile", {}).get(str(level), default_q))
-        scale = float(stoch_m.get("quintile_scale_factors", {}).get(str(level), stoch_m.get("scale_factor", 1.0)))
+        sigma_raw = float(require(stoch_m, DECISION, "sigma_quintile", str(level), prefix=prefix))
+        scale = float(require(stoch_m, DECISION, "quintile_scale_factors", str(level), prefix=prefix))
     else:
-        sigma_raw = float(stoch_m.get("sigma_overall", SIGMA_OVERALL[mechanism]))
-        scale = float(stoch_m.get("scale_factor", 1.0))
+        sigma_raw = float(require(stoch_m, DECISION, "sigma_overall", prefix=prefix))
+        scale = float(require(stoch_m, DECISION, "scale_factor", prefix=prefix))
     return sigma_raw * scale
 
 
@@ -694,9 +666,17 @@ def compute_rtd_population_stats(agents_df, all_incomes: List[float], params: Di
 
 
 def _aggregation_settings(params: Dict) -> Dict:
-    """params['aggregation'] merged over AGGREGATION_DEFAULTS (config/decisions.yaml)."""
+    """params['aggregation'] (enabled / mechanisms / last_resort) merged over the FILE's
+    aggregation block (_FILE_AGGREGATION, read at import - not a module copy).
+
+    A partial block is an interface tests/test_rtd_rank_aggregation.py pins
+    ({'enabled': False}, {'enabled': True, 'mechanisms': [...]}), so an absent or null
+    key takes the file's value instead of raising; with ``intercepts`` it is the only
+    block of this decision not read strictly. ``mechanisms`` null = every ranking
+    mechanism the model computes.
+    """
     cfg = params.get("aggregation") or {}
-    out = dict(AGGREGATION_DEFAULTS)
+    out = dict(_FILE_AGGREGATION)
     if isinstance(cfg, dict):
         for k in out:
             if k in cfg and cfg[k] is not None:
