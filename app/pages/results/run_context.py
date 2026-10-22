@@ -45,7 +45,7 @@ import streamlit as st
 
 from app.models import ALL_DECISIONS
 from app.reports.timestamps import DEFAULT_DURATION_HOURS, DEFAULT_PERIODS
-from app.state.saved_configs import RunOnScreen
+from app.state.saved_configs import _file_value, RunOnScreen
 
 
 def _as_plain_dict(sim_params: Any) -> Dict[str, Any]:
@@ -102,7 +102,7 @@ class RunContext:
     # 'aggregation', or None for a whole-decision / complete run)
     rtd_run_element: Optional[str] = None
     # The donation anchor weight the run used (observed share; predicted = 1 - it)
-    anchor_observed_weight: float = 0.75
+    anchor_observed_weight: float = field(default_factory=lambda: _file_value('donation_default', 'anchor_weights', 'observed'))
     # The default-decision settings the run used ({decision: {'type': ..., ...}},
     # ``RunMetadata.default_decision_settings``); None when the metadata does not
     # record them (``default_setting`` then returns the caller's live value)
@@ -157,7 +157,8 @@ class RunContext:
             rtd_run_element = st.session_state.get("rtd_run_element")
         anchor = metadata.get("anchor_observed_weight")
         if anchor is None:
-            anchor = st.session_state.get("anchor_observed_weight", 0.75)
+            anchor = st.session_state.get("anchor_observed_weight",
+                                          _file_value('donation_default', 'anchor_weights', 'observed'))
 
         return cls(
             results=results,
