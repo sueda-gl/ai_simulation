@@ -1,10 +1,13 @@
-# How to change the model
+# How to correct the model
 
-The thirteen decisions are fixed; what changes is their constants, equations, user
-controls, noise model and exports. This page is the recipe for each kind of change and
-the routine that proves nothing else moved. Modelling one of the nine default decisions
-from a new document is a separate page: [`how-to-model-a-new-decision.md`](how-to-model-a-new-decision.md).
-The rules of the model are the documents under [`reference/`](reference/README.md).
+The thirteen decisions, their equations and their constants are fixed by the decision
+documents; in practice they do not change. A change is made only when an error is
+found: a constant that does not match its document, an equation implemented wrongly,
+a document revision that corrects a slip. This page is the routine for applying such a
+correction and proving that nothing else moved. Modelling one of the nine default
+decisions from a new document is a separate page:
+[`how-to-model-a-new-decision.md`](how-to-model-a-new-decision.md).
+
 ---
 
 ## 0. The routine, before and after every change
