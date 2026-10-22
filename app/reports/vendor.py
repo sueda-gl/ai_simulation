@@ -10,9 +10,10 @@ import numpy as np
 import pandas as pd
 
 from app.reports._common import (
-    all_present, group_experiment_or_blank, income_rounded_or_blank, money, money_or_missing,
-    number_chronologically, proximity_scores_or_empty, purchase_now_price, purchase_requests_of,
-    request_time, request_vendor, rounded_or_blank, vendor_weights_or_equal, vendors_by_id,
+    NA, all_present, group_experiment_or_na, income_or_na, money, money_or_missing,
+    number_chronologically, or_na, proximity_scores_or_empty, purchase_now_price,
+    purchase_requests_of, request_time, request_vendor, rounded_value_or_na, study_program_or_na,
+    value_or_na, vendor_label, vendor_weights_or_none, vendors_by_id,
 )
 from app.reports.xlsx import apply_vendor_price_formatting, period_sheets, to_xlsx_bytes
 from app.reports.timestamps import TimestampConverter
@@ -97,18 +98,18 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
         agent_id = row.get('agent_id', idx + 1)
 
         # Agent Traits (matching disclose income export)
-        honesty_humility = rounded_or_blank(row, 'Honesty_Humility')
-        allowance_level = row.get('Assigned Allowance Level', np.nan)
-        study_program = row.get('Study Program', '')
-        group_experiment = group_experiment_or_blank(row)
-        twt_sospeso = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
-        income = income_rounded_or_blank(row)
+        honesty_humility = rounded_value_or_na(row, 'Honesty_Humility')
+        allowance_level = value_or_na(row, 'Assigned Allowance Level')
+        study_program = study_program_or_na(row)
+        group_experiment = group_experiment_or_na(row)
+        twt_sospeso = rounded_value_or_na(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        income = income_or_na(row)   # the dollar income; 'N/A' when missing, never the allowance
 
         # Get vendor proximity scores for this agent
         proximity_scores = proximity_scores_or_empty(row)
 
-        # Get vendor choice weights for score calculation
-        vendor_weights = vendor_weights_or_equal(row)
+        # The Decision 5 dict for the score; without it the score is 'N/A'
+        vendor_weights = vendor_weights_or_none(row)
 
         # Process each purchase request of this agent
         for req_idx, request in purchase_requests_of(row):
@@ -120,11 +121,9 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
             # Get timestamp and convert using centralized utilities
             ts_result, period, request_datetime = request_time(ts_converter, request)
 
-            # Determine customer type from request or agent
-            customer_type = request.get('customer_type', request.get('customerType', 'Regular'))
-            # Capitalize first letter
-            if isinstance(customer_type, str):
-                customer_type = customer_type.capitalize()
+            # Determine customer type from the request ('N/A' when it carries none)
+            customer_type = request.get('customer_type', request.get('customerType', ''))
+            customer_type = customer_type.capitalize() if isinstance(customer_type, str) and customer_type else NA
 
             # Get vendor attributes (and the proximity for this agent-vendor pair)
             vendor_integrated_score = np.nan
@@ -132,7 +131,9 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
                 request_vendor(vendor_lookup, vendor_id, proximity_scores)
 
             # Calculate vendor integrated score
-            if vendor is not None and all_present(
+            if vendor_weights is None:
+                vendor_integrated_score = NA
+            elif vendor is not None and all_present(
                     vendor_price, vendor_quality, vendor_sustainability, vendor_proximity):
                 vendor_integrated_score = calculate_vendor_score(
                     vendor, vendor_weights, vendor_proximity, vendors_data,
@@ -176,8 +177,8 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
             elif platform_price == 'DISCOUNT' or customer_type.lower() == 'discount':
                 purchase_type = 'Discount'
             else:
-                # Fallback based on customer type
-                purchase_type = customer_type if customer_type else 'Unknown'
+                # Fallback based on customer type ('N/A' when there is none)
+                purchase_type = customer_type
 
             # Build record (include hidden sort key)
             record = {
@@ -193,12 +194,13 @@ def build_purchase_request_export(df, vendors_data, base_time, duration_hours, p
                 'Purchase Type': purchase_type,
                 'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,
-                'Selected Vendor': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else np.nan,
-                'Vendor Price': money_or_missing(vendor_price),  # money: two decimals
-                'Quality': vendor_quality,
-                'Sustainability': vendor_sustainability,
-                'Proximity': vendor_proximity,
-                'Vendor Integrated Score': vendor_integrated_score,
+                # vendor cells: 'N/A' when the request names no vendor of the run
+                'Selected Vendor': vendor_label(vendor, vendor_id),
+                'Vendor Price': or_na(money_or_missing(vendor_price)),  # money: two decimals
+                'Quality': or_na(vendor_quality),
+                'Sustainability': or_na(vendor_sustainability),
+                'Proximity': or_na(vendor_proximity),
+                'Vendor Integrated Score': or_na(vendor_integrated_score),
                 'Customer Paid Price': display_customer_paid_price,
                 '_sort_datetime': request_datetime  # Hidden sort key
             }
@@ -237,42 +239,22 @@ def build_vendor_choice_weights_export(df, decision_data):
             row_data['Agent ID'] = idx + 1
 
         # Add Honesty_Humility
-        row_data['Honesty_Humility'] = rounded_or_blank(row, 'Honesty_Humility')
+        row_data['Honesty_Humility'] = rounded_value_or_na(row, 'Honesty_Humility')
 
-        # Add Assigned Allowance Level
-        if 'Assigned Allowance Level' in df.columns:
-            row_data['Assigned Allowance Level'] = row['Assigned Allowance Level']
-        elif 'income_category' in df.columns:
-            row_data['Assigned Allowance Level'] = row['income_category']
-        else:
-            row_data['Assigned Allowance Level'] = ''
+        # Add Assigned Allowance Level (the 1-5 level only; 'N/A' when missing --
+        # the income category is another quantity)
+        row_data['Assigned Allowance Level'] = value_or_na(row, 'Assigned Allowance Level')
 
-        # Add Study Program
-        if 'Study Program' in df.columns:
-            row_data['Study Program'] = row['Study Program']
-        else:
-            row_data['Study Program'] = ''
-
-        # Add Group_experiment
-        if 'Group_experiment' in df.columns:
-            row_data['Group_experiment'] = row['Group_experiment']
-        elif 'group' in df.columns:
-            row_data['Group_experiment'] = row['group']
-        elif 'group_experiment' in df.columns:
-            row_data['Group_experiment'] = row['group_experiment']
-        else:
-            row_data['Group_experiment'] = ''
+        # Add Study Program and Group_experiment ('N/A' when missing)
+        row_data['Study Program'] = study_program_or_na(row)
+        row_data['Group_experiment'] = group_experiment_or_na(row)
 
         # Add TWT+Sospeso
-        row_data['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        row_data['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_value_or_na(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
 
-        # Add income
-        if 'income' in df.columns:
-            row_data['income'] = round(row['income'], 2) if pd.notna(row['income']) else ''
-        elif 'actual_allowance' in df.columns:
-            row_data['income'] = round(row['actual_allowance'], 2) if pd.notna(row['actual_allowance']) else ''
-        else:
-            row_data['income'] = ''
+        # Add income: the dollar income the run assigned; 'N/A' when missing,
+        # never the 12-200 credit allowance
+        row_data['income'] = income_or_na(row)
 
         # Extract weights from the decision_data (which is a dict)
         weights = decision_data.iloc[idx]
@@ -284,11 +266,11 @@ def build_vendor_choice_weights_export(df, decision_data):
             row_data['Proximity'] = weights.get('proximity', 0.0)
             row_data['Sustainability'] = weights.get('sustainability', 0.0)
         else:
-            # Fallback if weights aren't in expected format
-            row_data['Price'] = 0.0
-            row_data['Quality'] = 0.0
-            row_data['Proximity'] = 0.0
-            row_data['Sustainability'] = 0.0
+            # No Decision 5 dict: every weight cell is 'N/A'
+            row_data['Price'] = NA
+            row_data['Quality'] = NA
+            row_data['Proximity'] = NA
+            row_data['Sustainability'] = NA
 
         export_data.append(row_data)
 

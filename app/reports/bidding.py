@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 
 from app.reports._common import (
-    group_experiment_skipping_blanks, money, money_or_missing, purchase_requests_of,
-    request_time, sort_chronologically, vendors_by_id_and_str,
+    NA, group_experiment_or_na, income_or_na, money, purchase_requests_of, request_time,
+    sort_chronologically, study_program_or_na, value_or_na, vendor_from, vendor_label,
+    vendors_by_id_and_str,
 )
 from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import apply_bid_price_formatting, period_sheets, to_xlsx_bytes
@@ -87,21 +88,15 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
         agent_id = row.get('agent_id', idx + 1)
 
         # Agent traits
-        honesty_humility = row.get('Honesty_Humility', np.nan)
-        allowance_level = row.get('Assigned Allowance Level', np.nan)
-        study_program = row.get('Study Program', '')
+        honesty_humility = value_or_na(row, 'Honesty_Humility')
+        allowance_level = value_or_na(row, 'Assigned Allowance Level')
+        study_program = study_program_or_na(row)
+        group_experiment = group_experiment_or_na(row)
+        twt_sospeso = value_or_na(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
 
-        # Group_experiment with fallbacks
-        group_experiment = group_experiment_skipping_blanks(row)
-
-        twt_sospeso = row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan)
-
-        # Income
-        income = np.nan
-        if 'income' in row and pd.notna(row['income']):
-            income = round(row['income'], 2)
-        elif 'actual_allowance' in row and pd.notna(row['actual_allowance']):
-            income = round(row['actual_allowance'], 2)
+        # Income: the dollar value the run assigned; 'N/A' when missing (never the
+        # 12-200 credit allowance)
+        income = income_or_na(row)
 
         # Process each purchase request - only include BID transactions
         for req_idx, request in purchase_requests_of(row):
@@ -121,19 +116,11 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
             # Get transaction ID
             transaction_id = request.get('transaction_id', f"A{agent_id}_R{req_idx+1}")
 
-            # Get vendor info
+            # The request's vendor (float 1.0 is looked up as vendor 1); None when the
+            # id is missing or names no vendor -- then every vendor cell is 'N/A'
             vendor_id = request.get('vendorID', request.get('vendor_id'))
-            vendor_price = np.nan
-
-            if vendor_id is not None:
-                lookup_key = vendor_id
-                if isinstance(vendor_id, float) and vendor_id.is_integer():
-                    lookup_key = int(vendor_id)
-
-                if lookup_key in vendor_lookup:
-                    vendor_price = vendor_lookup[lookup_key].get('price', np.nan)
-                elif str(lookup_key) in vendor_lookup:
-                    vendor_price = vendor_lookup[str(lookup_key)].get('price', np.nan)
+            vendor = vendor_from(vendor_lookup, vendor_id)
+            vendor_price = vendor.get('price', np.nan) if vendor is not None else np.nan
 
             # Get timestamp
             ts_result, period, request_datetime = request_time(ts_converter, request)
@@ -148,9 +135,9 @@ def build_bid_value_export(df, vendors_data, base_time, duration_hours, periods)
                 'Group_experiment': group_experiment,
                 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
                 'income': income,
-                'Vendor ID': f"Vendor {int(vendor_id)}" if vendor_id is not None and not pd.isna(vendor_id) else '',
+                'Vendor ID': vendor_label(vendor, vendor_id),
                 # money columns are stored rounded to two decimals
-                'Vendor Price': money_or_missing(vendor_price),
+                'Vendor Price': money(vendor_price) if not pd.isna(vendor_price) else NA,
                 'Bid Value': money(bid_value_numeric),
                 'Purchase Timestamp': ts_result['formatted'],
                 'Period': period,

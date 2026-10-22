@@ -1,12 +1,17 @@
 """Small helpers the report builders share.
 
 Each helper here is a block that two or more builders carried as identical
-copies; those builders now call it instead. Where two copies differed in a
-detail (a default value, a fallback label, the order of a multiplication) they
-were NOT merged: each builder keeps its own code, so no export changes. The
-helpers are written exactly as the copies they replace, including the money
-rule: a money value is computed from the exact inputs first and only then
-stored as ``float(f"{x:.2f}")``.
+copies; those builders now call it instead. The money rule: a money value is
+computed from the exact inputs first and only then stored as
+``float(f"{x:.2f}")``.
+
+The one rule for a missing value (docs/README.md section 9): a cell whose value
+the run did not produce is exported as ``'N/A'``; nothing is substituted for it.
+No column falls back to a different quantity (the income never to the 12-200
+credit allowance, an allowance level never to an income category), a request
+that names no vendor has no vendor cells, an agent without a Decision 5 dict has
+no weights and no vendor score, and a Y/N outcome that is missing is ``'N/A'``
+(1 for Y, 0 for N). The helpers below carry that rule; ``NA`` is the label.
 
 Nothing in this module imports Streamlit or reads session state.
 """
@@ -33,16 +38,92 @@ def money_or_missing(value):
     return money(value) if not pd.isna(value) else value
 
 
-def round2_or_nan(value):
-    """``round(value, 2)``, or NaN when the value is missing."""
-    return round(value, 2) if not pd.isna(value) else np.nan
-
-
 def purchase_now_price(price, platform_markup, price_range):
     """The Purchase Now price of `price`: (1 + price_range) x (1 + platform_markup) x price,
-    multiplied in this order -- the baseline price (1 + platform_markup) x price first."""
+    multiplied in this order -- the baseline price (1 + platform_markup) x price first.
+    Every sheet computes it here, so every sheet stores the same cents (for a
+    two-decimal price the other order can differ by one cent: 1.40 -> 1.92 vs 1.93)."""
     baseline_price = (1 + platform_markup) * price
     return (1 + price_range) * baseline_price
+
+
+# ---------------------------------------------------------------------------
+# missing values: 'N/A', never a substitute
+# ---------------------------------------------------------------------------
+NA = 'N/A'
+
+
+def is_missing(value):
+    """True when a cell value is missing: None, NaN / NaT, or the empty string."""
+    if isinstance(value, str):
+        return value == ''
+    if isinstance(value, (list, tuple, dict, set)):
+        return False
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def or_na(value):
+    """`value`, or 'N/A' when it is missing."""
+    return NA if is_missing(value) else value
+
+
+def value_or_na(row, column):
+    """row[column] when the row has the column and the value is not missing, else 'N/A'."""
+    return or_na(row[column]) if column in row else NA
+
+
+def rounded_value_or_na(row, column):
+    """``round(row[column], 2)`` when the row has the column and the value is not
+    missing, else 'N/A'."""
+    value = value_or_na(row, column)
+    return value if value == NA else round(value, 2)
+
+
+def series_or_na(series):
+    """The series with every missing (NaN / None / '') cell as 'N/A'; the series
+    itself, dtype untouched, when nothing is missing."""
+    missing = series.isna() | (series == '')
+    if missing.any():
+        return series.astype(object).where(~missing, NA)
+    return series
+
+
+def column_or_na(df, *names):
+    """df[name] for the first of `names` (spellings of ONE quantity) the frame has,
+    each missing cell as 'N/A' (`series_or_na`); 'N/A' in every row when the frame
+    has none of them."""
+    for name in names:
+        if name in df.columns:
+            return series_or_na(df[name])
+    return NA
+
+
+def rounded_column_or_na(df, name):
+    """df[name].round(2) with each missing cell as 'N/A'; 'N/A' in every row when
+    the frame has no such column."""
+    if name not in df.columns:
+        return NA
+    return series_or_na(df[name].round(2))
+
+
+def mean_or_na(values):
+    """The mean of the values that are present; 'N/A' when none is. Accumulated
+    in order with plain additions (not the compensated `sum`), as the builders
+    always did, so a present value's mean is bit-identical."""
+    total, count = 0, 0
+    for value in values:
+        if not is_missing(value):
+            total += float(value)
+            count += 1
+    return total / count if count else NA
+
+
+def money_or_na(value):
+    """`money(value)`, or 'N/A' when the value is missing."""
+    return NA if is_missing(value) else money(value)
 
 
 # ---------------------------------------------------------------------------
@@ -61,44 +142,23 @@ def purchase_requests_of(row):
             yield index, request
 
 
-def rounded_or_blank(row, column):
-    """``round(row[column], 2)`` when the row has the column and the value is not
-    missing, else ''."""
-    if column in row and pd.notna(row[column]):
-        return round(row[column], 2)
-    return ''
+def income_or_na(row):
+    """The row's 'income' (the dollar value the run assigned) rounded to two
+    decimals; 'N/A' when it is missing. Never the 12-200 credit allowance
+    ('actual_allowance'), which is a different quantity."""
+    return rounded_value_or_na(row, 'income')
 
 
-def income_rounded_or_blank(row):
-    """The row's income rounded to two decimals: 'income', else 'actual_allowance'
-    (each only when present and not missing), else ''."""
-    if 'income' in row and pd.notna(row['income']):
-        return round(row['income'], 2)
-    if 'actual_allowance' in row and pd.notna(row['actual_allowance']):
-        return round(row['actual_allowance'], 2)
-    return ''
+# 'Group_experiment' and 'Study Program' are the only names the engine produces
+# (config/trait_requirements.yaml; src/decisions/donation_default.py reads them).
+def group_experiment_or_na(row):
+    """The row's 'Group_experiment'; 'N/A' when it is absent, missing or ''."""
+    return value_or_na(row, 'Group_experiment')
 
 
-def group_experiment_or_blank(row):
-    """The first of 'Group_experiment', 'group', 'group_experiment' the row has
-    with a non-missing value, else ''."""
-    for column in ('Group_experiment', 'group', 'group_experiment'):
-        if column in row and pd.notna(row[column]):
-            return row[column]
-    return ''
-
-
-def group_experiment_skipping_blanks(row):
-    """'Group_experiment', falling back to 'group' and then 'group_experiment'
-    while the value so far is '' or missing; '' when it is still missing."""
-    group_experiment = row.get('Group_experiment', '')
-    if group_experiment == '' or pd.isna(group_experiment):
-        group_experiment = row.get('group', '')
-    if group_experiment == '' or pd.isna(group_experiment):
-        group_experiment = row.get('group_experiment', '')
-    if pd.isna(group_experiment):
-        group_experiment = ''
-    return group_experiment
+def study_program_or_na(row):
+    """The row's 'Study Program'; 'N/A' when it is absent, missing or ''."""
+    return value_or_na(row, 'Study Program')
 
 
 def income_category_or_na(row):
@@ -110,17 +170,11 @@ def income_category_or_na(row):
     return income_category_raw
 
 
-def income_disclosed_flag(row):
-    """Decision 1 as 1/0: 1 when 'disclose_income' is 'Y', else 0."""
-    return 1 if row.get('disclose_income', '') == 'Y' else 0
-
-
-def documents_disclosed_code(row):
-    """Decision 2's three-state outcome: 1 (Y = disclosed), 0 (N = asked but
-    declined) or 'NA' (never eligible). N and NA are NOT collapsed to 0, so the
-    qualified-disclosure denominator stays recoverable."""
-    disclose_documents_raw = row.get('disclose_documents', '')
-    return 1 if disclose_documents_raw == 'Y' else (0 if disclose_documents_raw == 'N' else 'NA')
+def yes_no_code(value):
+    """A Y/N outcome as 1 (Y) / 0 (N); 'N/A' for anything else -- a missing value,
+    or Decision 2's never-eligible 'NA'. N and the never-eligible state are NOT
+    collapsed to 0, so the qualified-disclosure denominator stays recoverable."""
+    return 1 if value == 'Y' else (0 if value == 'N' else NA)
 
 
 def rejected_default_priorities(row):
@@ -145,18 +199,11 @@ def rejected_default_priorities(row):
     return choices
 
 
-def vendor_weights_or_equal(row):
-    """The agent's vendor choice weights; equal weights (0.25 each) when the row
-    carries no dict."""
-    vendor_weights = row.get('vendor_choice_weights', {})
-    if not isinstance(vendor_weights, dict):
-        vendor_weights = {
-            'price': 0.25,
-            'quality': 0.25,
-            'proximity': 0.25,
-            'sustainability': 0.25
-        }
-    return vendor_weights
+def vendor_weights_or_none(row):
+    """The agent's Decision 5 dict ('vendor_choice_weights'); None when the row
+    carries no dict -- then every weight cell and the vendor score are 'N/A'."""
+    vendor_weights = row.get('vendor_choice_weights', None)
+    return vendor_weights if isinstance(vendor_weights, dict) else None
 
 
 def proximity_scores_or_empty(row):
@@ -181,14 +228,12 @@ def request_time(ts_converter, request):
 
 def request_customer_type(request):
     """(customer type, display name) of a request: 'customer_type', else
-    'customerType', else 'regular'; the display name is it capitalised, or
-    'Regular' when it is not a string."""
-    customer_type = request.get('customer_type', request.get('customerType', 'regular'))
-    if isinstance(customer_type, str):
-        customer_type_display = customer_type.capitalize()
-    else:
-        customer_type_display = 'Regular'
-    return customer_type, customer_type_display
+    'customerType'; the display name is it capitalised. A request without one
+    gives ('', 'N/A') -- nothing is substituted, and '' matches no type."""
+    customer_type = request.get('customer_type', request.get('customerType', ''))
+    if isinstance(customer_type, str) and customer_type != '':
+        return customer_type, customer_type.capitalize()
+    return '', NA
 
 
 # ---------------------------------------------------------------------------
@@ -217,21 +262,33 @@ def vendors_by_id_and_str(vendors):
     return vendor_lookup
 
 
-def vendor_price_from(vendor_lookup, vendor_id):
-    """The 'price' of the vendor `vendor_id` names in a `vendors_by_id_and_str`
-    lookup (a float id like 1.0 is looked up as 1, then as its string); None when
-    no vendor matches."""
+def vendor_from(vendor_lookup, vendor_id):
+    """The vendor `vendor_id` names in a `vendors_by_id_and_str` lookup (a float id
+    like 1.0 is looked up as 1, then as its string); None when the id is missing
+    or names no vendor in the list."""
+    if vendor_id is None or (isinstance(vendor_id, float) and np.isnan(vendor_id)):
+        return None
     lookup_key = vendor_id
     if isinstance(vendor_id, float) and vendor_id.is_integer():
         lookup_key = int(vendor_id)
+    if lookup_key in vendor_lookup:
+        return vendor_lookup[lookup_key]
+    if str(lookup_key) in vendor_lookup:
+        return vendor_lookup[str(lookup_key)]
+    return None
 
-    vendor_price = None
-    if lookup_key is not None:
-        if lookup_key in vendor_lookup:
-            vendor_price = vendor_lookup[lookup_key].get('price')
-        elif str(lookup_key) in vendor_lookup:
-            vendor_price = vendor_lookup[str(lookup_key)].get('price')
-    return vendor_price
+
+def vendor_price_from(vendor_lookup, vendor_id):
+    """The 'price' of the vendor `vendor_id` names (`vendor_from`); None when no
+    vendor matches."""
+    vendor = vendor_from(vendor_lookup, vendor_id)
+    return vendor.get('price') if vendor is not None else None
+
+
+def vendor_label(vendor, vendor_id):
+    """'Vendor <id>' for a request whose id names `vendor` (a vendor of the run);
+    'N/A' when the id is missing or names no vendor (vendor is None)."""
+    return f"Vendor {int(vendor_id)}" if vendor is not None else NA
 
 
 def request_vendor(vendor_lookup, vendor_id, proximity_scores):
@@ -287,23 +344,6 @@ def agent_id_column(df):
     if 'index' in df.columns:
         return df['index'] + 1
     return range(1, len(df) + 1)
-
-
-def column_or_blank(df, *names):
-    """df[name] for the first of `names` the frame has, else '' (an empty cell in
-    every row)."""
-    for name in names:
-        if name in df.columns:
-            return df[name]
-    return ''
-
-
-def rounded_column_or_blank(df, *names):
-    """df[name].round(2) for the first of `names` the frame has, else ''."""
-    for name in names:
-        if name in df.columns:
-            return df[name].round(2)
-    return ''
 
 
 def copy_present_columns(out, df, pairs):

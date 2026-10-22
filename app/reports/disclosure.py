@@ -19,7 +19,8 @@ from typing import Dict
 import pandas as pd
 
 from app.reports._common import (
-    CONFIG_SHEET_NAMES, agent_id_column, column_or_blank, rounded_column_or_blank,
+    CONFIG_SHEET_NAMES, NA, agent_id_column, column_or_na, rounded_column_or_na, series_or_na,
+    yes_no_code,
 )
 from app.reports.xlsx import apply_disclosure_price_formatting, to_xlsx_bytes
 
@@ -116,18 +117,8 @@ def customer_type_summary_frame(customer_stats: dict) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# Sheet builders
+# Sheet builders (a Y/N outcome is 1/0 through `yes_no_code`, 'N/A' when missing)
 # ---------------------------------------------------------------------------
-def _y1_n0_or_blank(value):
-    """A Y/N choice as 1/0; '' for anything else."""
-    return 1 if value == 'Y' else (0 if value == 'N' else '')
-
-
-def _y1_n0_or_na(value):
-    """A Y/N choice as 1/0; 'N/A' for anything else."""
-    return 1 if value == 'Y' else (0 if value == 'N' else 'N/A')
-
-
 def prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Prepare disclose income data for Excel export.
@@ -167,109 +158,97 @@ def prepare_disclose_income_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     # ========================================================================
     # 2-6. Raw Personality Trait Values (non-standardized)
     # ========================================================================
-    export_df['Agreeable'] = column_or_blank(df, 'Agreeable')                # 2.
-    export_df['Openness'] = column_or_blank(df, 'OpennessBig5')              # 3.
-    export_df['Honesty_Humility'] = column_or_blank(df, 'Honesty_Humility')  # 4.
-    export_df['Extraversion'] = column_or_blank(df, 'ExtraversionBig5')      # 5.
-    export_df['Neuroticism'] = column_or_blank(df, 'NeuroticismBig5')        # 6.
+    export_df['Agreeable'] = column_or_na(df, 'Agreeable')                # 2.
+    export_df['Openness'] = column_or_na(df, 'OpennessBig5')              # 3.
+    export_df['Honesty_Humility'] = column_or_na(df, 'Honesty_Humility')  # 4.
+    export_df['Extraversion'] = column_or_na(df, 'ExtraversionBig5')      # 5.
+    export_df['Neuroticism'] = column_or_na(df, 'NeuroticismBig5')        # 6.
 
     # ========================================================================
     # 7-9. Religious Components (raw values + computed composite)
     # ========================================================================
 
     # 7. ReligiousAffiliation (raw binary 0/1); 8. ReligiousService (raw ordinal)
-    export_df['ReligiousAffiliation'] = column_or_blank(df, 'ReligiousAffiliation')
-    export_df['ReligiousService'] = column_or_blank(df, 'ReligiousService')
+    export_df['ReligiousAffiliation'] = column_or_na(df, 'ReligiousAffiliation')
+    export_df['ReligiousService'] = column_or_na(df, 'ReligiousService')
 
     # 9. Religious composite (computed, non-standardized)
     # This comes from the decision function output
     if 'disclose_income_religious_composite' in df.columns:
-        export_df['Religious'] = df['disclose_income_religious_composite']
+        export_df['Religious'] = series_or_na(df['disclose_income_religious_composite'])
     else:
         # Fallback: compute it here if not available
         # Religious = (ReligiousAffiliation + scaled_ReligiousService) / 2
         # where scaled_ReligiousService = ReligiousService / 4 (assuming max=4)
         if 'ReligiousAffiliation' in df.columns and 'ReligiousService' in df.columns:
             rs_scaled = df['ReligiousService'] / 4.0  # Scale to 0-1
-            export_df['Religious'] = (df['ReligiousAffiliation'] + rs_scaled) / 2
+            export_df['Religious'] = series_or_na((df['ReligiousAffiliation'] + rs_scaled) / 2)
         else:
-            export_df['Religious'] = ''
+            export_df['Religious'] = NA
 
     # ========================================================================
     # 10-12. Income Information
     # ========================================================================
 
-    # 10. Assigned Allowance Level
-    export_df['Assigned Allowance Level'] = column_or_blank(df, 'Assigned Allowance Level', 'actual_allowance')
+    # 10. Assigned Allowance Level (the 1-5 level only; 'N/A' when missing -- never
+    #     the 12-200 credit allowance, a different quantity)
+    export_df['Assigned Allowance Level'] = column_or_na(df, 'Assigned Allowance Level')
 
-    # 11. Income (right after Assigned Allowance Level)
-    export_df['income'] = column_or_blank(df, 'income', 'actual_allowance')
+    # 11. Income (right after Assigned Allowance Level): the dollar value the run
+    #     assigned; 'N/A' when missing, never the allowance
+    export_df['income'] = column_or_na(df, 'income')
 
     # 12. I-High (income_high indicator: 1 if level > 3, else 0)
     if 'disclose_income_income_high' in df.columns:
-        export_df['I-High'] = df['disclose_income_income_high']
+        export_df['I-High'] = series_or_na(df['disclose_income_income_high'])
     else:
-        # Fallback: compute from Assigned Allowance Level
+        # Fallback: compute from Assigned Allowance Level ('N/A' where the level is missing)
         if 'Assigned Allowance Level' in df.columns:
-            export_df['I-High'] = (df['Assigned Allowance Level'] > 3).astype(int)
+            level = df['Assigned Allowance Level']
+            export_df['I-High'] = (level > 3).astype(int).astype(object).where(level.notna(), NA)
         else:
-            export_df['I-High'] = ''
+            export_df['I-High'] = NA
 
     # ========================================================================
     # 13. Observed Prosocial Behavior
     # ========================================================================
 
     # TWT+Sospeso (observed prosocial behavior)
-    export_df['TWT+Sospeso'] = column_or_blank(df, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+    export_df['TWT+Sospeso'] = column_or_na(df, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
 
     # ========================================================================
     # 14. Predicted Prosocial Behavior (trait-based)
     # ========================================================================
 
     # calc_PB (weighted_prosocial from traits, before anchoring)
-    export_df['calc_PB'] = column_or_blank(df, 'disclose_income_weighted_prosocial')
+    export_df['calc_PB'] = column_or_na(df, 'disclose_income_weighted_prosocial')
 
     # ========================================================================
     # 15-17. Configuration Values (Weights and Intercept)
     # ========================================================================
 
-    # 14. WOPB (Observed Prosocial Behavior Weight)
-    if 'disclose_income_wopb' in df.columns:
-        export_df['WOPB'] = df['disclose_income_wopb']
-    else:
-        # Default value from config
-        export_df['WOPB'] = 0.25
-
-    # 15. WPB (Prosocial Behavior Weight in final equation)
-    if 'disclose_income_wpb' in df.columns:
-        export_df['WPB'] = df['disclose_income_wpb']
-    else:
-        # Default value from config
-        export_df['WPB'] = 0.50
-
-    # 16. Intercept (β₀)
-    if 'disclose_income_intercept' in df.columns:
-        export_df['Intercept'] = df['disclose_income_intercept']
-    else:
-        # Default value from config
-        export_df['Intercept'] = 0.75
+    # 14-16. WOPB, WPB, Intercept: the values the run used; 'N/A' when the run did
+    # not record them (no configuration default is substituted)
+    export_df['WOPB'] = column_or_na(df, 'disclose_income_wopb')
+    export_df['WPB'] = column_or_na(df, 'disclose_income_wpb')
+    export_df['Intercept'] = column_or_na(df, 'disclose_income_intercept')
 
     # ========================================================================
     # 17-18. Calculated Values
     # ========================================================================
 
     # 17. PB_i (Anchored Prosocial Behavior)
-    export_df['PB_i'] = column_or_blank(df, 'disclose_income_anchored_pb')
+    export_df['PB_i'] = column_or_na(df, 'disclose_income_anchored_pb')
 
     # 18. Disclosure Income (Continuous value before Y/N classification)
-    export_df['Disclosure Income'] = column_or_blank(df, 'disclose_income_di', 'disclose_income_raw')
+    export_df['Disclosure Income'] = column_or_na(df, 'disclose_income_di', 'disclose_income_raw')
 
     # ========================================================================
     # 19. Final Decision (LAST COLUMN - nothing after this)
     # ========================================================================
 
-    # disclose_income (Y/N to 1/0)
-    export_df['Disclose Income (Y=1)'] = df['disclose_income'].apply(_y1_n0_or_blank)
+    # disclose_income (Y/N to 1/0; 'N/A' when missing)
+    export_df['Disclose Income (Y=1)'] = df['disclose_income'].apply(yes_no_code)
 
     return export_df
 
@@ -313,32 +292,35 @@ def prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     e['Agent ID'] = agent_id_column(df)
 
     # --- Raw traits ---------------------------------------------------------
-    e['Extraversion'] = column_or_blank(df, 'ExtraversionBig5')
-    e['Neuroticism'] = column_or_blank(df, 'NeuroticismBig5')
-    e['Agreeable'] = column_or_blank(df, 'Agreeable')
+    e['Extraversion'] = column_or_na(df, 'ExtraversionBig5')
+    e['Neuroticism'] = column_or_na(df, 'NeuroticismBig5')
+    e['Agreeable'] = column_or_na(df, 'Agreeable')
 
     # --- Income / allowance -------------------------------------------------
-    e['Assigned Allowance Level'] = column_or_blank(df, 'Assigned Allowance Level')
+    e['Assigned Allowance Level'] = column_or_na(df, 'Assigned Allowance Level')
+    # The income the run assigned; 'disclose_documents_agent_income' is the same
+    # dollar value as the decision recorded it (its own other name, not another
+    # quantity). A missing income is 'N/A' -- never the allowance.
     income_series = None
     if 'income' in df.columns:
         income_series = pd.to_numeric(df['income'], errors='coerce')
     elif 'disclose_documents_agent_income' in df.columns:
         income_series = pd.to_numeric(df['disclose_documents_agent_income'], errors='coerce')
-    e['Income'] = income_series if income_series is not None else ''
+    e['Income'] = series_or_na(income_series) if income_series is not None else NA
 
     # --- TWT+Sospeso (right AFTER income) -----------------------------------
-    e['TWT+Sospeso'] = column_or_blank(df, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+    e['TWT+Sospeso'] = column_or_na(df, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
 
     # --- PersonalIncentive = max_income - income (document Personal Incentive) -----
     # max_income is taken over the population (the maximum observed income in the sample).
     if income_series is not None and income_series.notna().any():
         max_income = income_series.max()
-        e['PersonalIncentive'] = max_income - income_series
+        e['PersonalIncentive'] = series_or_na(max_income - income_series)   # 'N/A' where the income is
     else:
-        e['PersonalIncentive'] = ''
+        e['PersonalIncentive'] = NA
 
     # --- Intercept (beta0), BEFORE the DD columns ---------------------------
-    e['Intercept'] = df.get('disclose_documents_intercept', '')
+    e['Intercept'] = column_or_na(df, 'disclose_documents_intercept')
 
     # --- Mediators: PrivacyConcern, Trust (standardized) AFTER Intercept ----
     def _standardize(col_name):
@@ -355,15 +337,15 @@ def prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
 
     pc_std = _standardize('disclose_documents_privacy_concern')
     tr_std = _standardize('disclose_documents_trust')
-    e['PrivacyConcern'] = pc_std if pc_std is not None else ''
-    e['Trust'] = tr_std if tr_std is not None else ''
+    e['PrivacyConcern'] = series_or_na(pc_std) if pc_std is not None else NA
+    e['Trust'] = series_or_na(tr_std) if tr_std is not None else NA
 
     # --- Single DD outcome: the FINAL value (DD raw, post-stochastic) -------
-    e['Disclosure Document'] = df.get('disclose_documents_raw', '')
+    e['Disclosure Document'] = column_or_na(df, 'disclose_documents_raw')
 
     # --- Disclose Income (Y=1) ----------------------------------------------
     if 'disclose_income' in df.columns:
-        e['Disclose Income (Y=1)'] = df['disclose_income'].apply(_y1_n0_or_na)
+        e['Disclose Income (Y=1)'] = df['disclose_income'].apply(yes_no_code)
     else:
         # Standalone DD run: disclose_income was not computed (ungated model).
         e['Disclose Income (Y=1)'] = 'N/A'
@@ -385,9 +367,9 @@ def prepare_disclose_documents_excel_data(df: pd.DataFrame) -> pd.DataFrame:
 
     def _dd_y(idx, raw):
         # Base mapping of the model's choice.
-        base = _y1_n0_or_na(raw)
-        if base == 'N/A':
-            return 'N/A'
+        base = yes_no_code(raw)
+        if base == NA:
+            return NA
         # Apply the qualified gate explicitly.
         if 'disclose_income' in df.columns:
             di = df['disclose_income'].iloc[idx]
@@ -437,32 +419,32 @@ def prepare_disclosure_excel_data(df: pd.DataFrame) -> pd.DataFrame:
     # AGENT TRAITS: Full agent trait columns (consistent with Disclose Income);
     # each is the first source column the frame has, else blank ('')
     # ====================================================================
-    export_df['Honesty_Humility'] = rounded_column_or_blank(df, 'Honesty_Humility')
+    export_df['Honesty_Humility'] = rounded_column_or_na(df, 'Honesty_Humility')
 
-    # Assigned Allowance Level - use the actual allowance column which exists for ALL agents
-    # Priority: 'Assigned Allowance Level' > 'actual_allowance' > 'income' (not income_category which is only for Discount/Fixed)
-    export_df['Assigned Allowance Level'] = column_or_blank(
-        df, 'Assigned Allowance Level', 'actual_allowance', 'income')
+    # Assigned Allowance Level: the 1-5 level only; 'N/A' when missing (never the
+    # 12-200 credit allowance or the income, which are different quantities)
+    export_df['Assigned Allowance Level'] = column_or_na(df, 'Assigned Allowance Level')
 
-    export_df['Study Program'] = column_or_blank(df, 'Study Program')
-    export_df['Group_experiment'] = column_or_blank(df, 'Group_experiment', 'group', 'group_experiment')
-    export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_column_or_blank(
+    export_df['Study Program'] = column_or_na(df, 'Study Program')
+    export_df['Group_experiment'] = column_or_na(df, 'Group_experiment')
+    export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_column_or_na(
         df, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
-    export_df['income'] = rounded_column_or_blank(df, 'income', 'actual_allowance')
+    # the dollar income the run assigned; 'N/A' when missing, never the allowance
+    export_df['income'] = rounded_column_or_na(df, 'income')
 
     # ====================================================================
 
-    # disclose_income (Y/N to 1/0)
+    # disclose_income (Y/N to 1/0; 'N/A' when missing)
     if 'disclose_income' in df.columns:
-        export_df['disclose_income'] = df['disclose_income'].apply(_y1_n0_or_blank)
+        export_df['disclose_income'] = df['disclose_income'].apply(yes_no_code)
     else:
-        export_df['disclose_income'] = ''
+        export_df['disclose_income'] = NA
 
-    # disclose_documents (Y/N/NA to 1/0/N/A)
+    # disclose_documents (Y / N / never-eligible to 1 / 0 / 'N/A')
     if 'disclose_documents' in df.columns:
-        export_df['disclose_documents'] = df['disclose_documents'].apply(_y1_n0_or_na)
+        export_df['disclose_documents'] = df['disclose_documents'].apply(yes_no_code)
     else:
-        export_df['disclose_documents'] = ''
+        export_df['disclose_documents'] = NA
 
     # Customer type indicator columns
     if 'customer_type' in df.columns:

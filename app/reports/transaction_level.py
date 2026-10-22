@@ -10,10 +10,11 @@ import numpy as np
 import pandas as pd
 
 from app.reports._common import (
-    all_present, documents_disclosed_code, income_category_or_na, income_disclosed_flag,
-    money, money_or_missing, number_chronologically, proximity_scores_or_empty,
+    NA, all_present, group_experiment_or_na, income_category_or_na, income_or_na, money,
+    money_or_na, number_chronologically, or_na, proximity_scores_or_empty, purchase_now_price,
     purchase_requests_of, rejected_default_priorities, request_time, request_vendor,
-    round2_or_nan, vendor_weights_or_equal, vendors_by_id,
+    study_program_or_na, value_or_na, vendor_label, vendor_weights_or_none, vendors_by_id,
+    yes_no_code,
 )
 from app.reports.timestamps import TimestampConverter
 from src.vendor_attribute_generator import calculate_vendor_score_with_breakdown
@@ -48,7 +49,9 @@ def build_transaction_level_dataframe(
         base_time: Base datetime every timestamp string is relative to (the page
             passes the run's start, ``RunContext.base_time``).
         periods: Number of periods in the run (was ``sim_params.periods``).
-        market_price: Market price (was ``sim_params.market_price``)
+        market_price: Market price (was ``sim_params.market_price``). Accepted for the
+            page's call; no longer used -- a request that names no vendor has no
+            Purchase Now price ('N/A'), the market price is not substituted.
         platform_markup: Platform markup (was ``sim_params.platform_markup``)
         price_range: Purchase-Now price range (was ``sim_params.price_range``)
         duration_hours: Hours per period (was ``sim_params.duration_hours``);
@@ -73,12 +76,12 @@ def build_transaction_level_dataframe(
     price_min_config = vendor_price_min
     price_max_config = vendor_price_max
     
-    # Calculate standard prices
     # Customer Price rule (COOPECON AI Agent Documentation 2026-10-07, Transaction-Level
     # export): Purchase Now = (1 + price_range) x (1 + platform_markup) x vendor_price;
     # Bid = the bid value; Fixed / Discount = N/A (the platform algorithm sets them).
-    # The market price is the fallback for a request that names no vendor.
-    market_pn_price = (1 + price_range) * (1 + platform_markup) * market_price
+    # A request that names no vendor has no Purchase Now price (N/A). The shared
+    # `purchase_now_price` multiplies the price first, like every other sheet, so the
+    # stored cents agree across sheets.
     
     # Build vendor lookup
     vendor_lookup = vendors_by_id(vendors_data)
@@ -86,38 +89,44 @@ def build_transaction_level_dataframe(
     for idx, row in df.iterrows():
         # Get agent-level data
         agent_id = row.get('agent_id', idx + 1)
-        honesty_humility = row.get('Honesty_Humility', np.nan)
-        allowance_level = row.get('Assigned Allowance Level', np.nan)
-        study_program = row.get('Study Program', '')
-        group_experiment = row.get('Group_experiment', '')
-        twt_sospeso = row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan)
+        honesty_humility = value_or_na(row, 'Honesty_Humility')
+        allowance_level = value_or_na(row, 'Assigned Allowance Level')
+        study_program = study_program_or_na(row)
+        group_experiment = group_experiment_or_na(row)
+        twt_sospeso = value_or_na(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
         customer_type = row.get('customer_type', '')
+        customer_type = customer_type if isinstance(customer_type, str) else ''
 
-        # Get income (try 'income' first, fallback to 'actual_allowance')
-        income = row.get('income', row.get('actual_allowance', np.nan))
+        # Income: the dollar value the run assigned, rounded; 'N/A' when missing
+        # (never the 12-200 credit allowance)
+        income = income_or_na(row)
 
         # Income category - use 'N/A' for empty/missing values (e.g., regular customers who didn't disclose income)
         income_category = income_category_or_na(row)
-        agent_donation_default = row.get('donation_default', np.nan)
+        agent_donation_default = value_or_na(row, 'donation_default')
 
-        # Decision 1: Income disclosed (convert Y/N to 1/0)
-        income_disclosed = income_disclosed_flag(row)
+        # Decision 1: Income disclosed (Y/N to 1/0; 'N/A' when missing)
+        income_disclosed = yes_no_code(row.get('disclose_income'))
 
-        # Decision 2: Documents disclosed (1 / 0 / 'NA': N and NA are not collapsed)
-        documents_disclosed = documents_disclosed_code(row)
+        # Decision 2: Documents disclosed (1 / 0 / 'N/A': N and never-eligible are not collapsed)
+        documents_disclosed = yes_no_code(row.get('disclose_documents'))
 
         # Decision 4: Rejected Transaction Defaults - 5 priority columns
         priority_choices = rejected_default_priorities(row)
 
-        # Decision 5: Vendor Choice Weights (also used for the vendor score below)
-        vendor_weights = vendor_weights_or_equal(row)
-        weight_price = vendor_weights.get('price', np.nan)
-        weight_quality = vendor_weights.get('quality', np.nan)
-        weight_proximity = vendor_weights.get('proximity', np.nan)
-        weight_sustainability = vendor_weights.get('sustainability', np.nan)
+        # Decision 5: Vendor Choice Weights (also used for the vendor score below);
+        # without the dict every weight cell and the vendor score are 'N/A'
+        vendor_weights = vendor_weights_or_none(row)
+        if vendor_weights is not None:
+            weight_price = vendor_weights.get('price', np.nan)
+            weight_quality = vendor_weights.get('quality', np.nan)
+            weight_proximity = vendor_weights.get('proximity', np.nan)
+            weight_sustainability = vendor_weights.get('sustainability', np.nan)
+        else:
+            weight_price = weight_quality = weight_proximity = weight_sustainability = NA
 
         # Decision 11: Rejected Transaction Option
-        rejected_transaction_option = row.get('rejected_transaction_option', '')
+        rejected_transaction_option = value_or_na(row, 'rejected_transaction_option')
         
         # Get vendor proximity scores for this agent
         proximity_scores = proximity_scores_or_empty(row)
@@ -142,12 +151,14 @@ def build_transaction_level_dataframe(
 
             vendor, vendor_price, vendor_quality, vendor_sustainability, vendor_proximity = \
                 request_vendor(vendor_lookup, vendor_id, proximity_scores)
-            # Use centralized scoring function for consistency
+            # Use centralized scoring function for consistency. The standardized
+            # component scores do not depend on the weights; the integrated score
+            # does, so it is 'N/A' for an agent without the Decision 5 dict.
             if vendor is not None and all_present(
                     vendor_price, vendor_quality, vendor_sustainability, vendor_proximity):
                 score_result = calculate_vendor_score_with_breakdown(
                     vendor=vendor,
-                    weights=vendor_weights,
+                    weights=vendor_weights if vendor_weights is not None else {},
                     proximity=vendor_proximity,
                     all_vendors=list(vendor_lookup.values()),
                     price_min_config=price_min_config,
@@ -158,10 +169,12 @@ def build_transaction_level_dataframe(
                 vendor_quality_score = score_result['norm_quality']
                 vendor_sustainability_score = score_result['norm_sustainability']
                 vendor_proximity_score = score_result['norm_proximity']
-                vendor_integrated_score = score_result['integrated_score']
+                vendor_integrated_score = (score_result['integrated_score']
+                                           if vendor_weights is not None else NA)
             
-            pn_price = ((1 + price_range) * (1 + platform_markup) * vendor_price
-                        if not pd.isna(vendor_price) else market_pn_price)
+            # No vendor price (the request names no vendor): no Purchase Now price
+            pn_price = (purchase_now_price(vendor_price, platform_markup, price_range)
+                        if not pd.isna(vendor_price) else None)
 
             # Purchase decision and pricing
             platform_price = request.get('platformPrice', '')
@@ -180,24 +193,23 @@ def build_transaction_level_dataframe(
             elif platform_price == 'BID':
                 purchase_request_type = 'Bid'
                 try:
-                    # For BID transactions, Customer Price is the bid amount if successful
-                    bid_val_numeric = float(bid_value) if bid_value != 'N/A' else pn_price
-                    customer_price = bid_val_numeric
+                    # For BID transactions, Customer Price is the bid amount (none without it)
+                    customer_price = float(bid_value) if bid_value != 'N/A' else None
                 except (ValueError, TypeError):
-                    customer_price = pn_price
+                    customer_price = None
             else:
-                purchase_request_type = customer_type.capitalize() if customer_type else 'Regular'
+                purchase_request_type = customer_type.capitalize() if customer_type else NA
                 customer_price = pn_price
             
             # Display customer price (stored rounded to two decimals, like every
             # money column of every export):
-            # - For Purchase Now: pn_price
-            # - For Bid: bid_value (if numeric)
+            # - For Purchase Now: pn_price ('N/A' when the request names no vendor)
+            # - For Bid: bid_value ('N/A' when it is not numeric)
             # - For Discount/Fixed: 'N/A' (actual price calculated by separate algorithm)
             if purchase_request_type in ['Purchase Now', 'Bid']:
-                display_customer_price = money(customer_price)
+                display_customer_price = money(customer_price) if customer_price is not None else NA
             else:
-                display_customer_price = 'N/A'
+                display_customer_price = NA
 
             # Bid value as stored: two decimals; N/A for non-Bid transactions
             if purchase_request_type == 'Bid':
@@ -207,15 +219,17 @@ def build_transaction_level_dataframe(
                     display_bid_value = bid_value
             else:
                 display_bid_value = 'N/A'
-            display_vendor_price = money_or_missing(vendor_price)
+            display_vendor_price = money_or_na(vendor_price)
             
             # Donation information
-            # Priority: request-level > agent-level
-            final_donation_rate = request.get('final_donation_rate', agent_donation_default)
-            try:
-                final_donation_rate = float(final_donation_rate) if not pd.isna(final_donation_rate) else 0.0
-            except (ValueError, TypeError):
-                final_donation_rate = 0.0
+            # Priority: request-level > agent-level; 'N/A' when neither carries a rate
+            # (no rate is substituted)
+            final_donation_rate = or_na(request.get('final_donation_rate', agent_donation_default))
+            if final_donation_rate != NA:
+                try:
+                    final_donation_rate = float(final_donation_rate)
+                except (ValueError, TypeError):
+                    final_donation_rate = NA
             
             # Build transaction record - organized by decision sequence
             # Column names standardized to match Agent-Level export
@@ -232,7 +246,7 @@ def build_transaction_level_dataframe(
                 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}': twt_sospeso,
 
                 # ===== INCOME & CUSTOMER INFO (matched to Agent-Level names) =====
-                'income': round2_or_nan(income),
+                'income': income,
                 'income_category': income_category,
 
                 # ===== DECISION 1: Disclose Income (1/0 format, matched to Agent-Level) =====
@@ -242,7 +256,7 @@ def build_transaction_level_dataframe(
                 'disclose_documents': documents_disclosed,
 
                 # ===== CUSTOMER TYPE (after disclosure decisions) =====
-                'customer_type': customer_type.capitalize() if customer_type else '',
+                'customer_type': customer_type.capitalize() if customer_type else NA,
 
                 # ===== DECISION 3: Donation Default (matched to Agent-Level name) =====
                 'donation_default': agent_donation_default,
@@ -265,19 +279,19 @@ def build_transaction_level_dataframe(
                 'Purchase Timestamp': ts_result['formatted'],
                 '_sort_datetime': request_datetime,  # Hidden sort key
 
-                # ===== DECISION 8: Vendor Selection =====
-                'Vendor ID': f"Vendor {int(vendor_id)}" if not pd.isna(vendor_id) else '',
+                # ===== DECISION 8: Vendor Selection ('N/A' when the request names no vendor) =====
+                'Vendor ID': vendor_label(vendor, vendor_id),
                 'Vendor Price': display_vendor_price,
-                'Vendor Quality': vendor_quality,
-                'Vendor Sustainability': vendor_sustainability,
-                'Vendor Proximity': vendor_proximity,
+                'Vendor Quality': or_na(vendor_quality),
+                'Vendor Sustainability': or_na(vendor_sustainability),
+                'Vendor Proximity': or_na(vendor_proximity),
 
                 # ===== Standardized Vendor Scores =====
-                'Standardized Vendor Price Score': vendor_price_score,
-                'Standardized Vendor Quality Score': vendor_quality_score,
-                'Standardized Vendor Sustainability Score': vendor_sustainability_score,
-                'Standardized Vendor Proximity Score': vendor_proximity_score,
-                'Vendor Integrated Score': vendor_integrated_score,
+                'Standardized Vendor Price Score': or_na(vendor_price_score),
+                'Standardized Vendor Quality Score': or_na(vendor_quality_score),
+                'Standardized Vendor Sustainability Score': or_na(vendor_sustainability_score),
+                'Standardized Vendor Proximity Score': or_na(vendor_proximity_score),
+                'Vendor Integrated Score': or_na(vendor_integrated_score),
 
                 # ===== DECISION 9 & 10: Purchase Decision & Pricing =====
                 'Purchase Request Type': purchase_request_type,

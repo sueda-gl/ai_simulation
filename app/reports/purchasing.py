@@ -12,8 +12,8 @@ from collections import Counter
 import pandas as pd
 
 from app.reports._common import (
-    column_first, group_experiment_or_blank, income_category_or_na, income_rounded_or_blank,
-    money, purchase_requests_of, rounded_or_blank,
+    NA, column_first, group_experiment_or_na, income_category_or_na, income_or_na, money, or_na,
+    purchase_requests_of, rounded_value_or_na, study_program_or_na, value_or_na,
 )
 from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import to_xlsx_bytes
@@ -296,8 +296,10 @@ def build_transaction_export(df, base_time, duration_hours, periods):
             transactions.append({
                 'transaction_id': req.get('transaction_id'),
                 'Agent ID': req.get('customer_id', idx + 1),
-                'vendorID': req.get('vendorID', 1),
-                'platformProductID': req.get('platformProductID', 1),
+                'vendorID': or_na(req.get('vendorID')),   # 'N/A' when the request names no vendor
+                # the engine writes no product id on a request (src/decisions/purchasing_quantity.py);
+                # nothing is substituted for it
+                'platformProductID': or_na(req.get('platformProductID')),
                 'purchase type': req.get('platformPrice', 'N/A'),
                 'purchase_bid_value': bid_value,
                 'Purchase Timestamp': timestamp_str,
@@ -350,17 +352,18 @@ def build_agent_level_purchases(df, periods, duration_hours):
         agent_id = row.get('agent_id', idx + 1)
 
         # Agent Traits (matching disclose income export)
-        honesty_humility = rounded_or_blank(row, 'Honesty_Humility')
-        allowance_level = row.get('Assigned Allowance Level', '')
-        study_program = row.get('Study Program', '')
-        group_experiment = group_experiment_or_blank(row)
-        twt_sospeso = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
-        income = income_rounded_or_blank(row)
+        honesty_humility = rounded_value_or_na(row, 'Honesty_Humility')
+        allowance_level = value_or_na(row, 'Assigned Allowance Level')
+        study_program = study_program_or_na(row)
+        group_experiment = group_experiment_or_na(row)
+        twt_sospeso = rounded_value_or_na(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        income = income_or_na(row)   # the dollar income; 'N/A' when missing, never the allowance
 
         # Handle None/NaN/empty - display as 'N/A' for Regular customers who don't have income categories
         income_category = income_category_or_na(row)
 
         # Get customer type - try direct column first, then purchase_requests as fallback
+        # (the agent's own type under its other name); 'N/A' when neither carries it
         customer_type = ''
 
         # Priority 1: Check if customer_type is directly available in the dataframe
@@ -375,6 +378,8 @@ def build_agent_level_purchases(df, periods, duration_hours):
                     customer_type = first_req.get('customer_type', '')
                     if isinstance(customer_type, str):
                         customer_type = customer_type.capitalize()
+        if not customer_type:
+            customer_type = NA
 
         # Get purchase_requests for counting
         purchase_requests = row.get('purchase_requests', [])

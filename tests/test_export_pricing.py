@@ -13,6 +13,7 @@ Agent Documentation 2026-10-07.docx, Transaction-Level export and Decision 8):
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from app.reports import build_agent_level_dataframe, build_transaction_level_dataframe
@@ -120,3 +121,49 @@ def test_single_vendor_price_component_is_full_weight(single_vendor):
     scored = transactions.dropna(subset=["Standardized Vendor Price Score"])
     assert len(scored) > 0
     assert (scored["Standardized Vendor Price Score"].astype(float) == 1.0).all()
+
+
+def test_purchase_now_price_multiplies_the_price_first_in_every_sheet():
+    """For a two-decimal vendor price the two multiplication orders can land on different
+    cents (1.40: price first -> 1.93, factors first -> 1.92). Every sheet uses the shared
+    `purchase_now_price` (price first, as the documentation writes the formula), so every
+    sheet stores the same cents."""
+    from app.reports import (
+        build_donation_transaction_export, build_purchase_request_export,
+        build_purchase_vs_bid_export,
+    )
+    from app.reports._common import purchase_now_price
+    from app.reports.timestamps import TimestampConverter
+
+    vendors = [{"vendor_id": 1, "price": 1.40, "quality": 4, "sustainability": 3}]
+    request = {"request_id": 1, "quantity": 1, "timestamp_hours": 0.1, "customer_id": 1,
+               "customer_type": "regular", "vendorID": 1, "platformPrice": "PN",
+               "bid_value": "N/A", "final_donation_rate": 0.1, "transaction_id": 1}
+    df = pd.DataFrame([{"agent_id": 1, "income": 10000.0, "customer_type": "regular",
+                        "vendor_choice_weights": {"price": 0.25, "quality": 0.25,
+                                                  "proximity": 0.25, "sustainability": 0.25},
+                        "vendor_proximity_scores": {"1": 50.0}, "purchasing_quantity": 1,
+                        "purchase_requests": [request]}])
+    base_time = datetime(2025, 1, 15)
+    exact = purchase_now_price(1.40, PLATFORM_MARKUP, PRICE_RANGE)
+    assert float(f"{exact:.2f}") == 1.93
+    assert float(f"{(1 + PRICE_RANGE) * (1 + PLATFORM_MARKUP) * 1.40:.2f}") == 1.92   # the other order
+
+    transactions = build_transaction_level_dataframe(
+        df, vendors_data=vendors, base_time=base_time, periods=1, duration_hours=1.0,
+        market_price=MARKET_PRICE, platform_markup=PLATFORM_MARKUP, price_range=PRICE_RANGE)
+    requests = pd.DataFrame(build_purchase_request_export(
+        df, vendors, base_time, 1.0, 1, platform_markup=PLATFORM_MARKUP, price_range=PRICE_RANGE))
+    purchase_vs_bid = pd.DataFrame(build_purchase_vs_bid_export(
+        df, ts_converter=TimestampConverter(base_time, 1.0, 1), vendors=vendors,
+        market_price=MARKET_PRICE, platform_markup=PLATFORM_MARKUP, price_range=PRICE_RANGE))
+    donation = pd.DataFrame(build_donation_transaction_export(
+        df, vendors=vendors, base_time=base_time, duration_hours=1.0, periods=1,
+        market_price=MARKET_PRICE, platform_markup=PLATFORM_MARKUP, price_range=PRICE_RANGE))
+    cents = {
+        "transaction_level": transactions["Customer Price"].iloc[0],
+        "purchase_requests": requests["Customer Paid Price"].iloc[0],
+        "purchase_vs_bid": purchase_vs_bid["Customer Price"].iloc[0],
+        "donation_transactions": donation["Customer Price"].iloc[0],
+    }
+    assert cents == {name: 1.93 for name in cents}

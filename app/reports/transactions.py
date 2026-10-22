@@ -21,10 +21,10 @@ import numpy as np
 import pandas as pd
 
 from app.reports._common import (
-    agent_id_column, column_or_blank, group_experiment_or_blank, income_category_or_na,
-    income_rounded_or_blank, money, purchase_now_price, purchase_requests_of,
-    request_customer_type, request_time, rounded_column_or_blank, rounded_or_blank,
-    vendor_price_from, vendors_by_id_and_str,
+    NA, agent_id_column, column_or_na, group_experiment_or_na, income_category_or_na,
+    income_or_na, money, purchase_now_price, purchase_requests_of, request_customer_type,
+    request_time, rounded_column_or_na, rounded_value_or_na, study_program_or_na, value_or_na,
+    vendor_from, vendors_by_id_and_str,
 )
 from app.reports.xlsx import apply_transaction_price_formatting, period_sheets, to_xlsx_bytes
 
@@ -74,12 +74,12 @@ def build_purchase_vs_bid_export(
         agent_id = row.get('agent_id', idx + 1)
         
         # Agent Traits (matching disclose income export)
-        honesty_humility = rounded_or_blank(row, 'Honesty_Humility')
-        allowance_level = row.get('Assigned Allowance Level', np.nan)
-        study_program = row.get('Study Program', '')
-        group_experiment = group_experiment_or_blank(row)
-        twt_sospeso = rounded_or_blank(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
-        income = income_rounded_or_blank(row)
+        honesty_humility = rounded_value_or_na(row, 'Honesty_Humility')
+        allowance_level = value_or_na(row, 'Assigned Allowance Level')
+        study_program = study_program_or_na(row)
+        group_experiment = group_experiment_or_na(row)
+        twt_sospeso = rounded_value_or_na(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        income = income_or_na(row)   # the dollar income; 'N/A' when missing, never the allowance
         
         # Income category - Regular customers don't have this (assigned in Decision 6 only for Discount/Fixed)
         # Use 'N/A' for empty/missing income_category (e.g., regular customers who didn't disclose income)
@@ -103,20 +103,21 @@ def build_purchase_vs_bid_export(
             platform_price = request.get('platformPrice', request.get('platform_price', ''))
             bid_value = request.get('bid_value', 'N/A')
             
-            # Get vendor price for this request's vendor (float 1.0 is looked up as vendor 1)
+            # The request's vendor (float 1.0 is looked up as vendor 1); None when the
+            # id is missing or names no vendor -- then every vendor cell is 'N/A'
             vendor_id = request.get('vendorID', request.get('vendor_id'))
-            vendor_price = vendor_price_from(vendor_lookup, vendor_id)
+            vendor = vendor_from(vendor_lookup, vendor_id)
+            vendor_price = vendor.get('price') if vendor is not None else None
             
             # Get Transaction ID (pre-assigned by central system)
             transaction_id = request.get('transaction_id')
             
-            # Calculate customer price based on vendor's actual price
-            # Formula: Customer Price (PN) = (1 + price_range) × (1 + platform_markup) × vendor_price
-            if vendor_price is not None:
-                pn_price = purchase_now_price(vendor_price, platform_markup, price_range)
-            else:
-                # Fallback to market_price if vendor price not available
-                pn_price = purchase_now_price(market_price, platform_markup, price_range)
+            # Customer Price (PN) = (1 + price_range) x (1 + platform_markup) x the VENDOR's
+            # price; a request that names no vendor has no Purchase Now price ('N/A' --
+            # the market price is not substituted). A Bid without a numeric bid value
+            # has no price either.
+            pn_price = (purchase_now_price(vendor_price, platform_markup, price_range)
+                        if vendor_price is not None else None)
             
             # Only include PN and BID for regular customers
             if platform_price == 'PN':
@@ -127,14 +128,14 @@ def build_purchase_vs_bid_export(
                 try:
                     customer_price = float(bid_value)
                 except (ValueError, TypeError):
-                    customer_price = pn_price
+                    customer_price = None
             else:
                 # Skip if not PN or BID
                 continue
             
             # Show price for both PN and BID customers
-            # Format to 2 decimal places for display
-            display_customer_price = money(customer_price)
+            # Format to 2 decimal places for display ('N/A' when there is no price)
+            display_customer_price = money(customer_price) if customer_price is not None else NA
             
             # Build record
             record = {
@@ -149,8 +150,8 @@ def build_purchase_vs_bid_export(
                 'Customer Type': customer_type_display,
                 'Income Category': income_category,
                 'Purchase Request Type': purchase_request_type,
-                'Vendor': vendor_id,
-                'Vendor Price': money(vendor_price) if vendor_price is not None else vendor_price,  # money: two decimals
+                'Vendor': vendor_id if vendor is not None else NA,
+                'Vendor Price': money(vendor_price) if vendor_price is not None else NA,  # money: two decimals
                 'Purchase Timestamp': timestamp_str,
                 'Period': period,
                 'Customer Price': display_customer_price,
@@ -291,13 +292,15 @@ def prepare_priority_lists_export(df: pd.DataFrame, decision_data) -> pd.DataFra
     
     # Agent ID, then the agent traits (first column present, else blank)
     export_df['Agent ID'] = agent_id_column(df)
-    export_df['Honesty_Humility'] = rounded_column_or_blank(df, 'Honesty_Humility')
-    export_df['Assigned Allowance Level'] = column_or_blank(df, 'Assigned Allowance Level', 'income_category')
-    export_df['Study Program'] = column_or_blank(df, 'Study Program')
-    export_df['Group_experiment'] = column_or_blank(df, 'Group_experiment', 'group', 'group_experiment')
-    export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_column_or_blank(
+    export_df['Honesty_Humility'] = rounded_column_or_na(df, 'Honesty_Humility')
+    # the 1-5 level only ('N/A' when missing; the income category is another quantity)
+    export_df['Assigned Allowance Level'] = column_or_na(df, 'Assigned Allowance Level')
+    export_df['Study Program'] = column_or_na(df, 'Study Program')
+    export_df['Group_experiment'] = column_or_na(df, 'Group_experiment')
+    export_df['TWT+Sospeso [=AW2+AX2]{Periods 1+2}'] = rounded_column_or_na(
         df, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
-    export_df['income'] = rounded_column_or_blank(df, 'income', 'actual_allowance')
+    # the dollar income the run assigned; 'N/A' when missing, never the allowance
+    export_df['income'] = rounded_column_or_na(df, 'income')
     
     # Priority columns (1-5)
     for priority_pos in range(1, 6):

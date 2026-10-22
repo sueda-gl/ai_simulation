@@ -18,9 +18,10 @@ import numpy as np
 import pandas as pd
 
 from app.reports._common import (
-    agent_id_renamed, column_first, group_experiment_skipping_blanks, income_category_or_na,
-    money, purchase_now_price, purchase_requests_of, request_customer_type, request_time,
-    sort_chronologically, vendor_price_from, vendors_by_id_and_str,
+    NA, agent_id_renamed, column_first, column_or_na, group_experiment_or_na,
+    income_category_or_na, is_missing, money, purchase_now_price, purchase_requests_of,
+    request_customer_type, request_time, sort_chronologically, study_program_or_na, value_or_na,
+    vendor_price_from, vendors_by_id_and_str,
 )
 from app.reports.timestamps import TimestampConverter
 from app.reports.xlsx import apply_donation_price_formatting, period_sheets, to_xlsx_bytes
@@ -95,9 +96,17 @@ def donation_default_export_columns(df: pd.DataFrame, decision_name: str) -> lis
     return export_columns
 
 
+def _traits_or_na(frame: pd.DataFrame) -> pd.DataFrame:
+    """In place: a missing cell of any trait column as 'N/A'."""
+    for column in DONATION_DEFAULT_TRAIT_COLUMNS:
+        if column in frame.columns:
+            frame[column] = column_or_na(frame, column)
+    return frame
+
+
 def build_donation_default_export(df: pd.DataFrame, export_columns: list) -> pd.DataFrame:
     """The 'Donation Results' sheet: selected columns, `agent_id` -> `Agent ID`."""
-    export_df = df[export_columns].copy()
+    export_df = _traits_or_na(df[export_columns].copy())
 
     # Rename agent_id to 'Agent ID' for clarity
     return agent_id_renamed(export_df)
@@ -112,6 +121,16 @@ def build_donation_default_xlsx(export_df: pd.DataFrame) -> bytes:
 # ---------------------------------------------------------------------------
 # final_donation_rate: transaction-level export
 # ---------------------------------------------------------------------------
+def _rate_or_na(value):
+    """A donation rate as a float; 'N/A' when it is missing or not numeric."""
+    if is_missing(value):
+        return NA
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return NA
+
+
 def build_donation_transaction_export(
     df,
     vendors=None,
@@ -166,43 +185,34 @@ def build_donation_transaction_export(
 
     # Customer Price rule (COOPECON AI Agent Documentation 2026-10-07): Purchase Now =
     # (1 + price_range) x (1 + platform_markup) x vendor_price, Bid = the bid value,
-    # Fixed / Discount = N/A. The market price is the fallback when no vendor is named.
-    pn_price = purchase_now_price(market_price, platform_markup, price_range)
+    # Fixed / Discount = N/A. A request that names no vendor has no Purchase Now
+    # price (N/A); the market price is not substituted. `market_price` is accepted
+    # for the callers and no longer used.
 
     for idx, row in df.iterrows():
         # Get agent information
         agent_id = row.get('agent_id', idx + 1)
-        allowance_level = row.get('Assigned Allowance Level', np.nan)
+        allowance_level = value_or_na(row, 'Assigned Allowance Level')
 
         # ====================================================================
         # AGENT TRAITS: Extract standard trait columns (consistent with Disclose Income)
         # ====================================================================
-        honesty_humility = row.get('Honesty_Humility', np.nan)
-        study_program = row.get('Study Program', np.nan)
-        twt_sospeso = row.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', np.nan)
-        income_value = row.get('income', np.nan)
-
-        # Group_experiment with fallbacks (handle various column naming conventions)
-        group_experiment = group_experiment_skipping_blanks(row)
+        honesty_humility = value_or_na(row, 'Honesty_Humility')
+        study_program = study_program_or_na(row)
+        twt_sospeso = value_or_na(row, 'TWT+Sospeso [=AW2+AX2]{Periods 1+2}')
+        # the dollar income the run assigned (as stored); 'N/A' when missing
+        income_value = value_or_na(row, 'income')
+        group_experiment = group_experiment_or_na(row)
         # ====================================================================
 
         # Use 'N/A' for empty/missing income_category (e.g., regular customers who didn't disclose income)
         income_category = income_category_or_na(row)
 
-        # Get AGENT-LEVEL donation rates (used as fallback only)
-        agent_default_rate = row.get('donation_default', np.nan)
-        agent_final_rate = row.get('final_donation_rate', agent_default_rate)
-
-        # Convert to numeric for fallback
-        try:
-            agent_default_rate = float(agent_default_rate) if not pd.isna(agent_default_rate) else 0.10
-        except (ValueError, TypeError):
-            agent_default_rate = 0.10
-
-        try:
-            agent_final_rate = float(agent_final_rate) if not pd.isna(agent_final_rate) else agent_default_rate
-        except (ValueError, TypeError):
-            agent_final_rate = agent_default_rate
+        # AGENT-LEVEL donation rates: the default (Decision 3) and the agent-level
+        # final rate, the fallback for a request without its own; 'N/A' when the
+        # run did not produce them (no rate is substituted)
+        agent_default_rate = _rate_or_na(row.get('donation_default'))
+        agent_final_rate = _rate_or_na(row.get('final_donation_rate', agent_default_rate))
 
         # Process each purchase request
         for _, request in purchase_requests_of(row):
@@ -221,17 +231,17 @@ def build_donation_transaction_export(
             vendor_id = request.get('vendorID', request.get('vendor_id'))
             vendor_price = vendor_price_from(vendor_lookup, vendor_id)
 
-            # PN price from the vendor's own price when the request names a vendor
-            current_pn_price = pn_price  # market-price fallback
+            # PN price from the vendor's own price; none when the request names no vendor
+            current_pn_price = None
             if vendor_price is not None:
                 current_pn_price = purchase_now_price(vendor_price, platform_markup, price_range)
 
             if platform_price == 'DISCOUNT' or customer_type.lower() == 'discount':
                 purchase_request_type = 'Discount'
-                customer_price = np.nan  # set by the platform algorithm; exported as N/A
+                customer_price = None  # set by the platform algorithm; exported as N/A
             elif platform_price == 'FIXED' or customer_type.lower() == 'fixed':
                 purchase_request_type = 'Fixed'
-                customer_price = np.nan  # set by the platform algorithm; exported as N/A
+                customer_price = None  # set by the platform algorithm; exported as N/A
             elif platform_price == 'PN':
                 purchase_request_type = 'PN'
                 customer_price = current_pn_price
@@ -240,7 +250,7 @@ def build_donation_transaction_export(
                 try:
                     customer_price = float(bid_value)
                 except (ValueError, TypeError):
-                    customer_price = current_pn_price
+                    customer_price = None
             else:
                 # Default to PN for regular customers
                 purchase_request_type = 'PN' if customer_type.lower() == 'regular' else customer_type_display
@@ -253,26 +263,24 @@ def build_donation_transaction_export(
             request_donation_rate = request.get('final_donation_rate', None)
 
             # Use request-level if available, otherwise fall back to agent-level
-            if request_donation_rate is not None:
-                try:
-                    final_donation_rate = float(request_donation_rate)
-                except (ValueError, TypeError):
-                    final_donation_rate = agent_final_rate
-            else:
-                # No request-level rate, use agent-level fallback
+            # (the agent's own rate); 'N/A' when neither carries a rate
+            final_donation_rate = _rate_or_na(request_donation_rate)
+            if final_donation_rate == NA:
                 final_donation_rate = agent_final_rate
 
             # Ensure valid range
-            final_donation_rate = np.clip(final_donation_rate, 0.0, 1.0) if not pd.isna(final_donation_rate) else agent_final_rate
+            if final_donation_rate != NA:
+                final_donation_rate = float(np.clip(final_donation_rate, 0.0, 1.0))
             # ====================================================================
 
-            # Only show price for PN and BID customers (we don't know actual price for Fixed/Discount)
-            # Stored rounded to two decimals, like every money column of every export
-            # Use np.nan instead of 'N/A' string to avoid mixed types in the column (Arrow compatibility)
-            if purchase_request_type in ['PN', 'Bid']:
+            # Only show price for PN and BID customers (we don't know actual price for
+            # Fixed/Discount): stored rounded to two decimals, like every money column
+            # of every export; 'N/A' when there is no price (Fixed / Discount, a PN
+            # request naming no vendor, a Bid without a numeric bid value)
+            if customer_price is not None:
                 display_customer_price = money(customer_price)
             else:
-                display_customer_price = np.nan
+                display_customer_price = NA
 
             # Build record with standardized timestamp column
             # NOTE: Removed 'Donation Paid' and 'Total Paid by Customer' columns because:
@@ -320,10 +328,10 @@ def donation_transactions_frame(transaction_records: list) -> pd.DataFrame:
 
 def donation_transactions_summary(transactions_df: pd.DataFrame):
     """The summary row above the transaction-level download: (distinct agents,
-    distinct periods, average final donation rate)."""
+    distinct periods, average final donation rate over the rows that have one)."""
     num_agents = transactions_df['Agent ID'].nunique()
     num_periods = transactions_df['Period'].nunique()
-    avg_donation = transactions_df['Final Donation Rate'].mean()
+    avg_donation = pd.to_numeric(transactions_df['Final Donation Rate'], errors='coerce').mean()
     return num_agents, num_periods, avg_donation
 
 
@@ -381,7 +389,7 @@ def donation_compare_all_sheets(results_dict) -> dict:
         else:
             sheet_data['Agent_ID'] = list(range(1, len(base_df) + 1))
         
-        # Add trait columns
+        # Add trait columns (a missing trait cell is 'N/A')
         for trait in trait_columns:
             if trait in base_df.columns:
                 # Use shorter column names for readability
@@ -389,7 +397,7 @@ def donation_compare_all_sheets(results_dict) -> dict:
                 short_trait = short_trait.replace('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 'TWT_Sospeso')
                 short_trait = short_trait.replace('Group_experiment', 'Group')
                 short_trait = short_trait.replace('Study Program', 'Study_Program')
-                sheet_data[short_trait] = base_df[trait].values
+                sheet_data[short_trait] = column_or_na(base_df, trait).to_numpy()
         
         # Add donation columns for each income mode
         if cat_df is not None and not cat_df.empty and 'donation_default' in cat_df.columns:
@@ -413,7 +421,7 @@ def donation_all_configs_frame(results_dict) -> pd.DataFrame:
     trait_columns = DONATION_ONLY_EXPORT_TRAIT_COLUMNS
     first_config_df = next(iter(results_dict.values()))
     available_traits = [col for col in trait_columns if col in first_config_df.columns]
-    combined_df = first_config_df[available_traits].copy()
+    combined_df = _traits_or_na(first_config_df[available_traits].copy())
     
     # Add agent_id if it exists
     if 'agent_id' in first_config_df.columns:
