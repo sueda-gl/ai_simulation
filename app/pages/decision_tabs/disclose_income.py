@@ -43,13 +43,6 @@ def _load_base_sigma_overall():
 # config/decisions.yaml, loaded once at import. The file is never written.
 BASE_SIGMA_OVERALL = _load_base_sigma_overall()
 
-# The effective σ the tab shows is computed from the base σ rounded to four
-# decimals, the precision the tab printed it with until every σ on screen went to
-# two decimals; printed with two decimals, the result is the same as from the
-# unrounded base for every slider value. Display only: the model takes its σ
-# from the configuration file directly.
-DISPLAY_SIGMA_OVERALL = round(BASE_SIGMA_OVERALL, 4)
-
 
 def research_default_config():
     """The tab's research defaults: the ``disclose_income`` block of
@@ -69,13 +62,13 @@ def initialize_disclose_income_session_state():
     config = research_default_config()
 
     # Initialize model parameters from config
-    anchor_weights = config.get('anchor_weights', {})
+    anchor_weights = config['anchor_weights']
     stochastic = config.get('stochastic', {})
 
     defaults = {
-        'di_intercept': config.get('intercept', 0.75),
-        'di_wopb': anchor_weights.get('observed_prosocial', 0.25),
-        'di_wpb': anchor_weights.get('prosocial_weight', 0.50),
+        'di_intercept': config['intercept'],
+        'di_wopb': anchor_weights['observed_prosocial'],
+        'di_wpb': anchor_weights['prosocial_weight'],
         'di_sigma_enabled': True,
         'di_scale_factor': stochastic.get('scale_factor', 1.0),
         'di_sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
@@ -118,7 +111,6 @@ DI_CONTROLS = TabControls(
     income_seed='match',
     after_income_change=lambda: clear_decision_config('disclose_income'),
     base_sigma=BASE_SIGMA_OVERALL,
-    effective_base=DISPLAY_SIGMA_OVERALL,
     base_sigmas=EMPIRICAL_BASE_SIGMAS,
     level_labels=LEVEL_LABELS,
 )
@@ -169,9 +161,9 @@ def render_disclose_income_tab():
         # Anchor Mix
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
 
-        anchor_weights = config.get('anchor_weights', {})
-        current_wopb = anchor_weights.get('observed_prosocial', 0.25)
-        current_wpb = anchor_weights.get('prosocial_weight', 0.50)
+        anchor_weights = config['anchor_weights']
+        current_wopb = anchor_weights['observed_prosocial']
+        current_wpb = anchor_weights['prosocial_weight']
 
         # Seed WOPB from its canonical key (di_wopb) when the slider comes back
         restore('di_wopb_widget', current_wopb)
@@ -296,7 +288,7 @@ def render_equation1_and_combining(config):
     """)
 
     st.markdown("### Combining with Observed Behavior")
-    wopb = config.get('anchor_weights', {}).get('observed_prosocial', 0.25)
+    wopb = config['anchor_weights']['observed_prosocial']
     st.latex(f"""
     PB_i = {wopb:.2f} \\times z_{{obs\\_PB_i}} + {1-wopb:.2f} \\times z_{{calc\\_PB_i}}
     """)
@@ -307,7 +299,7 @@ def render_categorical_di_formula(config):
     """Render Equation 2 for CATEGORICAL income mode."""
     st.markdown("### Equation 2: Disclose Income (Categorical)")
     
-    wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
+    wpb = config['anchor_weights']['prosocial_weight']
     
     # Show full expanded formula (per the Decision 1 document - no separate "direct effects" line)
     st.latex(f"""
@@ -336,8 +328,8 @@ def render_continuous_di_formula(config):
     """Render Equation 2 for CONTINUOUS income mode."""
     st.markdown("### Equation 2: Disclosure Intention (Continuous)")
     
-    wpb = config.get('anchor_weights', {}).get('prosocial_weight', 0.50)
-    beta0 = config.get('intercept', 0.75)
+    wpb = config['anchor_weights']['prosocial_weight']
+    beta0 = config['intercept']
     
     # Show full expanded formula only (per the Decision 1 document)
     st.latex(f"""
@@ -391,11 +383,11 @@ def _apply_extra_widget_keys(config):
     canonical keys. The unsuffixed writes that used to stand here set keys no
     widget and no reader ever used, so they are gone.
     """
-    anchor = config.get('anchor_weights', {})
-    st.session_state.di_wopb_widget = anchor.get('observed_prosocial', 0.25)
-    st.session_state.di_wpb_widget = anchor.get('prosocial_weight', 0.50)
-    st.session_state.di_wopb = anchor.get('observed_prosocial', 0.25)
-    st.session_state.di_wpb = anchor.get('prosocial_weight', 0.50)
+    anchor = config['anchor_weights']
+    st.session_state.di_wopb_widget = anchor['observed_prosocial']
+    st.session_state.di_wpb_widget = anchor['prosocial_weight']
+    st.session_state.di_wopb = anchor['observed_prosocial']
+    st.session_state.di_wpb = anchor['prosocial_weight']
 
 
 #: The intercept override, the resets and the action buttons (decision_tabs._disclosure).
@@ -403,7 +395,7 @@ DI_TAB = DisclosureTab(
     keys=DISCLOSURE_KEYS['disclose_income'],
     decision_label='disclose income',
     load_config=research_default_config,
-    default_intercept=0.75,
+    default_intercept=float(research_default_config()['intercept']),
     research_default_label='0.75',
     intercept_min=0.0,
     intercept_max=5.0,

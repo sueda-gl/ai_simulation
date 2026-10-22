@@ -104,11 +104,6 @@ class TabControls:
     # Every σ on screen (base, effective, per-quintile base in the slider labels
     # and the metrics) is printed with two decimals (owner decision, 2026-10-22).
     base_sigma: Optional[float] = None
-    #: what the "Effective σ" arithmetic multiplies: the base σ, or on Disclose
-    #: Income the base σ rounded to four decimals (a leftover of its former
-    #: four-decimal display; printed with two decimals, the result is the same as
-    #: from the unrounded base for every slider value)
-    effective_base: Optional[float] = None
     #: the parenthesised overall-σ summary of the quintile-mode warning / note,
     #: a str.format template over base, coeff (the overall coefficient) and eff
     overall_summary: str = "{coeff:.2f} × {base:.2f} = {eff:.2f}"
@@ -298,7 +293,7 @@ def render_sigma_controls(spec):
             scale_fallback = st.session_state[keys.coefficient]
         sigma_coefficient = render_coefficient_slider(spec, scale_fallback)
 
-        effective_sigma = spec.effective_base * sigma_coefficient
+        effective_sigma = spec.base_sigma * sigma_coefficient
         st.markdown(f"Effective σ = {spec.base_sigma:.2f} × {sigma_coefficient:.2f} = {effective_sigma:.2f}")
         return sigma_strategy, sigma_coefficient
 
@@ -307,7 +302,7 @@ def render_sigma_controls(spec):
     current_income_mode = st.session_state.get(keys.income, spec.income_default)
     overall_coeff = st.session_state.get(keys.coefficient, 1.0)
     summary = spec.overall_summary.format(base=spec.base_sigma, coeff=overall_coeff,
-                                          eff=spec.effective_base * overall_coeff)
+                                          eff=spec.base_sigma * overall_coeff)
     if 'continuous' in str(current_income_mode).lower() and 'compare' not in str(current_income_mode).lower():
         st.warning(
             "**Continuous mode uses overall σ.** "

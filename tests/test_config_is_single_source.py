@@ -3,10 +3,13 @@ config/decisions.yaml is the ONLY source of every constant of the four modelled 
 
 (a) None of the four decision modules (src/decisions/disclose_income_stochastic.py,
     disclose_documents_stochastic.py, donation_default.py,
-    rejected_transaction_defaults.py), nor the Decision 4 tab
-    (app/pages/decision_tabs/rejected_transaction.py), carries a literal copy of a
-    value that is in its decision's YAML block under the same key. The scan is
-    deliberately narrow, so that an unrelated number can never trip it:
+    rejected_transaction_defaults.py), nor the four modelled tabs
+    (app/pages/decision_tabs/rejected_transaction.py, disclose_income.py,
+    disclose_documents.py, donation_default.py), nor the saved-configuration
+    ("Use This Config") store (app/state/saved_configs.py, scanned against each of
+    the four blocks), carries a literal copy of a value that is in its decision's
+    YAML block under the same key. The scan is deliberately narrow, so that an
+    unrelated number can never trip it:
 
       1. ``<expr>.get('<key>', <number>)`` - a fallback for a YAML key, flagged when
          <key> is a key on the path of one of the block's values (its leaf key or any
@@ -17,7 +20,12 @@ config/decisions.yaml is the ONLY source of every constant of the four modelled 
          former FALLBACK_SIGMA_OVERALL ``{'risk_taking': <its sigma_overall>}`` -
          flagged on the same key-and-value match;
       3. a module-level ``NAME = <number>`` (the former B_EXTRA / BETA0 shape), flagged
-         when the number equals ANY numeric leaf of the block.
+         when the number equals ANY numeric leaf of the block;
+      4. a dict entry ``'<key>': <expr>`` whose expression holds a
+         ``.get(<anything>, <number>)`` fallback (nested dicts are their own entries) -
+         the store's former ``'intercept': st.session_state.get('di_intercept', 0.75)``
+         shape, where the session key is not a YAML key but the entry's key is -
+         flagged on the same key-and-value match.
 
     The neutral values 0, 1 and -1 are never flagged (they are identity defaults, not
     constants), so ``income_stats.get('mean', 0)`` on an engine dict passes; a number
@@ -30,6 +38,12 @@ config/decisions.yaml is the ONLY source of every constant of the four modelled 
 
 (c) The two file readers in src/config.py the tabs use (``donation_adjustment_shift``,
     ``rtd_sigma_coefficient_defaults``) raise, naming the key, when the file lacks it.
+
+(d) The saved-configuration store, asked for a decision's parameters while the
+    session holds none of its tab keys, records the file's values - the values a run
+    uses then (the seam leaves the file's value in place for an absent key) - not a
+    copy of its own (the Disclose Documents intercept fallback was -0.5, a stale copy
+    of the file's former value; the file says -0.75).
 
 The only keys not read strictly are two Decision-4 blocks whose absent keys existing
 tests pin as meaningful: ``intercepts`` (absent = 0,
@@ -54,7 +68,17 @@ from src.decisions.rejected_transaction_defaults import (
 from conftest import ROOT, load_decisions_yaml
 
 DECISIONS_DIR = ROOT / "src" / "decisions"
-D4_TAB = ROOT / "app" / "pages" / "decision_tabs" / "rejected_transaction.py"
+TABS_DIR = ROOT / "app" / "pages" / "decision_tabs"
+D4_TAB = TABS_DIR / "rejected_transaction.py"
+PIN_STORE = ROOT / "app" / "state" / "saved_configs.py"
+#: the app-layer files besides the Decision 4 tab, each with the blocks it is scanned against
+APP_FILES = {
+    "disclose_income tab": (TABS_DIR / "disclose_income.py", ("disclose_income",)),
+    "disclose_documents tab": (TABS_DIR / "disclose_documents.py", ("disclose_documents",)),
+    "donation_default tab": (TABS_DIR / "donation_default.py", ("donation_default",)),
+    "saved-configuration store": (PIN_STORE, ("disclose_income", "disclose_documents",
+                                              "donation_default", "rejected_transaction_defaults")),
+}
 MODULES = {
     "disclose_income": "disclose_income_stochastic.py",
     "disclose_documents": "disclose_documents_stochastic.py",
@@ -109,6 +133,17 @@ def _same(a, b):
     return math.isclose(a, b, rel_tol=1e-9, abs_tol=0.0)
 
 
+def _get_fallbacks(node):
+    """Every ``.get(<anything>, <number>)`` call inside ``node``, not descending into a
+    nested dict literal (its entries are checked as entries of their own)."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
+            and node.func.attr == "get" and len(node.args) == 2:
+        yield node
+    for child in ast.iter_child_nodes(node):
+        if not isinstance(child, ast.Dict):
+            yield from _get_fallbacks(child)
+
+
 def literal_copies(source: str, block: dict):
     """Every (line, description) where ``source`` carries a literal copy of ``block``."""
     leaves = _numeric_leaves(block)
@@ -139,6 +174,10 @@ def literal_copies(source: str, block: dict):
             for k, v in zip(node.keys, node.values):
                 if k is not None:
                     check_pair(k, v, "dict literal")
+                    # 4. {'<key>': <expr holding .get(<x>, <number>)>, ...}
+                    if not isinstance(v, ast.Dict):
+                        for call in _get_fallbacks(v):
+                            check_pair(k, call.args[1], "dict entry's .get() fallback")
     # 3. module-level NAME = <number>
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -169,8 +208,25 @@ def test_the_decision_4_tab_carries_no_literal_copy_of_its_yaml_block():
         "\n".join(f"  line {line}: {what}" for line, what in hits)
 
 
+@pytest.mark.parametrize("name", sorted(APP_FILES))
+def test_no_app_file_carries_a_literal_copy_of_its_yaml_block(name):
+    """The Disclose Income, Disclose Documents and Donation Default tabs read their
+    σ constants, coefficients, intercepts and anchor weights from the file (they
+    used to carry BASE_SIGMA_OVERALL / BASE_SIGMAS / RESEARCH_DEFAULT_INTERCEPT and
+    ``.get`` defaults); the saved-configuration store falls back to the file's
+    values (it used to carry 0.75 / 0.25 / 0.50 / 0.25 copies and a stale -0.5)."""
+    path, decisions = APP_FILES[name]
+    source = path.read_text()
+    yaml_blocks = load_decisions_yaml()
+    hits = sorted({(line, f"[{decision}] {what}")
+                   for decision in decisions
+                   for line, what in literal_copies(source, yaml_blocks[decision])})
+    assert hits == [], f"{path.name}: literal copies of config/decisions.yaml values:\n" + \
+        "\n".join(f"  line {line}: {what}" for line, what in hits)
+
+
 def test_the_scan_catches_each_shape_it_claims_to():
-    """The scanner is not vacuous: each of the three shapes is reported, neutral
+    """The scanner is not vacuous: each of the four shapes is reported, neutral
     numbers and unrelated numbers are not."""
     block = load_decisions_yaml()["disclose_income"]
     sample = (
@@ -190,6 +246,16 @@ def test_the_scan_catches_each_shape_it_claims_to():
     sigma_rt = rtd["stochastic"]["mechanisms"]["risk_taking"]["sigma_overall"]
     hits = literal_copies(f"S = {{'risk_taking': {sigma_rt!r}, 'ttp': 123.456}}\n", rtd)
     assert [line for line, _ in hits] == [1], hits
+    # 4. a dict entry whose value falls back to the file's value (the store's former shape)
+    sample = (
+        "def g(s):\n"
+        "    return {'intercept': s.get('di_intercept', 0.75),\n"                       # flagged
+        "            'anchor_weights': {'observed_prosocial': float(s.get('di_wopb', 0.25)),\n"  # flagged
+        "                               'prosocial_weight': 1 - s.get('di_wopb', 0.25)},\n"  # other value
+        "            'scale_factor': s.get('di_scale_factor', 1.0)}\n"                  # neutral
+    )
+    hits = literal_copies(sample, block)
+    assert [line for line, _ in hits] == [2, 3], hits
 
 
 # ----------------------------------------------------------------------------- (b)
@@ -395,3 +461,30 @@ def test_config_readers_raise_when_the_file_lacks_the_key():
     with pytest.raises(KeyError) as e:
         DecisionsConfig(decisions, {}, decisions_path="<test>").donation_adjustment_shift()
     assert "donation_default.adjustment.shift_value" in str(e.value)
+
+
+# ----------------------------------------------------------------------------- (d)
+
+def test_the_pin_store_falls_back_to_the_files_values(monkeypatch):
+    from types import SimpleNamespace
+    from app.state import saved_configs
+
+    monkeypatch.setattr(saved_configs, "st", SimpleNamespace(session_state={}))
+    y = load_decisions_yaml()
+
+    dd = saved_configs.get_current_disclose_documents_params()
+    assert dd["intercept"] == y["disclose_documents"]["intercept"] == -0.75
+
+    di = saved_configs.get_current_disclose_income_params()
+    assert di["intercept"] == y["disclose_income"]["intercept"]
+    assert di["anchor_weights"] == {k: y["disclose_income"]["anchor_weights"][k]
+                                    for k in ("observed_prosocial", "prosocial_weight")}
+
+    anchor = saved_configs.get_current_stochastic_params()["anchor_weights"]
+    assert anchor["observed"] == y["donation_default"]["anchor_weights"]["observed"]
+    assert anchor["predicted"] == 1 - y["donation_default"]["anchor_weights"]["observed"]
+
+    flex = saved_configs.get_current_rejected_transaction_params()["flexibility_anchor"]
+    assert flex["observed_weight"] == \
+        y["rejected_transaction_defaults"]["flexibility_anchor"]["observed_weight"]
+    assert flex["calculated_weight"] == 1.0 - flex["observed_weight"]

@@ -54,6 +54,19 @@ def _run_population_mode(run):
     return run.population_mode or st.session_state.get('population_mode', 'Copula (synthetic)')
 
 
+def _file_value(decision, *path):
+    """The value at ``path`` in ``decision``'s block of config/decisions.yaml: what
+    a run uses for a tab value the session does not hold (the seam then leaves the
+    file's value in place, app/seam/build_plan._apply_scalar_fields), so a pin
+    records the value the run used. A key the file lacks raises."""
+    node = get_config_repo().decision(decision)
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            raise KeyError(f"{decision}.{'.'.join(path)} missing from config/decisions.yaml")
+        node = node[key]
+    return node
+
+
 # ==================== DONATION DEFAULT (Decision 3) CONFIG SELECTION ====================
 # The donation triplet (details / params / metrics) plus the donation-only
 # wrappers over the unified store below.
@@ -164,6 +177,8 @@ def get_current_coefficients():
 
 def get_current_stochastic_params():
     """Collect current stochastic parameters from session state"""
+    observed_weight = st.session_state.get(
+        'anchor_observed_weight', _file_value('donation_default', 'anchor_weights', 'observed'))
     return {
         'stochastic': {
             'sigma_value': st.session_state.get('sigma_value_ui', DONATION_SIGMA_OVERALL),
@@ -172,8 +187,8 @@ def get_current_stochastic_params():
             'sigma_in_research': st.session_state.get('sigma_in_research', True)
         },
         'anchor_weights': {
-            'observed': st.session_state.get('anchor_observed_weight', 0.75),
-            'predicted': 1 - st.session_state.get('anchor_observed_weight', 0.75)
+            'observed': observed_weight,
+            'predicted': 1 - observed_weight
         }
     }
 
@@ -246,11 +261,13 @@ def extract_disclose_income_configuration_details(result_key, run):
 def get_current_disclose_income_params():
     """Collect current disclose income parameters from session state"""
     return {
-        'intercept': st.session_state.get('di_intercept', 0.75),
+        'intercept': st.session_state.get('di_intercept', _file_value('disclose_income', 'intercept')),
         'income_mode': st.session_state.get('di_income_mode', 'Categorical only'),
         'anchor_weights': {
-            'observed_prosocial': st.session_state.get('di_wopb', 0.25),
-            'prosocial_weight': st.session_state.get('di_wpb', 0.50)
+            'observed_prosocial': st.session_state.get(
+                'di_wopb', _file_value('disclose_income', 'anchor_weights', 'observed_prosocial')),
+            'prosocial_weight': st.session_state.get(
+                'di_wpb', _file_value('disclose_income', 'anchor_weights', 'prosocial_weight'))
         },
         'stochastic': {
             # The Disclose Income tab's own default is ON, so an unopened tab
@@ -318,7 +335,7 @@ def get_current_disclose_documents_params():
     there is no anchor_weights block.
     """
     return {
-        'intercept': st.session_state.get('dd_intercept', -0.5),
+        'intercept': st.session_state.get('dd_intercept', _file_value('disclose_documents', 'intercept')),
         'income_mode': st.session_state.get('dd_income_mode', 'Categorical only'),
         'stochastic': {
             # The Disclose Documents tab's own default is ON, so an unopened tab
@@ -398,13 +415,16 @@ def extract_rejected_transaction_configuration_details(result_key, run):
 def get_current_rejected_transaction_params():
     """Collect the current Decision 4 tab settings from session state (the model
     coefficients and sigma constants are fixed in config/decisions.yaml)."""
+    flex_observed = float(st.session_state.get(
+        'rtd_flex_observed_weight',
+        _file_value('rejected_transaction_defaults', 'flexibility_anchor', 'observed_weight')))
     return {
         'income_mode': st.session_state.get('rtd_income_mode', 'Continuous only'),
         'intercepts': {m: float(st.session_state.get(f'rtd_intercept_{m}', 0.0) or 0.0)
                        for m in RTD_CONFIG_MECHANISMS},
         'flexibility_anchor': {
-            'observed_weight': float(st.session_state.get('rtd_flex_observed_weight', 0.25)),
-            'calculated_weight': 1.0 - float(st.session_state.get('rtd_flex_observed_weight', 0.25)),
+            'observed_weight': flex_observed,
+            'calculated_weight': 1.0 - flex_observed,
         },
         'aggregation': {
             'enabled': bool(st.session_state.get('rtd_aggregation_enabled', True)),

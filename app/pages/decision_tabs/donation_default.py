@@ -54,7 +54,7 @@ def research_defaults():
             'continuous': float(block['regression_coefficients']['continuous']['intercept']),
         },
         'shift_value': float((block.get('adjustment') or {}).get('shift_value', 0.0)),
-        'anchor_observed_weight': float((block.get('anchor_weights') or {}).get('observed', 0.75)),
+        'anchor_observed_weight': float(block['anchor_weights']['observed']),
         'sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
         'scale_factor': default_scale,
         'quintile_scale_factors': {str(level): float(quintiles.get(level, quintiles.get(int(level), default_scale)))
@@ -97,7 +97,8 @@ def initialize_donation_widget_keys():
     # right before the slider and only in a run that draws it: seeded here it would
     # carry 1.0 - the quintile branch's coefficient - into a key no widget draws,
     # which then wins over the stored coefficient when the slider comes back.)
-    seed_if_absent("tab_anchor_weight", st.session_state.get('anchor_observed_weight', 0.75))
+    seed_if_absent("tab_anchor_weight", st.session_state.get(
+        'anchor_observed_weight', research_defaults()['anchor_observed_weight']))
 
     # Initialize sigma strategy (overall vs quintile)
     if "donation_sigma_strategy" not in st.session_state:
@@ -129,7 +130,6 @@ DONATION_CONTROLS = TabControls(
     strategy_header=False,
     strategy_label="Apply σ uniformly or per income level?",
     base_sigma=BASE_SIGMA_OVERALL,
-    effective_base=BASE_SIGMA_OVERALL,
     overall_summary="{base:.2f} × coefficient",
     coefficient_fallback=1.0,
     quintile_level_fallback=1.0,
@@ -236,7 +236,7 @@ def render_donation_default_tab():
         st.markdown('<h4 class="subsection-header">Anchor Mix</h4>', unsafe_allow_html=True)
 
         # Seed the anchor weight from its canonical key (anchor_observed_weight)
-        restore('tab_anchor_weight', 0.75)
+        restore('tab_anchor_weight', research_defaults()['anchor_observed_weight'])
 
         anchor_observed_weight = stateful(st.slider,
             "Weight for observed vs modeled prosocial behavior",

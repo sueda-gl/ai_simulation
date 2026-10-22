@@ -118,9 +118,9 @@ def compute_dd_score(
     bE, bN, bA, bPI = _equation_coefficients(params)
     beta0 = require(params, DECISION, 'intercept')
 
-    z_E = _z_score_trait(agent_state.get('ExtraversionBig5', 0), 'ExtraversionBig5', z_params)
-    z_N = _z_score_trait(agent_state.get('NeuroticismBig5', 0), 'NeuroticismBig5', z_params)
-    z_A = _z_score_trait(agent_state.get('Agreeable', 0), 'Agreeable', z_params)
+    z_E = _z_score_trait(agent_state['ExtraversionBig5'], 'ExtraversionBig5', z_params)
+    z_N = _z_score_trait(agent_state['NeuroticismBig5'], 'NeuroticismBig5', z_params)
+    z_A = _z_score_trait(agent_state['Agreeable'], 'Agreeable', z_params)
     trait_terms = bE * z_E + bN * z_N + bA * z_A
 
     # --- MEDIATORS (document Formulas 2 & 3): TRAIT part only (no beta0). ---------
@@ -131,7 +131,7 @@ def compute_dd_score(
     privacy_concern = PC_AGREE * z_A + PC_NEURO * z_N
     trust = TR_EXTRA * z_E + TR_AGREE * z_A + TR_NEURO * z_N
 
-    level = int(agent_state.get('Assigned Allowance Level', 3))
+    level = int(agent_state['Assigned Allowance Level'])
     total_allowance = float(ALLOWANCE_CREDIT_MAPPING.get(level, 200))
 
     is_continuous = normalise_income_mode(params.get('income_mode', 'categorical')) == 'continuous'
@@ -224,7 +224,7 @@ def _apply_stochastic(dd_det: float, params: Dict, pop_context: str,
 
     strategy = stoch.get('sigma_strategy', 'overall')
     if strategy == 'quintile':
-        level = int(agent_state.get('Assigned Allowance Level', 3))
+        level = int(agent_state['Assigned Allowance Level'])
         sigma_raw = require(require(params, DECISION, 'stochastic', 'sigma_quintile'),
                             DECISION, str(level), prefix='stochastic.sigma_quintile')
         scale = require(require(params, DECISION, 'stochastic', 'quintile_scale_factors'),
@@ -305,7 +305,7 @@ def disclose_documents_stochastic(
     # compute the UNGATED model for all agents - matching the document's validation tables, which
     # apply the privacy-calculus model to every participant (high-income agents simply score ~0%).
     if 'disclose_income' in agent_state:
-        if agent_state.get('disclose_income', 'N') != 'Y':
+        if agent_state['disclose_income'] != 'Y':
             agent_state['disclose_documents'] = 'NA'
             return {'disclose_documents': 'NA', 'disclose_documents_model_y': model_y,
                     'customer_type': get_customer_type(agent_state, simulation_config),
@@ -368,9 +368,9 @@ def compute_continuous_dd_stats(
 
     vals = []
     for i, (_, row) in enumerate(agents_df.iterrows()):
-        z_E = _z_score_trait(row.get('ExtraversionBig5', 0), 'ExtraversionBig5', z_params)
-        z_N = _z_score_trait(row.get('NeuroticismBig5', 0), 'NeuroticismBig5', z_params)
-        z_A = _z_score_trait(row.get('Agreeable', 0), 'Agreeable', z_params)
+        z_E = _z_score_trait(row['ExtraversionBig5'], 'ExtraversionBig5', z_params)
+        z_N = _z_score_trait(row['NeuroticismBig5'], 'NeuroticismBig5', z_params)
+        z_A = _z_score_trait(row['Agreeable'], 'Agreeable', z_params)
         income = all_incomes[i] if i < len(all_incomes) else 0
         z_income = (income - income_mean) / income_sd if income_sd > 0 else 0.0
         z_picont = -z_income

@@ -28,17 +28,6 @@ import pandas as pd
 
 CONFIG_PATH = DEFAULT_DECISIONS_PATH  # the shared constant (src/config.py)
 
-# Base σ values (empirical, from the reference Stata file's constranssospeso2periods01 column)
-BASE_SIGMA_OVERALL = 0.16066
-BASE_SIGMAS = {
-    '1': 0.1690045319,   # Level 1 (€12)
-    '2': 0.1909536245,   # Level 2 (€32)
-    '3': 0.1077552751,   # Level 3 (€72)
-    '4': 0.1436159112,   # Level 4 (€128)
-    '5': 0.1562794728,   # Level 5 (€200)
-}
-RESEARCH_DEFAULT_INTERCEPT = -0.75
-
 
 def load_disclose_documents_config():
     """Load disclose_documents configuration from YAML."""
@@ -54,13 +43,28 @@ def research_default_config():
     return load_disclose_documents_config()
 
 
+def _load_base_sigmas():
+    """(overall σ, {level: σ}): ``stochastic.sigma_overall`` and
+    ``stochastic.sigma_quintile`` of the ``disclose_documents`` block of
+    config/decisions.yaml (read-only), read the way the Decision 4 tab reads its own."""
+    stochastic = research_default_config()['stochastic']
+    return (float(stochastic['sigma_overall']),
+            {str(level): float(sigma) for level, sigma in stochastic['sigma_quintile'].items()})
+
+
+# Base σ values (empirical, from the reference Stata file's constranssospeso2periods01
+# column), loaded once at import; display only (the model reads the same keys from its
+# params). The file is never written.
+BASE_SIGMA_OVERALL, BASE_SIGMAS = _load_base_sigmas()
+
+
 def initialize_disclose_documents_session_state():
     """Initialize session state for disclose_documents tab."""
     config = research_default_config()
     stochastic = config.get('stochastic', {})
 
     defaults = {
-        'dd_intercept': config.get('intercept', RESEARCH_DEFAULT_INTERCEPT),
+        'dd_intercept': config['intercept'],
         'dd_sigma_enabled': True,
         'dd_scale_factor': stochastic.get('scale_factor', 1.0),
         'dd_sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
@@ -97,7 +101,6 @@ DD_CONTROLS = TabControls(
     income_seed='exact',
     draw_noun='score',
     base_sigma=BASE_SIGMA_OVERALL,
-    effective_base=BASE_SIGMA_OVERALL,
     base_sigmas=BASE_SIGMAS,
     level_labels=LEVEL_LABELS,
 )
@@ -232,15 +235,15 @@ def render_mediator_equations():
 
 def render_categorical_dd_formula(config):
     """Render the categorical-income DD formula."""
-    coeffs = config.get('equation_coefficients', {})
-    bE = coeffs.get('extraversion', 0.015584630336545)
-    bN = coeffs.get('neuroticism', -0.024781455105683)
-    bA = coeffs.get('agreeable', -0.016923520441338)
+    coeffs = config['equation_coefficients']
+    bE = coeffs['extraversion']
+    bN = coeffs['neuroticism']
+    bA = coeffs['agreeable']
     st.markdown("### Equation 3: Disclosure Documents (Categorical)")
     st.latex(
         rf"DiscloseDocuments_i = \beta_0 + {bE:.6f}\,z_{{E_i}} {bN:.6f}\,z_{{N_i}} {bA:.6f}\,z_{{A_i}} + \beta_{{PIcat\_q}}[quintile_i]"
     )
-    icpts = config.get('categorical_intercepts', {})
+    icpts = config['categorical_intercepts']
     st.markdown("**PIcat = 200 if income-level = 12; 128 if = 32; 72 if = 72; 32 if = 128; 12 if = 200**")
     st.markdown("**Income Quintile Effects (β_PIcat_q):**")
     df = pd.DataFrame({
@@ -248,11 +251,11 @@ def render_categorical_dd_formula(config):
         # income throughout" — so income-12 agents show as €200, income-200 as €12, etc.
         'Quintile': ['Q1 (€200)', 'Q2 (€128)', 'Q3 (€72)', 'Q4 (€32)', 'Q5 (€12)'],
         'β_PIcat_q': [
-            f"{icpts.get('level_1', 0.1464773):.7f}",
-            f"{icpts.get('level_2', 0.0902694):.7f}",
-            f"{icpts.get('level_3', 0.0384204):.7f}",
-            f"{icpts.get('level_4', -0.0522756):.7f}",
-            f"{icpts.get('level_5', -0.2393718):.7f}",
+            f"{icpts['level_1']:.7f}",
+            f"{icpts['level_2']:.7f}",
+            f"{icpts['level_3']:.7f}",
+            f"{icpts['level_4']:.7f}",
+            f"{icpts['level_5']:.7f}",
         ]
     })
     st.dataframe(df, hide_index=True, use_container_width=False)
@@ -264,12 +267,12 @@ def render_categorical_dd_formula(config):
 
 def render_continuous_dd_formula(config):
     """Render the continuous-income DD formula."""
-    coeffs = config.get('equation_coefficients', {})
-    bE = coeffs.get('extraversion', 0.015584630336545)
-    bN = coeffs.get('neuroticism', -0.024781455105683)
-    bA = coeffs.get('agreeable', -0.016923520441338)
-    bPI = coeffs.get('personal_incentive', 0.14735467793568)
-    beta0 = config.get('intercept', RESEARCH_DEFAULT_INTERCEPT)
+    coeffs = config['equation_coefficients']
+    bE = coeffs['extraversion']
+    bN = coeffs['neuroticism']
+    bA = coeffs['agreeable']
+    bPI = coeffs['personal_incentive']
+    beta0 = config['intercept']
     st.markdown("### Equation 3: Disclosure Documents (Continuous)")
     st.latex(
         rf"DiscloseDocuments_i = [\beta_0 = {beta0:.2f}] + [{bE:.6f}\times z_{{E_i}} {bN:.6f}\times z_{{N_i}} {bA:.6f}\times z_{{A_i}} + {bPI:.6f}\times z_{{PIcont_i}}]"
@@ -291,7 +294,7 @@ DD_TAB = DisclosureTab(
     keys=DISCLOSURE_KEYS['disclose_documents'],
     decision_label='disclose documents',
     load_config=research_default_config,
-    default_intercept=RESEARCH_DEFAULT_INTERCEPT,
+    default_intercept=float(research_default_config()['intercept']),
     research_default_label='−0.75',
     intercept_min=-5.0,
     intercept_max=0.0,

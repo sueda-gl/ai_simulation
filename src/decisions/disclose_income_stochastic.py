@@ -60,8 +60,8 @@ def _compute_religiosity_composite_raw(agent_state: Dict, params: Dict) -> float
     Returns:
         Raw composite value (NOT z-scored)
     """
-    religious_affiliation = agent_state.get('ReligiousAffiliation', 0)  # binary 0/1
-    religious_service = agent_state.get('ReligiousService', 0)          # ordinal
+    religious_affiliation = agent_state['ReligiousAffiliation']  # binary 0/1
+    religious_service = agent_state['ReligiousService']          # ordinal
     
     # Scale ReligiousService to 0-1 range
     rs_min = require(params, DECISION, 'religiosity', 'service_min')
@@ -126,11 +126,11 @@ def compute_pass1_values(
     # Z-score personality traits using individual trait parameters
     # ========================================================================
 
-    z_agreeable = _z_score_trait(agent_state.get('Agreeable', 0), 'Agreeable', z_params)
-    z_openness = _z_score_trait(agent_state.get('OpennessBig5', 0), 'OpennessBig5', z_params)
-    z_honesty_humility = _z_score_trait(agent_state.get('Honesty_Humility', 0), 'Honesty_Humility', z_params)
-    z_extraversion = _z_score_trait(agent_state.get('ExtraversionBig5', 0), 'ExtraversionBig5', z_params)
-    z_neuroticism = _z_score_trait(agent_state.get('NeuroticismBig5', 0), 'NeuroticismBig5', z_params)
+    z_agreeable = _z_score_trait(agent_state['Agreeable'], 'Agreeable', z_params)
+    z_openness = _z_score_trait(agent_state['OpennessBig5'], 'OpennessBig5', z_params)
+    z_honesty_humility = _z_score_trait(agent_state['Honesty_Humility'], 'Honesty_Humility', z_params)
+    z_extraversion = _z_score_trait(agent_state['ExtraversionBig5'], 'ExtraversionBig5', z_params)
+    z_neuroticism = _z_score_trait(agent_state['NeuroticismBig5'], 'NeuroticismBig5', z_params)
     z_religious = _compute_religiosity_composite(agent_state, params, z_params)
     
     # ========================================================================
@@ -166,7 +166,7 @@ def compute_pass1_values(
     # Z-SCORE OBSERVED PROSOCIAL BEHAVIOR
     # ========================================================================
     
-    obs_PB = agent_state.get('TWT+Sospeso [=AW2+AX2]{Periods 1+2}', 0)
+    obs_PB = agent_state['TWT+Sospeso [=AW2+AX2]{Periods 1+2}']
     twt_mean = require(z_params, DECISION, 'TWT_Sospeso', 'mean', prefix='z_scoring')
     twt_sd = require(z_params, DECISION, 'TWT_Sospeso', 'sd', prefix='z_scoring')
     
@@ -182,7 +182,7 @@ def compute_pass1_values(
     normalized_mode = normalise_income_mode(params.get('income_mode', 'categorical'))
     
     if normalized_mode == 'categorical':
-        level = agent_state.get('Assigned Allowance Level', 3)
+        level = agent_state['Assigned Allowance Level']
         income_high = 1 if int(level) > 3 else 0
     else:
         agent_income = agent_state.get('income', 0)
@@ -202,7 +202,7 @@ def compute_pass1_values(
 
     if normalized_mode == 'categorical':
         # CATEGORICAL MODE: Use level-specific intercepts, NO income coefficient
-        level = int(agent_state.get('Assigned Allowance Level', 3))
+        level = int(agent_state['Assigned Allowance Level'])
         intercept = categorical_intercept(params, level, DECISION)
 
         direct_effect = (
@@ -379,7 +379,7 @@ def disclose_income_stochastic(
         
         if sigma_strategy == 'quintile' and not is_continuous:
             # Quintile mode (categorical only): level-specific base sigma and scale factor
-            level = int(agent_state.get('Assigned Allowance Level', 3))
+            level = int(agent_state['Assigned Allowance Level'])
             sigma_quintile = require(params, DECISION, 'stochastic', 'sigma_quintile')
             sigma_raw = require(sigma_quintile, DECISION, str(level), prefix='stochastic.sigma_quintile')
             quintile_scale_factors = require(params, DECISION, 'stochastic', 'quintile_scale_factors')
@@ -505,9 +505,9 @@ def compute_continuous_de_stats(agents_df, all_incomes: List[float], di_params: 
     
     all_de = []
     for i, (_, row) in enumerate(agents_df.iterrows()):
-        z_e = _z_score_trait(row.get('ExtraversionBig5', 0), 'ExtraversionBig5', z_params)
-        z_n = _z_score_trait(row.get('NeuroticismBig5', 0), 'NeuroticismBig5', z_params)
-        z_hh = _z_score_trait(row.get('Honesty_Humility', 0), 'Honesty_Humility', z_params)
+        z_e = _z_score_trait(row['ExtraversionBig5'], 'ExtraversionBig5', z_params)
+        z_n = _z_score_trait(row['NeuroticismBig5'], 'NeuroticismBig5', z_params)
+        z_hh = _z_score_trait(row['Honesty_Humility'], 'Honesty_Humility', z_params)
         
         agent_income = all_incomes[i] if i < len(all_incomes) else 0
         if income_sd > 0:

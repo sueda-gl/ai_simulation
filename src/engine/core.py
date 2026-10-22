@@ -58,10 +58,6 @@ DECISION_ORDER: List[str] = [
 # src/decisions/<name>.py module in every mode.
 STOCHASTIC_MODULE_DECISIONS = ('disclose_income', 'disclose_documents')
 
-# The four modelled decisions that receive pop_context=.
-POP_CONTEXT_DECISIONS = ('donation_default', 'disclose_income', 'disclose_documents',
-                         'rejected_transaction_defaults')
-
 # Per-run scratch state run_simulation writes into simulation_config (the seed, the
 # vendors and the Pass-1 population statistics); cleared at the start of every run so
 # a reused engine never sees a previous run's values.
@@ -109,18 +105,22 @@ class Engine:
         # Decision order (1-13) - identical in every mode
         self.decision_order = list(DECISION_ORDER)
 
-        # Load decision modules
+        # Load decision modules. A decision whose module cannot be imported, or lacks
+        # its function, raises here, naming the decision: no run goes ahead without it.
         self.decision_modules = {}
         for decision_name in self.decision_order:
+            if decision_name in STOCHASTIC_MODULE_DECISIONS:
+                module_name = f'src.decisions.{decision_name}_stochastic'
+                function_name = f'{decision_name}_stochastic'
+            else:
+                module_name = f'src.decisions.{decision_name}'
+                function_name = decision_name
             try:
-                if decision_name in STOCHASTIC_MODULE_DECISIONS:
-                    module = importlib.import_module(f'src.decisions.{decision_name}_stochastic')
-                    self.decision_modules[decision_name] = getattr(module, f'{decision_name}_stochastic')
-                else:
-                    module = importlib.import_module(f'src.decisions.{decision_name}')
-                    self.decision_modules[decision_name] = getattr(module, decision_name)
+                module = importlib.import_module(module_name)
+                self.decision_modules[decision_name] = getattr(module, function_name)
             except (ImportError, AttributeError) as e:
-                print(f"Warning: Could not load decision module {decision_name}: {e}")
+                raise ImportError(f"decision {decision_name!r}: could not load "
+                                  f"{module_name}.{function_name}: {e}") from e
 
         # Lazily built agent sources (the copula may be supplied)
         self._trait_engine: Optional[TraitEngine] = trait_engine
@@ -370,8 +370,7 @@ class Engine:
 
             for decision_name in decisions_to_run:
                 if decision_name not in self.decision_modules:
-                    print(f"Warning: No module found for decision {decision_name}")
-                    continue
+                    raise KeyError(f"decision {decision_name!r} has no loaded module")
 
                 params = self._decision_params(decision_name)
 
@@ -379,15 +378,12 @@ class Engine:
                 decision_seed = agent_base_seed + decision_index[decision_name] * 1000
                 decision_rng = np.random.default_rng(decision_seed)
 
-                if decision_name in POP_CONTEXT_DECISIONS:
-                    decision_output = self.decision_modules[decision_name](
-                        agent_state, params, decision_rng,
-                        pop_context=self.pop_context, simulation_config=self.simulation_config
-                    )
-                else:
-                    decision_output = self.decision_modules[decision_name](
-                        agent_state, params, decision_rng, simulation_config=self.simulation_config
-                    )
+                # Every decision receives pop_context (a decision that does not use it
+                # takes it in its **kwargs and ignores it).
+                decision_output = self.decision_modules[decision_name](
+                    agent_state, params, decision_rng,
+                    pop_context=self.pop_context, simulation_config=self.simulation_config
+                )
 
                 agent_state.update(decision_output)
 
@@ -416,5 +412,5 @@ class Engine:
         return list(self.decision_modules.keys())
 
 
-__all__ = ["Engine", "DECISION_ORDER", "STOCHASTIC_MODULE_DECISIONS", "POP_CONTEXT_DECISIONS",
+__all__ = ["Engine", "DECISION_ORDER", "STOCHASTIC_MODULE_DECISIONS",
            "RUN_SCRATCH_KEYS", "CONFIG_PATH", "SIMULATION_CONFIG_PATH"]

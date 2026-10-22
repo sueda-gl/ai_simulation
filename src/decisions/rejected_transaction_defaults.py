@@ -247,14 +247,14 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
     agent's 'stdactions'.
     """
     z_params = require(params, DECISION, "z_scoring")
-    z_E = _z_score_trait(agent_state.get("ExtraversionBig5", 0), "ExtraversionBig5", z_params)
-    z_A = _z_score_trait(agent_state.get("Agreeable", 0), "Agreeable", z_params)
-    z_N = _z_score_trait(agent_state.get("NeuroticismBig5", 0), "NeuroticismBig5", z_params)
-    z_C = _z_score_trait(agent_state.get("ConscientiousnessBig5", 0), "ConscientiousnessBig5", z_params)
-    z_O = _z_score_trait(agent_state.get("OpennessBig5", 0), "OpennessBig5", z_params)
+    z_E = _z_score_trait(agent_state["ExtraversionBig5"], "ExtraversionBig5", z_params)
+    z_A = _z_score_trait(agent_state["Agreeable"], "Agreeable", z_params)
+    z_N = _z_score_trait(agent_state["NeuroticismBig5"], "NeuroticismBig5", z_params)
+    z_C = _z_score_trait(agent_state["ConscientiousnessBig5"], "ConscientiousnessBig5", z_params)
+    z_O = _z_score_trait(agent_state["OpennessBig5"], "OpennessBig5", z_params)
 
     # reducation = Education - 1 (survey coding 1=undergraduate, 2=graduate -> 0/1)
-    reducation = float(agent_state.get("Education", 1)) - 1.0
+    reducation = float(agent_state["Education"]) - 1.0
 
     # z_income: prefer the Decision-4 population stats computed with SAMPLE SD (ddof=1,
     # Stata `egen std` semantics) by compute_rtd_population_stats; fall back to the
@@ -306,8 +306,8 @@ def compute_rtd_scores(agent_state: Dict[str, Any], params: Dict[str, Any],
                       + c_rt["neuroticism"] * z_N)
     if income_mode == "categorical":
         # assignedallowancelevel 1..5 <-> totalallowance 12/32/72/128/200 (verified
-        # 1:1 in the .dta); default 3 mirrors _resolve_sigma / disclose_documents.
-        level = int(agent_state.get("Assigned Allowance Level", 3))
+        # 1:1 in the .dta).
+        level = int(agent_state["Assigned Allowance Level"])
         wtp_calculated = wtp_personality + _categorical_income_effect(params, "wtp", level)
         rt_calculated = rt_personality + _categorical_income_effect(params, "risk_taking", level)
     else:
@@ -487,7 +487,7 @@ def _resolve_sigma(stoch_m: Dict, agent_state: Dict, mechanism: str) -> float:
     strategy = stoch_m.get("sigma_strategy", "overall")
     prefix = f"stochastic.mechanisms.{mechanism}"
     if strategy == "quintile":
-        level = int(agent_state.get("Assigned Allowance Level", 3))
+        level = int(agent_state["Assigned Allowance Level"])
         sigma_raw = float(require(stoch_m, DECISION, "sigma_quintile", str(level), prefix=prefix))
         scale = float(require(stoch_m, DECISION, "quintile_scale_factors", str(level), prefix=prefix))
     else:
