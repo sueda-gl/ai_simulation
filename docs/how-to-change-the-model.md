@@ -94,7 +94,7 @@ def my_decision(agent_state: dict, params: dict, rng, simulation_config: dict = 
 | `params` | this decision's block of `config/decisions.yaml`, already patched with the user's settings |
 | `rng` | a `numpy.random.Generator` seeded for this agent × this decision. **Draw only from this.** Never `random.random()`, never `np.random.*` |
 | `simulation_config` | the whole run configuration; read Page-1 parameters with `get_simulation_param(simulation_config, 'market_price', 100.0)` from `src/engine/config_access.py`, never with a top-level `.get` |
-| `pop_context` (in `kwargs`) | the population mode, for the four modelled decisions; it drives the noise gate (§5) |
+| `pop_context` (in `kwargs`) | the population mode (`copula`, `documentation`, `baseline`), passed to every decision; the modelled ones use it for the noise gate (§5) |
 
 What it returns becomes columns of the results frame and is merged into
 `agent_state` for the decisions after it.
