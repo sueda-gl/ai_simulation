@@ -1,8 +1,10 @@
 # Core app and UI
-# Pinned: matches the locally validated version. Unpinned ">=1.28" made cloud deploys
-# install a newer Streamlit whose Starlette-based server crashed on a starlette
-# version mismatch (GZipResponder 'thread_minimum_size' TypeError).
-streamlit==1.49.0
+# Pinned on purpose. Do not raise this without testing in a real browser: 1.49.0 breaks
+# typing into number inputs (a typed "10.5" becomes 10.01, "11" becomes 1.00; the +/-
+# buttons still work) and an earlier unpinned ">=1.28" made cloud deploys install a
+# newer Streamlit whose Starlette-based server crashed (GZipResponder
+# 'thread_minimum_size' TypeError). 1.48.1 is the version verified on 2026-10-23.
+streamlit==1.48.1
 plotly>=5.17
 
 # Data and numerics
