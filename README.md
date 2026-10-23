@@ -174,7 +174,7 @@ once:
 
 ```bash
 pip install pytest
-pytest tests/          # 470 tests, about 70 seconds; everything passes
+pytest tests/          # 474 tests, about 70 seconds; everything passes
 ```
 
 Four parity tests additionally read the original Stata `.dta` files and **fail

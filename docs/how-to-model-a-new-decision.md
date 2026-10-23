@@ -541,7 +541,10 @@ whether the tab really draws a control.
    `_vcw_reset_to_defaults_pending`; the next run, before any widget of the tab exists, deletes
    every key starting with `vcw_` and writes the canonical keys and the widget keys it will draw
    from the YAML block (not the per-level sliders while the σ mode is "uniformly"), as
-   `apply_pending_reset` in `_disclosure.py` does.
+   `apply_pending_reset` in `_disclosure.py` does. Apply it from
+   `page2_decisions.apply_pending_tab_resets` (while the decision is selected), not only at the
+   top of the tab: the Overview is drawn before the tabs and reads their keys (the run gate), so a
+   reset applied inside the tab reaches the Overview one rerun late.
 7. An absent key means the tab's default, never "off": the seam must give the same numbers whether
    or not the user ever opened the tab.
 

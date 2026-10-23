@@ -148,6 +148,70 @@ DONATION_CONTROLS = TabControls(
 )
 
 
+def apply_pending_donation_reset():
+    """Apply a reset scheduled by "Reset Config to Defaults" (the
+    ``_reset_config_to_defaults_flag`` the button raises before it reruns) before
+    any Donation widget renders. Returns True when one was applied.
+
+    Page 2 calls it before the Overview, which reads these keys
+    (``page2_decisions.apply_pending_tab_resets``, while the decision is
+    selected); the tab's own call at its top then finds no flag."""
+    if not st.session_state.get('_reset_config_to_defaults_flag', False):
+        return False
+    st.session_state._reset_config_to_defaults_flag = False
+
+    # Research defaults from config/decisions.yaml (read-only) - the same values
+    # the first draw shows; nothing below is a hard-coded number.
+    defaults = research_defaults()
+
+    # Reset intercept widget keys (both, whichever one this income mode draws;
+    # see _seed_intercept_input for the one it does not)
+    st.session_state.override_categorical_intercept = defaults['intercepts']['categorical']
+    st.session_state.override_continuous_intercept = defaults['intercepts']['continuous']
+    st.session_state.intercept_override_values = {}
+
+    # Reset adjustment widget key
+    st.session_state.override_adjustment_shift = defaults['shift_value']
+    st.session_state.adjustment_override_values = {}
+
+    # Reset income mode (the app's default, a Page-2 setting the file does not carry)
+    st.session_state.page2_tab_income_spec_mode = "categorical only"
+    st.session_state.income_spec_mode = "categorical only"
+
+    # Reset the σ controls - the mode radio, the coefficient slider and the five
+    # quintile sliders - to the file's values: write their canonical keys and
+    # delete their widget keys, which the shared controls seed again from the
+    # canonical keys right before each control is next drawn (the Disclose
+    # Income / Documents resets leave their σ widget keys to the same seeding).
+    # The widget keys are not written here: the quintile sliders are hidden once
+    # the σ mode is back at 'overall', and a widget key written in a run that
+    # does not draw its widget resurfaces, stale, once the widget is culled.
+    st.session_state.donation_sigma_strategy = defaults['sigma_strategy']
+    st.session_state.donation_sigma_coefficient_setting = defaults['scale_factor']
+    st.session_state.donation_quintile_scale_factors = dict(defaults['quintile_scale_factors'])
+    for key in ('donation_tab_sigma_strategy_stochastic', 'tab_sigma_coefficient_stochastic'):
+        if key in st.session_state:
+            del st.session_state[key]
+    for level in LEVELS:
+        if f'donation_tab_sigma_q{level}_stochastic' in st.session_state:
+            del st.session_state[f'donation_tab_sigma_q{level}_stochastic']
+    # The coefficient in effect, as the tab writes it after the σ controls (the
+    # slider's in 'overall', 1.0 in 'quintile'): the Overview's donation card,
+    # drawn before the tab, reads it, and the Page-2 mirror cannot refresh it
+    # from the slider's widget key deleted above.
+    overall = defaults['sigma_strategy'] == 'overall'
+    st.session_state.sigma_coefficient = defaults['scale_factor'] if overall else 1.0
+    st.session_state.sigma_value_ui = BASE_SIGMA_OVERALL * st.session_state.sigma_coefficient
+
+    # Reset anchor weight
+    st.session_state.tab_anchor_weight = defaults['anchor_observed_weight']
+
+    # Reset sigma checkboxes
+    st.session_state.tab_sigma_in_copula = False
+    st.session_state.tab_sigma_in_research = True
+    return True
+
+
 def render_donation_default_tab():
     """Render donation_default specific configuration"""
     # Ensure coefficients are loaded from configuration file
@@ -157,52 +221,8 @@ def render_donation_default_tab():
     initialize_donation_widget_keys()
     
     # Handle full config reset flag BEFORE any widgets render
-    if st.session_state.get('_reset_config_to_defaults_flag', False):
-        st.session_state._reset_config_to_defaults_flag = False
+    apply_pending_donation_reset()
 
-        # Research defaults from config/decisions.yaml (read-only) - the same values
-        # the first draw shows; nothing below is a hard-coded number.
-        defaults = research_defaults()
-
-        # Reset intercept widget keys (both, whichever one this income mode draws;
-        # see _seed_intercept_input for the one it does not)
-        st.session_state.override_categorical_intercept = defaults['intercepts']['categorical']
-        st.session_state.override_continuous_intercept = defaults['intercepts']['continuous']
-        st.session_state.intercept_override_values = {}
-        
-        # Reset adjustment widget key
-        st.session_state.override_adjustment_shift = defaults['shift_value']
-        st.session_state.adjustment_override_values = {}
-        
-        # Reset income mode (the app's default, a Page-2 setting the file does not carry)
-        st.session_state.page2_tab_income_spec_mode = "categorical only"
-        st.session_state.income_spec_mode = "categorical only"
-        
-        # Reset the σ controls - the mode radio, the coefficient slider and the five
-        # quintile sliders - to the file's values: write their canonical keys and
-        # delete their widget keys, which the shared controls seed again from the
-        # canonical keys right before each control is next drawn (the Disclose
-        # Income / Documents resets leave their σ widget keys to the same seeding).
-        # The widget keys are not written here: the quintile sliders are hidden once
-        # the σ mode is back at 'overall', and a widget key written in a run that
-        # does not draw its widget resurfaces, stale, once the widget is culled.
-        st.session_state.donation_sigma_strategy = defaults['sigma_strategy']
-        st.session_state.donation_sigma_coefficient_setting = defaults['scale_factor']
-        st.session_state.donation_quintile_scale_factors = dict(defaults['quintile_scale_factors'])
-        for key in ('donation_tab_sigma_strategy_stochastic', 'tab_sigma_coefficient_stochastic'):
-            if key in st.session_state:
-                del st.session_state[key]
-        for level in LEVELS:
-            if f'donation_tab_sigma_q{level}_stochastic' in st.session_state:
-                del st.session_state[f'donation_tab_sigma_q{level}_stochastic']
-        
-        # Reset anchor weight
-        st.session_state.tab_anchor_weight = defaults['anchor_observed_weight']
-        
-        # Reset sigma checkboxes
-        st.session_state.tab_sigma_in_copula = False
-        st.session_state.tab_sigma_in_research = True
-    
     st.markdown('<h3 class="section-header"> Donation Default Configuration</h3>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
@@ -961,7 +981,8 @@ def render_actions_and_management_section():
             success_adjustment = ADJUSTMENT_OVERRIDE.reset_to_defaults()
             
             if success_intercept and success_adjustment:
-                # Set flag to reset ALL widgets on next rerun (before widgets render)
+                # Set flag to reset ALL widgets on next rerun (before the Overview
+                # and the widgets render: apply_pending_donation_reset)
                 st.session_state._reset_config_to_defaults_flag = True
                 st.toast("✅ All values reset to research defaults", icon="🔄")
                 st.rerun()

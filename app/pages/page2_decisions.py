@@ -8,6 +8,10 @@ from app.seam.config_repo import get_config_repo
 from app.models import ALL_DECISIONS, DONATION_SIGMA_OVERALL
 from app.pages.navigation import render_navigation
 from app.pages.decision_tabs import render_decision_tab
+from app.pages.decision_tabs._disclosure import apply_pending_reset
+from app.pages.decision_tabs.disclose_documents import DD_TAB
+from app.pages.decision_tabs.disclose_income import DI_TAB
+from app.pages.decision_tabs.donation_default import apply_pending_donation_reset
 from app.pages.decision_tabs.global_parameters import render_global_parameters_readonly
 from app.pages.decision_tabs.default_config import render_default_decisions_config
 from app.pages.decision_execution import run_combined_simulation, can_run_complete_simulation, format_decision_title, render_blocking_issues, current_donation_configuration
@@ -23,7 +27,9 @@ def initialize_page2_widget_keys():
     drawn BEFORE them, and in the run that processes a change to one of these
     widgets it reads the canonical keys (its donation card: the sigma coefficient,
     the tick boxes, the anchor weight; the run gate: the income mode), so without
-    this mirror it would show the previous value for one rerun.
+    this mirror it would show the previous value for one rerun. The run that
+    applies a whole-tab reset calls it again, after the reset
+    (``apply_pending_tab_resets``).
 
     The widget keys themselves are NOT seeded here: each tab seeds its own keys
     right before its widgets (``decision_tabs._tab_state.restore`` /
@@ -77,6 +83,35 @@ def initialize_page2_widget_keys():
     # _default_selection, _priority_template, _default_value) are seeded by
     # models.initialize_default_decision_parameters, which
     # models.initialize_session_state runs at the top of every script run.
+
+
+def apply_pending_tab_resets(selected_decisions):
+    """Apply the whole-tab resets scheduled in the previous run, before the Overview.
+
+    "Reset Config to Defaults" on the Disclose Income, Disclose Documents and
+    Donation Default tabs only raises a flag and reruns; the reset itself must run
+    before any of the tab's widgets exists. The Overview is drawn BEFORE the
+    decision tabs and reads their keys (the run gate: the income modes; the
+    donation card), so the reset is applied here, ahead of it - otherwise the
+    Overview showed the pre-reset state (a "Compare both" gate warning and a
+    disabled "Run Complete Simulation") until some other interaction reran the page.
+
+    Only for a decision selected in this run: its tab is drawn in this same run,
+    so the widget keys the reset writes are drawn in the run that writes them
+    (``decision_tabs._tab_state``). An unselected decision keeps its flag; its tab
+    applies it when it is next drawn. Afterwards the Page-2 mirror runs again so
+    the keys it copies from the reset widget keys are current for the Overview.
+    Decision 4's reset needs none of this: it deletes its keys in the click's run.
+    """
+    applied = False
+    if 'disclose_income' in selected_decisions:
+        applied |= apply_pending_reset(DI_TAB)
+    if 'disclose_documents' in selected_decisions:
+        applied |= apply_pending_reset(DD_TAB)
+    if 'donation_default' in selected_decisions:
+        applied |= apply_pending_donation_reset()
+    if applied:
+        initialize_page2_widget_keys()
 
 
 def render_overview_tab(selected_decisions):
@@ -237,6 +272,10 @@ def render_page2():
     if not selected_decisions_ordered:
         st.info("ℹ️ No decisions selected for custom configuration. You can run the complete simulation using default values for all decisions, or select specific decisions to customize their parameters.")
     
+    # A whole-tab reset scheduled in the previous run is applied here, before the
+    # Overview (drawn first) reads the tab's keys
+    apply_pending_tab_resets(selected_decisions_ordered)
+
     # Create tabs - Overview tab is always present
     if selected_decisions_ordered:
         # Overview + decision-specific tabs (in chronological order with numbers)

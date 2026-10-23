@@ -445,7 +445,8 @@ _PAGE2_MIRRORS = (
          notes="sigma_value = the one sigma constant x this coefficient.  The "
                "coefficient IN EFFECT: the slider (donation_sigma_coefficient_setting) "
                "while the σ mode is 'overall', 1.0 while it is 'quintile' "
-               "(render_donation_default_tab writes it after the σ controls) - so "
+               "(render_donation_default_tab writes it after the σ controls; the "
+               "whole-tab reset writes the file's, before the Overview) - so "
                "it cannot seed the slider."),
     _row("donation_sigma_coefficient_setting", "<absent until the σ coefficient slider is drawn>",
          "decision_tabs._controls.render_coefficient_slider", "page2-mirror",
@@ -642,14 +643,21 @@ _RTD_WIDGETS = _rows((
 
 #: The whole-decision "Reset Config to Defaults" of the Disclose Income / Documents
 #: tabs is applied at the TOP of the next script run, before any of the tab's widgets
-#: is instantiated (September 2026); the button only raises this flag.
+#: is instantiated (September 2026) and, since 2026-10-23, before the Page-2 Overview
+#: that reads the tab's keys; the button only raises this flag.
 _RESET_PENDING_FLAGS = (
     _row("_di_reset_to_defaults_pending", True,
          "decision_tabs._disclosure.reset_to_defaults (Disclose Income)", "page2-mirror",
-         notes="consumed (deleted) by apply_pending_reset at the top of the Disclose Income tab"),
+         notes="consumed (deleted) by apply_pending_reset, called by "
+               "page2_decisions.apply_pending_tab_resets before the Overview while "
+               "Disclose Income is selected (the tab's own call at its top then "
+               "finds no flag)"),
     _row("_dd_reset_to_defaults_pending", True,
          "decision_tabs._disclosure.reset_to_defaults (Disclose Documents)", "page2-mirror",
-         notes="consumed (deleted) by apply_pending_reset at the top of the Disclose Documents tab"),
+         notes="consumed (deleted) by apply_pending_reset, called by "
+               "page2_decisions.apply_pending_tab_resets before the Overview while "
+               "Disclose Documents is selected (the tab's own call at its top then "
+               "finds no flag)"),
 )
 
 _PAGE2_WIDGETS = _rows((
@@ -707,11 +715,15 @@ _RUN_FLAGS = (
     _row("_reset_config_to_defaults_flag", True,
          "decision_tabs.donation_default.render_actions_and_management_section",
          "run-flag",
-         notes="consumed at the top of the Donation tab in the next run, before its "
-               "widgets: writes the intercept, adjustment, income-mode, anchor and σ "
-               "tick-box widget keys and the canonical σ mode, coefficient and "
-               "quintile dict, and deletes the σ mode / coefficient / quintile "
-               "widget keys (seeded again from the canonical keys on their next draw)."),
+         notes="consumed by donation_default.apply_pending_donation_reset in the "
+               "next run, before the Page-2 Overview and the tab's widgets "
+               "(page2_decisions.apply_pending_tab_resets, while Donation Default is "
+               "selected; the tab's own call at its top then finds no flag): writes "
+               "the intercept, adjustment, income-mode, anchor and σ tick-box widget "
+               "keys, the canonical σ mode, coefficient and quintile dict and the "
+               "coefficient in effect (sigma_coefficient, sigma_value_ui), and "
+               "deletes the σ mode / coefficient / quintile widget keys (seeded "
+               "again from the canonical keys on their next draw)."),
 )
 
 

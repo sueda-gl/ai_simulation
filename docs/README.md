@@ -461,8 +461,8 @@ Run either snippet from the repository root with the virtual environment active.
 
 ```bash
 pip install pytest                      # not in requirements.txt
-pytest tests/ -q -m "not slow"          # engine, seam, boundary: 406 tests, about 35 seconds
-pytest tests/ -q                        # everything: 470 tests, about 70 seconds; everything passes
+pytest tests/ -q -m "not slow"          # engine, seam, boundary: 407 tests, about 35 seconds
+pytest tests/ -q                        # everything: 474 tests, about 70 seconds; everything passes
 ```
 
 Run them from the repository root (`pytest.ini` puts the root on the import path;

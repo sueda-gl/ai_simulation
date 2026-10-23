@@ -5,8 +5,8 @@ which reference. This page is the map.
 
 ```bash
 pip install pytest                                   # not in requirements.txt
-.venv/bin/python -m pytest tests/ -q -m "not slow"   # 406 tests, about 35 seconds
-.venv/bin/python -m pytest tests/ -q                 # 470 tests, about 70 seconds
+.venv/bin/python -m pytest tests/ -q -m "not slow"   # 407 tests, about 35 seconds
+.venv/bin/python -m pytest tests/ -q                 # 474 tests, about 80 seconds
 ```
 
 Run from the repository root: `pytest.ini` puts the root on `sys.path`
@@ -16,8 +16,9 @@ call `pytest` or `python -m pytest`.
 `slow` (registered in `pytest.ini`) is set per module (`pytestmark = pytest.mark.slow`)
 on every module that drives the real app through Streamlit `AppTest` or
 `tests/browser_sim.py`, or runs the simulation in a subprocess. The fast run leaves out
-every test of such a module, including the module's own quick unit tests. Two modules
-are slow: `test_rejected_transaction_defaults.py` and `test_golden_screens.py`.
+every test of such a module, including the module's own quick unit tests. Three modules
+are slow: `test_rejected_transaction_defaults.py`, `test_golden_screens.py` and
+`test_reset_reaches_overview.py`.
 
 The owner keeps an additional suite outside the repository; nothing in `tests/`
 depends on it.
@@ -93,6 +94,7 @@ No test module imports another.
 | `test_decision_order.py` | One decision order for engine, screens, seam and default registries. | `src/engine/core.py` `DECISION_ORDER`. |
 | `test_import_boundary.py` | `src/` never imports `streamlit` or `app`; `app/reports/` never imports `streamlit`; `app/state/` never imports `app.pages` (subprocess and AST). | The import rules (`docs/README.md` §6). |
 | `test_session_key_registry.py` | Every `st.session_state` key the app names has a registry entry and every entry is used (AST scan of `app/`). | `app/state/registry.py`. |
+| `test_reset_reaches_overview.py` (slow) | A whole-tab "Reset Config to Defaults" (Disclose Income, Disclose Documents, Donation Default) out of "Compare both" unblocks the Page-2 Overview's "Run Complete Simulation" in the run the reset causes. | The Overview is drawn before the tabs; Page 2 applies a pending reset first (`page2_decisions.apply_pending_tab_resets`). |
 
 ### Exports
 
