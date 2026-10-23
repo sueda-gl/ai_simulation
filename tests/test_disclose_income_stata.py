@@ -171,6 +171,13 @@ def test_shipped_default_intercept_unchanged(di_params):
     assert di_params["intercept"] == APP_DEFAULT_BETA0
 
 
+def test_quintile_multipliers_default_to_the_uniform_multiplier(di_params):
+    """The five per-level σ multipliers default to the uniform one (scale_factor, 0.1), so
+    switching the σ mode to quintiles does not by itself multiply the noise by ten."""
+    stochastic = di_params["stochastic"]
+    assert stochastic["quintile_scale_factors"] == {level: stochastic["scale_factor"] for level in "12345"}
+
+
 def test_frozen_csv_equals_professor_dta():
     require_reference_file(PROF_DTA, "PROF_DTA in tests/test_disclose_income_stata.py")
     require_reference_file(FROZEN, "FROZEN in tests/test_disclose_income_stata.py")

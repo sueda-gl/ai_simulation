@@ -178,12 +178,15 @@ stochastic:
   sigma_quintile: {'1': …, '2': …, '3': …, '4': …, '5': …}
   sigma_value: 0              # the Research tick box writes σ here
   scale_factor: 1.0           # the σ coefficient slider
-  quintile_scale_factors: {'1': 1.0, …}   # the per-quintile sliders
+  quintile_scale_factors: {'1': 1.0, …}   # the per-quintile sliders, each = scale_factor
   in_copula: false            # the "draw to Copula runs" tick box
 ```
 
 (Decision 4: `sigma_value` and `in_copula` at the top, the rest per element under
-`mechanisms.<element>`.)
+`mechanisms.<element>`.) The five `quintile_scale_factors` default to the decision's
+`scale_factor` (Decision 1: 0.1; Decisions 2 and 3: 1.0; Decision 4: 0.5), so
+switching the σ mode to quintiles does not change the multiplier; keep them equal
+when you change the default (`tests/test_disclose_income_stata.py` pins Decision 1's).
 
 The one rule that decides whether noise is added is `should_use_stochastic()` in
 `src/utils/stochastic.py`: Copula draws iff `in_copula`, Research Specification

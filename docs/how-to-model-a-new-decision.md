@@ -359,8 +359,7 @@ stays aligned).
 ### 3.7 Two conventions that matter: noise and income mode
 
 * **Noise** goes through `should_use_stochastic` (README §4). For Decisions 1, 2 and 4
-  `sigma_value` is only an on/off signal and σ is `sigma_overall` (or `sigma_quintile[level]`) ×
-  `scale_factor` from the block; only Decision 3 uses `sigma_value` as σ. The YAML ships
+  `sigma_value` is only an on/off signal and σ is `sigma_overall` × `scale_factor`, or `sigma_quintile[level]` × `quintile_scale_factors[level]` in per-level mode from the block; only Decision 3 uses `sigma_value` as σ. The YAML ships
   `sigma_value: 0`, but the app's Research Specification tick box is on by default: an app run in
   Research Specification adds noise unless the user clears it; an engine run from Python does not.
 * **The income mode**: `"Categorical only"`, `"Continuous only"` or `"Compare both"`
