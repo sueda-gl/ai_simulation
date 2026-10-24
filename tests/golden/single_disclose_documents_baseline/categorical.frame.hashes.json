@@ -15,9 +15,9 @@
  "TWT+Sospeso [=AW2+AX2]{Periods 1+2}": "57828330cd9fcbbf04f6be10318f47049b6c3f069e0ef8a010911a9e9ffb7402",
  "actual_allowance": "7b2181c018317b15b6baf4bdf589e5ede809117933641897bd10c07d992cdd2b",
  "agent_id": "c66f0a70047f58e47703a6aadc2838f6f4abbb66646752b528ccbf98488c6a7c",
- "customer_type": "151f579d9a2686ad3da86a7422f17ebe9e12b2994c5377d2a561a53854037f14",
- "disclose_documents": "4b4c1762331a892f9ab3f4bb132c1e16af2fe4e3ab6bf2ac61d9718182dc2981",
- "disclose_documents_agent_income": "a8d397dce3fbfd6ac457ac27747f91d8e166be5d4cf9a05143c6684829cbe2ec",
+ "customer_type": "097439325c3c7c367b653687109508f8439a846ee79d943c8d9f88219240406e",
+ "disclose_documents": "8ecd1e48d1a911d724c6fe882441d8396e298526f111ebe3152918e7bf843a18",
+ "disclose_documents_agent_income": "e9952039f92c8942f35813fb013c80cdedb724739a91e874d3e8fda594926cff",
  "disclose_documents_income_mode": "63d9f9c0f298c039d4d35a62226e514a348719ac2ac541343ef789e20d34ada4",
  "disclose_documents_intercept": "f2c8fc05389955cd345a6d040c57b01a15a2e690b40cdf3d7fc9e224a72b5d00",
  "disclose_documents_model_y": "9e2a1fbec27cd8cc8024a8c63bb001b444d17b931b3deaf1264824b9cdaee74c",
@@ -34,7 +34,7 @@
  "disclose_documents_z_picont": "7b6436b0c98f62380866d9432c2af0ee08ce16a171bda6951aecd95ee1307d61",
  "disclose_documents_z_weighted_dd": "11c8a708d0bc30cae6764f4eff31b837ed5df375584f14f7484637de03a10e90",
  "disclose_income": "bc37bf5b5cd75944e332e2ac66bfc206850785ac9351a3b3147f00d1922c159c",
- "income": "a8d397dce3fbfd6ac457ac27747f91d8e166be5d4cf9a05143c6684829cbe2ec",
+ "income": "e9952039f92c8942f35813fb013c80cdedb724739a91e874d3e8fda594926cff",
  "index": "f8703cc89a99548d244c9d77a029b67243081580ec654138460c84e1c142706a",
  "stdactions": "e203130e4b7d1195ea60a1496b2412c9d7b91c1cca9fca4b17a2b379bc5846e3"
 }

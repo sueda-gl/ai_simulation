@@ -58,8 +58,8 @@ def _get_distribution_object(sim_params: dict):
     
     if dist_type == 'lognormal':
         mu = sim_params.get('lognormal_mu', 10.0)
-        sigma = sim_params.get('lognormal_sigma', 0.5)
-        min_val = sim_params.get('lognormal_min', 0.0)
+        sigma = sim_params.get('lognormal_sigma', 0.7)
+        min_val = sim_params.get('lognormal_min', 2000.0)
         # Return shifted lognormal
         return stats.lognorm(s=sigma, scale=np.exp(mu), loc=min_val)
     

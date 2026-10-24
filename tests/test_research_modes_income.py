@@ -60,14 +60,15 @@ EXPECTED_LENGTH_DIST = {0: 20, 1: 92, 2: 95, 3: 57, 4: 14, 5: 2}
 # float32 storage tolerance of the .dta's z columns
 ATOL = 5e-6
 
-# Copula incomes for seed 42 with the shipped config/simulation.yaml distribution,
-# captured from the code BEFORE income was attached to the research populations.
+# Copula incomes for seed 42 with the shipped config/simulation.yaml distribution
+# (lognormal mu 10, sigma 0.7, minimum 2000 - the author's Stata income settings, the
+# defaults since 2026-10-24).
 COPULA_SEED = 42
 COPULA_N = 60
 COPULA_INCOMES_FIRST10 = [
-    10109.069650403353, 13655.23255836024, 27660.638012987067, 23106.803354348584,
-    53849.243615519415, 12072.23441895969, 32899.82182864339, 11833.041830769616,
-    12885.27250540582, 7783.318648051882,
+    9403.170246197005, 13278.226535639014, 32299.05914543962, 25553.632148556502,
+    78996.9500944492, 11491.280235368587, 40627.1829718846, 11229.050706073549,
+    12398.079250978386, 7133.963863456925,
 ]
 COPULA_ALLOWANCE_FIRST10 = [12.0, 12.0, 128.0, 72.0, 200.0, 12.0, 128.0, 12.0, 12.0, 12.0]
 
@@ -294,11 +295,19 @@ def test_page1_income_settings_move_the_research_modes(profile_name):
 
 def test_reference_income_is_the_apps_own_run_at_seed_42():
     """Provenance of data/stata_incomes.csv: a Research run at seed 42, 280 agents, with
-    Page 1 set to lognormal mu 10, sigma 0.7, minimum income 2000. Today's engine
-    reproduces it to 1e-9, which also pins the income draw chain since 2025."""
-    inc, _ = _research_incomes("baseline", seed=42, lognormal_mu=10.0, lognormal_sigma=0.7,
-                               lognormal_min=2000.0)
+    Page 1 set to lognormal mu 10, sigma 0.7, minimum income 2000. Those are the Page 1
+    defaults (app/models.py and config/simulation.yaml) since 2026-10-24, so a Research
+    run at the defaults reproduces the author's income column to 1e-9; this also pins the
+    income draw chain since 2025."""
+    from app.models import SimulationParameters
+    sp = SimulationParameters()
+    assert (sp.lognormal_mu, sp.lognormal_sigma, sp.lognormal_min) == (10.0, 0.7, 2000.0)
     frozen = pd.read_csv(INCOMES_CSV, float_precision="round_trip").sort_values("original_index")
+    for profile_name in ("baseline", "documentation"):
+        inc, _ = _research_incomes(profile_name, seed=42)          # the YAML defaults
+        assert np.allclose(inc, frozen["income"].to_numpy(), rtol=1e-9, atol=1e-6), profile_name
+    inc, _ = _research_incomes("baseline", seed=42, lognormal_mu=10.0, lognormal_sigma=0.7,
+                               lognormal_min=2000.0)                 # the same, explicit
     assert np.allclose(inc, frozen["income"].to_numpy(), rtol=1e-9, atol=1e-6)
 
 
@@ -317,7 +326,7 @@ def test_copula_sampled_agents_carry_no_income_column():
 
 def test_copula_incomes_unchanged_for_seed_42():
     """Regression pin: the copula population's incomes (and the derived 12-200 credit)
-    for seed 42, unchanged since before October 2026."""
+    for seed 42 at the shipped defaults."""
     from src.engine.core import Engine
 
     df = Engine("copula").run_simulation(COPULA_N, COPULA_SEED, ["donation_default"])

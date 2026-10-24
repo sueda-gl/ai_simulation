@@ -51,7 +51,9 @@ simulation:
   
   # Distribution-specific parameters
   # Lognormal parameters
-  lognormal_sigma: 0.5  # Shape parameter (standard deviation of log)
+  lognormal_mu: 10.0  # Location parameter (mean of log)
+  lognormal_sigma: 0.7  # Shape parameter (standard deviation of log); with mu 10, min 2000 and
+  lognormal_min: 2000.0  # seed 42 the Research modes reproduce the author's Stata income column
   
   # Pareto parameters
   pareto_alpha: 2.5  # Shape parameter (higher = less inequality)

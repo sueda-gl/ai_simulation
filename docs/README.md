@@ -547,8 +547,11 @@ The reasons behind behaviour that looks odd at first sight.
   specification uses the level only. The reference Stata files embed one fixed income
   per participant (`data/stata_incomes.csv`): the app's own Research run at seed 42
   with Page 1 set to lognormal μ 10, σ 0.7, minimum income $2,000, made in late 2025
-  and reused by the author since; today's engine reproduces it 280/280. The parity
-  tests inject it, the app never loads it. From 6 to 24 October
+  and reused by the author since. Those three values are the Page 1 defaults since
+  2026-10-24 (before: σ 0.5, minimum $0), so a Research run at the defaults reproduces
+  his income column 280/280 and every result built on it; change the income settings
+  and every continuous result in every mode moves. The parity tests inject the file,
+  the app never loads it. From 6 to 24 October
   2026 the loader merged it into the research populations, which made Page 1's income
   settings inert there; reverted (`tests/test_research_modes_income.py`).
 * **Decision 1's σ is converted into the anchor's units before the draw.** The file

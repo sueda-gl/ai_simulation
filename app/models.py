@@ -75,8 +75,11 @@ class SimulationParameters:
     # Distribution-specific parameters
     # Lognormal parameters
     lognormal_mu: float = 10.0  # Location parameter (mean of log)
-    lognormal_sigma: float = 0.5  # Shape parameter (standard deviation of log)
-    lognormal_min: float = 0.0  # Minimum value (linear shift)
+    # mu 10, sigma 0.7, minimum 2000 with seed 42 are the settings of the research author's
+    # Stata income run (data/stata_incomes.csv): at these defaults the Research modes
+    # reproduce his income column exactly (2026-10-24; before: sigma 0.5, minimum 0).
+    lognormal_sigma: float = 0.7  # Shape parameter (standard deviation of log)
+    lognormal_min: float = 2000.0  # Minimum value (linear shift)
     lognormal_max: Optional[float] = None  # Maximum value (rejection sampling)
     
     # Generalised Gamma parameters  

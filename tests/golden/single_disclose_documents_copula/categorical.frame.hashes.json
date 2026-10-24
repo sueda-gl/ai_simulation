@@ -15,8 +15,8 @@
  "actual_allowance": "d74d3dadce720bc48b8ab0751a628f21095602b8430f986503d5d644cfc5f433",
  "agent_id": "c66f0a70047f58e47703a6aadc2838f6f4abbb66646752b528ccbf98488c6a7c",
  "customer_type": "48d3934d4201168ec5deba31b53aba3a9aa0c13d2366d4db0a01b3aa316107a1",
- "disclose_documents": "5baa49a9a59b67903c833d78b1e10ddbac4df2efd4bddb12a8c2fca5221247bb",
- "disclose_documents_agent_income": "acbf1776e147ab78c57e78cb8a67e768ca4b8bbf04bb4ad8caa369229d637602",
+ "disclose_documents": "743ff143f9ae05cd7bc470fc29186c06b375d68e8bb5e511ddf10e9ba5f4bbb5",
+ "disclose_documents_agent_income": "bf72b203c52c0f70d71aac40bdc0a26f437bcb227c73e9fbbf00d01e8a93a336",
  "disclose_documents_income_mode": "63d9f9c0f298c039d4d35a62226e514a348719ac2ac541343ef789e20d34ada4",
  "disclose_documents_intercept": "f2c8fc05389955cd345a6d040c57b01a15a2e690b40cdf3d7fc9e224a72b5d00",
  "disclose_documents_model_y": "d3ab8d3c92388a356164e9ac1c1c7cf1dfb2dc0f1fea69845d4532af947f949f",
@@ -33,7 +33,7 @@
  "disclose_documents_z_picont": "7b6436b0c98f62380866d9432c2af0ee08ce16a171bda6951aecd95ee1307d61",
  "disclose_documents_z_weighted_dd": "a4fe17420028c511c522f3a3287970eb1c65ea9a42c073a1d26eca5e3aa1d0be",
  "disclose_income": "bc37bf5b5cd75944e332e2ac66bfc206850785ac9351a3b3147f00d1922c159c",
- "income": "acbf1776e147ab78c57e78cb8a67e768ca4b8bbf04bb4ad8caa369229d637602",
+ "income": "bf72b203c52c0f70d71aac40bdc0a26f437bcb227c73e9fbbf00d01e8a93a336",
  "index": "f8703cc89a99548d244c9d77a029b67243081580ec654138460c84e1c142706a",
  "stdactions": "f676457bce8020ae0514cb4b28131d585b3dbebdce527759d44f898bcd55eb4f"
 }
