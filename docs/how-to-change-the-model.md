@@ -184,9 +184,17 @@ stochastic:
 
 (Decision 4: `sigma_value` and `in_copula` at the top, the rest per element under
 `mechanisms.<element>`.) The five `quintile_scale_factors` default to the decision's
-`scale_factor` (Decision 1: 0.1; Decisions 2 and 3: 1.0; Decision 4: 0.5), so
-switching the σ mode to quintiles does not change the multiplier; keep them equal
-when you change the default (`tests/test_disclose_income_stata.py` pins Decision 1's).
+`scale_factor` (Decisions 1, 2 and 3: 1.0; Decision 4: 0.5), so switching the σ mode
+to quintiles does not change the multiplier; keep them equal when you change the
+default (`tests/test_disclose_income_stata.py` pins Decision 1's).
+
+The base σ must be in the units of the quantity the noise is added to. Decision 1's
+file values are in credits (sd(TWT+Sospeso)) while its anchor is in z units, so the
+engine divides by `z_scoring.TWT_Sospeso.sd` before the draw and the tab shows the
+converted base (1.00 overall); Decision 3 converts with 100/112 onto its 0–100 scale;
+Decisions 2 and 4 hold their σ on the score's scale already. If you add or change a
+σ, check this ratio first: at coefficient 1 the σ should be a fraction of the anchor's
+spread, not a multiple of it.
 
 The one rule that decides whether noise is added is `should_use_stochastic()` in
 `src/utils/stochastic.py`: Copula draws iff `in_copula`, Research Specification

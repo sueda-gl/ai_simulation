@@ -34,9 +34,16 @@ def load_disclose_income_config():
     return config.get('disclose_income', {})
 
 
+def _twt_sd():
+    """sd(TWT+Sospeso) of the 280 (``z_scoring.TWT_Sospeso.sd``): the divisor that puts
+    the file's credit-unit sigmas into the anchor's z units, exactly as the engine does
+    before its draw (Decision 1 document, section 8 step 1)."""
+    return float(get_config_repo().decision('disclose_income')['z_scoring']['TWT_Sospeso']['sd'])
+
+
 def _load_base_sigma_overall():
-    """Read the base sigma from the configuration file (read-only)."""
-    return float(get_config_repo().disclose_income_sigma_overall())
+    """The base sigma in the anchor's units: the file's sigma_overall (credits) / sd(TWT+Sospeso)."""
+    return float(get_config_repo().disclose_income_sigma_overall()) / _twt_sd()
 
 
 # Single sigma constant: disclose_income.stochastic.sigma_overall from
@@ -48,11 +55,13 @@ def _load_base_sigmas():
     """{level: σ}: ``stochastic.sigma_quintile`` of the ``disclose_income`` block of
     config/decisions.yaml (read-only), the way the Disclose Documents tab reads its own."""
     stochastic = get_config_repo().decision('disclose_income')['stochastic']
-    return {str(level): float(sigma) for level, sigma in stochastic['sigma_quintile'].items()}
+    twt_sd = _twt_sd()
+    return {str(level): float(sigma) / twt_sd for level, sigma in stochastic['sigma_quintile'].items()}
 
 
-# Per-quintile base σ shown by the slider labels and the metrics, loaded once at
-# import; display only (the model reads the same keys from its params).
+# Per-quintile base σ shown by the slider labels and the metrics, in the anchor's
+# units, loaded once at import; display only (the model reads the same keys from its
+# params and applies the same division).
 BASE_SIGMAS = _load_base_sigmas()
 
 
@@ -62,7 +71,7 @@ def research_default_config():
 
     The single source of truth for both the first draw
     (``initialize_disclose_income_session_state``) and "Reset Config to Defaults"
-    - e.g. the σ coefficient ``stochastic.scale_factor: 0.1`` (the intended default).
+    - e.g. the σ coefficient ``stochastic.scale_factor: 1.0`` (the intended default).
     The reset used to apply a hard-coded dict on top of the file, which set the σ
     coefficient to 1.0 while the first draw showed 0.1.
     """
@@ -82,7 +91,7 @@ def initialize_disclose_income_session_state():
         'di_wopb': anchor_weights['observed_prosocial'],
         'di_wpb': anchor_weights['prosocial_weight'],
         'di_sigma_enabled': True,
-        'di_scale_factor': stochastic['scale_factor'],   # the file's value (0.1), read strictly
+        'di_scale_factor': stochastic['scale_factor'],   # the file's value (1.0), read strictly
         'di_sigma_strategy': stochastic.get('sigma_strategy', 'overall'),
         'di_income_mode': config.get('income_mode', 'categorical'),
     }
@@ -125,6 +134,7 @@ DI_CONTROLS = TabControls(
     base_sigma=BASE_SIGMA_OVERALL,
     base_sigmas=BASE_SIGMAS,
     level_labels=LEVEL_LABELS,
+    base_note="sd(TWT+Sospeso) = 9.90 credits, in the anchor's z units (÷ 9.90), per the Decision 1 document, section 8",
 )
 
 
@@ -283,7 +293,7 @@ def render_formula_display(config):
         # Final decision (same for all modes)
         st.markdown("### Final Decision")
         st.markdown("""
-        - If stochastic enabled: `PB_i ~ Normal(μ = Anchor_i, σ)` where σ = sd(TWT+Sospeso) × coefficient (overall or per quintile)
+        - If stochastic enabled: `PB_i ~ Normal(μ = Anchor_i, σ)` where σ = sd(TWT+Sospeso) × coefficient (overall or per quintile), expressed in the anchor's z units (÷ sd(TWT+Sospeso) = 9.90), so coefficient 1 adds one unit of the observed variability
         - The stochastic PB_i is then z-scored and used in the DI equation above
         - **disclose_income = "Y"** if DI_i > 0, else **"N"**
         """)

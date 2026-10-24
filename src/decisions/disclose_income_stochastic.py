@@ -299,9 +299,16 @@ def disclose_income_stochastic(
     - Composite variables are NOT re-standardized for each simulated population
     - Natural variation in simulated populations is preserved as legitimate
     
-    STOCHASTIC COMPONENT (per documentation):
+    STOCHASTIC COMPONENT (Decision 1 document, section 8):
     - Stochastic draw is applied to anchored_pb: Normal(anchored_pb, σ)
-    - σ = sd(TWT+Sospeso) × scale_factor (natural variability of observed prosocial behavior)
+    - σ = sd(TWT+Sospeso) × coefficient, the natural variability of observed prosocial
+      behaviour, which the document states in "the original behaviour units" (credits,
+      sd 9.899547) together with the anchor. The anchor built by the document's own
+      Stata code is a mix of two z-scores, so before the draw σ is converted into the
+      anchor's units by dividing by sd(TWT+Sospeso) - the same statistic that z-scores
+      the observed prosocial behaviour. Coefficient 1 therefore adds one unit of the
+      observed variability; without the conversion it added twelve (9.9 against an
+      anchor spread of 0.8).
     - The stochastic anchored_pb is then z-scored and used in the DI equation
     
     Supports multiple population modes:
@@ -346,6 +353,7 @@ def disclose_income_stochastic(
     # ========================================================================
     
     pass1_values = compute_pass1_values(agent_state, params, simulation_config)
+    z_params = require(params, DECISION, 'z_scoring')
     weighted_prosocial = pass1_values['weighted_prosocial']
     direct_effect = pass1_values['direct_effect']
     income_high = pass1_values['income_high']
@@ -390,7 +398,13 @@ def disclose_income_stochastic(
             sigma_raw = require(params, DECISION, 'stochastic', 'sigma_overall')
             scale_factor = require(params, DECISION, 'stochastic', 'scale_factor')
         
-        sigma_scaled = sigma_raw * float(scale_factor)
+        # sigma_raw is in the original behaviour units (TWT+Sospeso credits), the
+        # anchor in z units: divide by sd(TWT+Sospeso) - z_scoring.TWT_Sospeso.sd,
+        # the statistic that z-scores the observed prosocial behaviour - so the
+        # draw is Normal(anchor, coefficient x one unit of the observed variability).
+        # (Decision 1 document, section 8 step 1: anchor and sigma in the same units.)
+        twt_sd = require(z_params, DECISION, 'TWT_Sospeso', 'sd', prefix='z_scoring')
+        sigma_scaled = sigma_raw * float(scale_factor) / twt_sd
         stochastic_anchored_pb = rng.normal(anchored_pb, sigma_scaled)
     else:
         # Baseline mode OR documentation with sigma disabled: Use anchored_pb directly

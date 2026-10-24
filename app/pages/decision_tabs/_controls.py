@@ -112,6 +112,9 @@ class TabControls:
     quintile_level_fallback: Optional[float] = None
     base_sigmas: Optional[dict] = None
     level_labels: dict = None
+    #: a line printed under "Base σ = …" in uniform mode (Disclose Income: how the
+    #: file's credit-unit σ became the anchor-unit value shown); None = no line
+    base_note: Optional[str] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -276,6 +279,8 @@ def render_sigma_controls(spec):
     if sigma_strategy == 'overall':
         # OVERALL MODE: Single slider
         st.markdown(f"Base σ = {spec.base_sigma:.2f} (empirical from 280 participants)")
+        if spec.base_note:
+            st.caption(spec.base_note)
 
         # The slider starts from the canonical coefficient (seeded by the tab's
         # initialiser from the configuration) or the tab's own fallback. 0.0 is a
