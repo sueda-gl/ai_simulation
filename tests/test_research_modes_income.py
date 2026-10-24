@@ -1,34 +1,34 @@
 """
-The Research Baseline / Research Specification populations must carry the reference
-income, not a freshly drawn one.
+Where each population's continuous income comes from, and the Decision 4 reference parity.
 
-Both research modes run the 280 ORIGINAL participants. The reference Stata files
-carry ONE fixed per-participant `income` column (identical in
-Stata_File_Decision4_050926.dta, Stata_File_Decision 2_260626 - CORRECTED.dta and
-Stata_File_Decision 1.dta), and every income-using result in the reference documents is computed
-with it. src/data/participants.py therefore merges data/stata_incomes.csv into
-`merged()` by Participant ID and carries that column into `original_data()` (the
-successor of the original repo's src/validate_traits.py and the two research
-orchestrators' `original_data`), and src.engine.income.get_agent_income() finds it
-already cached.
+Every population mode - Copula, Research Specification, Research Baseline - draws each
+agent's continuous income from the Page 1 distribution, within the band of the agent's
+allowance level (src.engine.income.get_agent_income, seeded per agent), as the deployed
+app always did. Changing the Page 1 income settings therefore moves every continuous
+result in every mode; the categorical specification uses the allowance level only.
+
+The reference Stata files (Decision 1 / 2 / 4) embed ONE fixed income per participant,
+frozen in data/stata_incomes.csv (a February 2026 export made to compare the app with
+Stata). The parity tests inject that column into the agents they run, so the Decision 4
+Research Baseline run reproduces the .dta 280/280; the app itself never loads it. From
+6 to 24 October 2026 src/data/participants.py merged the file into the research
+populations, which silently made Page 1's income settings inert for the Research modes;
+that is reverted and pinned here.
 
 What this pins down:
-  (a) merged['income'] equals the reference income participant-by-participant (the
-      frozen data/stata_incomes.csv, and the .dta at PROF_DTA itself - that test fails
-      when the file is missing unless COOPECON_ALLOW_DTA_SKIP=1);
-  (b) a Research Baseline Decision-4 run (all intercepts 0, deterministic) reproduces
-      the frozen extract of the .dta (data/stata_d4_verification.csv and
-      data/stata_d4_flexibility_verification.csv): WTP_calculated15 168/82/26/3/1 and
-      RT_calculated15 20/100/110/46/4 distributions AND the stored choice1..5 columns
-      280/280, NaN pattern included - the income-free elements (TTP, Loyalty,
-      Flexibility) are unaffected, and z_net_income (sample SD) reproduces the .dta
-      column to float32 tolerance;
-  (c) COPULA populations are untouched: copula-sampled agents carry no income column,
-      so income is still drawn from the Page-1 distribution, bit-identical to the
-      behaviour before the change (values pinned below for seed 42);
-  (d) the same run in categorical income reproduces the document's recomputed WTP / RT
-      segments and choice lists 280/280, and the file's stored categorical scores
-      (RT 280/280; WTP 279/280 - participant 716, the file's raw-`agreeable` error).
+  (a) the frozen file's layout, and that the research population carries NO income
+      column (merged() and original_data());
+  (b) a Research Baseline Decision-4 run with the reference income INJECTED (all
+      intercepts 0, deterministic) reproduces the frozen extract of the .dta
+      (data/stata_d4_verification.csv and data/stata_d4_flexibility_verification.csv):
+      WTP_calculated15 168/82/26/3/1 and RT_calculated15 20/100/110/46/4, every stored
+      segment and choice column 280/280, z_net_income to float32 tolerance;
+  (c) without injection the research modes generate the income from Page 1: it is
+      reproducible for a seed, differs from the reference file, and moves with the
+      Page 1 lognormal sigma;
+  (d) COPULA populations are untouched (values pinned for seed 42);
+  (e) the same injected run in categorical income reproduces the document's recomputed
+      WTP / RT segments and choice lists 280/280.
 """
 import os
 
@@ -106,7 +106,19 @@ def baseline_d4_categorical():
     return _baseline_run("categorical")
 
 
-def _baseline_run(income_mode):
+def _reference_agents(orch):
+    """original_data() with the reference income INJECTED by Participant ID (the app never
+    does this; the parity tests do, so the run reproduces the .dta)."""
+    from src.data import participants as P
+    agents = orch.original_data.copy()
+    pids = P.merged().loc[agents.index, "Participant ID"].astype(int).to_numpy()
+    by_pid = pd.read_csv(INCOMES_CSV, float_precision="round_trip").set_index("Participant ID")["income"]
+    agents["income"] = by_pid.loc[pids].to_numpy()
+    agents.index = range(len(agents))
+    return agents
+
+
+def _baseline_engine(income_mode):
     from src.engine.core import Engine
     from src.engine.profile import PROFILES
 
@@ -119,9 +131,14 @@ def _baseline_run(income_mode):
     stoch = cfg.setdefault("stochastic", {})
     stoch["in_copula"] = False
     stoch["sigma_value"] = 0.0
-    n = len(orch.original_data)
-    assert n == 280
-    return orch.run_simulation(n, 42, ["rejected_transaction_defaults"])
+    return orch
+
+
+def _baseline_run(income_mode):
+    orch = _baseline_engine(income_mode)
+    agents = _reference_agents(orch)
+    assert len(agents) == 280
+    return orch.run_simulation(len(agents), 42, ["rejected_transaction_defaults"], agents_df=agents)
 
 
 # ---------------------------------------------------------------------------
@@ -143,39 +160,34 @@ def test_frozen_income_file_layout():
     assert (inc["original_index"].to_numpy() == std["original_index"].to_numpy()).all()
 
 
-def test_merged_carries_the_professor_income(merged_df, frozen_incomes):
-    """merged['income'] is the reference income, joined by Participant ID, for all
-    280 participants - no NaN, no positional accident."""
-    assert "income" in merged_df.columns, \
-        "src/data/participants.py must merge data/stata_incomes.csv into `merged()`"
-    assert merged_df["income"].notna().all()
-
-    by_pid = frozen_incomes.set_index("Participant ID")["income"]
-    expected = by_pid.loc[merged_df["Participant ID"].to_numpy()].to_numpy()
-    assert np.array_equal(merged_df["income"].to_numpy(), expected)
-
+def test_research_population_carries_no_income_column(merged_df):
+    """The reference income is never merged into the population: the engine generates
+    every participant's income from the Page 1 distribution (src/data/participants.py)."""
+    from src.data.participants import original_data
+    assert "income" not in merged_df.columns
+    assert "income" not in original_data().columns
     # `merged` row order IS the .dta row order, i.e. original_index
-    assert (merged_df["Participant ID"].to_numpy()
-            == frozen_incomes["Participant ID"].to_numpy()).all()
+    frozen = pd.read_csv(INCOMES_CSV, float_precision="round_trip")
+    assert (merged_df["Participant ID"].to_numpy() == frozen["Participant ID"].to_numpy()).all()
 
 
-def test_merged_income_equals_the_dta_income_per_participant(merged_df):
-    """Exact, participant-by-participant, against the .dta itself."""
-    require_reference_file(PROF_DTA, "PROF_DTA in tests/test_research_modes_use_reference_income.py")
+def test_frozen_income_equals_the_dta_income_per_participant():
+    """The frozen file is the .dta's income column, participant by participant."""
+    require_reference_file(PROF_DTA, "PROF_DTA in tests/test_research_modes_income.py")
     dta = pd.read_stata(PROF_DTA, convert_categoricals=False)
     dta_income = pd.Series(dta["income"].to_numpy(dtype=float),
                            index=dta["participantid"].to_numpy().astype(int))
-    got = merged_df.set_index(merged_df["Participant ID"].astype(int))["income"]
-    assert set(got.index) == set(dta_income.index)
-    assert np.array_equal(got.to_numpy(), dta_income.loc[got.index].to_numpy())
+    frozen = pd.read_csv(INCOMES_CSV, float_precision="round_trip").set_index("Participant ID")["income"]
+    assert set(frozen.index) == set(dta_income.index)
+    assert np.array_equal(frozen.to_numpy(), dta_income.loc[frozen.index].to_numpy())
 
 
 # ---------------------------------------------------------------------------
-# (b) the Research Baseline Decision-4 run now reproduces the .dta
+# (b) the Research Baseline Decision-4 run with the reference income injected reproduces the .dta
 # ---------------------------------------------------------------------------
-def test_baseline_run_uses_the_professor_income(baseline_d4, frozen_incomes):
-    """The simulated population's income column IS the reference file's column, and the
-    12-200 allowance credit is still derived (get_agent_income's cached path)."""
+def test_injected_reference_income_is_kept(baseline_d4, frozen_incomes):
+    """An income pre-attached to the agents is kept (get_agent_income's cached path) and
+    the 12-200 allowance credit is still derived."""
     assert np.array_equal(baseline_d4["income"].to_numpy(),
                           frozen_incomes["income"].to_numpy())
     assert "actual_allowance" in baseline_d4.columns
@@ -241,7 +253,43 @@ def test_baseline_segments_and_choice_columns_match_the_dta_280_of_280(baseline_
 
 
 # ---------------------------------------------------------------------------
-# (c) Copula populations keep the generated income
+# (c) without injection the research modes generate the income from Page 1
+# ---------------------------------------------------------------------------
+def _research_incomes(profile_name, seed=42, **page1):
+    from src.engine.core import Engine
+    from src.engine.profile import PROFILES
+
+    orch = Engine(PROFILES[profile_name])
+    orch.simulation_config.setdefault("simulation", {}).update(page1)
+    df = orch.run_simulation(280, seed, ["donation_default"])
+    return df["income"].to_numpy(dtype=float), df["Assigned Allowance Level"].to_numpy(dtype=int)
+
+
+@pytest.mark.parametrize("profile_name", ["baseline", "documentation"])
+def test_research_modes_generate_income_from_page1(profile_name, frozen_incomes):
+    """The app's research runs do not carry the reference income: the engine draws it
+    from the Page 1 distribution, reproducibly for a seed, inside the allowance band."""
+    inc, levels = _research_incomes(profile_name)
+    again, _ = _research_incomes(profile_name)
+    assert np.array_equal(inc, again)                       # seeded
+    assert not np.array_equal(inc, frozen_incomes["income"].to_numpy())
+    assert np.isfinite(inc).all() and (inc > 0).all()
+    # category-first: every level-1 income below every level-5 income
+    assert inc[levels == 1].max() < inc[levels == 5].min()
+
+
+@pytest.mark.parametrize("profile_name", ["baseline", "documentation"])
+def test_page1_income_settings_move_the_research_modes(profile_name):
+    """Changing the Page 1 lognormal sigma changes the research population's incomes
+    (from 6 to 24 October 2026 it did not: the loader had merged a fixed income)."""
+    narrow, _ = _research_incomes(profile_name, lognormal_sigma=0.5)
+    wide, _ = _research_incomes(profile_name, lognormal_sigma=1.0)
+    assert not np.array_equal(narrow, wide)
+    assert wide.std(ddof=1) > 1.5 * narrow.std(ddof=1)
+
+
+# ---------------------------------------------------------------------------
+# (d) Copula populations keep the generated income
 # ---------------------------------------------------------------------------
 def test_copula_sampled_agents_carry_no_income_column():
     """Structural guarantee: the copula emits traits only, so get_agent_income() still
@@ -255,8 +303,7 @@ def test_copula_sampled_agents_carry_no_income_column():
 
 def test_copula_incomes_unchanged_for_seed_42():
     """Regression pin: the copula population's incomes (and the derived 12-200 credit)
-    for seed 42 are bit-identical to the behaviour before the research populations
-    started carrying the reference income."""
+    for seed 42, unchanged since before October 2026."""
     from src.engine.core import Engine
 
     df = Engine("copula").run_simulation(COPULA_N, COPULA_SEED, ["donation_default"])
@@ -268,7 +315,7 @@ def test_copula_incomes_unchanged_for_seed_42():
 
 
 # ---------------------------------------------------------------------------
-# (d) categorical income through the engine (Research Baseline, all 280)
+# (e) categorical income through the engine (Research Baseline, all 280, reference income injected)
 # ---------------------------------------------------------------------------
 def _seg15(v):
     v = np.asarray(v, dtype=float)

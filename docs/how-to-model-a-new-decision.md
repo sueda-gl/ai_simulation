@@ -199,8 +199,9 @@ participant.
   the experiment one `Group_experiment`.
 * `Study Program Category`: the copula does not carry it; Decision 3 maps it from `Study Program`.
 * `stdactions`: merged from `data/stata_stdactions.csv`.
-* `income`: in the Research modes, the fixed reference income of `data/stata_incomes.csv`; in
-  Copula, drawn from the Page 1 distribution inside the band of the allowance level.
+* `income`: in every mode, drawn from the Page 1 distribution inside the band of the allowance
+  level (seeded per agent). The parity tests inject the reference Stata income
+  (`data/stata_incomes.csv`) instead, so a run reproduces the author's file.
 * `actual_allowance`: 12, 32, 72, 128 or 200 credits, from the level (`ALLOWANCE_CREDIT_MAPPING`,
   `src/engine/income.py`).
 
@@ -221,8 +222,9 @@ Load it with `pd.read_stata(path, convert_categoricals=False)` and check:
   engine's IDs are `P.merged().loc[P.original_data().index, "Participant ID"]`
   (`from src.data import participants as P`);
 * every trait the model uses equals the agent's column (§1.2);
-* `income`, if present, equals the Research modes' fixed income (`data/stata_incomes.csv`, §1.2).
-  If not, ask the author: continuous-income results cannot match otherwise.
+* `income`, if present, equals the reference income (`data/stata_incomes.csv`, §1.2), which the
+  parity test injects into the agents it runs. If the author's file carries a different income
+  column, ask: continuous-income results cannot match otherwise.
 
 ### 1.4 Freeze a reference extract
 

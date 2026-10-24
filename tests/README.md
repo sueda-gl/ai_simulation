@@ -26,14 +26,14 @@ depends on it.
 ## References the tests pin
 
 * **Frozen reference extracts** (in git): `data/stata_d1_verification.csv` (Decision 1),
-  `data/stata_incomes.csv` (the reference income), `data/d3_doc_reference.csv`
+  `data/stata_incomes.csv` (the reference income the parity tests inject), `data/d3_doc_reference.csv`
   (Decision 3, written by `experiments/d3_doc_reference.py`),
   `data/stata_d4_verification.csv` and `data/stata_d4_flexibility_verification.csv`
   (Decision 4), plus the survey and experiment workbooks in `data/` that the research
   populations are built from.
 * **The original Stata `.dta` files**, in `data/stata/`. Four modules compare against
   them: `test_disclose_income_stata.py`, `test_disclose_documents.py`,
-  `test_donation_default_doc.py` and `test_research_modes_use_reference_income.py`. Each
+  `test_donation_default_doc.py` and `test_research_modes_income.py`. Each
   test that reads one fails when the file is missing, naming the file and the `PROF_DTA`
   constant at the top of its module; with `COOPECON_ALLOW_DTA_SKIP=1` it skips instead.
 * **Golden copies** recorded from the app itself, the parity net for refactoring:
@@ -76,7 +76,7 @@ No test module imports another.
 | `test_rtd_flexibility.py` | Decision 4 Flexibility: the deterministic pipeline 280/280, beta4, fallback, stochastic layer, copula trait. | `data/stata_d4_flexibility_verification.csv`. |
 | `test_rtd_rank_aggregation.py` | Decision 4 Section 6: Kemeny-Young with the Schulze / Copeland / footrule / random cascade, and its integration. | Decision 4 document rev 040926-2 Section 6; "Ranking Cascade Results (V1)" stage shares. |
 | `test_rtd_histogram_stata_parity.py` | Decision 4 score histograms use Stata's default bin rule (16 bins at N = 280) and draw the document's figure. | `data/stata_d4_verification.csv`; the design document's figure. |
-| `test_research_modes_use_reference_income.py` | Research populations carry the reference income; the Decision 4 Research Baseline run reproduces the file. | `data/stata_incomes.csv`, the Decision 4 extracts; the `.dta` at `PROF_DTA`. |
+| `test_research_modes_income.py` | Every population mode draws its income from Page 1 (seeded; moves with the Page 1 settings); with the reference income injected, the Decision 4 Research Baseline run reproduces the file. | `data/stata_incomes.csv`, the Decision 4 extracts; the `.dta` at `PROF_DTA`. |
 
 ### Golden nets
 

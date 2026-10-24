@@ -88,10 +88,10 @@ Everything needed to produce numbers, and nothing else.
 * **`src/contract/columns.py`** — the `rtd_consensus_*` → `rtd_integrated_*` renaming
   every export, the agent details and the CLI apply (outputs say "integrated").
 * **`src/data/participants.py`** — the 280 experiment participants, read from the two
-  workbooks in `data/` the first time they are asked for, then cached, with two columns
-  merged in: `stdactions` and the reference income (`data/stata_stdactions.csv`,
-  `data/stata_incomes.csv`) that the research modes run with. Nothing happens at
-  import time.
+  workbooks in `data/` the first time they are asked for, then cached, with one column
+  merged in: `stdactions` (`data/stata_stdactions.csv`). No income: every population
+  mode draws each agent's continuous income from the Page 1 distribution. Nothing
+  happens at import time.
 * **`src/trait_engine.py`** — samples synthetic agents from the fitted copula in
   `config/trait_model.pkl`. Retrain only with `scripts/train_copula.py`, and only if
   the experiment data or the master trait list changes.
@@ -500,7 +500,7 @@ Fixtures several modules share live in `tests/conftest.py`, plain helper functio
 `data/stata/` (the Decision 1, 2 and 4 files and the dedicated Donation file); the
 paths are the `PROF_DTA` constants at the top of `tests/test_disclose_income_stata.py`,
 `tests/test_disclose_documents.py`, `tests/test_donation_default_doc.py` and
-`tests/test_research_modes_use_reference_income.py`. A missing file fails the test
+`tests/test_research_modes_income.py`. A missing file fails the test
 naming it; with `COOPECON_ALLOW_DTA_SKIP=1` set it skips instead.
 
 ---
@@ -540,6 +540,15 @@ The reasons behind behaviour that looks odd at first sight.
   `config/decisions.yaml`: 1.0 for Decisions 1, 2 and 3, 0.5 for Decision 4), so
   switching the σ mode to "Quintiles (σ per budget level)" changes the base σ, not the
   multiplier.
+* **Every population mode draws its continuous income from Page 1.** Copula agents and
+  the 280 participants alike get a seeded draw from the Page 1 distribution inside the
+  band of their allowance level (`src/engine/income.py`), so the Page 1 income
+  settings (μ, σ, threshold) move every continuous result in every mode; the categorical
+  specification uses the level only. The reference Stata files embed one fixed income
+  per participant (`data/stata_incomes.csv`, a February 2026 export made to compare
+  with Stata); the parity tests inject it, the app never loads it. From 6 to 24 October
+  2026 the loader merged it into the research populations, which made Page 1's income
+  settings inert there; reverted (`tests/test_research_modes_income.py`).
 * **Decision 1's σ is converted into the anchor's units before the draw.** The file
   holds sd(TWT+Sospeso) in credits (9.899547 overall, 5.7 to 16.9 per level), as the
   Decision 1 document gives it; the anchor is a mix of two z-scores (spread 0.8). The

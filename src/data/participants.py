@@ -20,14 +20,15 @@ Two per-participant columns from the reference Stata files are merged in by
   carries per-participant totals, so the value comes from
   ``Stata_File_Decision4_050926.dta``. It is a trait (Decision 4 Flexibility,
   ``config/trait_requirements.yaml``) and therefore also a copula column.
-* ``income`` (``data/stata_incomes.csv``) - the ONE fixed continuous income per
-  participant, identical across the reference Decision 1 / 2 / 4 Stata files.
-  :func:`original_data` carries it next to the traits, so the Research modes find
-  it already cached in ``get_agent_income()`` and reproduce those files instead of
-  drawing a fresh income. Copula agents have no Participant ID and keep the
-  Page-1 generated income.
+* ``income`` is NOT merged. Every population mode draws each agent's continuous
+  income from the Page 1 distribution, within the band of the agent's allowance level
+  (``src.engine.income.get_agent_income``, seeded per agent), as the deployed app
+  always did. ``data/stata_incomes.csv`` is the one fixed income per participant that
+  the reference Stata files embed; the parity tests inject it themselves. From 6 to
+  24 October 2026 the loader merged it into the research populations, which made
+  Page 1's income settings inert for the Research modes; reverted.
 
-Neither merge changes the row order or the 280-row selection (``dropna`` stays
+The merge changes neither the row order or the 280-row selection (``dropna`` stays
 restricted to the trait columns).
 
 Row order, column selection, merge semantics and ``dropna`` are identical to the
@@ -50,7 +51,8 @@ EXPERIMENT_PATH = _ROOT / "data" / "Student Experiment Results - Period 1-2.xlsx
 REQ_PATH = _ROOT / "config" / "trait_requirements.yaml"
 # Per-participant SD in actions per cycle (Decision 4 Flexibility; Stata_File_Decision4_050926.dta).
 STDACTIONS_PATH = _ROOT / "data" / "stata_stdactions.csv"
-# The fixed per-participant continuous income of the reference Decision 1 / 2 / 4 .dta files.
+# The fixed per-participant continuous income the reference Decision 1 / 2 / 4 .dta files
+# embed. Read by the parity tests only; never merged into the population.
 INCOMES_PATH = _ROOT / "data" / "stata_incomes.csv"
 
 # Caches (populated on first use)
@@ -102,17 +104,6 @@ def merged() -> pd.DataFrame:
         if STDACTIONS_PATH.exists():
             stdactions = pd.read_csv(STDACTIONS_PATH)
             frame = frame.merge(stdactions, on="Participant ID", how="left")
-        if INCOMES_PATH.exists():
-            # float_precision="round_trip": pandas' default CSV float parser is not
-            # correctly rounded and loses the last ULP on two of the 280 values.
-            incomes = pd.read_csv(INCOMES_PATH, float_precision="round_trip")
-            frame = frame.merge(incomes[["Participant ID", "income"]],
-                                on="Participant ID", how="left")
-            n_missing_income = int(frame["income"].isna().sum())
-            if n_missing_income:
-                print(f"⚠️  {n_missing_income}/{len(frame)} participants have no income in "
-                      f"{INCOMES_PATH.name}; their income will be generated from the Page-1 "
-                      "distribution instead.")
 
         missing = [c for c in traits if c not in frame.columns]
         if missing:
@@ -124,19 +115,17 @@ def merged() -> pd.DataFrame:
 
 def original_data() -> pd.DataFrame:
     """
-    The master traits for the 280 participants, plus the reference files' fixed ``income``
-    column when it is available, ``dropna``-ed on the TRAIT columns only — identical to
-    the Sep-2026 original's ``merged[traits + ['income']].copy().dropna(subset=traits)``
-    in OrchestratorBaseline / OrchestratorDocMode, so the 280-participant selection
-    and order are unchanged and a missing income stays NaN (then generated).
+    The master traits for the 280 participants, ``dropna``-ed on the trait columns
+    (the same 280-row selection and order as the original orchestrators'
+    ``merged[traits].copy().dropna()``), with no income column: the engine generates
+    each participant's income from the Page 1 distribution.
 
-    A fresh copy is returned on every call, mirroring the per-orchestrator copy
-    of today, so a caller mutating its frame cannot affect anyone else.
+    A fresh copy is returned on every call, so a caller mutating its frame cannot
+    affect anyone else.
     """
     global _ORIGINAL_DATA
     if _ORIGINAL_DATA is None:
         traits = get_master_trait_list()
         frame = merged()
-        income_cols = ["income"] if "income" in frame.columns else []
-        _ORIGINAL_DATA = frame[traits + income_cols].copy().dropna(subset=traits)
+        _ORIGINAL_DATA = frame[traits].copy().dropna(subset=traits)
     return _ORIGINAL_DATA.copy()

@@ -1,15 +1,15 @@
 {
  "Agent ID": "d608e96ad63290f19651c20c42de516d3c7452904c851cc96b45ced7a5856ebc",
  "Assigned Allowance Level": "ce636f00887bcba5d5894c11794c8b6d9144ed660d80cfb1ba7a813d2944d015",
- "Customer Paid Price": "1a604991dd1990b6fb436222279284fd27868f9517d4a851c1116e1743a93a45",
- "Customer Type": "3a29ad0307baaa29b0078aeaa7007029d1608d4e304d1aa39bfe68db082c532f",
+ "Customer Paid Price": "717faff73fc477241fa21c9ff532308db5196e057fcd045fbb9e3ef85da2f766",
+ "Customer Type": "d85cb47feedfdf356a12ece0ab5f11317c19da6e30242aaedde28849d3b47679",
  "Group_experiment": "92141bd59aba9e842fa2abaea9ff8ffd6587dee6d77c90cabcf70895afd90581",
  "Honesty_Humility": "c7af9212f7f80521412ad88e3c7746de31ce384c23c39052925c5e86c91ec72c",
  "Period": "03599af192e5b3d1c328ff092afb4415fea66ef8c22e722ab607b45060a817ed",
  "Proximity": "e3a7a09faeea601f4f9db2b69c4c8d6836ea97d3d6048e03c651a4045176f932",
  "Purchase Request ID": "d49a176d6217766dbe4bc4ddeea4b8df13a76d9eb5a9740083ef17b15e1d6dbd",
  "Purchase Timestamp": "ea2cdf87b12eb8ba53e505ab70a115fa779d876c02ac331396351cbe364f4c52",
- "Purchase Type": "b88df24b99df30774b0178b007ee7fe863b635329003932dd5493288d6e4636c",
+ "Purchase Type": "0783e5f3c8e2c0651c8ec01fa62bc6d1c727de09cf005bc6fe17df54b5f079ac",
  "Quality": "e2dea554b09c351a7647d7541075ca6dfff3f144ad2778b8e8d11ea5d6ca104f",
  "Selected Vendor": "28d10637404cdebe16d28ba25c5c97c279843d960f3c2cfc254bc2651f732879",
  "Study Program": "8c81cbcb34a99d09ea744abf1fb82ab96ab9e8189f4c09d494ed8565611977cf",
@@ -17,5 +17,5 @@
  "TWT+Sospeso [=AW2+AX2]{Periods 1+2}": "dd41aa882dc9f399778119f0ea20e087b487f69557640ba66215ec63d80dc571",
  "Vendor Integrated Score": "a698df09024faddeac2ac977876be696d02d6e079c630969efd1da4b189141f6",
  "Vendor Price": "eb0a0ae8222d2c21382417afb4d4e9acda7cb8e5fadc57378fe5e9b21d38d025",
- "income": "bc2c92dff1382066035f5d40dac2f22ec6ad1c74167cd5a8b78a2f78be45b1f4"
+ "income": "dd5cdff3e617007f57ffbef23e202517eba3367b12a2cd1887f48f82413185b0"
 }

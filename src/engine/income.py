@@ -267,8 +267,8 @@ def get_agent_income(agent_state: dict, simulation_config: dict, rng: np.random.
     1. If 'income' already exists in agent_state, return it (cached) - but still make
        sure 'actual_allowance' is derived from 'Assigned Allowance Level', since the
        cached income may have been supplied by the caller rather than generated here
-       (Research Baseline / Research Specification carry the fixed reference income
-       on every original participant; see src/data/participants.py)
+       (the parity tests inject the reference Stata income this way; the app never
+       does - every population mode generates it here from the Page 1 distribution)
     2. Otherwise, generate BOTH 'income' and 'actual_allowance' from the agent's
        'Assigned Allowance Level' and cache them in agent_state
     3. 'income' is drawn stochastically from the percentile bucket

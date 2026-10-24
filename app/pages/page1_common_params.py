@@ -845,9 +845,9 @@ def _render_income_distribution():
     """💵 Annual Income Distribution: the type, then that type's parameters."""
     # Income Distribution Section
     st.markdown('<h3 class="section-header">💵 Annual Income Distribution</h3>', unsafe_allow_html=True)
-    st.caption("Research Baseline and Research Specification use each original participant's "
-               "income from the experiment data file; these distribution settings apply to "
-               "Copula populations.")
+    st.caption("Generates every agent's continuous income in every population mode, within "
+               "the band of the agent's allowance level; the categorical income specification "
+               "uses the level only.")
 
     stateful(st.selectbox,
         "Income Distribution Type",
