@@ -537,9 +537,9 @@ The reasons behind behaviour that looks odd at first sight.
   its `pop_context` switches the other three gates off.
 * **Every modelled decision's per-level σ multipliers default to the same value as its
   uniform multiplier** (`quintile_scale_factors` = `scale_factor` in
-  `config/decisions.yaml`: 1.0 for Decisions 1, 2 and 3, 0.5 for Decision 4), so
-  switching the σ mode to "Quintiles (σ per budget level)" changes the base σ, not the
-  multiplier.
+  `config/decisions.yaml`: 0.1 for Decision 1, 1.0 for Decisions 2 and 3, 0.5 for
+  Decision 4), so switching the σ mode to "Quintiles (σ per budget level)" changes the
+  base σ, not the multiplier.
 * **Every population mode draws its continuous income from Page 1.** Copula agents and
   the 280 participants alike get a seeded draw from the Page 1 distribution inside the
   band of their allowance level (`src/engine/income.py`), so the Page 1 income
@@ -554,15 +554,15 @@ The reasons behind behaviour that looks odd at first sight.
   the app never loads it. From 6 to 24 October
   2026 the loader merged it into the research populations, which made Page 1's income
   settings inert there; reverted (`tests/test_research_modes_income.py`).
-* **Decision 1's σ is converted into the anchor's units before the draw.** The file
-  holds sd(TWT+Sospeso) in credits (9.899547 overall, 5.7 to 16.9 per level), as the
-  Decision 1 document gives it; the anchor is a mix of two z-scores (spread 0.8). The
-  engine divides σ by sd(TWT+Sospeso) (`z_scoring.TWT_Sospeso.sd`, the statistic that
-  z-scores the observed prosocial behaviour) so that coefficient 1 adds one unit of the
-  observed variability, as the document's section 8 step 1 requires ("anchor … in the
-  original behaviour units" with σ in the same units) and as Decisions 2, 3 and 4
-  already do on their own scales. Until 2026-10-24 the credits value was added to the
-  anchor as it stood, twelve times its spread at coefficient 1, hidden by a 0.1 default.
+* **Decision 1's σ is the standard deviation of the raw TWT+Sospeso variable**
+  (9.899547 overall, 5.7 to 16.9 per budget level), as the Decision 1 document's
+  section 8 defines it, and it is added as it stands to the anchor, which the
+  document's section 7 builds from two z-scores (spread 0.8). So coefficient 1 means a
+  σ of 9.9 on an anchor that varies by 0.8, which spreads the raw DI values to about
+  ±30 and lowers the disclosure rate; the shipped 0.1 default keeps the σ near one
+  standard deviation of the anchor (0.99). This is the document as written, kept
+  deliberately (24 October 2026); the author may choose to restate σ on the anchor's
+  scale.
 * **A standalone Disclose Documents run forces Decision 1 first, with its default
   probability**, because eligibility for documents depends on income disclosure. The
   plan lists it in `default_decisions_list` and the screen says so. When the engine is

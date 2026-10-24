@@ -172,53 +172,10 @@ def test_shipped_default_intercept_unchanged(di_params):
 
 
 def test_quintile_multipliers_default_to_the_uniform_multiplier(di_params):
-    """The five per-level σ multipliers default to the uniform one (scale_factor), so
-    switching the σ mode to quintiles does not by itself change the noise; and both are
-    1.0, one unit of the observed variability, like Decisions 2 and 3."""
+    """The five per-level σ multipliers default to the uniform one (scale_factor, 0.1), so
+    switching the σ mode to quintiles does not by itself multiply the noise by ten."""
     stochastic = di_params["stochastic"]
-    assert stochastic["scale_factor"] == 1.0
     assert stochastic["quintile_scale_factors"] == {level: stochastic["scale_factor"] for level in "12345"}
-
-
-class _SigmaRecorder:
-    """An rng whose normal() returns the mean and records the sigma it was asked for."""
-    def __init__(self):
-        self.sigmas = []
-
-    def normal(self, mean, sigma):
-        self.sigmas.append(float(sigma))
-        return mean
-
-    def random(self):
-        return 0.5
-
-
-@pytest.mark.parametrize("strategy, level, coefficient", [
-    ("overall", 3, 1.0), ("overall", 3, 0.25), ("quintile", 1, 1.0), ("quintile", 5, 0.5)])
-def test_sigma_is_drawn_in_the_anchors_units(merged, di_params, strategy, level, coefficient):
-    """Decision 1 document, section 8 step 1: anchor and σ in the same units. The file's σ
-    is sd(TWT+Sospeso) in credits (9.899547 overall; 5.7 to 16.9 per level) and the anchor
-    is a mix of z-scores, so the draw's σ is the file's value × coefficient ÷ sd(TWT+Sospeso):
-    1.00 at coefficient 1 overall, 1.70 for level 5. (Before 2026-10-24 the credits value
-    was used as it stood: twelve times the anchor's own spread at coefficient 1.)"""
-    params = copy.deepcopy(di_params)
-    params["income_mode"] = "categorical"
-    stochastic = params["stochastic"]
-    stochastic["sigma_value"] = 9.899547           # the Research tick box: on
-    stochastic["sigma_strategy"] = strategy
-    stochastic["scale_factor"] = coefficient
-    stochastic["quintile_scale_factors"] = {k: coefficient for k in "12345"}
-    agent = merged[merged["Assigned Allowance Level"].astype(int) == level].iloc[0].to_dict()
-
-    rng = _SigmaRecorder()
-    out = disclose_income_stochastic(agent, params, rng, {}, pop_context="documentation")
-
-    twt_sd = params["z_scoring"]["TWT_Sospeso"]["sd"]
-    base = stochastic["sigma_overall"] if strategy == "overall" else stochastic["sigma_quintile"][str(level)]
-    assert rng.sigmas == [pytest.approx(base * coefficient / twt_sd)]
-    assert twt_sd == 9.899547
-    # the recorder returns the mean, so the draw equals the deterministic anchor
-    assert out["disclose_income_anchored_pb"] == pytest.approx(out["disclose_income_anchored_pb_deterministic"])
 
 
 def test_frozen_csv_equals_professor_dta():

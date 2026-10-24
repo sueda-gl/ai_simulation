@@ -364,11 +364,6 @@ stays aligned).
   `sigma_value` is only an on/off signal and σ is `sigma_overall` × `scale_factor`, or `sigma_quintile[level]` × `quintile_scale_factors[level]` in per-level mode from the block; only Decision 3 uses `sigma_value` as σ. The YAML ships
   `sigma_value: 0`, but the app's Research Specification tick box is on by default: an app run in
   Research Specification adds noise unless the user clears it; an engine run from Python does not.
-  Put the base σ in the units of the quantity the noise is added to, and check the ratio at
-  coefficient 1: σ should be a fraction of the anchor's spread, not a multiple of it. Decision 1's
-  file values are sd(TWT+Sospeso) in credits while its anchor is in z units, so its engine divides
-  by `z_scoring.TWT_Sospeso.sd` before the draw (Decision 1 document, section 8 step 1); Decision 3
-  converts with 100/112 onto its 0–100 scale; Decisions 2 and 4 hold their σ on the score's scale.
 * **The income mode**: `"Categorical only"`, `"Continuous only"` or `"Compare both"`
   (`MODE_OPTIONS`, `app/pages/decision_tabs/_controls.py`); `normalise_income_mode(mode)` turns
   any spelling into `"categorical"` or `"continuous"`. Categorical works from the allowance level
