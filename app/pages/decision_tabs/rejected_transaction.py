@@ -88,7 +88,7 @@ RTD_CONTROLS = TabControls(
             Options List Length (Tendency to Plan) and Loyalty do not use income.
             """,
     income_options=MODE_OPTIONS,
-    income_default='Continuous only',
+    income_default='Categorical only',
     income_seed='exact',
     coerce=True,
     coefficient_help="Coefficient to multiply each element's base σ. Applies to all elements "
@@ -115,7 +115,7 @@ def initialize_rtd_session_state():
     # (the updated user manual: 0.5 overall and per budget level; was 1.0).
     default_scale, default_quintile_scales = rtd_sigma_coefficient_defaults(config)
     defaults = {
-        'rtd_income_mode': 'Continuous only',
+        'rtd_income_mode': 'Categorical only',
         'rtd_sigma_enabled': True,
         'rtd_sigma_in_copula': False,
         'rtd_sigma_strategy': 'overall',
@@ -410,7 +410,7 @@ def _render_categorical_equation(config, coeffs, mech):
 def _render_income_element_formula(config, coeffs, mech):
     """Render the wtp / risk_taking equation(s) following the tab's Income
     Specification selection (categorical / continuous / both)."""
-    income_mode = st.session_state.get('rtd_income_mode', 'Continuous only')
+    income_mode = st.session_state.get('rtd_income_mode', 'Categorical only')
     if income_mode == "Categorical only":
         _render_categorical_equation(config, coeffs, mech)
     elif income_mode == "Compare both":

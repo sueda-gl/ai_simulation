@@ -69,7 +69,7 @@ tests import by name (`PRIORITY_SEQUENCES`, `SIGMA_OVERALL`, `DEFAULT_Z_SCORING`
 in `donation_default.py`, ...) are read from the file at import through the one loader
 in `src/config.py`; there is nothing to keep in step. Change the YAML; cite the
 document revision the value comes from in the YAML comment. (Only switches tolerate an
-absent key - `income_mode` falls back to categorical, on Decision 4 to continuous; an
+absent key - `income_mode` falls back to categorical on every decision; an
 absent `stochastic` block means no noise and an absent `sigma_strategy` overall - and
 two Decision 4 blocks whose meaning existing tests pin: `intercepts`, where an absent
 element is 0, and `aggregation`, where a partial block is merged over the file's.)

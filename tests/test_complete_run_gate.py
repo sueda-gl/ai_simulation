@@ -50,7 +50,7 @@ COMPARE_ALL = "Compare all"
 DECISIONS = {
     "disclose_income": ("di_income_mode", "Categorical only", "Compare both"),
     "disclose_documents": ("dd_income_mode", "Categorical only", "Compare both"),
-    "rejected_transaction_defaults": ("rtd_income_mode", "Continuous only", "Compare both"),
+    "rejected_transaction_defaults": ("rtd_income_mode", "Categorical only", "Compare both"),
     "donation_default": ("income_spec_mode", "categorical only", "Compare both"),
 }
 SHORT = {"disclose_income": "di", "disclose_documents": "dd",

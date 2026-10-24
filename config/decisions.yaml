@@ -337,8 +337,9 @@ rejected_transaction_defaults:
       neuroticism: -0.04921357 # Stata_File_Decision4_050926.dta embeds
       agreeable: 0.04339814    # (the old literals 0.0293241 / -0.053781925 / 0.04921357 are
       conscientiousness: 0.04811179   # obsolete - the file reproduces 280/280 with these)
-  # Income mode: 'continuous' (default, .dta-verified) or 'categorical'.
-  income_mode: continuous
+  # Income mode: 'categorical' (default, like Decisions 1 to 3; research author's request,
+  # 2026-10-24) or 'continuous' (the reference .dta is a continuous-income run).
+  income_mode: categorical
   # Categorical-income effects (doc rev 040926-2): score = intercept + level dummy
   # + personality part (income term dropped, remaining coefficients as above).
   # Level 1 (EUR 12) is the base level (intercept only); level_2..5 = EUR 32/72/128/200.

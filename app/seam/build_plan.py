@@ -686,7 +686,7 @@ def _rtd_normalize_income_mode(mode: Any) -> str:
 INCOME_MODE_RULES: Dict[str, IncomeModeRule] = {
     "disclose_income": IncomeModeRule("di_income_mode", "Categorical only", "categorical", False, normalize_income_mode),
     "disclose_documents": IncomeModeRule("dd_income_mode", "Categorical only", "categorical", False, normalize_income_mode),
-    "rejected_transaction_defaults": IncomeModeRule("rtd_income_mode", "Continuous only", "continuous", True,
+    "rejected_transaction_defaults": IncomeModeRule("rtd_income_mode", "Categorical only", "categorical", True,
                                                     _rtd_normalize_income_mode),
 }
 
@@ -1088,7 +1088,7 @@ def _resolve_modes(snapshot: Mapping, saved_configs: Mapping[str, dict],
         modes["force_di_default"] = di_saved is None
     elif single_decision == ("rejected_transaction_defaults",):
         modes["branch"] = "rejected_transaction_defaults"
-        modes["effective_income_mode"] = snapshot.get("rtd_income_mode", "Continuous only")
+        modes["effective_income_mode"] = snapshot.get("rtd_income_mode", "Categorical only")
     elif single_decision == ("donation_default",):
         modes["branch"] = "donation_default"
         if donation_saved:
@@ -1314,7 +1314,7 @@ def build_metadata(snapshot: Mapping, config_repo: DecisionsConfig, facts: RunFa
     rtd_compare_both_fallback = bool(
         rtd_ran_combined
         and "rejected_transaction_defaults" not in facts.saved_configs
-        and is_compare_income_mode(snapshot.get("rtd_income_mode", "Continuous only")))
+        and is_compare_income_mode(snapshot.get("rtd_income_mode", "Categorical only")))
 
     return RunMetadata(
         effective_population_mode=facts.effective_population_mode,

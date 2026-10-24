@@ -549,7 +549,7 @@ _DD_MIRRORS = _rows((
 ), DD_INIT, "page2-mirror", engine_input=True)
 
 _RTD_MIRRORS = _rows((
-    ("rtd_income_mode", "Continuous only"),
+    ("rtd_income_mode", "Categorical only"),
     ("rtd_sigma_strategy", "overall", "decision-wide: one strategy for all five mechanisms"),
     ("rtd_scale_factor", "<config stochastic.mechanisms.*.scale_factor (0.5), else 1.0>",
      "decision-wide; 0.5 per the platform documentation (previously 1.0)"),

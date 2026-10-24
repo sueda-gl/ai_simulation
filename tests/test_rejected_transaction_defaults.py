@@ -104,8 +104,10 @@ EXPECTED_LENGTH_DIST_BETA0_005 = {0: 0, 1: 6, 2: 59, 3: 95, 4: 86, 5: 34}
 
 @pytest.fixture(scope="module")
 def params():
+    """The shipped block with income_mode set to 'continuous': the reference .dta is a
+    continuous-income run (the shipped default is 'categorical' since 2026-10-24)."""
     cfg = load_decisions_yaml()
-    return cfg["rejected_transaction_defaults"]
+    return {**cfg["rejected_transaction_defaults"], "income_mode": "continuous"}
 
 
 @pytest.fixture(scope="module")
@@ -984,8 +986,9 @@ def test_categorical_leaves_income_free_elements_unchanged(all_scores, cat_score
         np.testing.assert_array_equal(cont, cat, err_msg=f"{key} changed by income_mode")
 
 
-def test_continuous_mode_unchanged_by_explicit_key(gold, params, sim_config, all_scores):
-    """income_mode='continuous' (explicit) == income_mode absent == gold columns."""
+def test_continuous_mode_unchanged_by_explicit_key(gold, params, sim_config, all_scores, cat_scores):
+    """income_mode='continuous' (explicit) == gold columns; an ABSENT key falls back to
+    categorical, like Decisions 1 to 3 (the shipped default since 2026-10-24)."""
     p = dict(params)
     p["income_mode"] = "continuous"
     explicit = [compute_rtd_scores(agent_state(r), p, sim_config)
@@ -994,6 +997,12 @@ def test_continuous_mode_unchanged_by_explicit_key(gold, params, sim_config, all
         np.testing.assert_array_equal(np.array([s[key] for s in explicit]),
                                       np.array([s[key] for s in all_scores]),
                                       err_msg=f"{key} explicit-continuous mismatch")
+    absent = dict(params); absent.pop("income_mode")
+    absent_scores = [compute_rtd_scores(agent_state(r), absent, sim_config) for _, r in gold.iterrows()]
+    for key in ("wtp", "risk_taking"):
+        np.testing.assert_array_equal(np.array([s[key] for s in absent_scores]),
+                                      np.array([s[key] for s in cat_scores]),
+                                      err_msg=f"{key}: absent income_mode must mean categorical")
     np.testing.assert_allclose(np.array([s["wtp"] for s in explicit]),
                                gold["WTP_calculated"], atol=1e-5)   # float32 income z
     np.testing.assert_allclose(np.array([s["risk_taking"] for s in explicit]),

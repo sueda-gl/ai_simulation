@@ -374,7 +374,8 @@ stays aligned).
   any spelling into `"categorical"` or `"continuous"`. Categorical works from the allowance level
   (`categorical_intercepts.level_1` to `level_5`), continuous from the income z-scored with the
   run's `income_stats`. Decisions 1 to 3 default to categorical and, in a complete run, follow the
-  run's income mode; Decision 4 defaults to continuous and keeps its own tab's mode (README §5).
+  run's income mode; Decision 4 also defaults to categorical but keeps its own tab's mode in a
+  complete run (README §5).
   Decide with the author which convention the new decision follows, and write it in the YAML
   comment.
 

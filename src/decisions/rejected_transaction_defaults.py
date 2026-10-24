@@ -210,8 +210,9 @@ def _coeffs(params: Dict, mechanism: str) -> Dict:
 
 
 def _income_mode(params: Dict) -> str:
-    """Resolve the decision's income mode: 'categorical' or 'continuous' (default)."""
-    return normalise_income_mode(params.get("income_mode", "continuous"), default="continuous")
+    """Resolve the decision's income mode: 'categorical' (default, as in Decisions 1 to 3)
+    or 'continuous'."""
+    return normalise_income_mode(params.get("income_mode", "categorical"), default="categorical")
 
 
 def _categorical_income_effect(params: Dict, mechanism: str, level: int) -> float:

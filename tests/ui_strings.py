@@ -55,6 +55,7 @@ ANALYSIS_MONTE_CARLO = "Monte-Carlo Study"             # Analysis Mode radio
 # capitalised labels, the Donation Default tab its own lower-case ones.
 COMPARE_BOTH = "Compare both"                          # every income-mode radio
 CONTINUOUS_ONLY = "Continuous only"                    # DI / DD / Decision 4
+CATEGORICAL_ONLY = "Categorical only"                  # DI / DD / Decision 4 (their default)
 
 # Results page: the button that pins a configuration.
 USE_THIS_CONFIG = "🎯 Use This Config"

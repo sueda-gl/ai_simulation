@@ -54,6 +54,8 @@ def flexgold():
 def params():
     cfg = load_decisions_yaml()
     p = copy.deepcopy(cfg["rejected_transaction_defaults"])
+    # the .dta is a continuous-income run (the shipped default is categorical since 2026-10-24)
+    p["income_mode"] = "continuous"
     # the .dta embeds no intercepts
     p["intercepts"] = {m: 0.0 for m in MECHANISMS}
     # NOTE: no coefficient override any more - the 050926 file embeds exactly the

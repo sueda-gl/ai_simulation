@@ -68,7 +68,7 @@ def base_state(repo, selected=None, **overrides):
         "dd_sigma_enabled": True, "dd_sigma_in_copula": False, "dd_sigma_strategy": "overall",
         "dd_scale_factor": 1.0, "dd_quintile_scale_factors": {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0},
         # RTD tab
-        "rtd_income_mode": "Continuous only", "rtd_sigma_enabled": True, "rtd_sigma_in_copula": False,
+        "rtd_income_mode": "Categorical only", "rtd_sigma_enabled": True, "rtd_sigma_in_copula": False,
         "rtd_sigma_strategy": "overall", "rtd_scale_factor": 1.0,
         "rtd_quintile_scale_factors": {"1": 1.0, "2": 1.0, "3": 1.0, "4": 1.0, "5": 1.0},
         "rtd_intercept_ttp": 0.0, "rtd_intercept_loyalty": 0.0, "rtd_intercept_wtp": 0.0,

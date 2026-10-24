@@ -38,7 +38,7 @@ pytestmark = pytest.mark.slow
 from browser_sim import BrowserSim
 from conftest import ROOT
 from ui_strings import (
-    ANALYSIS_MONTE_CARLO, BACK_TO_PAGE1, BACK_TO_PAGE2, COMPARE_BOTH, CONTINUOUS_ONLY,
+    ANALYSIS_MONTE_CARLO, BACK_TO_PAGE1, BACK_TO_PAGE2, COMPARE_BOTH, CONTINUOUS_ONLY, CATEGORICAL_ONLY,
     EXECUTION_LIVE, NEXT_TO_PAGE2, USE_THIS_CONFIG, VIEW_RESULTS,
 )
 
@@ -437,7 +437,7 @@ def journey_donation_overrides_survive_navigation(rec):
 def journey_compare_both_and_d4_elements(rec):
     """Disclose Income, Disclose Documents and Decision 4 each run alone in "Compare
     both"; then, still in "Compare both", Decision 4's Loyalty Ranking element run; then
-    Decision 4 back on "Continuous only" (its default) and the Integrated Default List
+    Decision 4 back on "Categorical only" (its default) and the Integrated Default List
     (rank aggregation) run."""
     s = Session(rec).to_page2()
     for decision, income_key in (("disclose_income", "di_tab_income_mode"),
@@ -449,7 +449,7 @@ def journey_compare_both_and_d4_elements(rec):
         s.back_to_page2(f"back_from_{decision}")
     s.click_key("results_d4_loyalty_compare_both", "rtd_run_loyalty_btn")
     s.back_to_page2("back_from_loyalty")
-    s.set("d4_continuous_only", "rtd_tab_income_mode", CONTINUOUS_ONLY)
+    s.set("d4_categorical_only", "rtd_tab_income_mode", CATEGORICAL_ONLY)
     s.click_key("results_d4_integrated_default_list", "rtd_run_aggregation_btn")
     return s.steps
 
