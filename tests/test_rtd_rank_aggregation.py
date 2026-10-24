@@ -337,8 +337,11 @@ def test_stage_shares_reproduce_the_documents_experiment():
 @pytest.fixture(scope="module")
 def params():
     cfg = load_decisions_yaml()
-    # no 'model_enabled' switch: the model runs whenever selected
-    return dict(cfg["rejected_transaction_defaults"])
+    # no 'model_enabled' switch: the model runs whenever selected. The reference
+    # population (gold) is the author's continuous-income .dta run and the shares
+    # asserted below were calibrated on it, so the income mode is set explicitly
+    # (the shipped default is categorical since 2026-10-24).
+    return {**cfg["rejected_transaction_defaults"], "income_mode": "continuous"}
 
 
 def _run(gold, params, sim_config, aggregation=None, stochastic=False, seed=1234):
