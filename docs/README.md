@@ -545,8 +545,10 @@ The reasons behind behaviour that looks odd at first sight.
   band of their allowance level (`src/engine/income.py`), so the Page 1 income
   settings (μ, σ, threshold) move every continuous result in every mode; the categorical
   specification uses the level only. The reference Stata files embed one fixed income
-  per participant (`data/stata_incomes.csv`, a February 2026 export made to compare
-  with Stata); the parity tests inject it, the app never loads it. From 6 to 24 October
+  per participant (`data/stata_incomes.csv`): the app's own Research run at seed 42
+  with Page 1 set to lognormal μ 10, σ 0.7, minimum income $2,000, made in late 2025
+  and reused by the author since; today's engine reproduces it 280/280. The parity
+  tests inject it, the app never loads it. From 6 to 24 October
   2026 the loader merged it into the research populations, which made Page 1's income
   settings inert there; reverted (`tests/test_research_modes_income.py`).
 * **Decision 1's σ is converted into the anchor's units before the draw.** The file

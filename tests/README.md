@@ -26,7 +26,7 @@ depends on it.
 ## References the tests pin
 
 * **Frozen reference extracts** (in git): `data/stata_d1_verification.csv` (Decision 1),
-  `data/stata_incomes.csv` (the reference income the parity tests inject), `data/d3_doc_reference.csv`
+  `data/stata_incomes.csv` (the reference income the parity tests inject: the app's own run at seed 42, lognormal μ 10, σ 0.7, minimum $2,000), `data/d3_doc_reference.csv`
   (Decision 3, written by `experiments/d3_doc_reference.py`),
   `data/stata_d4_verification.csv` and `data/stata_d4_flexibility_verification.csv`
   (Decision 4), plus the survey and experiment workbooks in `data/` that the research

@@ -8,8 +8,12 @@ app always did. Changing the Page 1 income settings therefore moves every contin
 result in every mode; the categorical specification uses the allowance level only.
 
 The reference Stata files (Decision 1 / 2 / 4) embed ONE fixed income per participant,
-frozen in data/stata_incomes.csv (a February 2026 export made to compare the app with
-Stata). The parity tests inject that column into the agents they run, so the Decision 4
+frozen in data/stata_incomes.csv. Provenance (established 24 October 2026): it is the
+app's own Research run at seed 42 with 280 agents and the Page 1 income settings
+lognormal mu = 10, sigma = 0.7, minimum income 2000 (not the defaults sigma 0.5 and
+minimum 0), made between 7 November 2025 (the category-first generator) and 23
+December 2025 (the Stata timestamp of the author's first Decision 1 file, which already
+carries the column); today's engine reproduces it 280/280 (test below). The parity tests inject that column into the agents they run, so the Decision 4
 Research Baseline run reproduces the .dta 280/280; the app itself never loads it. From
 6 to 24 October 2026 src/data/participants.py merged the file into the research
 populations, which silently made Page 1's income settings inert for the Research modes;
@@ -286,6 +290,16 @@ def test_page1_income_settings_move_the_research_modes(profile_name):
     wide, _ = _research_incomes(profile_name, lognormal_sigma=1.0)
     assert not np.array_equal(narrow, wide)
     assert wide.std(ddof=1) > 1.5 * narrow.std(ddof=1)
+
+
+def test_reference_income_is_the_apps_own_run_at_seed_42():
+    """Provenance of data/stata_incomes.csv: a Research run at seed 42, 280 agents, with
+    Page 1 set to lognormal mu 10, sigma 0.7, minimum income 2000. Today's engine
+    reproduces it to 1e-9, which also pins the income draw chain since 2025."""
+    inc, _ = _research_incomes("baseline", seed=42, lognormal_mu=10.0, lognormal_sigma=0.7,
+                               lognormal_min=2000.0)
+    frozen = pd.read_csv(INCOMES_CSV, float_precision="round_trip").sort_values("original_index")
+    assert np.allclose(inc, frozen["income"].to_numpy(), rtol=1e-9, atol=1e-6)
 
 
 # ---------------------------------------------------------------------------
