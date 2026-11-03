@@ -69,7 +69,7 @@ def render_global_parameters_readonly():
         # Show distribution-specific parameters
         if st.session_state.sim_params.income_distribution == "lognormal":
             st.text(f"Lognormal μ: {st.session_state.sim_params.lognormal_mu:.1f}")
-            st.text(f"Lognormal σ: {st.session_state.sim_params.lognormal_sigma:.1f}")
+            st.text(f"Lognormal σ: {st.session_state.sim_params.lognormal_sigma:.2f}")
             st.text(f"Minimum Income: ${st.session_state.sim_params.lognormal_min:.0f}")
             if st.session_state.sim_params.lognormal_max is not None:
                 st.text(f"Maximum Income: ${st.session_state.sim_params.lognormal_max:.0f}")

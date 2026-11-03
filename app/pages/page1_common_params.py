@@ -904,7 +904,7 @@ def _render_lognormal_parameters():
             "σ (sigma) - Std Dev of ln(Y)",
             min_value=0.1,
             max_value=3.0,
-            step=0.1,
+            step=0.05,  # 0.05 so that values such as 0.85 are reachable with the buttons as well as by typing
             help="Standard deviation parameter of the log-transformed values",
             key="lognormal_sigma_input",
             on_change=lambda: setattr(st.session_state.sim_params, 'lognormal_sigma', st.session_state.lognormal_sigma_input)
