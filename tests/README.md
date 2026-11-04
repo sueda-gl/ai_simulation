@@ -76,6 +76,7 @@ No test module imports another.
 | `test_rtd_flexibility.py` | Decision 4 Flexibility: the deterministic pipeline 280/280, beta4, fallback, stochastic layer, copula trait. | `data/stata_d4_flexibility_verification.csv`. |
 | `test_rtd_rank_aggregation.py` | Decision 4 Section 6: Kemeny-Young with the Schulze / Copeland / footrule / random cascade, and its integration. | Decision 4 document rev 040926-2 Section 6; "Ranking Cascade Results (V1)" stage shares. |
 | `test_rtd_histogram_stata_parity.py` | Decision 4 score histograms use Stata's default bin rule (16 bins at N = 280) and draw the document's figure. | `data/stata_d4_verification.csv`; the design document's figure. |
+| `test_histogram_bins.py` | Decisions 1 to 3 score histograms use 16 equal-width bins (Stata's count for the 280 participants); no chart module leaves binning to plotly. | `app/reports/bins.py`; the research author's request of 4 November 2026. |
 | `test_research_modes_income.py` | Every population mode draws its income from Page 1 (seeded; moves with the Page 1 settings); with the reference income injected, the Decision 4 Research Baseline run reproduces the file. | `data/stata_incomes.csv`, the Decision 4 extracts; the `.dta` at `PROF_DTA`. |
 
 ### Golden nets

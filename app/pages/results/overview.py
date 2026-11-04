@@ -11,7 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 from app.reports.donation import donation_default_stats_frame
-from app.pages.results.visualizations.viz_helpers import yes_no_pie
+from app.pages.results.visualizations.viz_helpers import yes_no_pie, score_histogram_bar
 from app.pages.results.config_pin import (
     render_disclose_documents_selection_button,
     render_disclose_income_selection_button,
@@ -150,15 +150,11 @@ def show_overview(df, title_suffix="", result_key=None, enable_selection=False):
         col1, col2 = st.columns([2, 1])
         
         with col1:
-            fig = px.histogram(
-                df, 
-                x=donation_col,
-                nbins=30,
-                title=f"Distribution of Donation Rates{title_suffix}",
-                labels={donation_col: 'Donation Rate', 'count': 'Number of Agents'},
-                marginal="box"
-            )
+            fig = go.Figure(score_histogram_bar(pd.to_numeric(df[donation_col], errors='coerce').dropna(),
+                                                'Donation Rate', x_format=".1%"))
             fig.update_layout(
+                title=f"Distribution of Donation Rates{title_suffix}",
+                xaxis_title='Donation Rate', yaxis_title='Number of Agents',
                 xaxis_tickformat='.0%',
                 showlegend=False
             )
@@ -295,13 +291,7 @@ def show_disclose_income_rate_analysis(df, title_suffix="", result_key=None, ena
     fig = go.Figure()
     
     # Add histogram
-    fig.add_trace(go.Histogram(
-        x=raw_values,
-        nbinsx=40,
-        name='DI Raw Values',
-        marker_color='steelblue',
-        opacity=0.7
-    ))
+    fig.add_trace(score_histogram_bar(raw_values, 'DI Raw Values'))
     
     # Add vertical line at 0 (decision boundary)
     fig.add_vline(
@@ -409,8 +399,7 @@ def show_disclose_documents_rate_analysis(df, title_suffix="", result_key=None, 
     n_pct = (n_count / total) * 100 if total > 0 else 0
 
     fig = go.Figure()
-    fig.add_trace(go.Histogram(x=raw_values, nbinsx=40, name='DD Raw Values',
-                               marker_color='steelblue', opacity=0.7))
+    fig.add_trace(score_histogram_bar(raw_values, 'DD Raw Values'))
     fig.add_vline(x=0, line_dash="solid", line_color="red", line_width=3,
                   annotation_text="Threshold (0)", annotation_position="top", annotation_font_color="red")
     fig.add_vline(x=mean_val, line_dash="dash", line_color="green", line_width=2,

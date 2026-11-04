@@ -5,6 +5,9 @@ several result views.
 """
 import streamlit as st
 import plotly.express as px
+import plotly.graph_objects as go
+
+from app.reports.bins import fixed_bins
 
 
 def get_dynamic_description(decision_name, ctx=None):
@@ -46,3 +49,19 @@ def yes_no_pie(value_counts):
         names=value_counts.index,
         color_discrete_map={'Y': '#2E8B57', 'N': '#DC143C'}
     )
+
+
+def score_histogram_bar(series, name, x_format=".3f"):
+    """The histogram trace of a decision score: STATA_BINS (16) equal-width bins from
+    the minimum to the maximum, drawn straight from fixed_bins' edges and counts as a
+    go.Bar (not re-binned by plotly, whose nbinsx is only an upper bound and whose
+    last bin drops the maximum). Counts on the y-axis; the hover shows the bin's
+    range and count."""
+    edges, counts, size = fixed_bins(series)
+    import numpy as np
+    return go.Bar(
+        x=(edges[:-1] + edges[1:]) / 2.0, y=counts, width=size * 0.95, name=name,
+        customdata=np.column_stack([edges[:-1], edges[1:]]),
+        hovertemplate="[%{customdata[0]:" + x_format + "}, %{customdata[1]:" + x_format + "})"
+                      "<br>%{y} agents<extra></extra>",
+        marker_color='steelblue', opacity=0.7)

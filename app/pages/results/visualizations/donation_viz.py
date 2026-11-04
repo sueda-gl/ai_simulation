@@ -10,7 +10,9 @@ calls those builders and renders charts, metrics and download buttons.
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime
+from app.pages.results.visualizations.viz_helpers import score_histogram_bar
 from app.reports.donation import (
     build_donation_default_export,
     build_donation_default_xlsx,
@@ -43,13 +45,9 @@ def render_donation_default(df, decision_name, decision_title, decision_data):
             col_plot, col_stats = st.columns([2, 1])
             with col_plot:
                 st.markdown(f"**Distribution of {decision_title}**")
-                fig = px.histogram(
-                    df,
-                    x=decision_name,
-                    nbins=30,
-                    labels={decision_name: decision_title, 'count': 'Number of Agents'}
-                )
+                fig = go.Figure(score_histogram_bar(numeric_data.dropna(), decision_title, x_format=".1%"))
                 fig.update_layout(
+                    xaxis_title=decision_title, yaxis_title='Number of Agents',
                     showlegend=False,
                     xaxis_tickformat='.0%'
                 )
@@ -168,14 +166,9 @@ def render_final_donation_rate(df, decision_name, decision_title, decision_data)
         with col_hist:
             # Histogram showing the distribution - match overview chart settings for consistency
             st.markdown("**Distribution of Donation Rates Across Agents**")
-            fig = px.histogram(
-                df,
-                x='donation_default',
-                labels={'donation_default': 'Donation Rate', 'count': 'Number of Agents'},
-                nbins=30,  # Match overview chart
-                marginal="box"  # Match overview chart
-            )
+            fig = go.Figure(score_histogram_bar(donation_data.dropna(), 'Donation Rate', x_format=".1%"))
             fig.update_layout(
+                xaxis_title='Donation Rate', yaxis_title='Number of Agents',
                 xaxis_tickformat='.0%',
                 showlegend=False,
                 height=400

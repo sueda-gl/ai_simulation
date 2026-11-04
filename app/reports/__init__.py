@@ -132,6 +132,7 @@ from app.reports.purchasing import (
     timestamps_by_customer_type,
     top_agents_by_quantity,
 )
+from app.reports.bins import STATA_BINS, fixed_bins
 from app.reports.rtd import (
     RTD_AGG_SHEET,
     RTD_AGGREGATION_ELEMENT,
@@ -378,6 +379,8 @@ __all__ = [
     "rtd_settled_by_frame",
     "rtd_stata_bin_count",
     "rtd_stata_bins",
+    "STATA_BINS",
+    "fixed_bins",
     # timestamps
     "DEFAULT_DURATION_HOURS",
     "DEFAULT_PERIODS",

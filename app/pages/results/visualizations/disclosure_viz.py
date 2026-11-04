@@ -26,7 +26,7 @@ from app.reports.disclosure import (
     raw_value_stats,
 )
 from app.pages.results.run_context import RunContext
-from app.pages.results.visualizations.viz_helpers import yes_no_pie
+from app.pages.results.visualizations.viz_helpers import yes_no_pie, score_histogram_bar
 
 
 def _income_mode_suffix():
@@ -97,13 +97,7 @@ def render_disclose_income(df, decision_name, decision_title, decision_data):
                 fig_hist = go.Figure()
 
                 # Add histogram
-                fig_hist.add_trace(go.Histogram(
-                    x=raw_values,
-                    nbinsx=40,
-                    name='DI Raw Values',
-                    marker_color='steelblue',
-                    opacity=0.7
-                ))
+                fig_hist.add_trace(score_histogram_bar(raw_values, 'DI Raw Values'))
 
                 # Add vertical line at 0 (decision boundary)
                 fig_hist.add_vline(
@@ -263,13 +257,7 @@ def render_disclose_documents(df, decision_name, decision_title, decision_data):
                 st.markdown(f"**📈 Raw Disclose Documents Distribution{mode_suffix}**")
 
                 fig_hist = go.Figure()
-                fig_hist.add_trace(go.Histogram(
-                    x=raw_values,
-                    nbinsx=40,
-                    name='DD Raw Values',
-                    marker_color='steelblue',
-                    opacity=0.7
-                ))
+                fig_hist.add_trace(score_histogram_bar(raw_values, 'DD Raw Values'))
                 fig_hist.add_vline(
                     x=0, line_dash="solid", line_color="red", line_width=3,
                     annotation_text="Threshold (0)", annotation_position="top",

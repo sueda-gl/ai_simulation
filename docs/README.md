@@ -533,6 +533,13 @@ The reasons behind behaviour that looks odd at first sight.
   settings would give different numbers depending on whether a tab had been opened.
 * **The income standard deviation divides by N − 1**, matching Stata's `egen std()`
   used for the reference z-scores.
+* **Every decision-score histogram has 16 bins.** The Decision 1 to 3 charts draw 16
+  equal-width bins from the minimum to the maximum (`app/reports/bins.py`), the count
+  Stata's default rule gives for the 280 participants, so they compare bar for bar
+  with the Stata figures in the decision documents; Decision 4 uses the rule itself,
+  which is the same 16 bins at every N ≥ 256. The bars are drawn from the computed
+  edges and counts, not re-binned by plotly, whose bin count is only an upper bound
+  (research author's request, 4 November 2026).
 * **Research Baseline never adds noise.** Its profile forces the donation σ to zero and
   its `pop_context` switches the other three gates off.
 * **Every modelled decision's per-level σ multipliers default to the same value as its
